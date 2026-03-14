@@ -1,0 +1,71 @@
+I have html form that sends data to php script. One of the field in that form is <input type="text" name="qr-code"> this form is used on smartphones. How can I add button next to that field, that opens phone camera, so I can scan qr code ?
+You can absolutely add a button next to your <input> field that opens the phone's camera and scans a QR code—thanks to modern browser APIs and libraries like html5-qrcode. Here's how you can do it using JavaScript and a lightweight library that works well on mobile devices:
+
+📸 Step-by-Step: Add QR Code Scanner to Your Form
+1. Include the QR Scanner Library
+Use the html5-qrcode library, which supports live camera scanning in mobile browsers.
+
+Add this to your HTML <head>:
+
+html
+<script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
+2. Update Your HTML Form
+Add a button and a container for the camera preview:
+
+html
+<form action="your-script.php" method="POST">
+  <input type="text" name="qr-code" id="qr-code" placeholder="Scan QR code">
+  <button type="button" onclick="startScanner()">📷 Scan</button>
+  <div id="qr-reader" style="width:300px;"></div>
+</form>
+3. Add JavaScript to Handle Scanning
+This script initializes the scanner and fills the input field with the scanned QR code:
+
+html
+<script>
+function startScanner() {
+  const qrReader = new Html5Qrcode("qr-reader");
+  qrReader.start(
+    { facingMode: "environment" }, // Use rear camera
+    {
+      fps: 10,
+      qrbox: 250
+    },
+    (decodedText) => {
+      document.getElementById("qr-code").value = decodedText;
+      qrReader.stop(); // Stop scanning after successful read
+      document.getElementById("qr-reader").innerHTML = ""; // Clear preview
+    },
+    (errorMessage) => {
+      // Optional: handle scan errors
+      console.warn(errorMessage);
+    }
+  );
+}
+</script>
+✅ Compatibility Notes
+Works on most modern mobile browsers (Chrome, Safari).
+
+Requires camera permission from the user.
+No need for native apps—pure HTML/JS.
+You can find a full tutorial on ScanApp’s documentation or GeeksforGeeks if you want to customize further.
+
+Would you like help styling the button or making the scanner auto-close after a few seconds?
+
+yes, style that button. you can use bootstrap4 form will be used under bootstrap4 envoroment
+Perfect! Since you're using Bootstrap 4, here's how you can style the QR scan button to match the form's aesthetics and layout. I’ll also wrap the input and button in a responsive input group for a clean, mobile-friendly look.
+
+✅ Styled Form with QR Scan Button (Bootstrap 4)
+
+<link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
+
+<form action="your-script.php" method="POST">
+  <div class="form-group">
+    <label for="qr-code">QR Code</label>
+    <div class="input-group">
+      <input type="text" class="form-control" name="qr-code" id="qr-code" placeholder="Scan QR code">
+      <div class="input-group-append">
+        <button type="button" class="btn btn-outline-primary" onclick="startScanner()">📷 Scan</button>
+      </div>
+    </div>
+  </div>
