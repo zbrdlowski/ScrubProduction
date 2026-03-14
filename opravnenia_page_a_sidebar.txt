@@ -1,0 +1,584 @@
+=======================
+priklad sidebaru
+=======================
+
+<?php if (canShowMenu('inventory')): ?>
+<li class="nav-item <?= isMenuOpen(['items','add_item','upload_items','shelves','display_stock']) ? 'menu-open' : '' ?>">
+  <a href="#" class="nav-link">
+    <i class="fas fa-boxes nav-icon"></i>
+    <p>Inventory & Items <i class="right fas fa-angle-left"></i></p>
+  </a>
+  <ul class="nav nav-treeview">
+
+    <?php if (canAccessPage('items')): ?>
+    <li class="nav-item">
+      <a href="?page=items" class="nav-link <?= isActive('items') ?>">
+        <p>All Items</p>
+      </a>
+    </li>
+    <?php endif; ?>
+
+    <?php if (canAccessPage('upload_items')): ?>
+    <li class="nav-item">
+      <a href="?page=upload_items" class="nav-link <?= isActive('upload_items') ?>">
+        <p>CSV Upload</p>
+      </a>
+    </li>
+    <?php endif; ?>
+
+  </ul>
+</li>
+<?php endif; ?>
+================================
+Permission Strategy (recommended)
+Permission	Meaning
+100	Basic operator
+200	Senior operator
+300	Supervisor
+500	Admin
+900	Super admin
+
+Departments (position_id) define scope, permission defines power.
+====================================
+prekopaný sidebar:
+===================================
+<?php require_once 'includes/permissions.php'; ?>
+
+<nav class="mt-2">
+<ul class="nav nav-pills nav-sidebar flex-column" data-widget="treeview" role="menu">
+
+<!-- ================= DASHBOARD ================= -->
+<?php if (canAccessPage('plastics_dashboard')): ?>
+<li class="nav-item">
+  <a href="?page=plastics_dashboard" class="nav-link <?= isActive('plastics_dashboard') ?>">
+    <i class="nav-icon fas fa-chart-line"></i>
+    <p>Dashboard</p>
+  </a>
+</li>
+<?php endif; ?>
+
+
+<!-- ================= INVENTORY ================= -->
+<?php if (canShowMenu('inventory')): ?>
+<li class="nav-item <?= isMenuOpen(['items','add_item','upload_items','shelves','display_stock']) ? 'menu-open' : '' ?>">
+  <a href="#" class="nav-link">
+    <i class="nav-icon fas fa-boxes"></i>
+    <p>
+      Inventory
+      <i class="right fas fa-angle-left"></i>
+    </p>
+  </a>
+  <ul class="nav nav-treeview">
+
+    <?php if (canAccessPage('items')): ?>
+    <li class="nav-item">
+      <a href="?page=items" class="nav-link <?= isActive('items') ?>">
+        <p>All Items</p>
+      </a>
+    </li>
+    <?php endif; ?>
+
+    <?php if (canAccessPage('add_item')): ?>
+    <li class="nav-item">
+      <a href="?page=add_item" class="nav-link <?= isActive('add_item') ?>">
+        <p>Add Item</p>
+      </a>
+    </li>
+    <?php endif; ?>
+
+    <?php if (canAccessPage('upload_items')): ?>
+    <li class="nav-item">
+      <a href="?page=upload_items" class="nav-link <?= isActive('upload_items') ?>">
+        <p>CSV Upload</p>
+      </a>
+    </li>
+    <?php endif; ?>
+
+    <?php if (canAccessPage('shelves')): ?>
+    <li class="nav-item">
+      <a href="?page=shelves" class="nav-link <?= isActive('shelves') ?>">
+        <p>Shelves</p>
+      </a>
+    </li>
+    <?php endif; ?>
+
+    <?php if (canAccessPage('display_stock')): ?>
+    <li class="nav-item">
+      <a href="?page=display_stock" class="nav-link <?= isActive('display_stock') ?>">
+        <p>Display Stock</p>
+      </a>
+    </li>
+    <?php endif; ?>
+
+  </ul>
+</li>
+<?php endif; ?>
+
+
+<!-- ================= STOCK OPERATIONS ================= -->
+<?php if (canShowMenu('stock_ops')): ?>
+<li class="nav-item <?= isMenuOpen(['scan_form','scan_form_out','bulk_scan_in','reset_location','relocate_item']) ? 'menu-open' : '' ?>">
+  <a href="#" class="nav-link">
+    <i class="nav-icon fas fa-barcode"></i>
+    <p>
+      Stock Operations
+      <i class="right fas fa-angle-left"></i>
+    </p>
+  </a>
+  <ul class="nav nav-treeview">
+
+    <?php if (canAccessPage('scan_form')): ?>
+    <li class="nav-item">
+      <a href="?page=scan_form" class="nav-link <?= isActive('scan_form') ?>">
+        <p>Scan In</p>
+      </a>
+    </li>
+    <?php endif; ?>
+
+    <?php if (canAccessPage('scan_form_out')): ?>
+    <li class="nav-item">
+      <a href="?page=scan_form_out" class="nav-link <?= isActive('scan_form_out') ?>">
+        <p>Scan Out</p>
+      </a>
+    </li>
+    <?php endif; ?>
+
+    <?php if (canAccessPage('bulk_scan_in')): ?>
+    <li class="nav-item">
+      <a href="?page=bulk_scan_in" class="nav-link <?= isActive('bulk_scan_in') ?>">
+        <p>Bulk Scan In</p>
+      </a>
+    </li>
+    <?php endif; ?>
+
+    <?php if (canAccessPage('reset_location')): ?>
+    <li class="nav-item">
+      <a href="?page=reset_location" class="nav-link <?= isActive('reset_location') ?>">
+        <p>Reset Location</p>
+      </a>
+    </li>
+    <?php endif; ?>
+
+    <?php if (canAccessPage('relocate_item')): ?>
+    <li class="nav-item">
+      <a href="?page=relocate_item" class="nav-link <?= isActive('relocate_item') ?>">
+        <p>Relocate Item</p>
+      </a>
+    </li>
+    <?php endif; ?>
+
+  </ul>
+</li>
+<?php endif; ?>
+
+
+<!-- ================= ORDERS ================= -->
+<?php if (canAccessPage('plastics_orders_active')): ?>
+<li class="nav-item">
+  <a href="?page=plastics_orders_active" class="nav-link <?= isActive('plastics_orders_active') ?>">
+    <i class="nav-icon fas fa-shopping-cart"></i>
+    <p>Orders</p>
+  </a>
+</li>
+<?php endif; ?>
+
+
+<!-- ================= ADMIN ================= -->
+<?php if (canShowMenu('admin')): ?>
+<li class="nav-item <?= isMenuOpen(['employee','controlls']) ? 'menu-open' : '' ?>">
+  <a href="#" class="nav-link">
+    <i class="nav-icon fas fa-user-shield"></i>
+    <p>
+      Administration
+      <i class="right fas fa-angle-left"></i>
+    </p>
+  </a>
+  <ul class="nav nav-treeview">
+
+    <?php if (canAccessPage('employee')): ?>
+    <li class="nav-item">
+      <a href="?page=employee" class="nav-link <?= isActive('employee') ?>">
+        <p>Employees</p>
+      </a>
+    </li>
+    <?php endif; ?>
+
+    <?php if (canAccessPage('controlls')): ?>
+    <li class="nav-item">
+      <a href="?page=controlls" class="nav-link <?= isActive('controlls') ?>">
+        <p>Controls</p>
+      </a>
+    </li>
+    <?php endif; ?>
+
+  </ul>
+</li>
+<?php endif; ?>
+
+</ul>
+</nav>
+
+============================
+celkový pôvodný návrh:
+
+Central Permission Map (single source of truth)
+Instead of scattering if ($_SESSION['permission'] >= 300) everywhere, you define one config file.
+1Create includes/access_control.php
+
+<?php
+
+return [
+
+    // PAGE ACCESS RULES
+    'pages' => [
+
+        // DASHBOARDS
+        'plastics_dashboard' => [
+            'min_permission' => 100,
+            'departments'    => [6], // plastics
+        ],
+
+        'stock_movements' => [
+            'min_permission' => 100,
+        ],
+
+        'historical_movements' => [
+            'min_permission' => 200,
+        ],
+
+        // INVENTORY
+        'items' => [
+            'min_permission' => 100,
+        ],
+        'add_item' => [
+            'min_permission' => 200,
+        ],
+        'upload_items' => [
+            'min_permission' => 300,
+        ],
+
+        // STOCK OPS
+        'scan_form' => [
+            'min_permission' => 100,
+        ],
+        'scan_form_out' => [
+            'min_permission' => 100,
+        ],
+        'bulk_scan_in' => [
+            'min_permission' => 200,
+        ],
+
+        // ORDERS
+        'plastics_orders_active' => [
+            'min_permission' => 100,
+            'departments' => [6],
+        ],
+
+        // ADMIN
+        'employee' => [
+            'min_permission' => 500,
+        ],
+        'controlls' => [
+            'min_permission' => 500,
+        ],
+    ],
+
+    // MENU GROUPS
+    'menus' => [
+
+        'inventory' => [
+            'min_permission' => 100,
+            'items' => ['items','add_item','upload_items','shelves','display_stock'],
+        ],
+
+        'stock_ops' => [
+            'min_permission' => 100,
+            'items' => ['scan_form','scan_form_out','bulk_scan_in','reset_location','relocate_item'],
+        ],
+
+        'admin' => [
+            'min_permission' => 500,
+            'items' => ['employee','controlls'],
+        ],
+    ],
+];
+
+
+✔ All rules in ONE place
+✔ Easy to read
+✔ Easy to extend
+
+Create helper functions includes/permissions.php
+<?php
+
+$ACL = require __DIR__ . '/access_control.php';
+
+function canAccessPage(string $page): bool
+{
+    global $ACL;
+
+    if (!isset($ACL['pages'][$page])) {
+        return false; // unknown page = blocked
+    }
+
+    $rule = $ACL['pages'][$page];
+
+    if ($_SESSION['permission'] < ($rule['min_permission'] ?? 0)) {
+        return false;
+    }
+
+    if (!empty($rule['departments']) && !in_array($_SESSION['dpt'], $rule['departments'])) {
+        return false;
+    }
+
+    return true;
+}
+
+function canShowMenu(string $menuKey): bool
+{
+    global $ACL;
+
+    if (!isset($ACL['menus'][$menuKey])) return false;
+
+    return $_SESSION['permission'] >= $ACL['menus'][$menuKey]['min_permission'];
+}
+
+Enforce Security in index.php (IMPORTANT)
+
+At the top of index.php:
+
+require 'includes/permissions.php';
+
+$page = $_GET['page'] ?? 'profile';
+
+if (!canAccessPage($page)) {
+    $_SESSION['error'] = 'Access denied';
+    $page = 'profile';
+}
+
+include "includes/$page.php";
+
+
+✅ This prevents URL-hacking
+✅ Menu hiding alone is NOT security
+
+Clean Sidebar Usage (no more magic numbers)
+Example: Inventory menu
+<?php if (canShowMenu('inventory')): ?>
+<li class="nav-item <?= isMenuOpen(['items','add_item','upload_items','shelves','display_stock']) ? 'menu-open' : '' ?>">
+  <a href="#" class="nav-link">
+    <i class="fas fa-boxes nav-icon"></i>
+    <p>Inventory & Items <i class="right fas fa-angle-left"></i></p>
+  </a>
+  <ul class="nav nav-treeview">
+
+    <?php if (canAccessPage('items')): ?>
+    <li class="nav-item">
+      <a href="?page=items" class="nav-link <?= isActive('items') ?>">
+        <p>All Items</p>
+      </a>
+    </li>
+    <?php endif; ?>
+
+    <?php if (canAccessPage('upload_items')): ?>
+    <li class="nav-item">
+      <a href="?page=upload_items" class="nav-link <?= isActive('upload_items') ?>">
+        <p>CSV Upload</p>
+      </a>
+    </li>
+    <?php endif; ?>
+
+  </ul>
+</li>
+<?php endif; ?>
+
+
+✔ Readable
+✔ Declarative
+✔ No duplication
+
+Permission Strategy (recommended)
+Permission	Meaning
+100		Basic operator
+200		Senior operator
+300		Supervisor
+500		Admin
+900		Super admin
+
+Departments (position_id) define scope, permission defines power.
+🚀 Optional (Future Enhancements)
+Move ACL to JSON or DB
+Admin UI to manage permissions
+Cache ACL in session
+Role-based mapping (role → permission)
+
+🧠 Final Advice
+
+What you are doing now is the perfect moment to refactor.
+If you continue adding if ($_SESSION['permission'] >= X) inline, it becomes unmaintainable within months.
+
+This approach:
+Scales cleanly
+Keeps security tight
+Keeps sidebar readable
+======================
+
+prístup k ovládacím prvkom a editácii:
+
+in some cases script needs to be accessible to let's say Basic operator, but columns or buttons must be disabled. or not displayed for them. (controlls like: Add, Edit, Delete...) only senior Operator or above can access it. How to ?
+
+Excellent question — this is exactly where many systems go wrong, so doing it now is smart 👍
+What you need is two-layer authorization:
+
+✅ THE CORRECT MODEL (Industry-grade)
+Page access → Can the user open the screen at all?
+Action access → What can the user do on that screen?
+
+You already solved #1.
+Now we add #2.
+
+🧱 CORE CONCEPT
+
+Instead of just:
+canAccessPage('items')
+
+
+You introduce:
+
+canPerform('items.add')
+canPerform('items.edit')
+canPerform('items.delete')
+
+
+✔ Page loads for Basic operator
+✔ Buttons/columns hidden or disabled
+✔ Backend still protected
+
+STEP 1: DEFINE ACTION PERMISSIONS
+includes/action_permissions.php
+<?php
+
+$ACTION_PERMISSIONS = [
+
+    // ITEMS
+    'items.view'   => 100,
+    'items.add'    => 200,
+    'items.edit'   => 300,
+    'items.delete' => 400,
+
+    // ORDERS
+    'orders.view'   => 100,
+    'orders.create'=> 200,
+    'orders.send'  => 300,
+    'orders.delete'=> 400,
+
+    // EMPLOYEES
+    'employee.view'   => 300,
+    'employee.add'    => 400,
+    'employee.edit'   => 400,
+    'employee.delete' => 500,
+];
+
+
+This stays stable for years
+
+🧠 STEP 2: HELPER FUNCTION
+includes/permissions.php
+require_once 'action_permissions.php';
+
+function canPerform(string $action): bool
+{
+    global $ACTION_PERMISSIONS;
+
+    if (!isset($ACTION_PERMISSIONS[$action])) {
+        return false;
+    }
+
+    return ($_SESSION['permission'] ?? 0) >= $ACTION_PERMISSIONS[$action];
+}
+
+STEP 3: FRONTEND CONTROL (Buttons / Columns)
+✅ Hide buttons completely
+<?php if (canPerform('items.add')): ?>
+<button class="btn btn-success">Add Item</button>
+<?php endif; ?>
+
+✅ Disable button (visible but blocked)
+<button class="btn btn-danger"
+    <?= canPerform('items.delete') ? '' : 'disabled title="Insufficient permission"' ?>>
+    Delete
+</button>
+
+✅ Table column visibility
+<?php if (canPerform('items.edit')): ?>
+<th>Edit</th>
+<?php endif; ?>
+
+<?php if (canPerform('items.edit')): ?>
+<td>
+  <a href="edit.php?id=<?= $row['id'] ?>" class="btn btn-sm btn-warning">Edit</a>
+</td>
+<?php endif; ?>
+
+🔐 STEP 4: BACKEND ENFORCEMENT (CRITICAL)
+
+Never rely on UI only
+
+Example: save_item.php
+require_once 'includes/permissions.php';
+
+if (!canPerform('items.edit')) {
+    http_response_code(403);
+    exit('Forbidden');
+}
+
+
+✔ Even if someone crafts a POST request → blocked
+✔ Protects API, AJAX, CSV uploads, etc.
+
+🧩 STEP 5: PAGE LOAD WITH LIMITED MODE
+
+Sometimes you want logic like:
+
+Same page, different behavior
+
+Example:
+$isReadOnly = !canPerform('items.edit');
+
+
+Then:
+
+<input type="text" <?= $isReadOnly ? 'readonly' : '' ?>>
+
+🧠 RECOMMENDED PERMISSION TIERS (Example)
+Role	Permission
+Basic Operator	100
+Operator	200
+Senior Operator	300
+Supervisor	400
+Admin	500
+
+This matches perfectly with your existing permission SMALLINT.
+
+🧰 OPTIONAL (NEXT LEVEL – FUTURE-PROOF)
+🟢 Centralize UI logic
+function disabledIfNo($action) {
+    return canPerform($action) ? '' : 'disabled';
+}
+
+🟢 Tooltips for UX
+title="<?= canPerform('items.edit') ? '' : 'Only senior operators allowed' ?>"
+
+🟢 Audit attempts
+if (!canPerform('items.delete')) {
+    logSecurityEvent($_SESSION['user_id'], 'Denied: items.delete');
+}
+
+🏆 SUMMARY
+
+✔ One page → multiple roles
+✔ Clean UI logic
+✔ Strong backend security
+✔ Scales cleanly
+✔ Zero duplication
+===================================

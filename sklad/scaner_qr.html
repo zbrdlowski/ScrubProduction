@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>QR Scanner Form</title>
+  <script src="https://unpkg.com/html5-qrcode"></script>
+  <style>
+    #qr-reader { width: 100%; max-width: 400px; margin-top: 10px; }
+    #form-container { margin: 20px; }
+  </style>
+</head>
+<body>
+  <div id="form-container">
+    <label for="itemCode">Item Code:</label>
+    <input type="text" id="itemCode" name="itemCode" />
+    <button onclick="startScanner()">📷 Scan QR</button>
+    <div id="qr-reader" style="display:none;"></div>
+  </div>
+
+  <script>
+    function startScanner() {
+      document.getElementById("qr-reader").style.display = "block";
+      const qrReader = new Html5Qrcode("qr-reader");
+      qrReader.start(
+        { facingMode: "environment" }, // rear camera
+        { fps: 10, qrbox: 250 },
+        qrCodeMessage => {
+          document.getElementById("itemCode").value = qrCodeMessage;
+          qrReader.stop().then(() => {
+            document.getElementById("qr-reader").style.display = "none";
+          });
+        },
+        errorMessage => {
+          // Optional: handle scan errors
+        }
+      ).catch(err => {
+        alert("Camera error: " + err);
+      });
+    }
+  </script>
+</body>
+</html>
