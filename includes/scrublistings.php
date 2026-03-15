@@ -372,7 +372,7 @@ $canEdit = (isset($_SESSION['permission']) && (int)$_SESSION['permission'] >= 30
 </section>
 
 <script>
-  // Upraviť podľa toho, kde je root pre scripty; momnetálne v "scripts/scrublistings/"
+  // Uprav podľa toho, kde máš root projektu
   const SCRIPTS_BASE = 'scripts/scrublistings';
 
   async function scrubPost(endpoint, data) {
@@ -393,7 +393,7 @@ $canEdit = (isset($_SESSION['permission']) && (int)$_SESSION['permission'] >= 30
   }
 
   function scrubToast(msg, type='success') {
-    // jednoduchý fallback: alert; neskôr môžem spraviť AdminLTE Toasts
+    // jednoduchý fallback: alert; neskôr môžeme spraviť AdminLTE Toasts
     if (type === 'error') alert(msg);
   }
 

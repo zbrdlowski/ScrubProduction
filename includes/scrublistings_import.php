@@ -31,7 +31,7 @@ $canEdit = (isset($_SESSION['permission']) && (int)$_SESSION['permission'] >= 30
         <i class="fas fa-cloud-upload-alt fa-2x mb-2"></i>
         <div><b>Drag & Drop CSV</b> sem, alebo klikni pre výber súboru.</div>
         <div class="small mt-2">
-          Áno Patrik, Header MUSÍ !!! byť: <code>listing_code,listing_name,model_code,price,barcode,sort_order</code>
+          Header musí byť: <code>listing_code,listing_name,model_code,price,barcode,sort_order</code>
         </div>
       </div>
       <input id="fileInput" type="file" accept=".csv,text/csv" hidden>

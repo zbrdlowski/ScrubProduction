@@ -55,11 +55,7 @@
 		}
 		
 	}
-	 if($_SESSION['dpt'] == '6'){
-	header('location: index.php?page=plastics_dashboard');
-	 }else{
-		header('location: index.php?page=profile');
-	 }	
+	header('location: index.php?page=profile&tab=online'); 
 }
 	else{
 		

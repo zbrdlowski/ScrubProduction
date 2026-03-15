@@ -33,7 +33,7 @@ if (mb_strlen($listingName) > 255) {
   $listingName = mb_substr($listingName, 0, 255);
 }
 
-// Voliteľne: ak budem chcieť editovať aj price/model_code, môžem poslať aj v POST
+// Voliteľne: ak chceš editovať aj price/model_code, môžeš poslať v POST
 $price = isset($_POST['price']) && $_POST['price'] !== '' ? (float)$_POST['price'] : null;
 $modelCode = isset($_POST['model_code']) ? trim((string)$_POST['model_code']) : null;
 if ($modelCode !== null && $modelCode !== '' && mb_strlen($modelCode) > 32) {
