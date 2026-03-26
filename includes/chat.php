@@ -37,7 +37,7 @@ if (empty($_SESSION['user_id'])) {
                          style="width:36px; height:36px; object-fit:cover; display:none;">
                     <div class="flex-grow-1">
                         <h3 class="card-title mb-0" id="chatThreadTitle">Vyber kolegu</h3>
-                        <div id="chatHeaderMeta" class="text-muted small mt-1"></div>
+                        <div id="chatHeaderMeta" style="display:none;"></div>
                     </div>
                 </div>
             </div>
@@ -198,6 +198,39 @@ if (empty($_SESSION['user_id'])) {
 </style>
 
 <script>
+function formatDateEU(datetimeStr) {
+    if (!datetimeStr) return '';
+
+    const d = new Date(datetimeStr);
+    if (isNaN(d)) return datetimeStr;
+
+    const now = new Date();
+
+    const isToday =
+        d.getDate() === now.getDate() &&
+        d.getMonth() === now.getMonth() &&
+        d.getFullYear() === now.getFullYear();
+
+    const yesterday = new Date();
+    yesterday.setDate(now.getDate() - 1);
+
+    const isYesterday =
+        d.getDate() === yesterday.getDate() &&
+        d.getMonth() === yesterday.getMonth() &&
+        d.getFullYear() === yesterday.getFullYear();
+
+    const time = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+
+    if (isToday) return time;
+    if (isYesterday) return `Včera ${time}`;
+
+    const day = String(d.getDate()).padStart(2, '0');
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const year = d.getFullYear();
+
+    return `${day}.${month}.${year} ${time}`;
+}
+
 function getUrlParam(name) {
     const params = new URLSearchParams(window.location.search);
     return params.get(name);
@@ -500,7 +533,7 @@ function renderMessages(messages) {
                 <div class="chat-bubble">
                     <div>${escapeHtml(msg.message_text)}</div>
                     <div class="chat-meta">
-                        ${escapeHtml(msg.sender_name)} • ${escapeHtml(msg.created_at)}
+                        ${formatDateEU(msg.created_at)}
                     </div>
                 </div>
             </div>
