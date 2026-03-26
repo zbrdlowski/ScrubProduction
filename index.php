@@ -46,6 +46,7 @@
     'logs'                   => 'System Logs',
     'calendar'               => 'Dochádzka',
     'cleanup'                => 'Cleanup',
+    'chat' => 'Interný chat',
     'shoptet_order_download' => 'Shoptet Order Download'
 
     // Add more as needed
