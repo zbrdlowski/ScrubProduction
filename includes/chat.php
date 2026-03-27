@@ -28,7 +28,7 @@ if (empty($_SESSION['user_id'])) {
 
     <div class="col-md-8">
         <div class="card card-dark card-outline">
-            <div class="card-header">
+            <div class="card-header bg-dark" id="chatCardHeader">
                 <div class="d-flex align-items-center w-100">
                     <img id="chatHeaderPhoto"
                          src="images/profile.jpg"
@@ -229,17 +229,15 @@ if (empty($_SESSION['user_id'])) {
 
 .chat-emoji-picker {
     position: absolute;
-    bottom: 60px;
-    right: 0;
-    width: 320px;          /* ⬅️ zväčšené */
-    max-height: 300px;     /* ⬅️ viac miesta */
-    background: #2c3034;   /* AdminLTE dark */
-    border: 1px solid #444;
-    border-radius: 10px;
-    box-shadow: 0 5px 20px rgba(0,0,0,0.5);
-    padding: 10px;
-    overflow: hidden;      /* ⬅️ zruší horizontal scroll */
-    z-index: 9999;
+    right: 15px;
+    bottom: 72px;
+    width: 320px;
+    background: #243140;
+    border: 1px solid rgba(255,255,255,0.10);
+    border-radius: 14px;
+    box-shadow: 0 16px 36px rgba(0,0,0,0.42);
+    z-index: 1055;
+    padding: 12px;
 }
 
 .chat-emoji-picker-header {
@@ -276,6 +274,9 @@ if (empty($_SESSION['user_id'])) {
     background: rgba(255,255,255,0.10);
     outline: none;
     transform: scale(1.05);
+}
+#chatHeaderMeta {
+    display: none;
 }
 </style>
 
@@ -376,33 +377,44 @@ function buildPhotoPath(photoValue) {
     return photo;
 }
 
+function applyChatHeaderStatus(statusBg) {
+    const header = $('#chatCardHeader');
+    const allowedClasses = [
+        'bg-success', 'bg-warning', 'bg-danger', 'bg-info', 'bg-secondary',
+        'bg-primary', 'bg-dark', 'bg-orange', 'bg-teal', 'bg-indigo', 'bg-pink'
+    ];
+
+    header.removeClass(allowedClasses.join(' ')).addClass(statusBg || 'bg-dark');
+}
+
 function renderChatHeader(user) {
     if (!user) {
         $('#chatHeaderPhoto').hide();
         $('#chatThreadTitle').text('Vyber kolegu');
-        $('#chatHeaderMeta').html('');
+        $('#chatHeaderMeta').html('').hide();
+        applyChatHeaderStatus('bg-dark');
         return;
     }
 
     let photo = buildPhotoPath(user.photo);
-        let currentPhoto = $('#chatHeaderPhoto').attr('src') || '';
+    let currentPhoto = $('#chatHeaderPhoto').attr('src') || '';
 
-        if (
-            (!user.photo || String(user.photo).trim() === '') &&
-            currentPhoto &&
-            currentPhoto !== 'images/profile.jpg' &&
-            !currentPhoto.endsWith('/images/profile.jpg')
-        ) {
-            photo = currentPhoto;
-        }
+    if (
+        (!user.photo || String(user.photo).trim() === '') &&
+        currentPhoto &&
+        currentPhoto !== 'images/profile.jpg' &&
+        !currentPhoto.endsWith('/images/profile.jpg')
+    ) {
+        photo = currentPhoto;
+    }
 
-        $('#chatHeaderPhoto')
-            .attr('src', photo)
-            .off('error')
-            .on('error', function() {
-                $(this).attr('src', 'images/profile.jpg');
-            })
-            .show();
+    $('#chatHeaderPhoto')
+        .attr('src', photo)
+        .off('error')
+        .on('error', function() {
+            $(this).attr('src', 'images/profile.jpg');
+        })
+        .show();
 
     $('#chatThreadTitle').text(user.name || 'Konverzácia');
 
@@ -412,15 +424,16 @@ function renderChatHeader(user) {
 
     let metaHtml = '';
 
-    if (statusLabel) {
-        metaHtml += `${statusIcon ? `<i class="fas ${escapeHtml(statusIcon)} mr-1"></i>` : ''}${escapeHtml(statusLabel)}`;
-    }
 
-    if (dept) {
-        metaHtml += `${metaHtml ? ' • ' : ''}${escapeHtml(dept)}`;
-    }
 
     $('#chatHeaderMeta').html(metaHtml);
+    if (metaHtml) {
+        $('#chatHeaderMeta').show();
+    } else {
+        $('#chatHeaderMeta').hide();
+    }
+
+    applyChatHeaderStatus(user.status_bg || 'bg-dark');
 }
 
 function setActiveContact(userId) {
@@ -443,9 +456,10 @@ function populateHeaderFromContactByThread(threadId) {
         id: userId,
         name: userName,
         photo: userPhoto,
-        department_name: '',
-        status_label: '',
-        status_icon: ''
+        department_name: contact.attr('data-department-name') || '',
+        status_label: contact.attr('data-status-label') || '',
+        status_icon: contact.attr('data-status-icon') || '',
+        status_bg: contact.attr('data-status-bg') || 'bg-dark'
     });
 
     setActiveContact(userId);
@@ -620,6 +634,10 @@ function loadContacts(query = '') {
                         data-user-name="${escapeAttr(user.name)}"
                         data-user-photo="${escapeAttr(user.photo || '')}"
                         data-thread-id="${threadId}"
+                        data-status-bg="${escapeAttr(statusBg)}"
+                        data-status-label="${escapeAttr(statusLabel)}"
+                        data-status-icon="${escapeAttr(statusIcon)}"
+                        data-department-name="${escapeAttr(dept)}"
                         style="color:#fff;">
 
                         <img src="${escapeAttr(photo)}" alt="" onerror="this.src='images/profile.jpg';">
@@ -788,7 +806,8 @@ function loadThreadInfo(threadId) {
                         photo: '',
                         department_name: '',
                         status_label: '',
-                        status_icon: ''
+                        status_icon: '',
+                        status_bg: 'bg-dark'
                     });
                 }
             }
@@ -808,13 +827,16 @@ function openDmWithUser(userId, userName, userPhoto = '') {
 
     setActiveContact(currentChatUserId);
 
+    const activeContact = $('.chat-contact[data-user-id="' + currentChatUserId + '"]');
+
     renderChatHeader({
         id: currentChatUserId,
         name: currentChatUserName,
         photo: userPhoto,
-        department_name: '',
-        status_label: '',
-        status_icon: ''
+        department_name: activeContact.attr('data-department-name') || '',
+        status_label: activeContact.attr('data-status-label') || '',
+        status_icon: activeContact.attr('data-status-icon') || '',
+        status_bg: activeContact.attr('data-status-bg') || 'bg-dark'
     });
 
     $('#chatMessages').html('<div class="text-muted">Načítavam konverzáciu...</div>');
@@ -861,8 +883,7 @@ function openDmWithUser(userId, userName, userPhoto = '') {
 
 function sendMessage() {
     const threadId = $('#chatThreadId').val();
-    const raw = $('#chatMessageInput').val();
-    const messageText = (raw || '').replace(/\s+/g, ' ').trim();
+    const messageText = $('#chatMessageInput').val().trim();
 
     if (!threadId || !messageText) return;
 
@@ -1073,16 +1094,4 @@ if (preselectedThreadId) {
     renderChatHeader(null);
 }
 });
-
-    const notificationSound = new Audio('/assets/sounds/notification.wav');
-
-    function playNotification() {
-        notificationSound.currentTime = 0;
-        notificationSound.play().catch(() => {});
-    }
-
-    // napr. keď príde nová správa:
-    function onNewMessage() {
-        playNotification();
-    }
 </script>
