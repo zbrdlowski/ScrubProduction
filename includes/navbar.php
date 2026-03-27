@@ -78,11 +78,33 @@
           </li>
     </ul>
   </nav>
-  <script>
+  <style>
+#chatNotifToggle .fa-comments {
+    transform-origin: center bottom;
+}
+
+#chatNotifToggle.chat-notif-attention .fa-comments {
+    animation: chatNotifWobble 4s ease-in-out infinite;
+}
+
+@keyframes chatNotifWobble {
+    0%, 85%, 100% { transform: translateY(0) rotate(0deg); }
+    88% { transform: translateY(-2px) rotate(-10deg); }
+    91% { transform: translateY(-5px) rotate(10deg); }
+    94% { transform: translateY(-3px) rotate(-8deg); }
+    97% { transform: translateY(0) rotate(0deg); }
+}
+</style>
+
+<script>
 function escapeHtmlNav(text) {
     const div = document.createElement('div');
     div.innerText = text || '';
     return div.innerHTML;
+}
+
+function setChatNotifAttention(hasUnread) {
+    $('#chatNotifToggle').toggleClass('chat-notif-attention', !!hasUnread);
 }
 
 function loadChatNotifications() {
@@ -100,9 +122,11 @@ function loadChatNotifications() {
             if (count > 0) {
                 $('#chatUnreadBadge').text(count).show();
                 $('#chatNotifHeader').text(count + ' nových správ');
+                setChatNotifAttention(true);
             } else {
                 $('#chatUnreadBadge').hide();
                 $('#chatNotifHeader').text('0 nových správ');
+                setChatNotifAttention(false);
             }
 
             let html = '';

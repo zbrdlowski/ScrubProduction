@@ -49,12 +49,22 @@ if (empty($_SESSION['user_id'])) {
             <div class="card-footer">
                 <form id="chatSendForm" autocomplete="off">
                     <input type="hidden" id="chatThreadId" name="thread_id" value="">
-                    <div class="input-group">
+                    <div class="input-group chat-input-group">
                         <input type="text" id="chatMessageInput" name="message_text" class="form-control" placeholder="Napíš správu..." disabled>
                         <div class="input-group-append">
+                            <button type="button" class="btn btn-outline-light chat-emoji-toggle" id="chatEmojiToggle" disabled aria-label="Vybrať smajlík" title="Smajlíky">
+                                <i class="far fa-smile"></i>
+                            </button>
                             <button type="submit" class="btn btn-primary" id="chatSendBtn" disabled>Odoslať</button>
                         </div>
                     </div>
+                    <div id="chatEmojiPicker" class="chat-emoji-picker" style="display:none;">
+                        <div class="chat-emoji-picker-header">Smajlíky</div>
+                        <div class="chat-emoji-grid" id="chatEmojiGrid"></div>
+                    </div>
+                    <audio id="chatNotificationAudio" preload="auto">
+                        <source src="sounds/notification.mp3" type="audio/mpeg">
+                    </audio>
                 </form>
             </div>
         </div>
@@ -195,6 +205,78 @@ if (empty($_SESSION['user_id'])) {
     color: #343a40; /* tmavá ikonka */
     opacity: 0.9;
 }
+
+.chat-input-group {
+    position: relative;
+}
+
+.chat-emoji-toggle {
+    border-color: rgba(255,255,255,0.12);
+    color: #f8f9fa;
+    background: #2b3645;
+}
+
+.chat-emoji-toggle:hover,
+.chat-emoji-toggle:focus {
+    color: #fff;
+    background: #364455;
+    border-color: rgba(255,255,255,0.22);
+}
+
+.chat-emoji-toggle:disabled {
+    opacity: 0.55;
+}
+
+.chat-emoji-picker {
+    position: absolute;
+    bottom: 60px;
+    right: 0;
+    width: 320px;          /* ⬅️ zväčšené */
+    max-height: 300px;     /* ⬅️ viac miesta */
+    background: #2c3034;   /* AdminLTE dark */
+    border: 1px solid #444;
+    border-radius: 10px;
+    box-shadow: 0 5px 20px rgba(0,0,0,0.5);
+    padding: 10px;
+    overflow: hidden;      /* ⬅️ zruší horizontal scroll */
+    z-index: 9999;
+}
+
+.chat-emoji-picker-header {
+    color: #ced4da;
+    font-size: 12px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-bottom: 10px;
+}
+
+.chat-emoji-grid {
+    display: grid;
+    grid-template-columns: repeat(8, minmax(0, 1fr));
+    gap: 6px;
+    max-height: 220px;
+    overflow-y: auto;
+}
+
+.chat-emoji-btn {
+    border: 0;
+    border-radius: 10px;
+    background: transparent;
+    color: #fff;
+    font-size: 22px;
+    line-height: 1;
+    padding: 8px 0;
+    cursor: pointer;
+    transition: background 0.15s ease, transform 0.12s ease;
+}
+
+.chat-emoji-btn:hover,
+.chat-emoji-btn:focus {
+    background: rgba(255,255,255,0.10);
+    outline: none;
+    transform: scale(1.05);
+}
 </style>
 
 <script>
@@ -247,6 +329,23 @@ let knownLastMessageIds = {};
 let initializedThreadIds = {};
 let userHasInteracted = false;
 let notifyAudio = null;
+let shouldAutoScrollOnNextRender = false;
+let forceScrollOnNextRender = false;
+let suppressNextIncomingSoundForThreadId = null;
+const chatEmojiList = ['😀','😁','😂','🤣','😊','😉','😍','😘','😎','🤩','🙂','🙃','🤗','🤔','😴','🤤','🤝','👏','👍','👎','🙏','💪','🔥','✨','🎉','❤️','💙','💚','💛','💯','✅','❌','⚠️','🚀','📦','📞','💬','😅','😭','😡','🤯','😇','🤌','👌','🙌','👀','🎯'];
+
+function isChatScrolledNearBottom() {
+    const el = $('#chatMessages')[0];
+    if (!el) return true;
+    const threshold = 80;
+    return (el.scrollHeight - el.scrollTop - el.clientHeight) <= threshold;
+}
+
+function scrollChatToBottom() {
+    const el = $('#chatMessages')[0];
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+}
 
 function escapeHtml(text) {
     const div = document.createElement('div');
@@ -376,8 +475,12 @@ function showChatToast(message) {
 
 function ensureNotificationAudio() {
     if (!notifyAudio) {
-        notifyAudio = new Audio('sounds/notification.mp3');
-        notifyAudio.preload = 'auto';
+        notifyAudio = document.getElementById('chatNotificationAudio');
+
+        if (!notifyAudio) {
+            notifyAudio = new Audio('sounds/notification.mp3');
+            notifyAudio.preload = 'auto';
+        }
     }
 }
 
@@ -439,6 +542,52 @@ function clearContactUnread(threadId) {
 
     contact.removeClass('unread');
     contact.find('.chat-unread-badge').remove();
+}
+
+
+function renderEmojiPicker() {
+    const grid = $('#chatEmojiGrid');
+    if (!grid.length || grid.children().length) return;
+
+    let html = '';
+    chatEmojiList.forEach(function(emoji) {
+        html += `<button type="button" class="chat-emoji-btn" data-emoji="${emoji}" title="${emoji}">${emoji}</button>`;
+    });
+
+    grid.html(html);
+}
+
+function toggleEmojiPicker(forceOpen = null) {
+    const picker = $('#chatEmojiPicker');
+    if (!picker.length) return;
+
+    const shouldOpen = forceOpen === null ? !picker.is(':visible') : !!forceOpen;
+    if (shouldOpen) {
+        renderEmojiPicker();
+        picker.stop(true, true).fadeIn(120);
+    } else {
+        picker.stop(true, true).fadeOut(120);
+    }
+}
+
+function insertEmojiToMessage(emoji) {
+    const input = document.getElementById('chatMessageInput');
+    if (!input || input.disabled) return;
+
+    const value = input.value || '';
+    const start = typeof input.selectionStart === 'number' ? input.selectionStart : value.length;
+    const end = typeof input.selectionEnd === 'number' ? input.selectionEnd : value.length;
+    const newValue = value.slice(0, start) + emoji + value.slice(end);
+
+    input.value = newValue;
+    input.focus();
+
+    const caretPos = start + emoji.length;
+    if (typeof input.setSelectionRange === 'function') {
+        input.setSelectionRange(caretPos, caretPos);
+    }
+
+    $(input).trigger('input');
 }
 
 function loadContacts(query = '') {
@@ -517,8 +666,13 @@ function loadContacts(query = '') {
 }
 
 function renderMessages(messages) {
+    const chatBox = $('#chatMessages');
+    const chatEl = chatBox[0];
+    const wasNearBottom = isChatScrolledNearBottom();
+    const previousScrollTop = chatEl ? chatEl.scrollTop : 0;
+
     if (!messages || !messages.length) {
-        $('#chatMessages').html('<div class="text-muted">Zatiaľ žiadne správy.</div>');
+        chatBox.html('<div class="text-muted">Zatiaľ žiadne správy.</div>');
         return;
     }
 
@@ -540,8 +694,16 @@ function renderMessages(messages) {
         `;
     });
 
-    $('#chatMessages').html(html);
-    $('#chatMessages').scrollTop($('#chatMessages')[0].scrollHeight);
+    chatBox.html(html);
+
+    if (forceScrollOnNextRender || shouldAutoScrollOnNextRender || wasNearBottom) {
+        scrollChatToBottom();
+    } else if (chatEl) {
+        chatEl.scrollTop = previousScrollTop;
+    }
+
+    forceScrollOnNextRender = false;
+    shouldAutoScrollOnNextRender = false;
 
     if (lastMessageId > 0 && currentThreadId) {
         knownLastMessageIds[currentThreadId] = lastMessageId;
@@ -583,6 +745,7 @@ function loadThreadInfo(threadId) {
             $('#chatThreadId').val(currentThreadId);
             $('#chatMessageInput').prop('disabled', false);
             $('#chatSendBtn').prop('disabled', false);
+    $('#chatEmojiToggle').prop('disabled', false);
 
            if (res.thread.other_user) {
                 currentChatUserId = parseInt(res.thread.other_user.id, 10);
@@ -657,6 +820,7 @@ function openDmWithUser(userId, userName, userPhoto = '') {
     $('#chatMessages').html('<div class="text-muted">Načítavam konverzáciu...</div>');
     $('#chatMessageInput').prop('disabled', false);
     $('#chatSendBtn').prop('disabled', false);
+    $('#chatEmojiToggle').prop('disabled', false);
 
     $.ajax({
         url: 'scripts/chat/start_dm.php',
@@ -674,6 +838,8 @@ function openDmWithUser(userId, userName, userPhoto = '') {
 
             clearContactUnread(currentThreadId);
             stopTitleBlink();
+            shouldAutoScrollOnNextRender = true;
+            suppressNextIncomingSoundForThreadId = currentThreadId;
 
             loadThreadInfo(currentThreadId);
             loadMessages(currentThreadId);
@@ -695,7 +861,8 @@ function openDmWithUser(userId, userName, userPhoto = '') {
 
 function sendMessage() {
     const threadId = $('#chatThreadId').val();
-    const messageText = $('#chatMessageInput').val().trim();
+    const raw = $('#chatMessageInput').val();
+    const messageText = (raw || '').replace(/\s+/g, ' ').trim();
 
     if (!threadId || !messageText) return;
 
@@ -714,6 +881,8 @@ function sendMessage() {
             }
 
             $('#chatMessageInput').val('');
+            toggleEmojiPicker(false);
+            forceScrollOnNextRender = true;
             loadMessages(threadId);
             loadContacts($('#chatSearch').val());
         },
@@ -745,11 +914,15 @@ function checkForIncomingMessages() {
                 return;
             }
 
+            let shouldReloadCurrentThread = false;
+            let currentSearch = $('#chatSearch').val() || '';
+
             res.threads.forEach(function(thread) {
                 let threadId = parseInt(thread.thread_id || 0, 10);
                 let lastMessageId = parseInt(thread.last_message_id || 0, 10);
                 let unreadCount = parseInt(thread.unread_count || 0, 10);
                 let senderName = thread.sender_name || 'kolegu';
+                let isCurrentThread = threadId === parseInt(currentThreadId || 0, 10);
 
                 if (!threadId || !lastMessageId) return;
 
@@ -759,26 +932,41 @@ function checkForIncomingMessages() {
                 } else if (lastMessageId > (knownLastMessageIds[threadId] || 0)) {
                     knownLastMessageIds[threadId] = lastMessageId;
 
-                    if (threadId !== parseInt(currentThreadId || 0, 10)) {
+                    if (isCurrentThread) {
+                        if (suppressNextIncomingSoundForThreadId === threadId) {
+                            suppressNextIncomingSoundForThreadId = null;
+                        } else {
+                            playNotificationSound();
+                        }
+
+                        forceScrollOnNextRender = isChatScrolledNearBottom();
+                        shouldReloadCurrentThread = true;
+                    } else {
                         triggerIncomingNotification(senderName, threadId);
                         markContactUnread(threadId, unreadCount);
-                    } else {
-                        loadMessages(threadId);
                     }
                 } else {
                     knownLastMessageIds[threadId] = lastMessageId;
                 }
 
-                if (unreadCount > 0 && threadId !== parseInt(currentThreadId || 0, 10)) {
+                if (unreadCount > 0 && !isCurrentThread) {
                     markContactUnread(threadId, unreadCount);
                 }
 
-                if (threadId === parseInt(currentThreadId || 0, 10)) {
+                if (isCurrentThread) {
                     clearContactUnread(threadId);
                 }
             });
 
-            loadContacts($('#chatSearch').val());
+            loadContacts(currentSearch);
+
+            if (currentThreadId) {
+                loadThreadInfo(currentThreadId);
+            }
+
+            if (shouldReloadCurrentThread && currentThreadId) {
+                loadMessages(currentThreadId);
+            }
         },
         error: function(xhr) {
             console.log('checkForIncomingMessages error:', xhr.responseText);
@@ -792,17 +980,15 @@ function startPolling() {
     }
 
     chatPollInterval = setInterval(function() {
-        if (currentThreadId) {
-            loadMessages(currentThreadId);
-        }
-        //checkForIncomingMessages();
+        checkForIncomingMessages();
     }, 5000);
 }
 
 $(document).ready(function() {
+    renderEmojiPicker();
     loadContacts();
-        // checkForIncomingMessages();
-        startPolling();
+    checkForIncomingMessages();
+    startPolling();
 
     $(document).on('click keydown mousedown', function() {
         userHasInteracted = true;
@@ -810,6 +996,25 @@ $(document).ready(function() {
 
     $('#chatSearch').on('keyup', function() {
         loadContacts($(this).val());
+    });
+
+
+    $('#chatEmojiToggle').on('click', function(e) {
+        e.preventDefault();
+        if ($(this).prop('disabled')) return;
+        toggleEmojiPicker();
+    });
+
+    $(document).on('click', '.chat-emoji-btn', function(e) {
+        e.preventDefault();
+        insertEmojiToMessage($(this).data('emoji') || '');
+    });
+
+    $(document).on('click', function(e) {
+        const $target = $(e.target);
+        if (!$target.closest('#chatEmojiPicker').length && !$target.closest('#chatEmojiToggle').length) {
+            toggleEmojiPicker(false);
+        }
     });
 
     $(document).on('click', '.chat-contact', function() {
@@ -835,6 +1040,7 @@ $(document).ready(function() {
     $(window).on('focus', function() {
         if (currentThreadId) {
             stopTitleBlink();
+            forceScrollOnNextRender = false;
             loadMessages(currentThreadId);
         }
     });
@@ -842,6 +1048,7 @@ $(document).ready(function() {
     document.addEventListener('visibilitychange', function() {
         if (!document.hidden && currentThreadId) {
             stopTitleBlink();
+            forceScrollOnNextRender = false;
             loadMessages(currentThreadId);
         }
     });
@@ -852,16 +1059,30 @@ if (preselectedThreadId) {
     $('#chatThreadId').val(currentThreadId);
     $('#chatMessageInput').prop('disabled', false);
     $('#chatSendBtn').prop('disabled', false);
+    $('#chatEmojiToggle').prop('disabled', false);
 
     // skús header doplniť hneď po načítaní kontaktov
     setTimeout(function() {
         populateHeaderFromContactByThread(currentThreadId);
     }, 300);
 
+    shouldAutoScrollOnNextRender = true;
     loadThreadInfo(currentThreadId);
     loadMessages(currentThreadId);
 } else {
     renderChatHeader(null);
 }
 });
+
+    const notificationSound = new Audio('/assets/sounds/notification.wav');
+
+    function playNotification() {
+        notificationSound.currentTime = 0;
+        notificationSound.play().catch(() => {});
+    }
+
+    // napr. keď príde nová správa:
+    function onNewMessage() {
+        playNotification();
+    }
 </script>
