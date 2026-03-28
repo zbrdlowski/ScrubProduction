@@ -13,7 +13,8 @@ if (empty($_SESSION['user_id'])) {
 }
 ?>
 
-<div class="row">
+<div id="chatPageRoot" class="chat-page">
+    <div class="row">
     <div class="col-md-4">
         <div class="card card-dark card-outline">
             <div class="card-header">
@@ -67,30 +68,30 @@ if (empty($_SESSION['user_id'])) {
 
                     <input type="file" id="chatAttachmentInput" style="display:none;">
 
-                    <div id="chatAttachmentPreview" class="chat-attachment-preview" style="display:none;">
-                        <div class="d-flex align-items-center justify-content-between">
-                            <div class="pr-2">
-                                <div class="font-weight-bold" id="chatAttachmentName"></div>
-                                <div class="small text-muted" id="chatAttachmentSize"></div>
+                        <div id="chatAttachmentPreview" class="chat-attachment-preview" style="display:none;">
+                            <div class="d-flex align-items-center justify-content-between">
+                                <div class="pr-2">
+                                    <div class="font-weight-bold" id="chatAttachmentName"></div>
+                                    <div class="small text-muted" id="chatAttachmentSize"></div>
+                                </div>
+                                <button type="button" class="btn btn-xs btn-outline-light" id="chatAttachmentRemove">
+                                    <i class="fas fa-times"></i>
+                                </button>
                             </div>
-                            <button type="button" class="btn btn-xs btn-outline-light" id="chatAttachmentRemove">
-                                <i class="fas fa-times"></i>
-                            </button>
                         </div>
-                    </div>
-                    <div id="chatEmojiPicker" class="chat-emoji-picker" style="display:none;">
-                        <div class="chat-emoji-picker-header">Smajlíky</div>
-                        <div class="chat-emoji-grid" id="chatEmojiGrid"></div>
-                    </div>
-                    <audio id="chatNotificationAudio" preload="auto">
-                        <source src="sounds/notification.mp3" type="audio/mpeg">
-                    </audio>
-                </form>
+                        <div id="chatEmojiPicker" class="chat-emoji-picker" style="display:none;">
+                            <div class="chat-emoji-picker-header">Smajlíky</div>
+                            <div class="chat-emoji-grid" id="chatEmojiGrid"></div>
+                        </div>
+                        <audio id="chatNotificationAudio" preload="auto">
+                            <source src="sounds/notification.mp3" type="audio/mpeg">
+                        </audio>
+                    </form>
+                </div>
             </div>
         </div>
     </div>
 </div>
-
 <style>
 .chat-contact {
     display: flex;
@@ -201,27 +202,117 @@ if (empty($_SESSION['user_id'])) {
     height: 650px;
 }
 
-.chat-toast {
+.chat-toast-container {
     position: fixed;
     top: 20px;
     right: 20px;
     z-index: 99999;
-    min-width: 280px;
-    max-width: 380px;
-    background: #dc3545;
+    width: 360px;
+    max-width: calc(100vw - 30px);
+}
+
+.chat-toast {
+    background: #6f1235;
     color: #fff;
-    border-radius: 10px;
-    padding: 14px 16px;
+    border-radius: 12px;
     box-shadow: 0 10px 25px rgba(0,0,0,0.35);
+    margin-bottom: 12px;
     opacity: 0;
     transform: translateY(-12px);
     transition: all 0.25s ease;
-    font-weight: 600;
+    overflow: hidden;
+    border: 1px solid rgba(255,255,255,0.08);
 }
 
 .chat-toast.show {
     opacity: 1;
     transform: translateY(0);
+}
+
+.chat-toast-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 12px;
+    background: rgba(0,0,0,0.18);
+    font-weight: 700;
+}
+
+.chat-toast-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.chat-toast-close {
+    background: transparent;
+    color: #fff;
+    border: 0;
+    font-size: 18px;
+    line-height: 1;
+    cursor: pointer;
+    opacity: 0.9;
+}
+
+.chat-toast-body {
+    padding: 12px;
+}
+
+.chat-toast-main {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+}
+
+.chat-toast-avatar {
+    width: 42px;
+    height: 42px;
+    border-radius: 50%;
+    object-fit: cover;
+    flex: 0 0 42px;
+    border: 1px solid rgba(255,255,255,0.18);
+}
+
+.chat-toast-content {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.chat-toast-sender {
+    font-weight: 700;
+    margin-bottom: 6px;
+}
+
+.chat-toast-preview {
+    font-size: 13px;
+    line-height: 1.35;
+    color: rgba(255,255,255,0.92);
+    margin-bottom: 10px;
+    word-break: break-word;
+}
+
+.chat-toast-actions {
+    display: flex;
+    justify-content: flex-end;
+}
+
+.chat-toast-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: rgba(255,255,255,0.14);
+    color: #fff;
+    padding: 6px 10px;
+    border-radius: 999px;
+    text-decoration: none;
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.chat-toast-link:hover {
+    color: #fff;
+    text-decoration: none;
+    background: rgba(255,255,255,0.22);
 }
 
 .chat-input-group {
@@ -355,6 +446,64 @@ if (empty($_SESSION['user_id'])) {
     color: #fff;
     text-decoration: underline;
 }
+.chat-broadcast-toolbar {
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px solid rgba(255,255,255,0.08);
+}
+
+.chat-broadcast-toolbar .custom-control-label,
+.chat-broadcast-toolbar .small {
+    color: #ced4da;
+}
+
+.chat-broadcast-toolbar select.form-control {
+    min-height: 110px;
+    background: #2b3645;
+    color: #fff;
+    border-color: rgba(255,255,255,0.12);
+}
+
+.chat-broadcast-toolbar select.form-control option {
+    color: #fff;
+    background: #2b3645;
+}
+
+.chat-recipient-check {
+    display: none;
+    margin-right: 8px;
+    flex: 0 0 auto;
+}
+
+.chat-page.broadcast-mode .chat-recipient-check {
+    display: inline-flex;
+    align-items: center;
+}
+
+.chat-page.broadcast-mode .chat-contact[data-thread-type="announcement"] {
+    display: none !important;
+}
+
+.chat-broadcast-summary {
+    font-size: 12px;
+    color: #ced4da;
+    margin-top: 8px;
+}
+
+.chat-announcement-sender {
+    font-size: 12px;
+    font-weight: 700;
+    color: rgba(255,255,255,0.85);
+    margin-bottom: 6px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+.card-header {
+    padding-top: 10px;
+    padding-bottom: 12px;
+}
+
+
 </style>
 
 <script>
@@ -402,7 +551,12 @@ function getUnreadMessageLabel(count) {
     if (count >= 2 && count <= 4) return `${count} neprečítané správy`;
     return `${count} neprečítaných správ`;
 }
-
+const canSendAnnouncements = <?php echo ((int)($_SESSION['permission'] ?? 0) >= 500 ? 'true' : 'false'); ?>;
+let broadcastModeEnabled = false;
+let selectedAnnouncementRecipients = new Set();
+let contactsCache = [];
+let lastToastSignature = '';
+let lastToastAt = 0;
 let currentThreadId = null;
 let currentChatUserName = '';
 let currentChatUserId = null;
@@ -460,12 +614,244 @@ function buildPhotoPath(photoValue) {
 
     return photo;
 }
+function setComposerEnabled(enabled) {
+    const isEnabled = !!enabled;
+
+    $('#chatMessageInput').prop('disabled', !isEnabled);
+    $('#chatSendBtn').prop('disabled', !isEnabled);
+    $('#chatEmojiToggle').prop('disabled', !isEnabled);
+
+    if ($('#chatAttachToggle').length) {
+        $('#chatAttachToggle').prop('disabled', !isEnabled || broadcastModeEnabled);
+    }
+}
+
+function getSelectedDepartmentValues() {
+    return ($('#chatAnnouncementDepartments').val() || []).filter(Boolean);
+}
+
+function refreshBroadcastSummary() {
+    const count = selectedAnnouncementRecipients.size;
+    $('#chatBroadcastSummary').text(
+        count > 0 ? ('Vybraní adresáti: ' + count) : 'Nie sú vybraní žiadni adresáti'
+    );
+}
+
+function collectDepartmentsFromContacts(contacts) {
+    const seen = new Set();
+    const departments = [];
+
+    (contacts || []).forEach(function(item) {
+        if ((item.item_type || 'user') !== 'user') return;
+        const dept = String(item.department_name || '').trim();
+        if (!dept || seen.has(dept)) return;
+        seen.add(dept);
+        departments.push(dept);
+    });
+
+    departments.sort(function(a, b) {
+        return a.localeCompare(b, 'sk', { sensitivity: 'base' });
+    });
+
+    return departments;
+}
+
+function renderAnnouncementToolbar(contacts) {
+    if (!canSendAnnouncements) return;
+
+    let toolbar = $('#chatBroadcastToolbar');
+
+    if (!toolbar.length) {
+        const toolbarHtml = `
+            <div id="chatBroadcastToolbar" class="chat-broadcast-toolbar">
+                <div class="custom-control custom-switch mb-2">
+                    <input type="checkbox" class="custom-control-input" id="chatBroadcastModeToggle">
+                    <label class="custom-control-label" for="chatBroadcastModeToggle">Hromadný oznam</label>
+                </div>
+
+                <div id="chatBroadcastControls" style="display:none;">
+                    <label for="chatAnnouncementDepartments" class="small mb-1">Departmenty</label>
+                    <select id="chatAnnouncementDepartments" class="form-control form-control-sm" multiple></select>
+                    <div class="d-flex mt-2">
+                    <button type="button" class="btn bg-gradient-primary flex-fill mr-2" id="chatBroadcastSelectAll">
+                        Vybrať všetkých
+                    </button>
+                    <button type="button" class="btn bg-gradient-danger flex-fill" id="chatBroadcastClearAll">
+                        Vymazať výber
+                    </button>
+                </div>
+                    <div id="chatBroadcastSummary" class="chat-broadcast-summary">Nie sú vybraní žiadni adresáti</div>
+                </div>
+            </div>
+        `;
+        $('.card-title:contains("Kolegovia")').closest('.card-header').append(toolbarHtml);
+        toolbar = $('#chatBroadcastToolbar');
+    }
+
+    const departments = collectDepartmentsFromContacts(contacts);
+    const select = $('#chatAnnouncementDepartments');
+    const previousValues = new Set(getSelectedDepartmentValues());
+
+    select.html(
+        departments.map(function(dept) {
+            const selected = previousValues.has(dept) ? 'selected' : '';
+            return `<option value="${escapeAttr(dept)}" ${selected}>${escapeHtml(dept)}</option>`;
+        }).join('')
+    );
+
+    $('#chatBroadcastModeToggle').prop('checked', broadcastModeEnabled);
+    $('#chatBroadcastControls').toggle(broadcastModeEnabled);
+    refreshBroadcastSummary();
+}
+
+function applyDepartmentSelection() {
+    const selectedDepts = new Set(getSelectedDepartmentValues());
+    selectedAnnouncementRecipients = new Set();
+
+    contactsCache.forEach(function(item) {
+        if ((item.item_type || 'user') !== 'user') return;
+        const dept = String(item.department_name || '').trim();
+        if (selectedDepts.has(dept)) {
+            selectedAnnouncementRecipients.add(parseInt(item.id, 10));
+        }
+    });
+
+    refreshBroadcastSummary();
+    loadContacts($('#chatSearch').val());
+}
+
+function toggleBroadcastMode(enabled) {
+    if (!canSendAnnouncements) return;
+
+    broadcastModeEnabled = !!enabled;
+    $('#chatPageRoot').toggleClass('broadcast-mode', broadcastModeEnabled);
+    $('#chatBroadcastControls').toggle(broadcastModeEnabled);
+
+    selectedAnnouncementRecipients = new Set();
+
+    if (broadcastModeEnabled) {
+        currentThreadId = null;
+        currentChatUserId = null;
+        currentChatUserName = 'Hromadné správy';
+        $('#chatThreadId').val('');
+        $('#chatMessages').html('<div class="text-muted">Vyber adresátov vľavo a napíš hromadnú správu.</div>');
+        renderChatHeader({
+            name: 'Hromadné správy',
+            photo: '',
+            status_bg: 'bg-maroon',
+            hide_photo: true,
+            thread_type: 'announcement'
+        });
+        setComposerEnabled(true);
+        resetAttachmentPreview();
+    } else {
+        $('#chatAnnouncementDepartments').val([]);
+        $('#chatMessageInput').val('');
+        $('#chatMessages').html('<div class="text-muted">Zatiaľ nie je otvorená žiadna konverzácia.</div>');
+        resetAttachmentPreview();
+        setComposerEnabled(false);
+        renderChatHeader(null);
+    }
+
+    refreshBroadcastSummary();
+    loadContacts($('#chatSearch').val());
+}
+
+function toggleAnnouncementRecipient(userId) {
+    const parsedId = parseInt(userId, 10);
+    if (!parsedId || parsedId <= 0) return;
+
+    if (selectedAnnouncementRecipients.has(parsedId)) {
+        selectedAnnouncementRecipients.delete(parsedId);
+    } else {
+        selectedAnnouncementRecipients.add(parsedId);
+    }
+
+    refreshBroadcastSummary();
+    loadContacts($('#chatSearch').val());
+}
+
+function sendAnnouncement() {
+    const messageText = ($('#chatMessageInput').val() || '').trim();
+    const recipientIds = Array.from(selectedAnnouncementRecipients);
+
+    if (recipientIds.length === 0) {
+        alert('Vyber aspoň jedného adresáta.');
+        return;
+    }
+
+    if (!messageText) {
+        alert('Napíš text hromadnej správy.');
+        return;
+    }
+
+    if (!confirm('Naozaj chceš odoslať hromadnú správu ' + recipientIds.length + ' používateľom?')) {
+        return;
+    }
+
+    $.ajax({
+        url: 'scripts/chat/send_announcement.php',
+        method: 'POST',
+        dataType: 'json',
+        data: {
+            message_text: messageText,
+            'recipient_ids[]': recipientIds
+        },
+        success: function(res) {
+            if (!res || res.status !== 'success') {
+                alert((res && res.message) ? res.message : 'Hromadnú správu sa nepodarilo odoslať');
+                return;
+            }
+
+            $('#chatMessageInput').val('');
+            $('#chatAnnouncementDepartments').val([]);
+            selectedAnnouncementRecipients = new Set();
+            refreshBroadcastSummary();
+            toggleBroadcastMode(false);
+            loadContacts($('#chatSearch').val());
+        },
+        error: function(xhr) {
+            console.log('sendAnnouncement error:', xhr.responseText);
+            alert('Chyba pri odosielaní hromadnej správy: ' + (xhr.responseText || 'Neznáma chyba'));
+        }
+    });
+}
+
+function openAnnouncementThread(threadId) {
+    const parsedThreadId = parseInt(threadId, 10);
+    if (!parsedThreadId) return;
+
+    currentThreadId = parsedThreadId;
+    currentChatUserId = -parsedThreadId;
+    currentChatUserName = 'Hromadné správy';
+
+    $('#chatThreadId').val(parsedThreadId);
+    renderChatHeader({
+        name: 'Hromadné správy',
+        photo: '',
+        status_bg: 'bg-maroon',
+        hide_photo: true,
+        thread_type: 'announcement'
+    });
+
+    $('#chatMessages').html('<div class="text-muted">Načítavam hromadnú správu...</div>');
+    setComposerEnabled(false);
+    loadThreadInfo(parsedThreadId);
+    loadMessages(parsedThreadId);
+
+    const newUrl = `${window.location.pathname}?page=chat&thread_id=${parsedThreadId}`;
+    window.history.replaceState({}, '', newUrl);
+}
 
 function sortContactsForList(contacts) {
     return (contacts || []).slice().sort(function(a, b) {
+        const typeA = a.thread_type || 'dm';
+        const typeB = b.thread_type || 'dm';
         const unreadA = parseInt(a.unread_count || 0, 10);
         const unreadB = parseInt(b.unread_count || 0, 10);
 
+        if (typeA === 'announcement' && typeB !== 'announcement') return -1;
+        if (typeB === 'announcement' && typeA !== 'announcement') return 1;
         if (unreadA > 0 && unreadB === 0) return -1;
         if (unreadB > 0 && unreadA === 0) return 1;
         if (unreadA !== unreadB) return unreadB - unreadA;
@@ -482,7 +868,7 @@ function applyChatHeaderStatus(statusBg) {
     const header = $('#chatCardHeader');
     const allowedClasses = [
         'bg-success', 'bg-warning', 'bg-danger', 'bg-info', 'bg-secondary',
-        'bg-primary', 'bg-dark', 'bg-orange', 'bg-teal', 'bg-indigo', 'bg-pink'
+        'bg-primary', 'bg-dark', 'bg-orange', 'bg-teal', 'bg-indigo', 'bg-pink', 'bg-maroon'
     ];
 
     header.removeClass(allowedClasses.join(' ')).addClass(statusBg || 'bg-dark');
@@ -490,10 +876,30 @@ function applyChatHeaderStatus(statusBg) {
 
 function renderChatHeader(user) {
     if (!user) {
-        $('#chatHeaderPhoto').hide();
+        $('#chatHeaderPhoto')
+            .attr('src', 'images/profile.jpg')
+            .hide();
+
         $('#chatThreadTitle').text('Vyber kolegu');
         $('#chatHeaderMeta').html('').hide();
         applyChatHeaderStatus('bg-dark');
+        return;
+    }
+
+    const shouldHidePhoto =
+        user.hide_photo === true ||
+        user.thread_type === 'announcement' ||
+        user.name === 'Hromadná správa' ||
+        user.name === 'Hromadné správy';
+
+    if (shouldHidePhoto) {
+        $('#chatHeaderPhoto')
+            .attr('src', 'images/profile.jpg')
+            .hide();
+
+        $('#chatThreadTitle').text(user.name || 'Konverzácia');
+        $('#chatHeaderMeta').html('').hide();
+        applyChatHeaderStatus(user.status_bg || 'bg-dark');
         return;
     }
 
@@ -567,27 +973,100 @@ function normalizeToastText(value, fallback = '') {
     return fallback;
 }
 
-function showChatToast(message) {
-    const safeMessage = normalizeToastText(message, 'Nová správa');
+function showChatToast(payload) {
+    const data = (payload && typeof payload === 'object') ? payload : { message: payload };
+    const threadId = parseInt(data.thread_id || 0, 10);
+    const messageId = parseInt(data.last_message_id || data.message_id || 0, 10);
+    const senderName = normalizeToastText(data.sender_name || data.name, 'Nová správa');
+    const rawPreview = normalizeToastText(data.last_message_text || data.message_text || data.preview || data.message, '');
+    const preview = rawPreview && rawPreview.trim() !== '' ? rawPreview.trim() : 'Máš novú správu';
+    const shortPreview = preview.length > 140 ? preview.substring(0, 140) + '...' : preview;
+
+    const signature = [threadId, messageId, senderName, shortPreview].join('|');
+    const nowTs = Date.now();
+    if (signature === lastToastSignature && (nowTs - lastToastAt) < 4000) {
+        return;
+    }
+    lastToastSignature = signature;
+    lastToastAt = nowTs;
+
+    const contact = threadId ? $('.chat-contact[data-thread-id="' + threadId + '"]') : $();
+    const threadType = contact.attr('data-thread-type') || data.thread_type || 'dm';
+    const titleText = threadType === 'announcement' ? 'Nový oznam' : 'Nová správa';
+
+    let avatar = 'images/profile.jpg';
+    if (threadType === 'announcement') {
+        if (data.sender_photo && String(data.sender_photo).trim() !== '') {
+            avatar = buildPhotoPath(data.sender_photo);
+        } else if (data.sender_id) {
+            const senderContact = $('.chat-contact[data-user-id="' + parseInt(data.sender_id, 10) + '"]');
+            const senderPhoto = senderContact.attr('data-user-photo') || '';
+            if (senderPhoto) {
+                avatar = buildPhotoPath(senderPhoto);
+            }
+        }
+    } else if (contact.length) {
+        const contactPhoto = contact.attr('data-user-photo') || '';
+        if (contactPhoto) {
+            avatar = buildPhotoPath(contactPhoto);
+        }
+    }
+
+    let container = $('#chatToastContainer');
+    if (!container.length) {
+        $('body').append('<div id="chatToastContainer" class="chat-toast-container"></div>');
+        container = $('#chatToastContainer');
+    }
+
+    const toastId = 'chatToast_' + Date.now() + '_' + Math.floor(Math.random() * 100000);
+    const threadUrl = '?page=chat&thread_id=' + encodeURIComponent(threadId || '');
 
     const toast = $(`
-        <div class="chat-toast">
-            ${escapeHtml(safeMessage)}
+        <div class="chat-toast" id="${toastId}">
+            <div class="chat-toast-header">
+                <div class="chat-toast-title">
+                    <i class="fas ${threadType === 'announcement' ? 'fa-bullhorn' : 'fa-comments'}"></i>
+                    <span>${escapeHtml(titleText)}</span>
+                </div>
+                <button type="button" class="chat-toast-close" aria-label="Zavrieť">&times;</button>
+            </div>
+            <div class="chat-toast-body">
+                <div class="chat-toast-main">
+                    <img src="${escapeAttr(avatar)}" alt="" class="chat-toast-avatar" onerror="this.src='images/profile.jpg';">
+                    <div class="chat-toast-content">
+                        <div class="chat-toast-sender">${escapeHtml(senderName)}</div>
+                        <div class="chat-toast-preview">${escapeHtml(shortPreview)}</div>
+                        <div class="chat-toast-actions">
+                            <a href="${escapeAttr(threadUrl)}" class="chat-toast-link">
+                                <i class="fas fa-external-link-alt"></i>
+                                Otvoriť
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
         </div>
     `);
 
-    $('body').append(toast);
+    container.append(toast);
 
     setTimeout(function() {
         toast.addClass('show');
     }, 10);
 
-    setTimeout(function() {
+    toast.find('.chat-toast-close').on('click', function() {
         toast.removeClass('show');
         setTimeout(function() {
             toast.remove();
         }, 250);
-    }, 4200);
+    });
+
+    toast.find('.chat-toast-link').on('click', function() {
+        toast.removeClass('show');
+        setTimeout(function() {
+            toast.remove();
+        }, 150);
+    });
 }
 
 function ensureNotificationAudio() {
@@ -627,13 +1106,12 @@ function stopTitleBlink() {
     document.title = originalPageTitle;
 }
 
-function triggerIncomingNotification(senderName, threadId) {
-    const safeName = normalizeToastText(senderName, 'kolegu');
-
-    showChatToast('Nová správa od ' + safeName);
+function triggerIncomingNotification(thread) {
+    const safeName = normalizeToastText(thread && thread.sender_name, 'kolegu');
+    showChatToast(thread || {});
     playNotificationSound();
 
-    if (document.hidden || parseInt(currentThreadId || 0, 10) !== parseInt(threadId || 0, 10)) {
+    if (document.hidden || parseInt(currentThreadId || 0, 10) !== parseInt((thread && thread.thread_id) || 0, 10)) {
         startTitleBlink('💬 Nová správa od ' + safeName);
     }
 }
@@ -787,14 +1265,20 @@ function loadContacts(query = '') {
         data: { q: query },
         success: function(res) {
             if (!res || res.status !== 'success') return;
+            contactsCache = res.contacts || [];
+            renderAnnouncementToolbar(contactsCache);
 
             let html = '';
-            const contacts = sortContactsForList(res.contacts || []);
-
+            const contacts = sortContactsForList(contactsCache);
+    
             if (!contacts.length) {
                 html = '<div class="text-muted p-2">Žiadni kolegovia.</div>';
             } else {
                 contacts.forEach(function(user) {
+                    const itemType = user.item_type || 'user';
+                    const threadType = user.thread_type || 'dm';
+                    const isAnnouncement = threadType === 'announcement';
+                    const isChecked = selectedAnnouncementRecipients.has(parseInt(user.id, 10));
                     let photo = buildPhotoPath(user.photo);
                     let dept = user.department_name ? user.department_name : '';
                     let statusLabel = user.status_label ? user.status_label : 'Unknown';
@@ -804,6 +1288,9 @@ function loadContacts(query = '') {
                     let unreadCount = parseInt(user.unread_count || 0, 10);
                     let threadId = parseInt(user.thread_id || 0, 10);
                     let metaText = unreadCount > 0 ? getUnreadMessageLabel(unreadCount) : (dept ? dept : '');
+                    if (isAnnouncement && unreadCount === 0) {
+                        metaText = 'Oznamy';
+                    }
 
                     html += `
                     <div class="chat-contact ${statusBg} ${isActive ? 'active' : ''} ${unreadCount > 0 ? 'unread' : ''}"
@@ -811,13 +1298,16 @@ function loadContacts(query = '') {
                         data-user-name="${escapeAttr(user.name)}"
                         data-user-photo="${escapeAttr(user.photo || '')}"
                         data-thread-id="${threadId}"
+                        data-thread-type="${escapeAttr(threadType)}"
                         data-status-bg="${escapeAttr(statusBg)}"
                         data-status-label="${escapeAttr(statusLabel)}"
                         data-status-icon="${escapeAttr(statusIcon)}"
                         data-department-name="${escapeAttr(dept)}"
                         data-default-meta="${escapeAttr(dept)}"
                         style="color:#fff;">
-
+                        <div class="chat-recipient-check">
+                            ${itemType === 'user' ? `<input type="checkbox" class="chat-recipient-checkbox" ${isChecked ? 'checked' : ''}>` : ''}
+                        </div>
                         <img src="${escapeAttr(photo)}" alt="" onerror="this.src='images/profile.jpg';">
 
                         <div class="flex-grow-1">
@@ -834,7 +1324,7 @@ function loadContacts(query = '') {
                         <div class="chat-contact-status">
                             <i class="fas ${escapeHtml(statusIcon)}"></i>
                         </div>
-                    </div>
+                    </div>                    
                 `;
                 });
             }
@@ -897,9 +1387,14 @@ messages.forEach(function(msg) {
         `;
     }
 
+    const senderLabelHtml = msg.message_type === 'announcement'
+        ? `<div class="chat-announcement-sender">${escapeHtml(msg.sender_name || 'Administrátor')}</div>`
+        : '';
+
     html += `
         <div class="chat-message-row ${msg.is_own ? 'own' : ''}">
             <div class="chat-bubble">
+                ${senderLabelHtml}
                 ${msg.message_text ? `<div>${escapeHtml(msg.message_text)}</div>` : ''}
                 ${attachmentHtml}
                 <div class="chat-meta">
@@ -958,6 +1453,24 @@ function loadThreadInfo(threadId) {
             }
 
             currentThreadId = parseInt(res.thread.id, 10);
+            const threadType = (res.thread.thread_type || 'dm');
+            if (threadType === 'announcement') {
+                currentChatUserId = -currentThreadId;
+                currentChatUserName = res.thread.title || 'Hromadné správy';
+                $('#chatThreadId').val(currentThreadId);
+                renderChatHeader({
+                    name: currentChatUserName,
+                    photo: '',
+                    status_bg: 'bg-maroon'
+                });
+                setComposerEnabled(false);
+                clearContactUnread(currentThreadId);
+                stopTitleBlink();
+                return;
+            }
+
+            setComposerEnabled(true);
+
             $('#chatThreadId').val(currentThreadId);
             $('#chatMessageInput').prop('disabled', false);
             $('#chatSendBtn').prop('disabled', false);
@@ -1081,6 +1594,10 @@ function openDmWithUser(userId, userName, userPhoto = '') {
 }
 
 function sendMessage() {
+    if (broadcastModeEnabled) {
+    sendAnnouncement();
+    return;
+    }
     const threadId = $('#chatThreadId').val();
     const messageText = $('#chatMessageInput').val().trim();
 
@@ -1167,7 +1684,7 @@ function checkForIncomingMessages() {
                         forceScrollOnNextRender = isChatScrolledNearBottom();
                         shouldReloadCurrentThread = true;
                     } else {
-                        triggerIncomingNotification(senderName, threadId);
+                        triggerIncomingNotification(thread);
                         markContactUnread(threadId, unreadCount);
                     }
                 } else {
@@ -1241,10 +1758,23 @@ $(document).ready(function() {
         }
     });
 
-    $(document).on('click', '.chat-contact', function() {
+    $(document).on('click', '.chat-contact', function(e) {
+        const threadType = $(this).attr('data-thread-type') || 'dm';
         const userId = $(this).data('user-id');
         const userName = $(this).data('user-name');
         const userPhoto = $(this).attr('data-user-photo') || '';
+        const threadId = $(this).attr('data-thread-id') || '';
+
+        if (broadcastModeEnabled && threadType !== 'announcement') {
+            e.preventDefault();
+            toggleAnnouncementRecipient(userId);
+            return;
+        }
+
+        if (threadType === 'announcement') {
+            openAnnouncementThread(threadId);
+            return;
+        }
 
         openDmWithUser(userId, userName, userPhoto);
     });
@@ -1298,6 +1828,8 @@ $(document).ready(function() {
             $('#chatEmojiToggle').prop('disabled', true);
             $('#chatAttachToggle').prop('disabled', true);
             renderChatHeader(null);
+            setComposerEnabled(false);
+            renderChatHeader(null);
     }
 
     $('#chatAttachToggle').on('click', function(e) {
@@ -1315,5 +1847,32 @@ $(document).ready(function() {
     e.preventDefault();
     resetAttachmentPreview();
     });
+    $(document).on('change', '#chatBroadcastModeToggle', function() {
+    toggleBroadcastMode($(this).is(':checked'));
+});
+
+$(document).on('change', '#chatAnnouncementDepartments', function() {
+    applyDepartmentSelection();
+});
+
+$(document).on('click', '#chatBroadcastSelectAll', function(e) {
+    e.preventDefault();
+    selectedAnnouncementRecipients = new Set(
+        contactsCache
+            .filter(item => (item.item_type || 'user') === 'user')
+            .map(item => parseInt(item.id, 10))
+            .filter(id => id > 0)
+    );
+    refreshBroadcastSummary();
+    loadContacts($('#chatSearch').val());
+});
+
+$(document).on('click', '#chatBroadcastClearAll', function(e) {
+    e.preventDefault();
+    $('#chatAnnouncementDepartments').val([]);
+    selectedAnnouncementRecipients = new Set();
+    refreshBroadcastSummary();
+    loadContacts($('#chatSearch').val());
+});
 });
 </script>

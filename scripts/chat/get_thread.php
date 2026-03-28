@@ -3,17 +3,21 @@ require_once __DIR__ . '/helpers.php';
 
 chat_require_login();
 
-header('Content-Type: application/json; charset=utf-8');
-
-$userId   = (int)$_SESSION['user_id'];
+$userId = (int)($_SESSION['user_id'] ?? 0);
 $threadId = isset($_GET['thread_id']) ? (int)$_GET['thread_id'] : 0;
 
 if ($threadId <= 0) {
-    echo json_encode([
+    chat_json([
         'status' => 'error',
         'message' => 'Missing thread_id'
-    ], JSON_UNESCAPED_UNICODE);
-    exit;
+    ], 422);
+}
+
+if (!chat_user_in_thread($conn, $threadId, $userId)) {
+    chat_json([
+        'status' => 'error',
+        'message' => 'Access denied'
+    ], 403);
 }
 
 function chat_online_status_meta($statusInt): array
@@ -32,49 +36,64 @@ function chat_online_status_meta($statusInt): array
     }
 }
 
-/*
- * 1) načítaj thread
- */
-$sqlThread = "
+$stmtThread = $conn->prepare("
     SELECT
         ct.id,
-        ct.title
+        ct.title,
+        ct.thread_type,
+        ct.created_by
     FROM chat_threads ct
     WHERE ct.id = ?
     LIMIT 1
-";
+");
 
-$stmt = $conn->prepare($sqlThread);
-if (!$stmt) {
-    echo json_encode([
+if (!$stmtThread) {
+    chat_json([
         'status' => 'error',
         'message' => 'Prepare thread failed: ' . $conn->error
-    ], JSON_UNESCAPED_UNICODE);
-    exit;
+    ], 500);
 }
 
-$stmt->bind_param("i", $threadId);
-$stmt->execute();
-$resThread = $stmt->get_result();
-$threadRow = $resThread->fetch_assoc();
-$stmt->close();
+$stmtThread->bind_param("i", $threadId);
+
+if (!$stmtThread->execute()) {
+    $error = $stmtThread->error;
+    $stmtThread->close();
+
+    chat_json([
+        'status' => 'error',
+        'message' => 'Execute failed: ' . $error
+    ], 500);
+}
+
+$resThread = $stmtThread->get_result();
+$threadRow = $resThread ? $resThread->fetch_assoc() : null;
+$stmtThread->close();
 
 if (!$threadRow) {
-    echo json_encode([
+    chat_json([
         'status' => 'error',
         'message' => 'Thread not found'
-    ], JSON_UNESCAPED_UNICODE);
-    exit;
+    ], 404);
 }
 
-/*
- * 2) nájdi "other_user" v DM konverzácii
- *
- * Priorita:
- * - najprv posledný iný sender v tomto threade
- * - ak nič nenájde, tak akýkoľvek iný sender v tomto threade
- */
-$sqlOtherUser = "
+$threadType = (string)($threadRow['thread_type'] ?? 'dm');
+
+if ($threadType === 'announcement') {
+    chat_json([
+        'status' => 'success',
+        'thread' => [
+            'id' => (int)$threadRow['id'],
+            'title' => trim((string)($threadRow['title'] ?? '')) !== '' ? (string)$threadRow['title'] : 'Hromadné správy',
+            'thread_type' => 'announcement',
+            'created_by' => (int)($threadRow['created_by'] ?? 0),
+            'other_user' => null,
+            'can_reply' => false
+        ]
+    ]);
+}
+
+$stmtOther = $conn->prepare("
     SELECT
         e.id,
         e.employee_id,
@@ -88,108 +107,75 @@ $sqlOtherUser = "
         e.online_status,
         p.description AS department_name
     FROM employees e
-    LEFT JOIN position p ON p.id = e.position_id
+    LEFT JOIN position p
+        ON p.id = e.position_id
     WHERE e.id = (
-        SELECT x.sender_id
+        SELECT x.user_id
         FROM (
-            SELECT cm.sender_id
-            FROM chat_messages cm
-            WHERE cm.thread_id = ?
-              AND cm.sender_id != ?
-            ORDER BY cm.id DESC
+            SELECT tm.user_id
+            FROM chat_thread_members tm
+            WHERE tm.thread_id = ?
+              AND tm.user_id != ?
             LIMIT 1
         ) x
     )
     LIMIT 1
-";
+");
 
-$stmt = $conn->prepare($sqlOtherUser);
-if (!$stmt) {
-    echo json_encode([
+if (!$stmtOther) {
+    chat_json([
         'status' => 'error',
         'message' => 'Prepare other user failed: ' . $conn->error
-    ], JSON_UNESCAPED_UNICODE);
-    exit;
+    ], 500);
 }
 
-$stmt->bind_param("ii", $threadId, $userId);
-$stmt->execute();
-$resOther = $stmt->get_result();
-$otherUserRow = $resOther->fetch_assoc();
-$stmt->close();
+$stmtOther->bind_param("ii", $threadId, $userId);
 
-/*
- * Fallback: ak posledný iný sender neexistuje, zober hociktorého iného sendera v threade
- */
-if (!$otherUserRow) {
-    $sqlOtherUserFallback = "
-        SELECT
-            e.id,
-            e.employee_id,
-            e.firstname,
-            e.lastname,
-            e.username,
-            e.photo,
-            e.position_id,
-            e.permission,
-            e.active,
-            e.online_status,
-            p.description AS department_name
-        FROM employees e
-        LEFT JOIN position p ON p.id = e.position_id
-        WHERE e.id = (
-            SELECT x.sender_id
-            FROM (
-                SELECT cm.sender_id
-                FROM chat_messages cm
-                WHERE cm.thread_id = ?
-                  AND cm.sender_id != ?
-                GROUP BY cm.sender_id
-                ORDER BY MAX(cm.id) DESC
-                LIMIT 1
-            ) x
-        )
-        LIMIT 1
-    ";
+if (!$stmtOther->execute()) {
+    $error = $stmtOther->error;
+    $stmtOther->close();
 
-    $stmt = $conn->prepare($sqlOtherUserFallback);
-    if ($stmt) {
-        $stmt->bind_param("ii", $threadId, $userId);
-        $stmt->execute();
-        $resOther = $stmt->get_result();
-        $otherUserRow = $resOther->fetch_assoc();
-        $stmt->close();
-    }
+    chat_json([
+        'status' => 'error',
+        'message' => 'Execute failed: ' . $error
+    ], 500);
 }
+
+$resOther = $stmtOther->get_result();
+$otherUserRow = $resOther ? $resOther->fetch_assoc() : null;
+$stmtOther->close();
 
 $otherUser = null;
 
 if ($otherUserRow) {
-    $meta = chat_online_status_meta((int)$otherUserRow['online_status']);
+    $meta = chat_online_status_meta((int)($otherUserRow['online_status'] ?? 0));
 
     $otherUser = [
-        'id'              => (int)$otherUserRow['id'],
-        'employee_id'     => $otherUserRow['employee_id'] ?? '',
-        'name'            => trim(($otherUserRow['firstname'] ?? '') . ' ' . ($otherUserRow['lastname'] ?? '')),
-        'firstname'       => $otherUserRow['firstname'] ?? '',
-        'lastname'        => $otherUserRow['lastname'] ?? '',
-        'username'        => $otherUserRow['username'] ?? '',
-        'photo'           => $otherUserRow['photo'] ?? '',
+        'id' => (int)$otherUserRow['id'],
+        'employee_id' => $otherUserRow['employee_id'] ?? '',
+        'name' => trim(($otherUserRow['firstname'] ?? '') . ' ' . ($otherUserRow['lastname'] ?? '')),
+        'firstname' => $otherUserRow['firstname'] ?? '',
+        'lastname' => $otherUserRow['lastname'] ?? '',
+        'username' => $otherUserRow['username'] ?? '',
+        'photo' => $otherUserRow['photo'] ?? '',
         'department_name' => $otherUserRow['department_name'] ?? '',
-        'permission'      => (int)($otherUserRow['permission'] ?? 0),
-        'online_status'   => (int)($otherUserRow['online_status'] ?? 0),
-        'status_label'    => $meta['label'],
-        'status_icon'     => $meta['icon'],
-        'status_bg'       => $meta['bg']
+        'permission' => (int)($otherUserRow['permission'] ?? 0),
+        'online_status' => (int)($otherUserRow['online_status'] ?? 0),
+        'status_label' => $meta['label'],
+        'status_icon' => $meta['icon'],
+        'status_bg' => $meta['bg']
     ];
 }
 
-echo json_encode([
+chat_json([
     'status' => 'success',
     'thread' => [
-        'id'         => (int)$threadRow['id'],
-        'title'      => $threadRow['title'] ?? '',
-        'other_user' => $otherUser
+        'id' => (int)$threadRow['id'],
+        'title' => $threadRow['title'] ?? '',
+        'thread_type' => 'dm',
+        'created_by' => (int)($threadRow['created_by'] ?? 0),
+        'other_user' => $otherUser,
+        'can_reply' => true
     ]
-], JSON_UNESCAPED_UNICODE);
+]);
 ?>
