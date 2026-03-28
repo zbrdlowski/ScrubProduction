@@ -96,31 +96,33 @@ if (empty($_SESSION['user_id'])) {
 }
 
 .chat-contact.unread {
-    border-color: rgba(220,53,69,0.55);
-    background: rgba(220,53,69,0.18);
-    animation: pulseUnread 1.2s infinite;
+    border: 2px solid rgba(255,255,255,0.85); /* svetlý outline */
+    box-shadow: 0 0 8px rgba(255,255,255,0.25); /* jemný glow */   
 }
 
-@keyframes pulseUnread {
-    0% { box-shadow: 0 0 0 0 rgba(220,53,69,0.60); }
-    70% { box-shadow: 0 0 0 10px rgba(220,53,69,0); }
-    100% { box-shadow: 0 0 0 0 rgba(220,53,69,0); }
+.chat-contact.unread .chat-contact-name {
+    font-weight: 700;
+}
+
+.chat-contact.unread .chat-contact-meta {
+    color: rgba(255,255,255,0.96) !important;
+    font-weight: 600;
 }
 
 .chat-unread-badge {
-    min-width: 22px;
-    height: 22px;
-    padding: 0 6px;
+    min-width: 24px;
+    height: 24px;
+    padding: 0 8px;
     border-radius: 999px;
-    background: #dc3545;
-    color: #fff;
+    background: rgba(255,255,255,0.96);
+    color: #1f2d3d;
     font-size: 12px;
-    font-weight: 700;
+    font-weight: 800;
     display: inline-flex;
     align-items: center;
     justify-content: center;
     margin-left: 8px;
-    box-shadow: 0 0 8px rgba(220,53,69,0.45);
+    box-shadow: 0 0 10px rgba(0,0,0,0.18);
 }
 
 .chat-contact img {
@@ -137,6 +139,14 @@ if (empty($_SESSION['user_id'])) {
 .chat-contact-meta {
     font-size: 12px;
     color: #adb5bd;
+    line-height: 1.25;
+}
+
+.chat-contact-status {
+    margin-left: auto;
+    font-size: 16px;
+    color: #343a40;
+    opacity: 0.9;
 }
 
 .chat-message-row {
@@ -192,18 +202,6 @@ if (empty($_SESSION['user_id'])) {
 .chat-toast.show {
     opacity: 1;
     transform: translateY(0);
-}
-.chat-contact {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-}
-
-.chat-contact-status {
-    margin-left: auto;
-    font-size: 16px;
-    color: #343a40; /* tmavá ikonka */
-    opacity: 0.9;
 }
 
 .chat-input-group {
@@ -275,8 +273,38 @@ if (empty($_SESSION['user_id'])) {
     outline: none;
     transform: scale(1.05);
 }
+
 #chatHeaderMeta {
     display: none;
+}
+/* scroll container */
+#chatContactsList {
+    scrollbar-width: thin; /* Firefox */
+    scrollbar-color: #495057 transparent; /* Firefox */
+}
+
+#chatMessages { scrollbar-width: thin; /* Firefox */
+    scrollbar-color: #495057 transparent; /* Firefox */ }
+
+/* Chrome / Edge / Safari */
+#chatContactsList::-webkit-scrollbar {
+    width: 8px;
+}
+
+#chatContactsList::-webkit-scrollbar-track {
+    background: transparent;
+    margin: 6px 0; /* ⬅️ odsadenie hore/dole */
+}
+
+#chatContactsList::-webkit-scrollbar-thumb {
+    background-color: #495057; /* tmavá sivá */
+    border-radius: 10px;
+    border: 2px solid transparent; /* ⬅️ vytvorí “gap” */
+    background-clip: content-box;
+}
+
+#chatContactsList::-webkit-scrollbar-thumb:hover {
+    background-color: #6c757d;
 }
 </style>
 
@@ -319,6 +347,13 @@ function getUrlParam(name) {
     return params.get(name);
 }
 
+function getUnreadMessageLabel(count) {
+    count = parseInt(count || 0, 10);
+    if (count === 1) return '1 neprečítaná správa';
+    if (count >= 2 && count <= 4) return `${count} neprečítané správy`;
+    return `${count} neprečítaných správ`;
+}
+
 let currentThreadId = null;
 let currentChatUserName = '';
 let currentChatUserId = null;
@@ -357,7 +392,7 @@ function escapeHtml(text) {
 function escapeAttr(text) {
     return String(text || '')
         .replace(/&/g, '&amp;')
-        .replace(/"/g, '&quot;')
+        .replace(/\"/g, '&quot;')
         .replace(/'/g, '&#039;')
         .replace(/</g, '&lt;')
         .replace(/>/g, '&gt;');
@@ -375,6 +410,23 @@ function buildPhotoPath(photoValue) {
     }
 
     return photo;
+}
+
+function sortContactsForList(contacts) {
+    return (contacts || []).slice().sort(function(a, b) {
+        const unreadA = parseInt(a.unread_count || 0, 10);
+        const unreadB = parseInt(b.unread_count || 0, 10);
+
+        if (unreadA > 0 && unreadB === 0) return -1;
+        if (unreadB > 0 && unreadA === 0) return 1;
+        if (unreadA !== unreadB) return unreadB - unreadA;
+
+        const timeA = a.last_message_at ? new Date(a.last_message_at).getTime() : 0;
+        const timeB = b.last_message_at ? new Date(b.last_message_at).getTime() : 0;
+        if (timeA !== timeB) return timeB - timeA;
+
+        return String(a.name || '').localeCompare(String(b.name || ''), 'sk', { sensitivity: 'base' });
+    });
 }
 
 function applyChatHeaderStatus(statusBg) {
@@ -417,22 +469,7 @@ function renderChatHeader(user) {
         .show();
 
     $('#chatThreadTitle').text(user.name || 'Konverzácia');
-
-    let statusLabel = user.status_label || '';
-    let statusIcon = user.status_icon || '';
-    let dept = user.department_name || '';
-
-    let metaHtml = '';
-
-
-
-    $('#chatHeaderMeta').html(metaHtml);
-    if (metaHtml) {
-        $('#chatHeaderMeta').show();
-    } else {
-        $('#chatHeaderMeta').hide();
-    }
-
+    $('#chatHeaderMeta').html('').hide();
     applyChatHeaderStatus(user.status_bg || 'bg-dark');
 }
 
@@ -440,6 +477,7 @@ function setActiveContact(userId) {
     $('.chat-contact').removeClass('active');
     $('.chat-contact[data-user-id="' + userId + '"]').addClass('active');
 }
+
 function populateHeaderFromContactByThread(threadId) {
     const contact = $('.chat-contact[data-thread-id="' + threadId + '"]');
 
@@ -535,29 +573,31 @@ function triggerIncomingNotification(senderName, threadId) {
     }
 }
 
-function markContactUnread(threadId, unreadCount) {
-    const contact = $('.chat-contact[data-thread-id="' + threadId + '"]');
-
-    if (!contact.length) return;
-
-    contact.addClass('unread');
+function updateContactUnreadState(contact, unreadCount) {
+    const count = parseInt(unreadCount || 0, 10);
+    if (!contact || !contact.length) return;
 
     contact.find('.chat-unread-badge').remove();
+    contact.find('.chat-contact-meta').text(contact.attr('data-default-meta') || '');
 
-    if (unreadCount > 0) {
-        contact.find('.chat-contact-name').append(`<span class="chat-unread-badge">${parseInt(unreadCount, 10)}</span>`);
+    if (count > 0) {
+        contact.addClass('unread');
+        contact.find('.chat-contact-name').append(`<span class="chat-unread-badge">${count}</span>`);
+        contact.find('.chat-contact-meta').text(getUnreadMessageLabel(count));
+    } else {
+        contact.removeClass('unread');
     }
+}
+
+function markContactUnread(threadId, unreadCount) {
+    const contact = $('.chat-contact[data-thread-id="' + threadId + '"]');
+    updateContactUnreadState(contact, unreadCount);
 }
 
 function clearContactUnread(threadId) {
     const contact = $('.chat-contact[data-thread-id="' + threadId + '"]');
-
-    if (!contact.length) return;
-
-    contact.removeClass('unread');
-    contact.find('.chat-unread-badge').remove();
+    updateContactUnreadState(contact, 0);
 }
-
 
 function renderEmojiPicker() {
     const grid = $('#chatEmojiGrid');
@@ -614,11 +654,12 @@ function loadContacts(query = '') {
             if (!res || res.status !== 'success') return;
 
             let html = '';
+            const contacts = sortContactsForList(res.contacts || []);
 
-            if (!res.contacts || !res.contacts.length) {
+            if (!contacts.length) {
                 html = '<div class="text-muted p-2">Žiadni kolegovia.</div>';
             } else {
-                res.contacts.forEach(function(user) {
+                contacts.forEach(function(user) {
                     let photo = buildPhotoPath(user.photo);
                     let dept = user.department_name ? user.department_name : '';
                     let statusLabel = user.status_label ? user.status_label : 'Unknown';
@@ -627,6 +668,7 @@ function loadContacts(query = '') {
                     let isActive = currentChatUserId && parseInt(currentChatUserId, 10) === parseInt(user.id, 10);
                     let unreadCount = parseInt(user.unread_count || 0, 10);
                     let threadId = parseInt(user.thread_id || 0, 10);
+                    let metaText = unreadCount > 0 ? getUnreadMessageLabel(unreadCount) : (dept ? dept : '');
 
                     html += `
                     <div class="chat-contact ${statusBg} ${isActive ? 'active' : ''} ${unreadCount > 0 ? 'unread' : ''}"
@@ -638,6 +680,7 @@ function loadContacts(query = '') {
                         data-status-label="${escapeAttr(statusLabel)}"
                         data-status-icon="${escapeAttr(statusIcon)}"
                         data-department-name="${escapeAttr(dept)}"
+                        data-default-meta="${escapeAttr(dept)}"
                         style="color:#fff;">
 
                         <img src="${escapeAttr(photo)}" alt="" onerror="this.src='images/profile.jpg';">
@@ -649,7 +692,7 @@ function loadContacts(query = '') {
                             </div>
 
                             <div class="chat-contact-meta text-white">
-                                ${dept ? escapeHtml(dept) : ''}
+                                ${escapeHtml(metaText)}
                             </div>
                         </div>
 
@@ -763,9 +806,9 @@ function loadThreadInfo(threadId) {
             $('#chatThreadId').val(currentThreadId);
             $('#chatMessageInput').prop('disabled', false);
             $('#chatSendBtn').prop('disabled', false);
-    $('#chatEmojiToggle').prop('disabled', false);
+            $('#chatEmojiToggle').prop('disabled', false);
 
-           if (res.thread.other_user) {
+            if (res.thread.other_user) {
                 currentChatUserId = parseInt(res.thread.other_user.id, 10);
                 currentChatUserName = res.thread.other_user.name || currentChatUserName || '';
 
@@ -799,7 +842,6 @@ function loadThreadInfo(threadId) {
                 renderChatHeader(headerUser);
                 setActiveContact(currentChatUserId);
             } else {
-                // Ak backend nevie určiť other_user, NEPREPISUJ už správne nastavený header placeholderom
                 if (!currentChatUserName || currentChatUserName === 'Vyber kolegu') {
                     renderChatHeader({
                         name: res.thread.title || 'Konverzácia',
@@ -1019,7 +1061,6 @@ $(document).ready(function() {
         loadContacts($(this).val());
     });
 
-
     $('#chatEmojiToggle').on('click', function(e) {
         e.preventDefault();
         if ($(this).prop('disabled')) return;
@@ -1075,23 +1116,22 @@ $(document).ready(function() {
     });
 
     const preselectedThreadId = getUrlParam('thread_id');
-if (preselectedThreadId) {
-    currentThreadId = parseInt(preselectedThreadId, 10);
-    $('#chatThreadId').val(currentThreadId);
-    $('#chatMessageInput').prop('disabled', false);
-    $('#chatSendBtn').prop('disabled', false);
-    $('#chatEmojiToggle').prop('disabled', false);
+    if (preselectedThreadId) {
+        currentThreadId = parseInt(preselectedThreadId, 10);
+        $('#chatThreadId').val(currentThreadId);
+        $('#chatMessageInput').prop('disabled', false);
+        $('#chatSendBtn').prop('disabled', false);
+        $('#chatEmojiToggle').prop('disabled', false);
 
-    // skús header doplniť hneď po načítaní kontaktov
-    setTimeout(function() {
-        populateHeaderFromContactByThread(currentThreadId);
-    }, 300);
+        setTimeout(function() {
+            populateHeaderFromContactByThread(currentThreadId);
+        }, 300);
 
-    shouldAutoScrollOnNextRender = true;
-    loadThreadInfo(currentThreadId);
-    loadMessages(currentThreadId);
-} else {
-    renderChatHeader(null);
-}
+        shouldAutoScrollOnNextRender = true;
+        loadThreadInfo(currentThreadId);
+        loadMessages(currentThreadId);
+    } else {
+        renderChatHeader(null);
+    }
 });
 </script>

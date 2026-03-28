@@ -78,7 +78,34 @@
           </li>
     </ul>
   </nav>
+  <style>
+    .chat-toast-container {
+      position: fixed;
+      top: 1rem;
+      right: 1rem;
+      z-index: 1080;
+      width: 360px;
+      max-width: calc(100vw - 2rem);
+    }
+
+    .chat-toast-container .toast {
+      margin-bottom: .75rem;
+    }
+
+    .chat-toast-body .btn {
+      border-radius: 999px;
+    }
+
+    .chat-toast-body img {
+      width: 40px;
+      height: 40px;
+      object-fit: cover;
+    }
+  </style>
   <script>
+let chatNotifInitialized = false;
+let seenChatNotificationKeys = new Set();
+
 function escapeHtmlNav(text) {
     const div = document.createElement('div');
     div.innerText = text || '';
@@ -97,6 +124,85 @@ function getChatMessageLabel(count) {
     return 'nových správ';
 }
 
+function getChatNotificationKey(item) {
+    return [
+        item.thread_id || 0,
+        item.created_at || '',
+        item.message_text || '',
+        item.name || ''
+    ].join('|');
+}
+
+function isSameOpenChatThread(threadId) {
+    const params = new URLSearchParams(window.location.search);
+    const page = params.get('page') || '';
+    const currentThreadId = params.get('thread_id') || '';
+
+    return page === 'chat' && String(currentThreadId) === String(threadId) && document.visibilityState === 'visible';
+}
+
+function showChatToast(item) {
+    if (isSameOpenChatThread(item.thread_id)) {
+        return;
+    }
+
+    let container = $('#chatToastContainer');
+
+    if (!container.length) {
+        $('body').append('<div id="chatToastContainer" class="chat-toast-container"></div>');
+        container = $('#chatToastContainer');
+    }
+
+    const photo = item.photo ? ('images/' + item.photo) : 'images/profile.jpg';
+    const senderName = item.name || 'Nová správa';
+    let text = item.message_text || 'Poslal(a) ti novú správu';
+
+    if (text.length > 90) {
+        text = text.substring(0, 90) + '...';
+    }
+
+    const toastId = 'chatToast_' + Date.now() + '_' + Math.floor(Math.random() * 100000);
+
+    const toastHtml = `
+        <div id="${toastId}" class="toast bg-maroon fade" role="alert" aria-live="assertive" aria-atomic="true" data-autohide="false">
+            <div class="toast-header bg-maroon text-white">
+                <strong class="mr-auto">Nová správa</strong>
+                <button type="button" class="ml-2 mb-1 close text-white" aria-label="Zavrieť">
+                    <span aria-hidden="true">&times;</span>
+                </button>
+            </div>
+            <div class="toast-body">
+                <div class="chat-toast-body d-flex align-items-start">
+                    <img src="${escapeHtmlNav(photo)}" alt="Avatar" class="img-circle mr-2" onerror="this.src='images/profile.jpg';">
+                    <div class="flex-grow-1 pr-2">
+                        <div class="font-weight-bold mb-1">${escapeHtmlNav(senderName)}</div>
+                        <div class="mb-2">${escapeHtmlNav(text)}</div>
+                        <a href="?page=chat&thread_id=${encodeURIComponent(item.thread_id)}" class="btn btn-xs btn-light">Otvoriť chat</a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+
+    container.append(toastHtml);
+
+    const toast = $('#' + toastId);
+    toast.toast({
+        autohide: false,
+        animation: true
+    });
+
+    toast.find('.close').on('click', function() {
+        toast.toast('hide');
+    });
+
+    toast.on('hidden.bs.toast', function() {
+        toast.remove();
+    });
+
+    toast.toast('show');
+}
+
 function loadChatNotifications() {
     $.ajax({
         url: 'scripts/chat/get_unread_threads.php',
@@ -107,7 +213,9 @@ function loadChatNotifications() {
                 return;
             }
 
+            const threads = Array.isArray(res.threads) ? res.threads : [];
             const count = parseInt(res.count || 0, 10);
+            const currentKeys = new Set();
 
             if (count > 0) {
                 $('#chatUnreadBadge').text(count).show();
@@ -119,10 +227,17 @@ function loadChatNotifications() {
 
             let html = '';
 
-            if (!res.threads || !res.threads.length) {
+            if (!threads.length) {
                 html = '<span class="dropdown-item text-muted">Žiadne nové správy</span>';
             } else {
-                res.threads.forEach(function(item) {
+                threads.forEach(function(item) {
+                    const key = getChatNotificationKey(item);
+                    currentKeys.add(key);
+
+                    if (chatNotifInitialized && !seenChatNotificationKeys.has(key)) {
+                        showChatToast(item);
+                    }
+
                     let photo = item.photo ? ('images/' + item.photo) : 'images/profile.jpg';
                     let text = item.message_text || '';
 
@@ -149,6 +264,8 @@ function loadChatNotifications() {
             }
 
             $('#chatNotifList').html(html);
+            seenChatNotificationKeys = currentKeys;
+            chatNotifInitialized = true;
         }
     });
 }

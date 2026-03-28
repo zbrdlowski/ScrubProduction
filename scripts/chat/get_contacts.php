@@ -22,7 +22,8 @@ function chat_online_status_meta($statusInt): array
     }
 }
 
-$sql = "SELECT 
+$sql = "
+    SELECT
         e.id,
         e.employee_id,
         e.firstname,
@@ -33,15 +34,71 @@ $sql = "SELECT
         e.permission,
         e.active,
         e.online_status,
-        p.description AS department_name
+        p.description AS department_name,
+        dm.thread_id,
+        dm.last_message_id,
+        dm.last_message_at,
+        dm.last_message_text,
+        COALESCE(dm.unread_count, 0) AS unread_count
     FROM employees e
-    LEFT JOIN position p ON p.id = e.position_id
+    LEFT JOIN position p
+        ON p.id = e.position_id
+    LEFT JOIN (
+        SELECT
+            other.user_id AS other_user_id,
+            self.thread_id,
+            (
+                SELECT cm1.id
+                FROM chat_messages cm1
+                WHERE cm1.thread_id = self.thread_id
+                ORDER BY cm1.id DESC
+                LIMIT 1
+            ) AS last_message_id,
+            (
+                SELECT cm2.created_at
+                FROM chat_messages cm2
+                WHERE cm2.thread_id = self.thread_id
+                ORDER BY cm2.id DESC
+                LIMIT 1
+            ) AS last_message_at,
+            (
+                SELECT cm3.message_text
+                FROM chat_messages cm3
+                WHERE cm3.thread_id = self.thread_id
+                ORDER BY cm3.id DESC
+                LIMIT 1
+            ) AS last_message_text,
+            (
+                SELECT COUNT(*)
+                FROM chat_messages cm4
+                WHERE cm4.thread_id = self.thread_id
+                  AND cm4.sender_id != ?
+                  AND (
+                        self.last_read_message_id IS NULL
+                        OR cm4.id > self.last_read_message_id
+                  )
+            ) AS unread_count
+        FROM chat_thread_members self
+        INNER JOIN chat_thread_members other
+            ON other.thread_id = self.thread_id
+           AND other.user_id != self.user_id
+        INNER JOIN chat_threads ct
+            ON ct.id = self.thread_id
+           AND ct.thread_type = 'dm'
+        WHERE self.user_id = ?
+          AND (
+                SELECT COUNT(*)
+                FROM chat_thread_members x
+                WHERE x.thread_id = self.thread_id
+          ) = 2
+    ) dm
+        ON dm.other_user_id = e.id
     WHERE e.active = 'Active'
       AND e.id != ?
 ";
 
-$params = [$userId];
-$types = "i";
+$params = [$userId, $userId, $userId];
+$types = "iii";
 
 if ($search !== '') {
     $sql .= " AND (
@@ -58,18 +115,29 @@ if ($search !== '') {
     $types .= "ssss";
 }
 
-$sql .= " ORDER BY e.firstname ASC, e.lastname ASC";
+$sql .= " ORDER BY
+    CASE WHEN COALESCE(dm.unread_count, 0) > 0 THEN 0 ELSE 1 END ASC,
+    COALESCE(dm.last_message_at, '1970-01-01 00:00:00') DESC,
+    e.firstname ASC,
+    e.lastname ASC
+";
 
 $stmt = $conn->prepare($sql);
 
 if (!$stmt) {
-    die("Prepare failed: " . $conn->error);
+    chat_json([
+        'status' => 'error',
+        'message' => 'Prepare failed: ' . $conn->error
+    ], 500);
 }
 
 $stmt->bind_param($types, ...$params);
 
 if (!$stmt->execute()) {
-    die("Execute failed: " . $stmt->error);
+    chat_json([
+        'status' => 'error',
+        'message' => 'Execute failed: ' . $stmt->error
+    ], 500);
 }
 
 $result = $stmt->get_result();
@@ -91,7 +159,12 @@ while ($row = $result->fetch_assoc()) {
         'online_status' => (int)$row['online_status'],
         'status_label' => $meta['label'],
         'status_icon' => $meta['icon'],
-        'status_bg' => $meta['bg']
+        'status_bg' => $meta['bg'],
+        'thread_id' => (int)($row['thread_id'] ?? 0),
+        'last_message_id' => (int)($row['last_message_id'] ?? 0),
+        'last_message_at' => $row['last_message_at'] ?? null,
+        'last_message_text' => $row['last_message_text'] ?? '',
+        'unread_count' => (int)($row['unread_count'] ?? 0)
     ];
 }
 
