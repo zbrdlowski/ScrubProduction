@@ -51,11 +51,31 @@ if (empty($_SESSION['user_id'])) {
                     <input type="hidden" id="chatThreadId" name="thread_id" value="">
                     <div class="input-group chat-input-group">
                         <input type="text" id="chatMessageInput" name="message_text" class="form-control" placeholder="Napíš správu..." disabled>
+
                         <div class="input-group-append">
+                            <button type="button" class="btn btn-outline-light" id="chatAttachToggle" disabled aria-label="Priložiť súbor" title="Priložiť súbor">
+                                <i class="fas fa-paperclip"></i>
+                            </button>
+
                             <button type="button" class="btn btn-outline-light chat-emoji-toggle" id="chatEmojiToggle" disabled aria-label="Vybrať smajlík" title="Smajlíky">
                                 <i class="far fa-smile"></i>
                             </button>
+
                             <button type="submit" class="btn btn-primary" id="chatSendBtn" disabled>Odoslať</button>
+                        </div>
+                    </div>
+
+                    <input type="file" id="chatAttachmentInput" style="display:none;">
+
+                    <div id="chatAttachmentPreview" class="chat-attachment-preview" style="display:none;">
+                        <div class="d-flex align-items-center justify-content-between">
+                            <div class="pr-2">
+                                <div class="font-weight-bold" id="chatAttachmentName"></div>
+                                <div class="small text-muted" id="chatAttachmentSize"></div>
+                            </div>
+                            <button type="button" class="btn btn-xs btn-outline-light" id="chatAttachmentRemove">
+                                <i class="fas fa-times"></i>
+                            </button>
                         </div>
                     </div>
                     <div id="chatEmojiPicker" class="chat-emoji-picker" style="display:none;">
@@ -229,7 +249,7 @@ if (empty($_SESSION['user_id'])) {
     position: absolute;
     right: 15px;
     bottom: 72px;
-    width: 320px;
+    width: 450px;
     background: #243140;
     border: 1px solid rgba(255,255,255,0.10);
     border-radius: 14px;
@@ -251,8 +271,11 @@ if (empty($_SESSION['user_id'])) {
     display: grid;
     grid-template-columns: repeat(8, minmax(0, 1fr));
     gap: 6px;
-    max-height: 220px;
+    max-height: 450px;
     overflow-y: auto;
+    overflow-x: hidden;
+    padding: 6px; /* 👈 buffer proti overflow */
+    box-sizing: border-box;
 }
 
 .chat-emoji-btn {
@@ -271,7 +294,7 @@ if (empty($_SESSION['user_id'])) {
 .chat-emoji-btn:focus {
     background: rgba(255,255,255,0.10);
     outline: none;
-    transform: scale(1.05);
+    transform: scale(1.08); /* môže zostať */
 }
 
 #chatHeaderMeta {
@@ -305,6 +328,32 @@ if (empty($_SESSION['user_id'])) {
 
 #chatContactsList::-webkit-scrollbar-thumb:hover {
     background-color: #6c757d;
+}
+.chat-attachment-preview {
+    margin-top: 10px;
+    padding: 10px 12px;
+    border-radius: 10px;
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.10);
+    color: #fff;
+}
+
+.chat-attachment-card {
+    margin-top: 8px;
+    padding: 10px 12px;
+    border-radius: 10px;
+    background: rgba(255,255,255,0.08);
+    border: 1px solid rgba(255,255,255,0.10);
+}
+
+.chat-attachment-link {
+    color: #fff;
+    text-decoration: none;
+}
+
+.chat-attachment-link:hover {
+    color: #fff;
+    text-decoration: underline;
 }
 </style>
 
@@ -504,10 +553,26 @@ function populateHeaderFromContactByThread(threadId) {
     return true;
 }
 
+function normalizeToastText(value, fallback = '') {
+    if (value === null || value === undefined) return fallback;
+    if (typeof value === 'string') return value;
+    if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+
+    if (typeof value === 'object') {
+        if (typeof value.name === 'string' && value.name.trim() !== '') return value.name;
+        if (typeof value.sender_name === 'string' && value.sender_name.trim() !== '') return value.sender_name;
+        if (typeof value.message === 'string' && value.message.trim() !== '') return value.message;
+    }
+
+    return fallback;
+}
+
 function showChatToast(message) {
+    const safeMessage = normalizeToastText(message, 'Nová správa');
+
     const toast = $(`
         <div class="chat-toast">
-            ${escapeHtml(message)}
+            ${escapeHtml(safeMessage)}
         </div>
     `);
 
@@ -563,7 +628,7 @@ function stopTitleBlink() {
 }
 
 function triggerIncomingNotification(senderName, threadId) {
-    const safeName = senderName || 'kolegu';
+    const safeName = normalizeToastText(senderName, 'kolegu');
 
     showChatToast('Nová správa od ' + safeName);
     playNotificationSound();
@@ -642,6 +707,76 @@ function insertEmojiToMessage(emoji) {
     }
 
     $(input).trigger('input');
+}
+
+let selectedAttachmentFile = null;
+
+function formatFileSize(bytes) {
+    const size = parseInt(bytes || 0, 10);
+    if (size < 1024) return size + ' B';
+    if (size < 1024 * 1024) return (size / 1024).toFixed(1) + ' KB';
+    return (size / (1024 * 1024)).toFixed(1) + ' MB';
+}
+
+function resetAttachmentPreview() {
+    selectedAttachmentFile = null;
+    $('#chatAttachmentInput').val('');
+    $('#chatAttachmentName').text('');
+    $('#chatAttachmentSize').text('');
+    $('#chatAttachmentPreview').hide();
+}
+
+function setAttachmentPreview(file) {
+    selectedAttachmentFile = file || null;
+
+    if (!selectedAttachmentFile) {
+        resetAttachmentPreview();
+        return;
+    }
+
+    $('#chatAttachmentName').text(selectedAttachmentFile.name || 'Príloha');
+    $('#chatAttachmentSize').text(formatFileSize(selectedAttachmentFile.size || 0));
+    $('#chatAttachmentPreview').show();
+}
+
+function sendAttachmentMessage() {
+    const threadId = $('#chatThreadId').val();
+    const messageText = $('#chatMessageInput').val().trim();
+
+    if (!threadId || !selectedAttachmentFile) {
+        return;
+    }
+
+    const formData = new FormData();
+    formData.append('thread_id', threadId);
+    formData.append('message_text', messageText);
+    formData.append('attachment', selectedAttachmentFile);
+
+    $.ajax({
+        url: 'scripts/chat/upload_attachment.php',
+        method: 'POST',
+        data: formData,
+        processData: false,
+        contentType: false,
+        dataType: 'json',
+        success: function(res) {
+            if (!res || res.status !== 'success') {
+                alert((res && res.message) ? res.message : 'Prílohu sa nepodarilo odoslať');
+                return;
+            }
+
+            $('#chatMessageInput').val('');
+            resetAttachmentPreview();
+            toggleEmojiPicker(false);
+            forceScrollOnNextRender = true;
+            loadMessages(threadId);
+            loadContacts($('#chatSearch').val());
+        },
+        error: function(xhr) {
+            console.log('sendAttachmentMessage error:', xhr.responseText);
+            alert('Chyba pri odosielaní prílohy');
+        }
+    });
 }
 
 function loadContacts(query = '') {
@@ -740,20 +875,40 @@ function renderMessages(messages) {
     let html = '';
     let lastMessageId = 0;
 
-    messages.forEach(function(msg) {
-        lastMessageId = msg.id;
+messages.forEach(function(msg) {
+    lastMessageId = msg.id;
 
-        html += `
-            <div class="chat-message-row ${msg.is_own ? 'own' : ''}">
-                <div class="chat-bubble">
-                    <div>${escapeHtml(msg.message_text)}</div>
-                    <div class="chat-meta">
-                        ${formatDateEU(msg.created_at)}
-                    </div>
+    let attachmentHtml = '';
+
+    if (msg.attachment && msg.attachment.id) {
+        attachmentHtml = `
+            <div class="chat-attachment-card">
+                <div class="font-weight-bold mb-1">
+                    <i class="fas fa-paperclip mr-1"></i>
+                    ${escapeHtml(msg.attachment.original_name || 'Príloha')}
                 </div>
+                <div class="small mb-2">
+                    ${escapeHtml(msg.attachment.extension || '')} · ${escapeHtml(msg.attachment.file_size_human || '')}
+                </div>
+                <a class="chat-attachment-link" href="${escapeAttr(msg.attachment.download_url || '#')}" target="_blank">
+                    <i class="fas fa-download mr-1"></i>Stiahnuť
+                </a>
             </div>
         `;
-    });
+    }
+
+    html += `
+        <div class="chat-message-row ${msg.is_own ? 'own' : ''}">
+            <div class="chat-bubble">
+                ${msg.message_text ? `<div>${escapeHtml(msg.message_text)}</div>` : ''}
+                ${attachmentHtml}
+                <div class="chat-meta">
+                    ${formatDateEU(msg.created_at)}
+                </div>
+            </div>
+        </div>
+    `;
+});
 
     chatBox.html(html);
 
@@ -807,6 +962,7 @@ function loadThreadInfo(threadId) {
             $('#chatMessageInput').prop('disabled', false);
             $('#chatSendBtn').prop('disabled', false);
             $('#chatEmojiToggle').prop('disabled', false);
+            $('#chatAttachToggle').prop('disabled', false);
 
             if (res.thread.other_user) {
                 currentChatUserId = parseInt(res.thread.other_user.id, 10);
@@ -861,6 +1017,7 @@ function loadThreadInfo(threadId) {
             console.log('get_thread error:', xhr.responseText);
         }
     });
+
 }
 
 function openDmWithUser(userId, userName, userPhoto = '') {
@@ -926,6 +1083,11 @@ function openDmWithUser(userId, userName, userPhoto = '') {
 function sendMessage() {
     const threadId = $('#chatThreadId').val();
     const messageText = $('#chatMessageInput').val().trim();
+
+    if (selectedAttachmentFile) {
+        sendAttachmentMessage();
+        return;
+    }
 
     if (!threadId || !messageText) return;
 
@@ -1131,7 +1293,27 @@ $(document).ready(function() {
         loadThreadInfo(currentThreadId);
         loadMessages(currentThreadId);
     } else {
-        renderChatHeader(null);
+            $('#chatMessageInput').prop('disabled', true);
+            $('#chatSendBtn').prop('disabled', true);
+            $('#chatEmojiToggle').prop('disabled', true);
+            $('#chatAttachToggle').prop('disabled', true);
+            renderChatHeader(null);
     }
+
+    $('#chatAttachToggle').on('click', function(e) {
+    e.preventDefault();
+    if ($(this).prop('disabled')) return;
+    $('#chatAttachmentInput').trigger('click');
+    });
+
+    $('#chatAttachmentInput').on('change', function() {
+    const file = this.files && this.files[0] ? this.files[0] : null;
+    setAttachmentPreview(file);
+    });
+
+    $('#chatAttachmentRemove').on('click', function(e) {
+    e.preventDefault();
+    resetAttachmentPreview();
+    });
 });
 </script>
