@@ -607,6 +607,41 @@ if (empty($_SESSION['user_id'])) {
     .chat-file-link:hover {
         color: #63d3e6;
     }
+    .chat-file-wrapper {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: rgba(23, 162, 184, 0.12);
+    border: 1px solid rgba(23, 162, 184, 0.25);
+    border-radius: 8px;
+    padding: 4px 8px;
+}
+
+.chat-file-link {
+    color: #17a2b8;
+    text-decoration: none;
+    font-weight: 600;
+}
+
+.chat-file-link:hover {
+    color: #63d3e6;
+    text-decoration: underline;
+}
+
+.chat-copy-path {
+    border: 0;
+    background: transparent;
+    color: #ced4da;
+    cursor: pointer;
+    padding: 2px 4px;
+    border-radius: 4px;
+    transition: all 0.15s ease;
+}
+
+.chat-copy-path:hover {
+    background: rgba(255,255,255,0.1);
+    color: #fff;
+}
 </style>
 
 <script>
@@ -1978,31 +2013,61 @@ if (empty($_SESSION['user_id'])) {
             loadContacts($('#chatSearch').val());
         });
     });
-    function linkify(text) {
-    if (!text) return '';
+        function linkify(text) {
+            if (!text) return '';
 
-    // ESCAPE najprv
-    let safe = escapeHtml(text);
+            let safe = escapeHtml(text);
 
-    // http / https → nový tab
-    safe = safe.replace(
-        /(https?:\/\/[^\s]+)/gi,
-        '<a href="$1" target="_blank" rel="noopener noreferrer">$1</a>'
-    );
+            // HTTP / HTTPS
+            safe = safe.replace(
+                /(https?:\/\/[^\s]+)/gi,
+                '<a href="$1" target="_blank" rel="noopener noreferrer">$1</a>'
+            );
 
-    // Y:\ paths → Explorer
-    safe = safe.replace(
-        /(Y:\\[^\s]+)/gi,
-        function(match) {
-            const url = match.replace(/\\/g, '/');
-            return `<a href="file:///${url}" class="chat-file-link">${match}</a>`;
+            // Y:\ paths → link + copy button
+            safe = safe.replace(
+                /(Y:\\[^\s]+)/gi,
+                function(match) {
+                    const url = match.replace(/\\/g, '/');
+
+                    return `
+                        <span class="chat-file-wrapper">
+                            <a href="file:///${url}" class="chat-file-link">
+                                <i class="fas fa-folder-open mr-1"></i>${match}
+                            </a>
+                            <button class="chat-copy-path" data-path="${match}" title="Kopírovať">
+                                <i class="fas fa-copy"></i>
+                            </button>
+                        </span>
+                    `;
+                }
+            );
+
+            return safe;
         }
-    );
-
-    return safe;
-}
     $(document).on('click', '.chat-file-link', function(e) {
         // optional: warning
         console.log('Opening file path:', this.href);
+    });$(document).on('click', '.chat-copy-path', function(e) {
+    e.preventDefault();
+
+    const path = $(this).data('path');
+
+    if (!path) return;
+
+    navigator.clipboard.writeText(path).then(() => {
+        const btn = $(this);
+        const original = btn.html();
+
+        btn.html('<i class="fas fa-check"></i>');
+        btn.css('color', '#28a745');
+
+        setTimeout(() => {
+            btn.html(original);
+            btn.css('color', '');
+        }, 1200);
+    }).catch(() => {
+        alert('Nepodarilo sa skopírovať cestu');
     });
+});
 </script>
