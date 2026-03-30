@@ -1,6 +1,7 @@
 <?php
 	session_start();
-include 'conn.php';
+	include 'conn.php';
+
 	if(isset($_POST['empid'])){
 		$empid = $_POST['empid'];
 		$firstname = $_POST['firstname'];
@@ -14,25 +15,56 @@ include 'conn.php';
 		$schedule = $_POST['schedule_id'];
 		$active = $_POST['active'];
 		$personal = $_POST['personal'];
+		$created_on = $_POST['created_on'];
+		$chat = $_POST['chat'];
 		$password = $_POST['password'];
 		$permission = $_POST['permission'];
-		if($_POST['password'] != ''){			
+
+		if($_POST['password'] != ''){
 			$password = $_POST['password'];
-			$sql = "UPDATE employees SET firstname = '$firstname', lastname = '$lastname', address = '$address', birthdate = '$birthdate', contact_info = '$contact', gender = '$gender', 
-			position_id = '$position', schedule_id = '$schedule', active = '$active', personal = '$personal', permission='$permission', password = PASSWORD('$password') WHERE id = '$empid'";
+			$sql = "UPDATE employees 
+					SET firstname = '$firstname',
+						lastname = '$lastname',
+						address = '$address',
+						birthdate = '$birthdate',
+						contact_info = '$contact',
+						gender = '$gender',
+						position_id = '$position',
+						schedule_id = '$schedule',
+						created_on = '$created_on',
+						chat = '$chat',
+						active = '$active',
+						personal = '$personal',
+						permission = '$permission',
+						password = PASSWORD('$password')
+					WHERE id = '$empid'";
 			$krokodyl = 'Pass';
-		}else{
-			$sql = "UPDATE employees SET firstname = '$firstname', lastname = '$lastname', address = '$address', birthdate = '$birthdate', contact_info = '$contact', gender = '$gender', 
-			position_id = '$position', schedule_id = '$schedule', active = '$active', personal = '$personal', permission='$permission' WHERE id = '$empid'";
+		}
+		else{
+			$sql = "UPDATE employees 
+					SET firstname = '$firstname',
+						lastname = '$lastname',
+						address = '$address',
+						birthdate = '$birthdate',
+						contact_info = '$contact',
+						gender = '$gender',
+						position_id = '$position',
+						schedule_id = '$schedule',
+						created_on = '$created_on',
+						chat = '$chat',
+						active = '$active',
+						personal = '$personal',
+						permission = '$permission'
+					WHERE id = '$empid'";
 			$krokodyl = 'No Pass';
-		} 
+		}
+
 		if($conn->query($sql)){
 			$_SESSION['success'] = 'Zmeny úspešne uložené '.$krokodyl;
 		}
 		else{
 			$_SESSION['error'] = $conn->error;
 		}
-
 	}
 	else{
 		$_SESSION['error'] = 'Najprv vyber, koho treba upraviť';

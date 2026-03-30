@@ -1,6 +1,16 @@
 <?php
  
-  session_start();
+  // pred session_start()
+ini_set('session.gc_maxlifetime', 60 * 60 * 24 * 7); // 7 dní
+
+session_set_cookie_params([
+    'lifetime' => 60 * 60 * 24 * 7, // 7 dní
+    'path' => '/',    
+    'httponly' => true,
+    'samesite' => 'Lax',
+]);
+
+session_start();
 
   if(!isset($_SESSION['permission'])){	
     header('location:login.php');
