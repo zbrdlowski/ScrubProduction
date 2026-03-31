@@ -242,11 +242,15 @@
 </section>
 
 <script>
-  $(function () {
-    $('#created_on_picker').datetimepicker({
-      format: 'YYYY-MM-DD'
-    });
+ $(function () {
+  $('#created_on_picker').datetimepicker({
+    format: 'YYYY-MM-DD'
   });
+
+  $('#birthdate_picker').datetimepicker({
+    format: 'YYYY-MM-DD'
+  });
+});
 </script>
 
 <div class="modal fade" id="edit_photo">
