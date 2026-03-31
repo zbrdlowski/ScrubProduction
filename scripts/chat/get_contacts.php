@@ -22,8 +22,7 @@ function chat_online_status_meta($statusInt): array
     }
 }
 
-$sqlUsers = "
-    SELECT
+$sqlUsers = "SELECT
         e.id,
         e.employee_id,
         e.firstname,
@@ -33,6 +32,7 @@ $sqlUsers = "
         e.position_id,
         e.permission,
         e.active,
+        e.chat,
         e.online_status,
         p.description AS department_name,
         dm.thread_id,
@@ -80,7 +80,7 @@ $sqlUsers = "
             WHERE cm.thread_id = dm.thread_id
               AND cm.deleted_at IS NULL
         )
-    WHERE e.active = 'Active'
+    WHERE e.chat = 'yes'
       AND e.id != ?
 ";
 
@@ -88,8 +88,7 @@ $params = [$userId, $userId, $userId, $userId, $userId];
 $types = "iiiii";
 
 if ($search !== '') {
-    $sqlUsers .= "
-      AND (
+    $sqlUsers .= "AND (
         e.firstname LIKE ?
         OR e.lastname LIKE ?
         OR CONCAT(e.firstname, ' ', e.lastname) LIKE ?
@@ -159,8 +158,7 @@ while ($row = $resultUsers->fetch_assoc()) {
 
 $stmtUsers->close();
 
-$sqlAnnouncement = "
-    SELECT
+$sqlAnnouncement = "SELECT
         t.id AS thread_id,
         t.title,
         t.created_by,

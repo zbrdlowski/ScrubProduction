@@ -27,7 +27,7 @@ if ($otherUserId === $currentUserId) {
 
 /* overíme druhého používateľa */
 $stmt = $conn->prepare("
-    SELECT id, firstname, lastname, active
+    SELECT id, firstname, lastname, active, chat
     FROM employees
     WHERE id = ?
     LIMIT 1
@@ -62,10 +62,10 @@ if (!$result || $result->num_rows === 0) {
 $otherUser = $result->fetch_assoc();
 $stmt->close();
 
-if (($otherUser['active'] ?? '') !== 'Active') {
+if (($otherUser['chat'] ?? '') !== 'yes') {
     chat_json([
         'status' => 'error',
-        'message' => 'User is not active'
+        'message' => 'User is not available in chat'
     ], 422);
 }
 

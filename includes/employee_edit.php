@@ -218,7 +218,6 @@
                       <option value="1"<? if ($user_permission == '1'){echo ' selected';}?>>User</option>
                       <option value="300"<? if ($user_permission == '300'){echo ' selected';}?>>Moderator</option>
                       <option value="500"<? if ($user_permission == '500'){echo ' selected';}?>>Administrator</option>
-                      <option value="900"<? if ($user_permission == '900'){echo ' selected';}?>>Super Administrator</option>
                     </select>
                   </div>
 
@@ -242,11 +241,15 @@
 </section>
 
 <script>
-  $(function () {
-    $('#created_on_picker').datetimepicker({
-      format: 'YYYY-MM-DD'
-    });
+ $(function () {
+  $('#created_on_picker').datetimepicker({
+    format: 'YYYY-MM-DD'
   });
+
+  $('#birthdate_picker').datetimepicker({
+    format: 'YYYY-MM-DD'
+  });
+});
 </script>
 
 <div class="modal fade" id="edit_photo">
