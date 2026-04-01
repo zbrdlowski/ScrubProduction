@@ -230,7 +230,20 @@ if ($urow) {
 
 <div class="emp-banner <?php echo $isPlaceholder ? 'placeholder' : ''; ?>">
   <div class="emp-left">
+    <?php
+    // Determine user ID based on context
+    if (isset($_GET['eno'])) {
+        $user_id = $_GET['eno']; // viewing another profile
+    } else {
+        $user_id = $_SESSION['user_id']; // own profile
+    }
+
+    $return_to = urlencode($_SERVER['REQUEST_URI']);
+    ?>
+    <a href="index.php?page=employee_edit&user-id=<?php echo $user_id; ?>&return_to=<?php echo $return_to; ?>">
     <img class="emp-avatar" src="<?php echo htmlspecialchars($photoPath, ENT_QUOTES, 'UTF-8'); ?>" alt="photo">
+    </a>
+
     <div class="emp-main">
       <p class="emp-name">
         <?php echo htmlspecialchars($empName, ENT_QUOTES, 'UTF-8'); ?>

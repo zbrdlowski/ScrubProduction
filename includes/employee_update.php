@@ -1,10 +1,24 @@
 <?php
 	session_start();
 	include 'conn.php';
+		// Store referrer (fallback if not set)
+	$redirect = $_SERVER['HTTP_REFERER'] ?? '../index.php?page=employee';
+	$return_to = $_POST['return_to'] ?? '';
+
+	if ($return_to === '') {
+		$return_to = '../index.php?page=employee';
+	} elseif (
+		strpos($return_to, 'http://') !== 0 &&
+		strpos($return_to, 'https://') !== 0 &&
+		strpos($return_to, '/') !== 0 &&
+		strpos($return_to, '../') !== 0
+	) {
+		$return_to = '../' . ltrim($return_to, '/');
+	}
 
 	if(!isset($_SESSION['permission'])){
 		$_SESSION['error'] = 'Unauthorized access';
-		header('location: ../index.php?page=employee');
+		header("Location: " . $redirect);
 		exit;
 	}
 
@@ -12,8 +26,8 @@
 
 	// User -> no access
 	if($editor_permission < 300){
-		$_SESSION['error'] = 'You do not have permission to edit employees';
-		header('location: ../index.php?page=employee');
+		$_SESSION['error'] = 'You do not have permission to edit employee';
+		header("Location: " . $redirect);
 		exit;
 	}
 
@@ -26,7 +40,7 @@
 
 		if(!$current_result || $current_result->num_rows == 0){
 			$_SESSION['error'] = 'Employee not found';
-			header('location: ../index.php?page=employee');
+			header("Location: " . $redirect);
 			exit;
 		}
 
@@ -127,5 +141,6 @@
 		$_SESSION['error'] = 'Najprv vyber, koho treba upraviť';
 	}
 
-	header('location: ../index.php?page=employee');
+	header("Location: " . $return_to);
+exit;
 ?>

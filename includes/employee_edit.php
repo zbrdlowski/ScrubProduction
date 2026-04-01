@@ -107,6 +107,7 @@
           <div class="card-body">
             <form action="includes/employee_update.php" method="POST" class="p-4 rounded h-100">
               <input type="hidden" id="empid" name="empid" value="<? echo $empid; ?>">
+              <input type="hidden" name="return_to" value="<?php echo htmlspecialchars($_GET['return_to'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
 
               <h4 class="mb-4">Edit Profile</h4>
 
