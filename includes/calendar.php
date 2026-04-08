@@ -61,7 +61,16 @@
 .row-eq-height .box {
   flex: 1 1 auto;
 }
+/* Attendance rows that need manual check */
+.table > tbody > tr.attendance-error > td {
+    background-color: #f02020 !important;
+    /*color: #ffd6d6 !important;*/
+    color: #0a0a0a !important;
+}
 
+.table-hover > tbody > tr.attendance-error:hover > td {
+    background-color: #f02020 !important;
+}
 </style>
 
 <?php include 'sviatky.php'; ?>
@@ -263,6 +272,31 @@ echo '<tbody>';
     }
 
 $rowClass = $volnyDen ? 'day-off' : 'work-day';
+$currentDate = $Year . '-' . $Month . '-' . $i_display;
+$isToday = ($currentDate === $today);
+$hasAttendanceError = false;
+
+if (!$isToday && !empty($eno)) {
+    $ErrorSQL = "SELECT COUNT(*) AS error_count
+        FROM `" . $attdn_table . "`
+        WHERE employee_id = '$eno'
+          AND date = '" . $currentDate . "'
+          AND (
+                TIME(time_in) = '00:00:00'
+                OR TIME(time_out) = '23:59:59'
+          )
+    ";
+    $ErrorQuery = $conn->query($ErrorSQL);
+    if ($ErrorQuery && $ErrorRow = $ErrorQuery->fetch_assoc()) {
+        $hasAttendanceError = ((int)$ErrorRow['error_count'] > 0);
+    }
+}
+
+$rowClass = $volnyDen ? 'day-off' : 'work-day';
+if ($hasAttendanceError) {
+    $rowClass .= ' attendance-error';
+}
+
 echo '<tr class="'.$rowClass.'">';     
     echo '<td width="1%">' . $i_display . '</td>';
     echo '<td width="14%">' . $SlovakDay. '</td>';

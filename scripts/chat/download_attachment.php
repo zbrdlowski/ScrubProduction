@@ -3,8 +3,8 @@ require_once __DIR__ . '/helpers.php';
 
 chat_require_login();
 
-$currentUserId = (int)$_SESSION['user_id'];
-$attachmentId = isset($_GET['id']) ? (int)$_GET['id'] : 0;
+$currentUserId = (int) $_SESSION['user_id'];
+$attachmentId = isset($_GET['id']) ? (int) $_GET['id'] : 0;
 
 if ($attachmentId <= 0) {
     chat_json([
@@ -13,8 +13,7 @@ if ($attachmentId <= 0) {
     ], 422);
 }
 
-$stmt = $conn->prepare("
-    SELECT
+$stmt = $conn->prepare("SELECT
         a.id,
         a.message_id,
         a.thread_id,
@@ -67,7 +66,7 @@ if (!empty($attachment['deleted_at'])) {
     ], 404);
 }
 
-$threadId = (int)$attachment['thread_id'];
+$threadId = (int) $attachment['thread_id'];
 
 if (!chat_user_in_thread($conn, $threadId, $currentUserId)) {
     chat_json([
@@ -76,7 +75,7 @@ if (!chat_user_in_thread($conn, $threadId, $currentUserId)) {
     ], 403);
 }
 
-$filePath = (string)$attachment['storage_path'];
+$filePath = (string) $attachment['storage_path'];
 
 if ($filePath === '' || !is_file($filePath) || !is_readable($filePath)) {
     chat_json([
@@ -85,15 +84,15 @@ if ($filePath === '' || !is_file($filePath) || !is_readable($filePath)) {
     ], 404);
 }
 
-$downloadName = (string)$attachment['original_name'];
+$downloadName = (string) $attachment['original_name'];
 if ($downloadName === '') {
-    $downloadName = (string)$attachment['stored_name'];
+    $downloadName = (string) $attachment['stored_name'];
 }
 if ($downloadName === '') {
     $downloadName = 'attachment';
 }
 
-$mimeType = (string)$attachment['mime_type'];
+$mimeType = (string) $attachment['mime_type'];
 if ($mimeType === '') {
     $mimeType = 'application/octet-stream';
 }
