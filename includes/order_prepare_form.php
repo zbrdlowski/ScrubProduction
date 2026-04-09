@@ -64,7 +64,7 @@ $items = $stmt->fetchAll(PDO::FETCH_ASSOC);
   <input type="text" name="order_number" id="order_number" class="form-control input-sm" required style="width: 200px;">
   
 </div>
-  <table class="table table-bordered table-striped">
+  <table id="orderPrepareTable" class="table table-bordered table-striped">
     <thead>
   <tr>
     <th><center>

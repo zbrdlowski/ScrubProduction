@@ -1,3 +1,11 @@
+<style>
+#example1 tbody tr:hover {
+
+    background-color: #3c759e !important;
+    transition: background-color 0.2s ease;
+    cursor: pointer;
+}
+</style>
 <?
 $_SESSION['uri'] = $_SERVER['REQUEST_URI'];
 if(isset($_GET['scrubcocode'])){

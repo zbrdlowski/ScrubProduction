@@ -1,4 +1,44 @@
 <script>
+function orderPrepareExportFormatter(data, row, column, node) {
+  // ak je v bunke input/select/textarea, exportuj jeho value
+  var $input = $(node).find('input, select, textarea');
+
+  if ($input.length) {
+    return $input.first().val();
+  }
+
+  // inak normálne text
+  return $(node).text().trim();
+}
+
+$("#orderPrepareTable").DataTable({
+  responsive: true,
+  lengthChange: true,
+  autoWidth: false,
+  pageLength: 100,
+  info: true,
+  dom: 'Bfrtip',
+  buttons: [
+    {
+      extend: 'copy',
+      text: 'Copy',
+      exportOptions: {
+        format: {
+          body: orderPrepareExportFormatter
+        }
+      }
+    },
+    {
+      extend: 'excel',
+      text: 'XLSX',
+      exportOptions: {
+        format: {
+          body: orderPrepareExportFormatter
+        }
+      }
+    }
+  ]
+}).buttons().container().appendTo('#orderPrepareTable_wrapper .col-md-6:eq(0)');
   $(function () {
     $("#example0").DataTable({
       "responsive": true,
