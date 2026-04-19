@@ -19,6 +19,13 @@ if (empty($_SESSION['user_id'])) {
             <div class="card card-dark card-outline">
                 <div class="card-header">
                     <h3 class="card-title">Kolegovia</h3>
+                    
+
+                <div class="custom-control custom-switch mb-2">
+                    <input type="checkbox" class="custom-control-input" id="chatBroadcastModeToggle">
+                    <label class="custom-control-label" for="chatBroadcastModeToggle">Hromadný oznam</label>
+                </div>
+
                 </div>
                 <div class="card-body p-2">
                     <input type="text" id="chatSearch" class="form-control mb-2" placeholder="Hľadať kolegu...">
@@ -801,12 +808,7 @@ if (empty($_SESSION['user_id'])) {
 
         if (!toolbar.length) {
             const toolbarHtml = `
-            <div id="chatBroadcastToolbar" class="chat-broadcast-toolbar">
-                <div class="custom-control custom-switch mb-2">
-                    <input type="checkbox" class="custom-control-input" id="chatBroadcastModeToggle">
-                    <label class="custom-control-label" for="chatBroadcastModeToggle">Hromadný oznam</label>
-                </div>
-
+            <div id="chatBroadcastToolbar" class="chat-broadcast-toolbar">          
                 <div id="chatBroadcastControls" style="display:none;">
                     <label for="chatAnnouncementDepartments" class="small mb-1">Departmenty</label>
                     <select id="chatAnnouncementDepartments" class="form-control form-control-sm" multiple></select>
