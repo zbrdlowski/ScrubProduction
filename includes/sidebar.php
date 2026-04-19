@@ -338,12 +338,13 @@ function isMenuOpen($pages = []) {
     <p>Orders Section <i class="fas fa-angle-left right"></i></p>
   </a>
   <ul class="nav nav-treeview">
-    <li class="nav-item"><a href="?page=kit_diss" class="nav-link <?= isActive('kit_diss') ?>"><i class="fas fa-puzzle-piece nav-icon"></i><p>Kit Diss</p></a></li>
+    <li class="nav-item"><a href="?page=order_prepare" class="nav-link <?= isActive('order_prepare') ?>"><i class="fas fa-clock nav-icon"></i><p> Prepare Order</p></a></li>
+   
     <li class="nav-item"><a href="?page=plastics_orders_active" class="nav-link <?= isActive('plastics_orders_active') ?>"><i class="fas fa-hourglass-half nav-icon"></i><p>Send Order</p></a></li>
     <li class="nav-item"><a href="?page=receive_supply" class="nav-link <?= isActive('receive_supply') ?>"><i class="fas fa-inbox nav-icon"></i><p>Receive Order</p></a></li>
     <li class="nav-item"><a href="?page=plastics_orders_sent" class="nav-link <?= isActive('plastics_orders_sent') ?>"><i class="fas fa-truck nav-icon"></i><p>Sent Orders</p></a></li>
     <li class="nav-item"><a href="?page=plastics_orders_all" class="nav-link <?= isActive('plastics_orders_all') ?>"><i class="fas fa-clipboard-list nav-icon"></i><p>All Orders</p></a></li>
-    <li class="nav-item"><a href="?page=order_prepare" class="nav-link <?= isActive('order_prepare') ?>"><i class="fas fa-clock nav-icon"></i><p> Prepare Order</p></a></li>
+    <li class="nav-item"><a href="?page=kit_diss" class="nav-link <?= isActive('kit_diss') ?>"><i class="fas fa-puzzle-piece nav-icon"></i><p>Kit Diss</p></a></li>
     <li class="nav-item"><a href="?page=intake_print" class="nav-link <?= isActive('intake_print') ?>"><i class="fas fa-print nav-icon"></i><p>Intake Print</p></a></li>
   </ul>
 </li>

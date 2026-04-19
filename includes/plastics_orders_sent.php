@@ -71,6 +71,10 @@ $orders = $stmt->fetchAll(PDO::FETCH_ASSOC);
 </form>
 
 <div style="margin-bottom: 15px;">
+    <button type="button" id="bulk-edit-btn" class="btn btn-primary">
+        <i class="fa fa-edit"></i> Edit selected
+    </button>
+
     <button type="button" id="bulk-delete-btn" class="btn btn-danger">
         <i class="fa fa-trash"></i> Delete selected
     </button>
@@ -166,7 +170,32 @@ $orders = $stmt->fetchAll(PDO::FETCH_ASSOC);
 </section>
 
 </div>
+<!-- Bulk edit modal -->
+<div class="modal fade" id="bulkEditModal" tabindex="-1" role="dialog" aria-labelledby="bulkEditModalLabel">
+  <div class="modal-dialog" role="document">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h4 class="modal-title" id="bulkEditModalLabel">Edit order number</h4>
+        <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+          <span aria-hidden="true">&times;</span>
+        </button>
+      </div>
 
+      <div class="modal-body">
+        <div class="form-group">
+          <label for="new_order_number">New order number</label>
+          <input type="text" id="new_order_number" class="form-control" placeholder="Enter new order number">
+        </div>
+        <p id="bulk-edit-info" style="margin-bottom:0;"></p>
+      </div>
+
+      <div class="modal-footer">
+        <button type="button" class="btn btn-default" data-dismiss="modal">Cancel</button>
+        <button type="button" id="save-bulk-edit-btn" class="btn btn-primary">Save changes</button>
+      </div>
+    </div>
+  </div>
+</div>
 <script>
 $(document).ready(function() {
 
@@ -236,6 +265,65 @@ $(document).ready(function() {
             }
         }).fail(function(xhr) {
             alert("Error deleting selected rows!");
+            console.error(xhr);
+        });
+    });
+        // Open bulk edit modal
+    $('#bulk-edit-btn').on('click', function() {
+        let ids = $('.row-checkbox:checked').map(function() {
+            return $(this).val();
+        }).get();
+
+        if (!ids.length) {
+            alert('Please select at least one row.');
+            return;
+        }
+
+        $('#new_order_number').val('');
+        $('#bulk-edit-info').text('Selected rows: ' + ids.length);
+        $('#bulkEditModal').modal('show');
+    });
+
+    // Save bulk edit
+    $('#save-bulk-edit-btn').on('click', function() {
+        let ids = $('.row-checkbox:checked').map(function() {
+            return $(this).val();
+        }).get();
+
+        let newOrderNumber = $('#new_order_number').val().trim();
+
+        if (!ids.length) {
+            alert('Please select at least one row.');
+            return;
+        }
+
+        if (!newOrderNumber) {
+            alert('Please enter a new order number.');
+            return;
+        }
+
+        $.post('scripts/update_order_number.php', {
+            ids: ids,
+            order_number: newOrderNumber
+        }, function(res) {
+            res = (res || "").trim();
+
+            if (res === "OK") {
+                $('.row-checkbox:checked').each(function() {
+                    let row = $(this).closest('tr');
+                    row.find('td').eq(2).text(newOrderNumber); // stĺpec Order #
+                });
+
+                $('#bulkEditModal').modal('hide');
+                $('#toggle-all').prop('checked', false);
+                $('.row-checkbox').prop('checked', false);
+
+            } else {
+                alert("Error updating order number!");
+                console.error("Bulk edit response:", res);
+            }
+        }).fail(function(xhr) {
+            alert("Error updating order number!");
             console.error(xhr);
         });
     });
