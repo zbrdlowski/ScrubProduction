@@ -20,12 +20,12 @@ if (empty($_SESSION['user_id'])) {
                 <div class="card-header">
                     <h3 class="card-title">Kolegovia</h3>
                     
-
+                <? if (($_SESSION['permission']) > 300) { ?>
                 <div class="custom-control custom-switch mb-2">
                     <input type="checkbox" class="custom-control-input" id="chatBroadcastModeToggle">
                     <label class="custom-control-label" for="chatBroadcastModeToggle">Hromadný oznam</label>
                 </div>
-
+                <? } ?>
                 </div>
                 <div class="card-body p-2">
                     <input type="text" id="chatSearch" class="form-control mb-2" placeholder="Hľadať kolegu...">
