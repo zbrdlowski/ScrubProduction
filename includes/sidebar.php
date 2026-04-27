@@ -63,12 +63,13 @@ function isMenuOpen($pages = []) {
             <a href="#" class="nav-link active">
                with font-awesome or any other icon font library -->   
                <li class="nav-item <?= isMenuOpen([
-            'kit_diss',
+           'kit_diss',
             'plastics_orders_active',
             'receive_supply',
             'plastics_orders_sent',
             'plastics_orders_all',
-            'order_prepare'
+            'order_prepare',
+            'import_orders'
           ]) ? 'menu-open' : '' ?>">
             <?
               if($_SESSION['permission'] > 300){
@@ -76,7 +77,8 @@ function isMenuOpen($pages = []) {
              <li class="nav-item <?= isMenuOpen([
             'employee',
             'controlls',
-            'calendar'
+            'calendar',
+            'import_orders'
           ]) ? 'menu-open' : '' ?>">    
           <?
            echo ' <a href="#" class="nav-link"style="background-color:#2a3036;">';
@@ -109,6 +111,15 @@ function isMenuOpen($pages = []) {
               //echo '<i class="nav-icon fas fa-cogs"></i>';
               echo '<p>';
                 echo 'Controlls';                
+              echo '</p>';
+            echo '</a>';
+          echo '</li>'; 
+          echo '<li class="nav-item active">';
+            echo '<a href="'.basename($_SERVER['PHP_SELF']).'?page=import_orders" class="nav-link  '.isActive('import_orders').'">';
+            echo '<i class="fas fa-file-upload nav-icon"></i>';
+              //echo '<i class="nav-icon fas fa-cogs"></i>';
+              echo '<p>';
+                echo 'Import Orders';                
               echo '</p>';
             echo '</a>';
           echo '</li>'; 

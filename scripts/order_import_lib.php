@@ -301,7 +301,7 @@ function oi_upsert_address(mysqli $conn, int $orderId, string $type, array $a): 
       SET name=?, company=?, street=?, city=?, zip=?, country=?, email=?, phone=?
       WHERE order_id=? AND type=?
     ");
-    $upd->bind_param('ssssssss is', $name, $company, $street, $city, $zip, $country, $email, $phone, $orderId, $type);
+    $upd->bind_param('ssssssssis', $name, $company, $street, $city, $zip, $country, $email, $phone, $orderId, $type);
     $upd->execute();
     $upd->close();
     return;
@@ -426,7 +426,7 @@ function oi_upsert_order_header_mysqli(mysqli $conn, int $sourceId, string $exte
     VALUES
       (?, ?, ?, ?, ?, 'NEW', ?, ?, ?, ?, ?, ?, ?)
   ");
-  $ins->bind_param('issssss d sss s i', $sourceId, $externalOrderId, $order_number, $imported_at, $order_date, $currency, $total, $payment_method, $shipping_method, $note, $source_meta, $customer_id);
+  $ins->bind_param('isssssdssssi', $sourceId, $externalOrderId, $order_number, $imported_at, $order_date, $currency, $total, $payment_method, $shipping_method, $note, $source_meta, $customer_id);
   // mysqli type string above has spaces -> invalid. Use correct one:
   $ins->close();
 
