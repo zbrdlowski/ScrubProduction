@@ -79,14 +79,16 @@ function import_darkscrub_unified_csv(mysqli $conn, string $csvPath): array {
     ];
 
     $beforeExists = oi_find_order_id($conn, $sourceId, $externalOrderId) !== null;
+    $shippingMethod = oi_extract_shipping_method_from_rows($itemRows);
+    $paymentMethod = oi_extract_payment_method_from_rows($itemRows);
 
     $orderId = oi_upsert_order_header_mysqli($conn, $sourceId, $externalOrderId, [
       'order_number' => $externalOrderId,
       'order_date' => oi_parse_date_any($first['order_date'] ?? null),
       'currency' => oi_trim($first['currency'] ?? null),
       'total' => oi_parse_money($first['price_to_pay'] ?? null),
-      'payment_method' => oi_trim($first['payment_method'] ?? null),
-      'shipping_method' => oi_trim($first['shipping_method'] ?? null),
+      'payment_method' => $paymentMethod,
+      'shipping_method' => $shippingMethod,
       'note' => oi_first_nonempty($first['customer_note'] ?? null, $first['internal_note'] ?? null),
       'source_meta_json' => oi_json_clean($sourceMeta),
       'customer_id' => $customerId,
@@ -136,6 +138,12 @@ function import_darkscrub_unified_csv(mysqli $conn, string $csvPath): array {
 
       $sku = oi_trim($r['item_sku'] ?? null);
       $customLabel = oi_trim($r['custom_label'] ?? null);
+      $skuUpper = strtoupper((string)$sku);
+      if (str_starts_with($skuUpper, 'SHIPPING') || str_starts_with($skuUpper, 'BILLING')) {
+        $stats['skipped_shipping_items']++;
+        $seenShipping = true;
+        continue;
+      }
       $title = oi_trim($r['item_name'] ?? null);
       $variant = oi_trim($r['item_variant'] ?? null);
       if ($variant) $title = trim((string)$title . ' / ' . $variant);
@@ -381,4 +389,23 @@ function oi_upsert_shipment_from_unified_row(mysqli $conn, int $orderId, array $
     $stmt->execute();
     $stmt->close();
   }
+}
+function oi_extract_shipping_method_from_rows(array $rows): ?string {
+  foreach ($rows as $r) {
+    $sku = strtoupper((string)oi_trim($r['item_sku'] ?? null));
+    if (str_starts_with($sku, 'SHIPPING')) {
+      return oi_trim($r['item_name'] ?? null);
+    }
+  }
+  return oi_trim($rows[0]['shipping_method'] ?? null);
+}
+
+function oi_extract_payment_method_from_rows(array $rows): ?string {
+  foreach ($rows as $r) {
+    $sku = strtoupper((string)oi_trim($r['item_sku'] ?? null));
+    if (str_starts_with($sku, 'BILLING')) {
+      return oi_trim($r['item_name'] ?? null);
+    }
+  }
+  return oi_trim($rows[0]['payment_method'] ?? null);
 }
