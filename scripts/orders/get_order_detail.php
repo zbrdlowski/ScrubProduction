@@ -135,6 +135,8 @@ $stmt = $conn->prepare("
   SELECT id, line_no, sku, title, custom_label, item_type_code, qty, options_json
   FROM order_items
   WHERE order_id=?
+    AND item_type_code IS NOT NULL
+    AND item_type_code <> ''
   ORDER BY COALESCE(line_no, 999999), id
 ");
 $stmt->bind_param('i', $orderId);

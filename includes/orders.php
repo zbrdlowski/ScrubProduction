@@ -108,9 +108,11 @@ $sql = " SELECT
      WHERE oc.order_id = o.id
     ) AS categories,
 
-    (SELECT GROUP_CONCAT(DISTINCT COALESCE(oi.item_type_code,'NULL') ORDER BY oi.item_type_code SEPARATOR ', ')
-     FROM order_items oi
-     WHERE oi.order_id = o.id
+    (SELECT GROUP_CONCAT(DISTINCT oi.item_type_code ORDER BY oi.item_type_code SEPARATOR ', ')
+    FROM order_items oi
+    WHERE oi.order_id = o.id
+      AND oi.item_type_code IS NOT NULL
+      AND oi.item_type_code <> ''
     ) AS item_types,
 
     EXISTS (
