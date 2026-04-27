@@ -312,7 +312,6 @@ function oi_refresh_order_categories(mysqli $conn, int $orderId): void {
 }
 
 function oi_upsert_order_header_mysqli(mysqli $conn, int $sourceId, string $externalOrderId, array $data): int {
-  // manual mysqli-friendly upsert
   $stmt = $conn->prepare("SELECT id FROM orders WHERE source_id=? AND external_order_id=? LIMIT 1");
   $stmt->bind_param('is', $sourceId, $externalOrderId);
   $stmt->execute();
@@ -322,48 +321,38 @@ function oi_upsert_order_header_mysqli(mysqli $conn, int $sourceId, string $exte
   $order_number = oi_trim($data['order_number'] ?? null);
   $order_date = oi_trim($data['order_date'] ?? null);
   $currency = oi_trim($data['currency'] ?? null);
-  $total = $data['total'] ?? null; // float|null
+  $total = $data['total'] ?? null;
   $payment_method = oi_trim($data['payment_method'] ?? null);
   $shipping_method = oi_trim($data['shipping_method'] ?? null);
   $note = oi_trim($data['note'] ?? null);
-  $source_meta = $data['source_meta_json'] ?? null; // string|null
-  $customer_id = $data['customer_id'] ?? null; // int|null
+  $source_meta = $data['source_meta_json'] ?? null;
+  $customer_id = $data['customer_id'] ?? null;
 
   if ($row) {
     $id = (int)$row['id'];
+
     $upd = $conn->prepare("
       UPDATE orders
-      SET order_number = COALESCE(order_number, ?),
-          order_date = COALESCE(order_date, ?),
-          currency = COALESCE(currency, ?),
-          total = COALESCE(total, ?),
-          payment_method = COALESCE(payment_method, ?),
-          shipping_method = COALESCE(shipping_method, ?),
-          note = COALESCE(note, ?),
-          source_meta = COALESCE(source_meta, ?),
-          customer_id = COALESCE(customer_id, ?)
+      SET order_number = COALESCE(?, order_number),
+          order_date = COALESCE(?, order_date),
+          currency = COALESCE(?, currency),
+          total = COALESCE(?, total),
+          payment_method = COALESCE(?, payment_method),
+          shipping_method = COALESCE(?, shipping_method),
+          note = COALESCE(?, note),
+          source_meta = COALESCE(?, source_meta),
+          customer_id = COALESCE(?, customer_id)
       WHERE id = ?
     ");
-    // total as double, customer_id as int nullable
     $upd->bind_param('sssdssssii', $order_number, $order_date, $currency, $total, $payment_method, $shipping_method, $note, $source_meta, $customer_id, $id);
     $upd->execute();
     $upd->close();
+
     return $id;
   }
 
   $imported_at = oi_now();
-  $ins = $conn->prepare("
-    INSERT INTO orders
-      (source_id, external_order_id, order_number, imported_at, order_date, status,
-       currency, total, payment_method, shipping_method, note, source_meta, customer_id)
-    VALUES
-      (?, ?, ?, ?, ?, 'NEW', ?, ?, ?, ?, ?, ?, ?)
-  ");
-  $ins->bind_param('isssssdssssi', $sourceId, $externalOrderId, $order_number, $imported_at, $order_date, $currency, $total, $payment_method, $shipping_method, $note, $source_meta, $customer_id);
-  // mysqli type string above has spaces -> invalid. Use correct one:
-  $ins->close();
 
-  // Correct binding without spaces:
   $ins = $conn->prepare("
     INSERT INTO orders
       (source_id, external_order_id, order_number, imported_at, order_date, status,
@@ -371,11 +360,13 @@ function oi_upsert_order_header_mysqli(mysqli $conn, int $sourceId, string $exte
     VALUES
       (?, ?, ?, ?, ?, 'NEW', ?, ?, ?, ?, ?, ?, ?)
   ");
-  // i s s s s s d s s s s i
-  $ins->bind_param('issssssdssssi', $sourceId, $externalOrderId, $order_number, $imported_at, $order_date, $currency, $total, $payment_method, $shipping_method, $note, $source_meta, $customer_id);
+
+  $ins->bind_param('isssssdssssi', $sourceId, $externalOrderId, $order_number, $imported_at, $order_date, $currency, $total, $payment_method, $shipping_method, $note, $source_meta, $customer_id);
   $ins->execute();
+
   $id = (int)$ins->insert_id;
   $ins->close();
+
   return $id;
 }
 ?>
