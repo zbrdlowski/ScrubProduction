@@ -241,14 +241,7 @@ function oi_upsert_order(mysqli $conn, int $sourceId, string $externalOrderId, a
           customer_id = COALESCE(customer_id, ?)
       WHERE id = ?
     ");
-    $upd->bind_param(
-      'sss d sss s i i', // won't work with spaces; bind below manually
-    );
-    // manual bind (mysqli doesn't like mixed in one string with spaces)
-    $upd->bind_param(
-      'sss d sss s i i',
-      $order_number, $order_date, $currency, $total, $payment_method, $shipping_method, $note, $source_meta, $customer_id, $id
-    );
+    $upd->bind_param('sssdssssii', $order_number, $order_date, $currency, $total, $payment_method, $shipping_method, $note, $source_meta, $customer_id, $id);
     $upd->execute();
     $upd->close();
     return $id;
@@ -263,16 +256,19 @@ function oi_upsert_order(mysqli $conn, int $sourceId, string $externalOrderId, a
       (?, ?, ?, ?, ?, 'NEW', ?, ?, ?, ?, ?, ?, ?)
   ");
   // total is double; customer_id is int nullable
-  $ins->bind_param(
-    'issssss d sss s i',
-    $sourceId, $externalOrderId, $order_number, $imported_at, $order_date,
-    $currency, $total, $payment_method, $shipping_method, $note, $source_meta, $customer_id
-  );
-  // mysqli bind typing is picky; easiest is to cast total to float or null and bind as string.
-  // We'll instead bind total as string:
-  $ins->close(); // We'll handle inserts per importer (simpler) if needed.
-
-  throw new RuntimeException("oi_upsert_order: use importer-specific insert/update (mysqli typing).");
+  $imported_at = oi_now();
+  $ins = $conn->prepare("
+    INSERT INTO orders
+      (source_id, external_order_id, order_number, imported_at, order_date, status,
+       currency, total, payment_method, shipping_method, note, source_meta, customer_id)
+    VALUES
+      (?, ?, ?, ?, ?, 'NEW', ?, ?, ?, ?, ?, ?, ?)
+  ");
+  $ins->bind_param('issssssdssssi', $sourceId, $externalOrderId, $order_number, $imported_at, $order_date, $currency, $total, $payment_method, $shipping_method, $note, $source_meta, $customer_id);
+  $ins->execute();
+  $id = (int)$ins->insert_id;
+  $ins->close();
+  return $id;
 }
 
 /**
