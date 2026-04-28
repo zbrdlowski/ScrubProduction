@@ -795,6 +795,19 @@ $(document).on('click', '.btn-copy-inline', function(e) {
 });
 
 </script>
+<div class="modal fade" id="optionsModal" tabindex="-1" role="dialog" aria-hidden="true">
+  <div class="modal-dialog modal-lg" role="document">
+    <div class="modal-content bg-dark text-light">
+      <div class="modal-header">
+        <h5 class="modal-title">Product Options</h5>
+        <button type="button" class="close text-light" data-dismiss="modal" aria-label="Close">
+          <span aria-hidden="true">&times;</span>
+        </button>
+      </div>
+      <div class="modal-body" id="optionsModalBody"></div>
+    </div>
+  </div>
+</div>
 <div class="modal fade" id="inviteModal" tabindex="-1" role="dialog" aria-hidden="true">
   <div class="modal-dialog modal-lg" role="document">
     <div class="modal-content bg-dark">
