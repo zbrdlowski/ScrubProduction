@@ -315,10 +315,7 @@ $deptOptions = [
                 <small class="text-muted">Ext: <?= htmlspecialchars((string)$row['external_order_id']) ?></small>
 
               <?php endif; ?>
-              <div class="text-muted" style="font-size:12px;">
-                
-                <?php if (!empty($row['payment_method'])): ?> | <?= htmlspecialchars((string)$row['payment_method']) ?><?php endif; ?>
-              </div>
+              
             </td>
             
             <td><?= htmlspecialchars($customer) ?></td>
