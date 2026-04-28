@@ -292,13 +292,34 @@ ob_start();
               <td><?php echo h($it['sku'] ?? ''); ?></td>
               <td><?php echo h($it['custom_label'] ?? ''); ?></td>
               <td><?php echo (int)($it['qty'] ?? 1); ?></td>
-              <td class="text-muted" style="max-width:420px;"><?php echo h($optPreview); ?></td>
+              <td>
+              <button class="btn btn-sm btn-outline-info btn-view-options"
+                      data-options='<?php echo h($it['options_json'] ?? ''); ?>'>
+                VIEW
+              </button>
+
+              <button class="btn btn-sm btn-outline-secondary btn-copy-options"
+                      data-options='<?php echo h($it['options_json'] ?? ''); ?>'>
+                COPY
+              </button>
+            </td>
             </tr>
           <?php endforeach; ?>
           </tbody>
         </table>
       </div>
 
+    </div>
+  </div>
+</div>
+<div class="modal fade" id="optionsModal" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content bg-dark text-light">
+      <div class="modal-header">
+        <h5 class="modal-title">Product Options</h5>
+        <button type="button" class="close text-light" data-dismiss="modal">&times;</button>
+      </div>
+      <div class="modal-body" id="optionsModalBody"></div>
     </div>
   </div>
 </div>

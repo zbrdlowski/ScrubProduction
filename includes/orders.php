@@ -207,6 +207,9 @@ $deptOptions = [
 .btn-order-action {
   min-width: 72px;
 }
+.order-row {
+  cursor: pointer;
+}
 </style>
 
 <div class="card card-dark">
@@ -295,7 +298,7 @@ $deptOptions = [
             $customer = trim((string)($row['customer_name'] ?? ''));
             if ($customer === '') $customer = (string)($row['customer_email'] ?? '-');
           ?>
-          <tr class="<?= $rowClass ?>" data-order-id="<?= $orderId ?>">
+          <tr class="<?= $rowClass ?> order-row" data-order-id="<?= $orderId ?>">
           <td>
             <?php
             $dateRaw = $row['order_date'] ?? null;
@@ -553,6 +556,102 @@ $(document).on('click', '.btn-emp-pick', function(){
       alert('Invite error (request failed)');
     }
   });
+});
+// klik na celý riadok otvorí detail
+$(document).on('click', '.order-row', function(e) {
+
+  // ak klikol na tlačidlo alebo ikonku → ignoruj
+  if ($(e.target).closest('button, a, .btn').length) {
+    return;
+  }
+
+  const orderId = $(this).data('order-id');
+  const $btn = $(this).find('.btn-toggle-detail');
+
+  if ($btn.length) {
+    $btn.trigger('click');
+  }
+});
+function renderOptionsPretty(data) {
+  if (!data) return '<div class="text-muted">No options</div>';
+
+  let html = '';
+
+  function section(title, obj) {
+    if (!obj || Object.keys(obj).length === 0) return '';
+    let rows = '';
+    for (let k in obj) {
+      rows += `<div><b>${k}:</b> ${obj[k]}</div>`;
+    }
+    return `<div class="mb-3">
+      <h6 class="text-info">${title}</h6>
+      ${rows}
+    </div>`;
+  }
+
+  const bike = {};
+  const personal = {};
+  const graphics = {};
+  const seat = {};
+  const other = {};
+
+  for (let k in data) {
+    const v = data[k];
+
+    if (k === 'Category Info') {
+      bike[k] = v;
+    } else if (k.includes('name') || k.includes('number')) {
+      personal[k] = v;
+    } else if (k.includes('material') || k.includes('finish') || k.includes('fork')) {
+      graphics[k] = v;
+    } else if (k.includes('seat')) {
+      seat[k] = v;
+    } else if (!k.startsWith('_')) {
+      other[k] = v;
+    }
+  }
+
+  html += section('Bike / Category', bike);
+  html += section('Personalization', personal);
+  html += section('Graphics', graphics);
+  html += section('Seat Cover', seat);
+  html += section('Other', other);
+
+  return html;
+}
+
+// VIEW
+$(document).on('click', '.btn-view-options', function() {
+  let raw = $(this).data('options');
+  let data = {};
+
+  try {
+    data = JSON.parse(raw);
+  } catch(e) {}
+
+  $('#optionsModalBody').html(renderOptionsPretty(data));
+  $('#optionsModal').modal('show');
+});
+
+// COPY
+$(document).on('click', '.btn-copy-options', function() {
+  let raw = $(this).data('options');
+  let text = '';
+
+  try {
+    const data = JSON.parse(raw);
+    for (let k in data) {
+      if (k.startsWith('_')) continue;
+      text += `${k}: ${data[k]}\n`;
+    }
+  } catch(e) {
+    text = raw;
+  }
+
+  navigator.clipboard.writeText(text);
+
+  $(this).text('COPIED');
+  setTimeout(() => $(this).text('COPY'), 1000);
 });
 </script>
 <div class="modal fade" id="inviteModal" tabindex="-1" role="dialog" aria-hidden="true">
