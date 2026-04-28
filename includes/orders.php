@@ -290,7 +290,7 @@ $deptOptions = [
           <tr>
             <th width="5%">Date</th>
             <th width="5%">Source</th>
-            <th width="5%">Order #</th>            
+            <th width="8%">Order #</th>            
             <th>Customer</th>
             
             <th>Status</th>

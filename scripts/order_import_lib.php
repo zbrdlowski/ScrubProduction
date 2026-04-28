@@ -3,6 +3,12 @@
 declare(strict_types=1);
 session_start();
 
+if (!function_exists('str_starts_with')) {
+  function str_starts_with($haystack, $needle) {
+    return $needle !== '' && substr($haystack, 0, strlen($needle)) === $needle;
+  }
+}
+
 /**
  * Shared library for importing platform CSVs into orders module.
  * Assumes mysqli connection in $conn from includes/conn.php
@@ -171,13 +177,18 @@ function oi_parse_category_letters(?string $maybeCode, ?string $fallbackText): a
 }
 
 function oi_letter_to_category_id(array $catIds, string $letter): int {
-  return match ($letter) {
-    'G' => $catIds['GRAPHICS'],
-    'P' => $catIds['PLASTICS'],
-    'S' => $catIds['SEATCOVER'],
-    'F' => $catIds['FITTING'],
-    default => throw new RuntimeException("Unknown category letter: $letter")
-  };
+  switch ($letter) {
+    case 'G':
+      return $catIds['GRAPHICS'];
+    case 'P':
+      return $catIds['PLASTICS'];
+    case 'S':
+      return $catIds['SEATCOVER'];
+    case 'F':
+      return $catIds['FITTING'];
+    default:
+      throw new RuntimeException("Unknown category letter: " . $letter);
+  }
 }
 
 function oi_upsert_customer(mysqli $conn, ?string $name, ?string $email, ?string $phone): ?int {

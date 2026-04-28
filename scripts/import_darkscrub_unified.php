@@ -1,5 +1,10 @@
 <?php
 declare(strict_types=1);
+if (!function_exists('str_contains')) {
+  function str_contains($haystack, $needle) {
+    return $needle !== '' && strpos($haystack, $needle) !== false;
+  }
+}
 
 /**
  * Unified DarkScrub CSV importer.
@@ -272,15 +277,27 @@ function oi_detect_item_type(?string $sku, ?string $customLabel, ?string $title,
 
 function oi_item_type_to_category_codes(?string $itemType, ?string $sku = null, ?string $customLabel = null, ?string $title = null): array {
   $itemType = strtoupper((string)$itemType);
-  return match ($itemType) {
-    'G' => ['GRAPHICS'],
-    'T' => ['GRAPHICS', 'PLASTICS'],
-    'M' => ['GRAPHICS', 'PLASTICS'],
-    'P' => ['PLASTICS'],
-    'S' => ['SEATCOVER'],
-    'F' => ['FITTING'],
-    default => [],
-  };
+
+  switch ($itemType) {
+    case 'G':
+      return ['GRAPHICS'];
+
+    case 'T':
+    case 'M':
+      return ['GRAPHICS', 'PLASTICS'];
+
+    case 'P':
+      return ['PLASTICS'];
+
+    case 'S':
+      return ['SEATCOVER'];
+
+    case 'F':
+      return ['FITTING'];
+
+    default:
+      return [];
+  }
 }
 
 function oi_is_shipping_or_payment_line(array $r): bool {
