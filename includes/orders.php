@@ -210,6 +210,17 @@ $deptOptions = [
 .order-row {
   cursor: pointer;
 }
+.btn-copy-inline {
+  background: transparent;
+  border: none;
+  color: #adb5bd;
+  cursor: pointer;
+  padding: 0 4px;
+}
+
+.btn-copy-inline:hover {
+  color: #17a2b8;
+}
 </style>
 
 <div class="card card-dark">
@@ -573,48 +584,148 @@ $(document).on('click', '.order-row', function(e) {
   }
 });
 function renderOptionsPretty(data) {
-  if (!data) return '<div class="text-muted">No options</div>';
+  if (!data || Object.keys(data).length === 0) {
+    return '<div class="text-muted">No options</div>';
+  }
 
-  let html = '';
+  function esc(s) {
+    return ('' + s).replace(/[&<>"']/g, m => ({
+      '&': '&amp;',
+      '<': '&lt;',
+      '>': '&gt;',
+      '"': '&quot;',
+      "'": '&#039;'
+    }[m]));
+  }
 
   function section(title, obj) {
     if (!obj || Object.keys(obj).length === 0) return '';
+
     let rows = '';
     for (let k in obj) {
-      rows += `<div><b>${k}:</b> ${obj[k]}</div>`;
+      rows += `
+        <div class="mb-1">
+          <span class="text-muted">${esc(k)}:</span>
+          <b>${esc(obj[k])}</b>
+        </div>
+      `;
     }
-    return `<div class="mb-3">
-      <h6 class="text-info">${title}</h6>
-      ${rows}
-    </div>`;
+
+    return `
+      <div class="card bg-secondary mb-3">
+        <div class="card-header py-2">
+          <b>${esc(title)}</b>
+        </div>
+        <div class="card-body py-2">
+          ${rows}
+        </div>
+      </div>
+    `;
   }
 
   const bike = {};
   const personal = {};
   const graphics = {};
   const seat = {};
+  const files = {};
   const other = {};
 
-  for (let k in data) {
-    const v = data[k];
+for (let k in data) {
+  let v = data[k];
+  let displayKey = k;
 
-    if (k === 'Category Info') {
-      bike[k] = v;
-    } else if (k.includes('name') || k.includes('number')) {
-      personal[k] = v;
-    } else if (k.includes('material') || k.includes('finish') || k.includes('fork')) {
-      graphics[k] = v;
-    } else if (k.includes('seat')) {
-      seat[k] = v;
-    } else if (!k.startsWith('_')) {
-      other[k] = v;
+  if (k === 'name-color') {
+    displayKey = 'number plates color';
+  }
+
+  if (k === 'applyinggraphics') {
+  displayKey = 'Fitting';
+}
+
+  if (k === 'number-font' || k === 'name-font') {
+    const match = ('' + v).match(/(\d+)$/);
+    if (match) {
+      v = match[1];
     }
+  }
+
+  if (v === null || v === '' || typeof v === 'object') continue;
+
+  const key = k.toLowerCase();
+
+  if (k === 'Category Info' || key.includes('category')) {
+    bike[displayKey] = v;
+  } else if (key.includes('name') || key.includes('number')) {
+    personal[displayKey] = v;
+  } else if (
+    key.includes('material') ||
+    key.includes('finish') ||
+    key.includes('fork') ||
+    key.includes('draft')
+  ) {
+    graphics[displayKey] = v;
+  } else if (key.includes('seat')) {
+    seat[displayKey] = v;
+  } else if (key === 'file' || key.includes('image') || key.includes('upload')) {
+    files[displayKey] = v;
+  } else if (!k.startsWith('_')) {
+    other[displayKey] = v;
+  }
+}
+
+  let warnings = [];
+
+  if (!data['Category Info']) warnings.push('Missing category / bike info');
+  if (!data['name']) warnings.push('Missing rider name');
+  if (!data['number']) warnings.push('Missing number');
+  if (!data['file']) warnings.push('Missing uploaded file / logo');
+
+  let html = '';
+
+  if (warnings.length) {
+    html += `
+      <div class="alert alert-warning">
+        <b>Check before production:</b><br>
+        ${warnings.map(w => `<span class="badge badge-danger mr-1 mb-1">${esc(w)}</span>`).join('')}
+      </div>
+    `;
+  } else {
+    html += `
+      <div class="alert alert-success py-2">
+        <b>Production data looks complete.</b>
+      </div>
+    `;
+  }
+
+  if (data['file']) {
+    const url = esc(data['file']);
+
+    html += `
+      <div class="card bg-dark border-info mb-3">
+        <div class="card-header py-2">
+          <b>Uploaded File / Logo Preview</b>
+        </div>
+        <div class="card-body">
+          <a href="${url}" target="_blank" rel="noopener">
+            <img src="${url}"
+                 alt="Uploaded file preview"
+                 style="max-width:220px; max-height:160px; border-radius:10px; border:1px solid rgba(255,255,255,.25); object-fit:contain; background:#fff; padding:6px;">
+          </a>
+          <div class="mt-2">
+            <a href="${url}" target="_blank" rel="noopener" class="btn btn-sm btn-outline-info">
+              Open original file
+            </a>
+          </div>
+        </div>
+      </div>
+    `;
   }
 
   html += section('Bike / Category', bike);
   html += section('Personalization', personal);
   html += section('Graphics', graphics);
   html += section('Seat Cover', seat);
+  html += section('Files', files);
   html += section('Other', other);
 
   return html;
@@ -667,6 +778,20 @@ $(document).on('click', '.btn-copy-options', function(e) {
 $(document).on('click', '[data-dismiss="modal"], [data-bs-dismiss="modal"]', function(e) {
   e.preventDefault();
   $(this).closest('.modal').modal('hide');
+});
+$(document).on('click', '.btn-copy-inline', function(e) {
+  e.stopPropagation();
+
+  const text = $(this).attr('data-copy') || '';
+
+  navigator.clipboard.writeText(text);
+
+  const $btn = $(this);
+  $btn.text('✔');
+
+  setTimeout(() => {
+    $btn.text('📋');
+  }, 800);
 });
 
 </script>

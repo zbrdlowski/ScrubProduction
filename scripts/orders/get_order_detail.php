@@ -202,9 +202,24 @@ ob_start();
 
       <div class="row">
         <div class="col-md-6">
-          <div><b>Zákazník:</b> <?php echo h($order['customer_name'] ?: $order['customer_email'] ?: '-'); ?></div>
-          <?php if (!empty($order['customer_email'])): ?><div class="text-muted"><?php echo h($order['customer_email']); ?></div><?php endif; ?>
-          <?php if (!empty($order['customer_phone'])): ?><div class="text-muted"><?php echo h($order['customer_phone']); ?></div><?php endif; ?>
+          <div>
+          <b>Zákazník:</b>
+          <?php $val = $order['customer_name'] ?: $order['customer_email'] ?: '-'; ?>
+          <?php echo h($val); ?>
+          <button class="btn btn-xs btn-copy-inline ml-1" data-copy="<?php echo h($val); ?>">📋</button>
+        </div>
+          <?php if (!empty($order['customer_email'])): ?>
+          <div class="text-muted">
+            <?php echo h($order['customer_email']); ?>
+            <button class="btn btn-xs btn-copy-inline ml-1" data-copy="<?php echo h($order['customer_email']); ?>">📋</button>
+          </div>
+          <?php endif; ?>
+          <?php if (!empty($order['customer_phone'])): ?>
+          <div class="text-muted">
+            <?php echo h($order['customer_phone']); ?>
+            <button class="btn btn-xs btn-copy-inline ml-1" data-copy="<?php echo h($order['customer_phone']); ?>">📋</button>
+          </div>
+          <?php endif; ?>
         </div>
         <div class="col-md-6">
           <div><b>Shipping:</b> <?php echo h($order['shipping_method'] ?? '-'); ?></div>
@@ -223,6 +238,17 @@ ob_start();
           <h6 class="text-muted">Billing</h6>
           <?php $b = $addr['BILLING']; ?>
           <?php if ($b): ?>
+            <?php
+            $fullBilling = trim(
+              ($b['name'] ?? '') . "\n" .
+              ($b['company'] ?? '') . "\n" .
+              ($b['street'] ?? '') . "\n" .
+              ($b['city'] ?? '') . " " . ($b['zip'] ?? '')
+            );
+            ?>
+            <button class="btn btn-xs btn-copy-inline mb-2" data-copy="<?php echo h($fullBilling); ?>">
+              📋 Copy address
+            </button>
             <div><?php echo h($b['name'] ?? '-'); ?><?php echo !empty($b['company']) ? ' ('.h($b['company']).')' : ''; ?></div>
             <div class="text-muted"><?php echo h(trim(($b['street'] ?? '').', '.($b['city'] ?? '').' '.($b['zip'] ?? ''))); ?></div>
           <?php else: ?>
