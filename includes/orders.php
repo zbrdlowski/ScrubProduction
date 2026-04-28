@@ -625,7 +625,7 @@ $(document).on('click', '.btn-view-options', function() {
   let raw = $(this).data('options');
   let data = {};
 
-  try {
+  try {s
     data = JSON.parse(raw);
   } catch(e) {}
 
@@ -650,9 +650,10 @@ $(document).on('click', '.btn-copy-options', function() {
 
   navigator.clipboard.writeText(text);
 
-  $(this).text('COPIED');
-  setTimeout(() => $(this).text('COPY'), 1000);
-});
+  const $btn = $(this);
+  $btn.text('COPIED');
+  setTimeout(() => $btn.text('COPY'), 1000);
+});s
 </script>
 <div class="modal fade" id="inviteModal" tabindex="-1" role="dialog" aria-hidden="true">
   <div class="modal-dialog modal-lg" role="document">
