@@ -620,32 +620,40 @@ function renderOptionsPretty(data) {
   return html;
 }
 
-// VIEW
-$(document).on('click', '.btn-view-options', function() {
-  let raw = $(this).data('options');
-  let data = {};
+// ===== FIX JSON + MODAL =====
 
-  try {s
-    data = JSON.parse(raw);
-  } catch(e) {}
+// helper – vždy bezpečne načíta JSON
+function getOptionsData($btn) {
+  const raw = $btn.attr('data-options') || '';
+
+  try {
+    return JSON.parse(raw);
+  } catch(e) {
+    return {};
+  }
+}
+
+// VIEW
+$(document).on('click', '.btn-view-options', function(e) {
+  e.stopPropagation(); // aby neklikol row
+
+  const data = getOptionsData($(this));
 
   $('#optionsModalBody').html(renderOptionsPretty(data));
   $('#optionsModal').modal('show');
 });
 
 // COPY
-$(document).on('click', '.btn-copy-options', function() {
-  let raw = $(this).data('options');
+$(document).on('click', '.btn-copy-options', function(e) {
+  e.stopPropagation();
+
+  const data = getOptionsData($(this));
   let text = '';
 
-  try {
-    const data = JSON.parse(raw);
-    for (let k in data) {
-      if (k.startsWith('_')) continue;
-      text += `${k}: ${data[k]}\n`;
-    }
-  } catch(e) {
-    text = raw;
+  for (let k in data) {
+    if (k.startsWith('_')) continue;
+    if (typeof data[k] === 'object') continue;
+    text += `${k}: ${data[k]}\n`;
   }
 
   navigator.clipboard.writeText(text);
@@ -653,7 +661,14 @@ $(document).on('click', '.btn-copy-options', function() {
   const $btn = $(this);
   $btn.text('COPIED');
   setTimeout(() => $btn.text('COPY'), 1000);
-});s
+});
+
+// fallback pre zatváranie modalu
+$(document).on('click', '[data-dismiss="modal"], [data-bs-dismiss="modal"]', function(e) {
+  e.preventDefault();
+  $(this).closest('.modal').modal('hide');
+});
+
 </script>
 <div class="modal fade" id="inviteModal" tabindex="-1" role="dialog" aria-hidden="true">
   <div class="modal-dialog modal-lg" role="document">
