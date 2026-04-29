@@ -137,6 +137,8 @@ $sql = " SELECT
   FROM orders o
   JOIN order_sources os ON os.id = o.source_id
   LEFT JOIN customers cu ON cu.id = o.customer_id
+  LEFT JOIN order_addresses oa_ship 
+  ON oa_ship.order_id = o.id AND oa_ship.type = 'shipping'
   $whereSql
   ORDER BY o.id DESC
   LIMIT 500
@@ -221,6 +223,10 @@ $deptOptions = [
 .btn-copy-inline:hover {
   color: #17a2b8;
 }
+.order-row-open {
+  background: rgba(23, 162, 184, 0.18) !important;
+  box-shadow: inset 4px 0 0 #17a2b8;
+}
 </style>
 
 <div class="card card-dark">
@@ -290,7 +296,8 @@ $deptOptions = [
           <tr>
             <th width="5%">Date</th>
             <th width="5%">Source</th>
-            <th width="8%">Order #</th>            
+            <th width="8%">Order #</th>
+            <th width="3%">Country</th>            
             <th>Customer</th>
             
             <th>Status</th>
@@ -322,6 +329,12 @@ $deptOptions = [
             ?>
             </td>
             <td><?= htmlspecialchars((string)$row['source_code']) ?></td>
+            <td>
+              <?php
+                $cc = strtoupper((string)($row['country_code'] ?? ''));
+                echo $cc !== '' ? htmlspecialchars($cc) : '-';
+              ?>
+            </td>
             <td>
               <div><b><?= htmlspecialchars((string)($row['order_number'] ?? $row['external_order_id'] ?? '')) ?></b></div>
             
