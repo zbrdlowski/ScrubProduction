@@ -2,6 +2,17 @@
 declare(strict_types=1);
 require_once __DIR__ . '/conn.php';
 
+function countryFlag($code) {
+  $code = strtoupper($code);
+  if (strlen($code) !== 2) return '🏳️';
+
+  return mb_convert_encoding(
+    '&#' . (127397 + ord($code[0])) . ';&#' . (127397 + ord($code[1])) . ';',
+    'UTF-8',
+    'HTML-ENTITIES'
+  );
+}
+
 $dpt = (int)($_SESSION['dpt'] ?? 0);
 $allAccess = in_array($dpt, [1,3,4,5,7], true);
 
@@ -101,6 +112,7 @@ $sql = " SELECT
     os.code AS source_code,
     cu.name AS customer_name,
     cu.email AS customer_email,
+    COALESCE(oa_ship.country, oa_bill.country) AS country_code,
 
     (SELECT GROUP_CONCAT(DISTINCT c.code ORDER BY c.code SEPARATOR ', ')
      FROM order_categories oc
@@ -137,8 +149,8 @@ $sql = " SELECT
   FROM orders o
   JOIN order_sources os ON os.id = o.source_id
   LEFT JOIN customers cu ON cu.id = o.customer_id
-  LEFT JOIN order_addresses oa_ship 
-  ON oa_ship.order_id = o.id AND oa_ship.type = 'shipping'
+  LEFT JOIN order_addresses oa_ship ON oa_ship.order_id = o.id AND UPPER(oa_ship.type) = 'SHIPPING'
+  LEFT JOIN order_addresses oa_bill ON oa_bill.order_id = o.id AND UPPER(oa_bill.type) = 'BILLING'
   $whereSql
   ORDER BY o.id DESC
   LIMIT 500
@@ -296,8 +308,8 @@ $deptOptions = [
           <tr>
             <th width="5%">Date</th>
             <th width="5%">Source</th>
-            <th width="8%">Order #</th>
-            <th width="3%">Country</th>            
+            <th width="4%">Country</th>
+            <th width="5%">Order #</th>           
             <th>Customer</th>
             
             <th>Status</th>
@@ -328,13 +340,28 @@ $deptOptions = [
             }
             ?>
             </td>
-            <td><?= htmlspecialchars((string)$row['source_code']) ?></td>
-            <td>
-              <?php
-                $cc = strtoupper((string)($row['country_code'] ?? ''));
-                echo $cc !== '' ? htmlspecialchars($cc) : '-';
-              ?>
-            </td>
+                      <td><?= htmlspecialchars((string)$row['source_code']) ?></td>
+                      <td>
+  <?php
+    $cc = strtoupper(trim((string)($row['country_code'] ?? '')));
+
+    if ($cc === 'UM') $cc = 'US';
+
+    if ($cc !== '') {
+      $ccLower = strtolower($cc);
+
+      echo '<span style="white-space:nowrap;">';
+      echo '<img src="https://flagcdn.com/16x12/' . htmlspecialchars($ccLower) . '.png" ';
+      echo 'alt="' . htmlspecialchars($cc) . '" ';
+      echo 'style="margin-right:5px; vertical-align:-1px;">';
+      echo htmlspecialchars($cc);
+      echo '</span>';
+    } else {
+      echo '-';
+    }
+  ?>
+</td>
+
             <td>
               <div><b><?= htmlspecialchars((string)($row['order_number'] ?? $row['external_order_id'] ?? '')) ?></b></div>
             
@@ -417,7 +444,7 @@ $deptOptions = [
 
           <!-- Detail row (hidden, will be filled via AJAX) -->
           <tr class="order-detail-row">
-            <td colspan="9">
+            <td colspan="10">
               <div id="detail-<?= $orderId ?>" class="detail-wrap"></div>
             </td>
           </tr>
