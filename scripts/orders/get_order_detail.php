@@ -31,7 +31,20 @@ $allAccess = in_array($dpt, [1,3,4,5,7], true);
 function h($s): string {
   return htmlspecialchars((string)$s, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
 }
+function countryFlag($code): string {
+  $code = strtoupper(trim((string)$code));
+  if ($code === '') return '';
 
+  if ($code === 'UK') $code = 'GB';
+  if ($code === 'UM') $code = 'US';
+  if ($code === 'KX') $code = 'XK';
+
+  $imgCode = strtolower($code);
+
+  return '<img src="https://flagcdn.com/16x12/' . h($imgCode) . '.png" '
+    . 'alt="' . h($code) . '" '
+    . 'style="margin-right:5px; vertical-align:-1px;">';
+}
 // PHP 7 compatible (no match)
 function status_badge_class($status): string {
   $s = strtoupper(trim((string)$status));
@@ -49,8 +62,7 @@ function status_badge_class($status): string {
 }
 
 // --- order header ---
-$stmt = $conn->prepare("
-  SELECT
+$stmt = $conn->prepare("SELECT
     o.*,
     os.code AS source_code,
     cu.name AS customer_name,
@@ -84,8 +96,7 @@ if (!$allAccess) {
   $types = 'i' . str_repeat('s', count($cats));
   $params = array_merge([$orderId], $cats);
 
-  $q = $conn->prepare("
-    SELECT 1
+  $q = $conn->prepare("SELECT 1
     FROM order_categories oc
     JOIN categories c ON c.id=oc.category_id
     WHERE oc.order_id=? AND c.code IN ($ph)
@@ -101,8 +112,7 @@ if (!$allAccess) {
 }
 
 // --- categories ---
-$stmt = $conn->prepare("
-  SELECT c.code
+$stmt = $conn->prepare("SELECT c.code
   FROM order_categories oc
   JOIN categories c ON c.id=oc.category_id
   WHERE oc.order_id=?
@@ -116,10 +126,9 @@ while ($x = $r->fetch_assoc()) $cats[] = $x['code'];
 $stmt->close();
 
 // --- addresses ---
-$stmt = $conn->prepare("
-  SELECT type, name, company, street, city, zip, email, phone
-  FROM order_addresses
-  WHERE order_id=?
+$stmt = $conn->prepare("SELECT type, name, company, street, city, zip, country, email, phone
+FROM order_addresses
+WHERE order_id=?
 ");
 $stmt->bind_param('i', $orderId);
 $stmt->execute();
@@ -130,9 +139,15 @@ while ($a = $r->fetch_assoc()) {
 }
 $stmt->close();
 
+$orderCountry = '';
+if (!empty($addr['SHIPPING']['country'])) {
+  $orderCountry = strtoupper((string)$addr['SHIPPING']['country']);
+} elseif (!empty($addr['BILLING']['country'])) {
+  $orderCountry = strtoupper((string)$addr['BILLING']['country']);
+}
+
 // --- items (no fetch_all to avoid mysqlnd dependency issues) ---
-$stmt = $conn->prepare("
-  SELECT id, line_no, sku, title, custom_label, item_type_code, qty, options_json
+$stmt = $conn->prepare("SELECT id, line_no, sku, title, custom_label, item_type_code, qty, options_json
   FROM order_items
   WHERE order_id=?
     AND item_type_code IS NOT NULL
@@ -224,7 +239,22 @@ ob_start();
         <div class="col-md-6">
           <div><b>Shipping:</b> <?php echo h($order['shipping_method'] ?? '-'); ?></div>
           <div><b>Payment:</b> <?php echo h($order['payment_method'] ?? '-'); ?></div>
-          <div class="text-muted">
+
+              <div>
+                <b>Country:</b>
+                <span class="order-country-display"><?php echo h($orderCountry ?: '-'); ?></span>
+
+                <?php if ((int)($_SESSION['permission'] ?? 0) >= 400): ?>
+                  <button type="button"
+                          class="btn btn-xs btn-outline-warning btn-edit-country ml-2"
+                          data-order-id="<?php echo (int)$orderId; ?>"
+                          data-country="<?php echo h($orderCountry); ?>">
+                    Edit
+                  </button>
+                <?php endif; ?>
+              </div>
+
+              <div class="text-muted">
             <b>Dátum:</b> <?php echo h($order['order_date'] ?? '-'); ?>
             <span class="ml-2"><b>Import:</b> <?php echo h($order['imported_at'] ?? '-'); ?></span>
           </div>
@@ -251,6 +281,14 @@ ob_start();
             </button>
             <div><?php echo h($b['name'] ?? '-'); ?><?php echo !empty($b['company']) ? ' ('.h($b['company']).')' : ''; ?></div>
             <div class="text-muted"><?php echo h(trim(($b['street'] ?? '').', '.($b['city'] ?? '').' '.($b['zip'] ?? ''))); ?></div>
+            <?php if (!empty($b['country'])): ?>
+              <div class="text-muted">
+                <?php
+                  $cc = strtoupper($b['country']);
+                  echo countryFlag($cc) . ' ' . h($cc);
+                ?>
+              </div>
+            <?php endif; ?>
           <?php else: ?>
             <div class="text-muted">—</div>
           <?php endif; ?>

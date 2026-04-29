@@ -833,7 +833,51 @@ $(document).on('click', '.btn-copy-inline', function(e) {
     $btn.text('📋');
   }, 800);
 });
+$(document).on('click', '.btn-edit-country', function(e) {
+  e.stopPropagation();
 
+  const $btn = $(this);
+  const orderId = $btn.data('order-id');
+  const current = ($btn.attr('data-country') || '').toUpperCase();
+
+  const next = prompt('New country code (2 letters, e.g. GB, US, DE):', current);
+  if (next === null) return;
+
+  const country = next.trim().toUpperCase();
+  if (!/^[A-Z]{2}$/.test(country)) {
+    alert('Country must be 2-letter code, e.g. GB, US, DE');
+    return;
+  }
+
+  $.ajax({
+    url: 'scripts/orders/update_order_country.php',
+    method: 'POST',
+    dataType: 'json',
+    data: {
+      order_id: orderId,
+      country: country
+    },
+    success: function(resp) {
+      if (!resp || !resp.ok) {
+        alert('Country update error: ' + (resp && resp.error ? resp.error : 'unknown'));
+        return;
+      }
+
+      const finalCountry = resp.country || country;
+
+      $btn.attr('data-country', finalCountry);
+      $btn.closest('div').find('.order-country-display').text(finalCountry);
+
+      // grid country column sa najistejšie zosúladí refreshom
+      setTimeout(function() {
+        location.reload();
+      }, 300);
+    },
+    error: function() {
+      alert('Country update request failed');
+    }
+  });
+});
 </script>
 <div class="modal fade" id="optionsModal" tabindex="-1" role="dialog" aria-hidden="true">
   <div class="modal-dialog modal-lg" role="document">
