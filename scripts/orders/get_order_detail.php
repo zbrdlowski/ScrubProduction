@@ -45,6 +45,79 @@ function countryFlag($code): string {
     . 'alt="' . h($code) . '" '
     . 'style="margin-right:5px; vertical-align:-1px;">';
 }
+
+function normalizeUsZipFromAddress(array $a): string {
+  $text = trim(
+    ($a['zip'] ?? '') . ' ' .
+    ($a['street'] ?? '') . ' ' .
+    ($a['city'] ?? '')
+  );
+
+  if ($text === '') return '';
+
+  // ZIP+4: 11706-4815 => 11706
+  if (preg_match('/\b(\d{5})-\d{4}\b/', $text, $m)) {
+    return $m[1];
+  }
+
+  // last standalone 5 digits
+  if (preg_match_all('/\b\d{5}\b/', $text, $m) && !empty($m[0])) {
+    return end($m[0]);
+  }
+
+  // MXLocker/Shoptet missing leading zero: 2703 => 02703
+  if (preg_match('/\b(\d{4})\b\s*$/', $text, $m)) {
+    return '0' . $m[1];
+  }
+
+  return '';
+}
+
+function usStateFromZip(string $zip): string {
+  $zip = preg_replace('/\D+/', '', $zip);
+  if (strlen($zip) < 5) return '';
+
+  $n = (int)substr($zip, 0, 5);
+
+  $ranges = [
+    'AL'=>[[35000,36999]], 'AK'=>[[99500,99999]], 'AZ'=>[[85000,86999]],
+    'AR'=>[[71600,72999]], 'CA'=>[[90000,96699]], 'CO'=>[[80000,81999]],
+    'CT'=>[[6000,6999]],   'DE'=>[[19700,19999]], 'DC'=>[[20000,20099],[20200,20599],[56900,56999]],
+    'FL'=>[[32000,34999]], 'GA'=>[[30000,31999],[39800,39999]], 'HI'=>[[96700,96899]],
+    'ID'=>[[83200,83999]], 'IL'=>[[60000,62999]], 'IN'=>[[46000,47999]],
+    'IA'=>[[50000,52999]], 'KS'=>[[66000,67999]], 'KY'=>[[40000,42999]],
+    'LA'=>[[70000,71599]], 'ME'=>[[3900,4999]],   'MD'=>[[20600,21999]],
+    'MA'=>[[1000,2799],[5500,5599]], 'MI'=>[[48000,49999]], 'MN'=>[[55000,56799]],
+    'MS'=>[[38600,39799]], 'MO'=>[[63000,65999]], 'MT'=>[[59000,59999]],
+    'NE'=>[[68000,69999]], 'NV'=>[[88900,89999]], 'NH'=>[[3000,3899]],
+    'NJ'=>[[7000,8999]],   'NM'=>[[87000,88499]], 'NY'=>[[10000,14999],[500,599],[6390,6390]],
+    'NC'=>[[27000,28999]], 'ND'=>[[58000,58999]], 'OH'=>[[43000,45999]],
+    'OK'=>[[73000,74999]], 'OR'=>[[97000,97999]], 'PA'=>[[15000,19699]],
+    'RI'=>[[2800,2999]],   'SC'=>[[29000,29999]], 'SD'=>[[57000,57999]],
+    'TN'=>[[37000,38599]], 'TX'=>[[75000,79999],[88500,88599]], 'UT'=>[[84000,84999]],
+    'VT'=>[[5000,5999]],   'VA'=>[[20100,24699]], 'WA'=>[[98000,99499]],
+    'WV'=>[[24700,26999]], 'WI'=>[[53000,54999]], 'WY'=>[[82000,83199]],
+  ];
+
+  foreach ($ranges as $state => $rs) {
+    foreach ($rs as $r) {
+      if ($n >= $r[0] && $n <= $r[1]) return $state;
+    }
+  }
+
+  return '';
+}
+
+function addressCopyText(array $a, string $state = ''): string {
+  return trim(
+    ($a['name'] ?? '') . "\n" .
+    ($a['company'] ?? '') . "\n" .
+    ($a['street'] ?? '') . "\n" .
+    trim(($a['city'] ?? '') . ' ' . ($a['zip'] ?? '')) .
+    ($state !== '' ? "\nState: " . $state : '')
+  );
+}
+
 // PHP 7 compatible (no match)
 function status_badge_class($status): string {
   $s = strtoupper(trim((string)$status));
@@ -194,7 +267,10 @@ ob_start();
     background-color: #343a40;
     font-weight: 600;
 }
-
+.order-detail-table tbody tr.qty-warning-row > td {
+  background: rgba(255, 193, 7, 0.22) !important;
+  box-shadow: inset 4px 0 0 #ffc107;
+}
 </style>
 <div class="p-3">
   <div class="card card-dark mb-0" style="border-radius:14px; overflow:hidden;">
@@ -218,7 +294,7 @@ ob_start();
       <div class="row">
         <div class="col-md-6">
           <div>
-          <b>Zákazník:</b>
+          <b>Zákazník:</b><br />
           <?php $val = $order['customer_name'] ?: $order['customer_email'] ?: '-'; ?>
           <?php echo h($val); ?>
           <button class="btn btn-xs btn-copy-inline ml-1" data-copy="<?php echo h($val); ?>">📋</button>
@@ -265,15 +341,19 @@ ob_start();
 
       <div class="row">
         <div class="col-md-6">
-          <h6 class="text-muted">Billing</h6>
+          <h6 class="text-muted"><span class="badge badge-secondary">Billing</span></h6>
           <?php $b = $addr['BILLING']; ?>
           <?php if ($b): ?>
             <?php
+            $billingZip = normalizeUsZipFromAddress($b);
+            $billingState = usStateFromZip($billingZip);
+
             $fullBilling = trim(
               ($b['name'] ?? '') . "\n" .
               ($b['company'] ?? '') . "\n" .
               ($b['street'] ?? '') . "\n" .
-              ($b['city'] ?? '') . " " . ($b['zip'] ?? '')
+              trim(($b['city'] ?? '') . " " . ($b['zip'] ?? '')) .
+              ($billingState !== '' ? "\n" . $billingState : '')
             );
             ?>
             <button class="btn btn-xs btn-copy-inline mb-2" data-copy="<?php echo h($fullBilling); ?>">
@@ -281,8 +361,14 @@ ob_start();
             </button>
             <div><?php echo h($b['name'] ?? '-'); ?><?php echo !empty($b['company']) ? ' ('.h($b['company']).')' : ''; ?></div>
             <div class="text-muted"><?php echo h(trim(($b['street'] ?? '').', '.($b['city'] ?? '').' '.($b['zip'] ?? ''))); ?></div>
+            
             <?php if (!empty($b['country'])): ?>
               <div class="text-muted">
+                <?php if ($billingState !== ''): ?>
+                  <div>
+                    <span><b><?php echo h($billingState); ?></b></span>
+                  </div>
+                <?php endif; ?>
                 <?php
                   $cc = strtoupper($b['country']);
                   echo countryFlag($cc) . ' ' . h($cc);
@@ -293,16 +379,50 @@ ob_start();
             <div class="text-muted">—</div>
           <?php endif; ?>
         </div>
-        <div class="col-md-6">
-          <h6 class="text-muted">Shipping</h6>
-          <?php $s = $addr['SHIPPING']; ?>
-          <?php if ($s): ?>
-            <div><?php echo h($s['name'] ?? '-'); ?><?php echo !empty($s['company']) ? ' ('.h($s['company']).')' : ''; ?></div>
-            <div class="text-muted"><?php echo h(trim(($s['street'] ?? '').', '.($s['city'] ?? '').' '.($s['zip'] ?? ''))); ?></div>
-          <?php else: ?>
-            <div class="text-muted">—</div>
-          <?php endif; ?>
-        </div>
+
+          <div class="col-md-6">
+             <h6 class="text-muted"><span class="badge badge-secondary">Delivery</span></h6>
+            <?php $s = $addr['SHIPPING']; ?>
+            <?php if ($s): ?>
+              <?php
+                $shippingZip = normalizeUsZipFromAddress($s);
+                $shippingState = usStateFromZip($shippingZip);
+                $fullShipping = addressCopyText($s, $shippingState);
+              ?>
+
+              <button class="btn btn-xs btn-copy-inline mb-2" data-copy="<?php echo h($fullShipping); ?>">
+                📋 Copy address
+              </button>
+
+              <div>
+                <?php echo h($s['name'] ?? '-'); ?>
+                <?php echo !empty($s['company']) ? ' ('.h($s['company']).')' : ''; ?>
+              </div>
+
+              <div class="text-muted">
+                <?php echo h(trim(($s['street'] ?? '').', '.($s['city'] ?? '').' '.($s['zip'] ?? ''))); ?>
+              </div>
+
+              <?php if ($shippingState !== ''): ?>
+                <div>
+                  <span><?php echo h($shippingState); ?></span>
+                </div>
+              <?php endif; ?>
+
+              <?php if (!empty($s['country'])): ?>
+                <div class="text-muted">
+                  <?php
+                    $cc = strtoupper($s['country']);
+                    echo countryFlag($cc) . ' ' . h($cc);
+                  ?>
+                </div>
+              <?php endif; ?>
+
+            <?php else: ?>
+              <div class="text-muted">—</div>
+            <?php endif; ?>
+          </div>
+
       </div>
 
       <hr/>
@@ -325,13 +445,15 @@ ob_start();
           <?php foreach ($items as $it): ?>
             <?php
               $t = strtoupper((string)($it['item_type_code'] ?? 'NULL'));
-              $badge = 'badge-secondary';
+              $badge = 'badge-secondary';             
+              
               if ($t === 'T' || $t === 'M') $badge = 'badge-warning';
               elseif ($t === 'G') $badge = 'badge-info';
               elseif ($t === 'P') $badge = 'badge-primary';
               elseif ($t === 'S') $badge = 'badge-success';
               elseif ($t === 'F') $badge = 'badge-danger';
-
+              $qty = (int)($it['qty'] ?? 1);
+              $rowClass = $qty > 1 ? 'qty-warning-row' : '';
               $optPreview = '';
               if (!empty($it['options_json'])) {
                 $decoded = json_decode((string)$it['options_json'], true);
@@ -349,13 +471,13 @@ ob_start();
                 }
               }
             ?>
-            <tr>
+            <tr class="<?php echo h($rowClass); ?>">
               <td><?php echo (int)($it['line_no'] ?? 0); ?></td>
               <td><span class="badge <?php echo h($badge); ?>"><?php echo h($t); ?></span></td>
               <td><?php echo h($it['title'] ?? ''); ?></td>
               <td><?php echo h($it['sku'] ?? ''); ?></td>
               <td><?php echo h($it['custom_label'] ?? ''); ?></td>
-              <td><?php echo (int)($it['qty'] ?? 1); ?></td>
+              <td align="center"><?php echo (int)($it['qty'] ?? 1); ?></td>
               <td>
               <button class="btn btn-sm btn-outline-info btn-view-options"
                       data-options='<?php echo h($it['options_json'] ?? ''); ?>'>
