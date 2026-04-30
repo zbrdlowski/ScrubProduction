@@ -411,27 +411,7 @@ ob_start();
 </div>
 <?php endif; ?>
       <hr/>
-          <?php
-            $stmt = $conn->prepare("
-              SELECT tracking_number, carrier
-              FROM order_tracking_numbers
-              WHERE order_id = ? AND deleted_at IS NULL
-            ");
-            $stmt->bind_param('i', $orderId);
-            $stmt->execute();
-            $tr = $stmt->get_result();
-            ?>
 
-            <h6 class="text-muted">Tracking</h6>
-
-            <?php while ($t = $tr->fetch_assoc()): ?>
-              <div>
-                <b><?php echo h($t['tracking_number']); ?></b>
-                <?php if (!empty($t['carrier'])): ?>
-                  <span class="text-muted">(<?php echo h($t['carrier']); ?>)</span>
-                <?php endif; ?>
-              </div>
-            <?php endwhile; ?>
       <div class="row">
         <div class="col-md-6">
           <h6 class="text-muted"><span class="badge badge-secondary">Billing</span></h6>
@@ -464,10 +444,51 @@ ob_start();
                     <span><b><?php echo h($billingState); ?></b></span>
                   </div>
                 <?php endif; ?>
+
                 <?php
                   $cc = strtoupper($b['country']);
                   echo countryFlag($cc) . ' ' . h($cc);
                 ?>
+
+                <hr class="my-2">
+
+                <h6 class="text-muted mb-2">
+                  <span class="badge badge-secondary">Invoices</span>
+                </h6>
+
+                <?php
+                $invStmt = $conn->prepare("
+                  SELECT id, invoice_number
+                  FROM order_invoices
+                  WHERE order_id = ? AND deleted_at IS NULL
+                  ORDER BY id DESC
+                ");
+                $invStmt->bind_param('i', $orderId);
+                $invStmt->execute();
+                $invRes = $invStmt->get_result();
+                ?>
+
+                <?php while ($inv = $invRes->fetch_assoc()): ?>
+                  <div class="small mb-1">
+                    <b><?php echo h($inv['invoice_number']); ?></b>
+                  </div>
+                <?php endwhile; ?>
+                <?php $invStmt->close(); ?>
+
+                <?php if ((int)($_SESSION['permission'] ?? 0) >= 400): ?>
+                  <div class="form-row mt-2">
+                    <div class="col-md-8">
+                      <input class="form-control form-control-sm invoice-number"
+                            placeholder="Invoice number">
+                    </div>
+                    <div class="col-md-4">
+                      <button class="btn btn-sm btn-warning btn-block btn-add-invoice"
+                              data-order-id="<?php echo (int)$orderId; ?>">
+                        Add Invoice
+                      </button>
+                    </div>
+                  </div>
+                <?php endif; ?>
               </div>
             <?php endif; ?>
           <?php else: ?>
@@ -564,38 +585,14 @@ ob_start();
                         data-order-id="<?php echo (int)$orderId; ?>">
                   Add Tracking
                 </button>
+                
               </div>
             </div>
           <?php endif; ?>
           </div>
-
       </div>
-   
-
-          <?php
-          $trackingStmt = $conn->prepare("
-            SELECT tracking_number, carrier
-            FROM order_tracking_numbers
-            WHERE order_id = ? AND deleted_at IS NULL
-            ORDER BY id DESC
-          ");
-          $trackingStmt->bind_param('i', $orderId);
-          $trackingStmt->execute();
-          $trackingRes = $trackingStmt->get_result();
-          ?>
-
-          <?php while ($t = $trackingRes->fetch_assoc()): ?>
-            <div class="small mb-1">
-              <b><?php echo h($t['tracking_number']); ?></b>
-              <?php if (!empty($t['carrier'])): ?>
-                <span class="text-muted">(<?php echo h($t['carrier']); ?>)</span>
-              <?php endif; ?>
-            </div>
-          <?php endwhile; ?>
-          <?php $trackingStmt->close(); ?>
           
       <hr/>
-
       <h6 class="text-muted mb-2">Položky</h6>
       <div class="table-responsive">
     <table class="table table-sm table-bordered mb-0 order-detail-table">

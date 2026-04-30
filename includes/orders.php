@@ -1041,22 +1041,55 @@ $(document).on('click', '.btn-save-order-header', function(){
     }
   });
 });
+
 $(document).on('click', '.btn-add-tracking', function(){
   const orderId = $(this).data('order-id');
-  const $box = $(this).closest('.mt-2');
+  const $box = $(this).closest('.form-row');
 
-  $box.find('.tracking-number').val('');
-  $box.find('.tracking-carrier').val('');
+  const trackingNumber = $box.find('.tracking-number').val().trim();
+  const carrier = $box.find('.tracking-carrier').val().trim();
 
   $.post('scripts/orders/add_tracking.php', {
     order_id: orderId,
-    tracking_number: $box.find('.tracking-number').val(),
-    carrier: $box.find('.tracking-carrier').val()
+    tracking_number: trackingNumber,
+    carrier: carrier
   }, function(res){
     if (!res.ok) {
       alert(res.error || 'Error');
       return;
     }
+
+    $box.find('.tracking-number').val('');
+    $box.find('.tracking-carrier').val('');
+
+    const $wrap = $('#detail-' + orderId);
+    $wrap.removeData('loaded').html('');
+    $('.btn-toggle-detail[data-order-id="'+orderId+'"]').click();
+
+  }, 'json');
+});
+
+$(document).on('keypress', '.tracking-number', function(e){
+  if (e.which === 13) {
+    $(this).closest('.form-row').find('.btn-add-tracking').click();
+  }
+});
+
+$(document).on('click', '.btn-add-invoice', function(){
+  const orderId = $(this).data('order-id');
+  const $box = $(this).closest('.form-row');
+
+  $.post('scripts/orders/add_invoice.php', {
+    order_id: orderId,
+    invoice_number: $box.find('.invoice-number').val()
+  }, function(res){
+    if (!res.ok) {
+      alert(res.error || 'Error');
+      return;
+    }
+
+    // clear input
+    $box.find('.invoice-number').val('');
 
     // reload detail
     const $wrap = $('#detail-' + orderId);
@@ -1064,11 +1097,6 @@ $(document).on('click', '.btn-add-tracking', function(){
     $('.btn-toggle-detail[data-order-id="'+orderId+'"]').click();
 
   }, 'json');
-});
-$(document).on('keypress', '.tracking-number', function(e){
-  if (e.which === 13) {
-    $(this).closest('.form-row').find('.btn-add-tracking').click();
-  }
 });
 </script>
 <div class="modal fade" id="optionsModal" tabindex="-1" role="dialog" aria-hidden="true">
