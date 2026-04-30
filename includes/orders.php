@@ -1,6 +1,12 @@
 <?php
 declare(strict_types=1);
+/** @var mysqli $conn */
 require_once __DIR__ . '/conn.php';
+
+if (!isset($conn) || !$conn instanceof mysqli) {
+  echo '<div class="alert alert-danger">Database connection error.</div>';
+  return;
+}
 
 function countryFlag($code) {
   $code = strtoupper($code);
@@ -31,27 +37,58 @@ if ($fType !== '' && !in_array($fType, $allowedTypes, true)) $fType = '';
 
 $deptFilter = [
   2 => ['GRAPHICS'],
-  6 => ['PLASTICS'],  // T/M pridávajú PLASTICS, takže netreba špeciál
+  6 => ['PLASTICS'],
   8 => ['SEATCOVER'],
-  9 => ['FITTING'],
+];
+
+$deptTypeFilter = [
+  9 => ['F'],
 ];
 
 $effectiveDept = $dpt;
 $deptCodeMap = [ 2=>'GRAPHICS', 6=>'PLASTICS', 8=>'SEATCOVER', 9=>'FITTING' ];
-$uiDept = $effectiveDept;                 // keď admin vyberie dept filter, reaguje to naň
-$uiDeptCode = $deptCodeMap[$uiDept] ?? null;
-$rolePrimaryUI = $uiDeptCode ? ('PRIMARY_' . $uiDeptCode) : null;
-$meUserId = (int)($_SESSION['user_id'] ?? 0);
-$perm = (int)($_SESSION['permission'] ?? 0);
-if ($allAccess && $fDept > 0) $effectiveDept = $fDept;
 
-$aclCats = [];
-if (!$allAccess) {
-  $aclCats = $deptFilter[$dpt] ?? ['__NONE__'];
-} else {
-  $aclCats = $deptFilter[$effectiveDept] ?? [];
+if ($allAccess && $fDept > 0) {
+  $effectiveDept = $fDept;
 }
 
+$uiDept = $effectiveDept;
+$uiDeptCode = $deptCodeMap[$uiDept] ?? null;
+$rolePrimaryUI = $uiDeptCode ? ('PRIMARY_' . $uiDeptCode) : null;
+
+$meUserId = (int)($_SESSION['user_id'] ?? 0);
+$perm = (int)($_SESSION['permission'] ?? 0);
+
+$aclCats = [];
+$aclTypes = [];
+
+if (!$allAccess) {
+  $aclCats = $deptFilter[$dpt] ?? [];
+  $aclTypes = $deptTypeFilter[$dpt] ?? [];
+} else {
+  $aclCats = $deptFilter[$effectiveDept] ?? [];
+  $aclTypes = $deptTypeFilter[$effectiveDept] ?? [];
+}
+$fitWhere = "EXISTS (
+  SELECT 1
+  FROM order_items oifit
+  WHERE oifit.order_id = o.id
+    AND (
+      UPPER(TRIM(COALESCE(oifit.item_type_code, ''))) = 'F'
+      OR UPPER(COALESCE(oifit.sku, '')) LIKE 'GFP%'
+      OR UPPER(COALESCE(oifit.custom_label, '')) LIKE 'GFP%'
+
+      OR LOWER(COALESCE(oifit.options_json, '')) LIKE CONCAT('%applyinggraphics', CHAR(34), ':', CHAR(34), 'y%')
+      OR LOWER(COALESCE(oifit.options_json, '')) LIKE CONCAT('%applyinggraphics', CHAR(34), ':', CHAR(34), 'o%')
+      OR LOWER(COALESCE(oifit.options_json, '')) LIKE CONCAT('%applyinggraphics', CHAR(34), ':', CHAR(34), 'j%')
+      OR LOWER(COALESCE(oifit.options_json, '')) LIKE CONCAT('%applyinggraphics', CHAR(34), ':', CHAR(34), 's%')
+
+      OR LOWER(COALESCE(oifit.options_json, '')) LIKE CONCAT('%fitting', CHAR(34), ':', CHAR(34), 'y%')
+      OR LOWER(COALESCE(oifit.options_json, '')) LIKE CONCAT('%fitting', CHAR(34), ':', CHAR(34), 'o%')
+      OR LOWER(COALESCE(oifit.options_json, '')) LIKE CONCAT('%fitting', CHAR(34), ':', CHAR(34), 'j%')
+      OR LOWER(COALESCE(oifit.options_json, '')) LIKE CONCAT('%fitting', CHAR(34), ':', CHAR(34), 's%')
+    )
+)";
 $where = [];
 $types = '';
 $params = [];
@@ -68,25 +105,49 @@ if (!empty($aclCats)) {
   foreach ($aclCats as $c) $params[] = $c;
 }
 
+if (!empty($aclTypes)) {
+  if (in_array('F', $aclTypes, true)) {
+    $where[] = $fitWhere;
+  }
+}
+
 if ($fCat !== '') {
-  $where[] = "EXISTS (
-    SELECT 1
-    FROM order_categories ocf
-    JOIN categories cf ON cf.id = ocf.category_id
-    WHERE ocf.order_id = o.id AND cf.code = ?
-  )";
-  $types .= 's';
-  $params[] = $fCat;
+if ($fCat === 'FITTING') {
+  $where[] = $fitWhere;
+} else {
+    $where[] = "EXISTS (
+      SELECT 1
+      FROM order_categories ocf
+      JOIN categories cf ON cf.id = ocf.category_id
+      WHERE ocf.order_id = o.id AND cf.code = ?
+    )";
+    $types .= 's';
+    $params[] = $fCat;
+  }
 }
 
 if ($fType !== '') {
   if ($fType === '(NULL)') {
-    $where[] = "EXISTS (SELECT 1 FROM order_items oit WHERE oit.order_id=o.id AND oit.item_type_code IS NULL)";
+    $where[] = "EXISTS (
+      SELECT 1
+      FROM order_items oit
+      WHERE oit.order_id = o.id
+        AND (oit.item_type_code IS NULL OR TRIM(oit.item_type_code) = '')
+    )";
   } else {
-    $where[] = "EXISTS (SELECT 1 FROM order_items oit WHERE oit.order_id=o.id AND oit.item_type_code = ?)";
+  if (strtoupper($fType) === 'F') {
+    $where[] = $fitWhere;
+  } else {
+    $where[] = "EXISTS (
+      SELECT 1
+      FROM order_items oit
+      WHERE oit.order_id = o.id
+        AND UPPER(TRIM(COALESCE(oit.item_type_code, ''))) = ?
+    )";
     $types .= 's';
-    $params[] = $fType;
+    $params[] = strtoupper($fType);
   }
+}
 }
 
 if ($fQ !== '') {
@@ -101,59 +162,90 @@ if ($fQ !== '') {
 $whereSql = $where ? ('WHERE ' . implode(' AND ', $where)) : '';
 
 $sql = " SELECT
-    o.id,
-    o.order_number,
-    o.external_order_id,
-    o.order_date,
-    o.imported_at,
-    o.status,
-    o.payment_method,
-    o.shipping_method,
-    os.code AS source_code,
-    cu.name AS customer_name,
-    cu.email AS customer_email,
-    COALESCE(oa_ship.country, oa_bill.country) AS country_code,
+  o.id,
+  o.order_number,
+  o.external_order_id,
+  o.order_date,
+  o.imported_at,
+  o.status,
+  o.payment_method,
+  o.shipping_method,
+  os.code AS source_code,
+  cu.name AS customer_name,
+  cu.email AS customer_email,
+  COALESCE(oa_ship.country, oa_bill.country) AS country_code,
 
-    (SELECT GROUP_CONCAT(DISTINCT c.code ORDER BY c.code SEPARATOR ', ')
-     FROM order_categories oc
-     JOIN categories c ON c.id = oc.category_id
-     WHERE oc.order_id = o.id
-    ) AS categories,
+  (
+    SELECT GROUP_CONCAT(DISTINCT c.code ORDER BY c.code SEPARATOR ', ')
+    FROM order_categories oc
+    JOIN categories c ON c.id = oc.category_id
+    WHERE oc.order_id = o.id
+  ) AS categories,
 
-    (SELECT GROUP_CONCAT(DISTINCT oi.item_type_code ORDER BY oi.item_type_code SEPARATOR ', ')
+  (
+    SELECT GROUP_CONCAT(DISTINCT oi.item_type_code ORDER BY oi.item_type_code SEPARATOR ', ')
     FROM order_items oi
     WHERE oi.order_id = o.id
       AND oi.item_type_code IS NOT NULL
       AND oi.item_type_code <> ''
-    ) AS item_types,
+  ) AS item_types,
 
-    EXISTS (
-      SELECT 1 FROM order_items oi2
-      WHERE oi2.order_id = o.id AND oi2.item_type_code IN ('T','M')
-    ) AS has_tm,
-(SELECT oa.employee_id
- FROM order_assignments oa
- WHERE oa.order_id = o.id
-   AND oa.role = ?
-   AND oa.removed_at IS NULL
- LIMIT 1) AS primary_emp_id,
+EXISTS (
+  SELECT 1
+  FROM order_items oigfp
+  WHERE oigfp.order_id = o.id
+    AND (
+      UPPER(COALESCE(oigfp.sku, '')) LIKE 'GFP%'
+      OR UPPER(COALESCE(oigfp.custom_label, '')) LIKE 'GFP%'
 
-(SELECT CONCAT(e.firstname,' ',e.lastname)
- FROM order_assignments oa
- JOIN employees e ON e.id = oa.employee_id
- WHERE oa.order_id = o.id
-   AND oa.role = ?
-   AND oa.removed_at IS NULL
- LIMIT 1) AS primary_emp_name
+      OR LOWER(COALESCE(oigfp.options_json, '')) LIKE CONCAT('%applyinggraphics', CHAR(34), ':', CHAR(34), 'y%')
+      OR LOWER(COALESCE(oigfp.options_json, '')) LIKE CONCAT('%applyinggraphics', CHAR(34), ':', CHAR(34), 'o%')
+      OR LOWER(COALESCE(oigfp.options_json, '')) LIKE CONCAT('%applyinggraphics', CHAR(34), ':', CHAR(34), 'j%')
+      OR LOWER(COALESCE(oigfp.options_json, '')) LIKE CONCAT('%applyinggraphics', CHAR(34), ':', CHAR(34), 's%')
 
-  FROM orders o
-  JOIN order_sources os ON os.id = o.source_id
-  LEFT JOIN customers cu ON cu.id = o.customer_id
-  LEFT JOIN order_addresses oa_ship ON oa_ship.order_id = o.id AND UPPER(oa_ship.type) = 'SHIPPING'
-  LEFT JOIN order_addresses oa_bill ON oa_bill.order_id = o.id AND UPPER(oa_bill.type) = 'BILLING'
-  $whereSql
-  ORDER BY o.id DESC
-  LIMIT 500
+      OR LOWER(COALESCE(oigfp.options_json, '')) LIKE CONCAT('%fitting', CHAR(34), ':', CHAR(34), 'y%')
+      OR LOWER(COALESCE(oigfp.options_json, '')) LIKE CONCAT('%fitting', CHAR(34), ':', CHAR(34), 'o%')
+      OR LOWER(COALESCE(oigfp.options_json, '')) LIKE CONCAT('%fitting', CHAR(34), ':', CHAR(34), 'j%')
+      OR LOWER(COALESCE(oigfp.options_json, '')) LIKE CONCAT('%fitting', CHAR(34), ':', CHAR(34), 's%')
+    )
+) AS has_gfp,
+
+  EXISTS (
+    SELECT 1
+    FROM order_items oi2
+    WHERE oi2.order_id = o.id
+      AND oi2.item_type_code IN ('T','M')
+  ) AS has_tm,
+
+  (
+    SELECT oa.employee_id
+    FROM order_assignments oa
+    WHERE oa.order_id = o.id
+      AND oa.role = ?
+      AND oa.removed_at IS NULL
+    LIMIT 1
+  ) AS primary_emp_id,
+
+  (
+    SELECT CONCAT(e.firstname,' ',e.lastname)
+    FROM order_assignments oa
+    JOIN employees e ON e.id = oa.employee_id
+    WHERE oa.order_id = o.id
+      AND oa.role = ?
+      AND oa.removed_at IS NULL
+    LIMIT 1
+  ) AS primary_emp_name
+
+FROM orders o
+JOIN order_sources os ON os.id = o.source_id
+LEFT JOIN customers cu ON cu.id = o.customer_id
+LEFT JOIN order_addresses oa_ship
+  ON oa_ship.order_id = o.id AND UPPER(oa_ship.type) = 'SHIPPING'
+LEFT JOIN order_addresses oa_bill
+  ON oa_bill.order_id = o.id AND UPPER(oa_bill.type) = 'BILLING'
+$whereSql
+ORDER BY o.id DESC
+LIMIT 500
 ";
 
 $stmt = $conn->prepare($sql);
@@ -309,12 +401,11 @@ $deptOptions = [
             <th width="5%">Date</th>
             <th width="5%">Source</th>
             <th width="4%">Country</th>
-            <th width="5%">Order #</th>           
+            <th width="8%">Order #</th>
+            <th>Types</th>
             <th>Customer</th>
-            
             <th>Status</th>
             <th>Category</th>
-            <th>Types</th>
             <th>Detail</th>
           </tr>
         </thead>
@@ -371,27 +462,38 @@ $deptOptions = [
               <?php endif; ?>
               
             </td>
-            
+                        <td align="center">
+              <?php
+                $hasGfp = (int)($row['has_gfp'] ?? 0) === 1;
+
+                if ($hasGfp) {
+                  echo '<span class="badge badge-danger badge-type mr-1">GFP</span>';
+                } else {
+                  $types = array_filter(array_map('trim', explode(',', $typesStr)));
+                  if (!$types) $types = ['NULL'];
+
+                  foreach ($types as $t):
+                    $tClean = strtoupper($t);
+                    $badge = 'badge-secondary';
+
+                    if (in_array($tClean, ['T','M'], true)) $badge = 'badge-warning';
+                    elseif ($tClean === 'G') $badge = 'badge-info';
+                    elseif ($tClean === 'P') $badge = 'badge-primary';
+                    elseif ($tClean === 'S') $badge = 'badge-success';
+                    elseif ($tClean === 'F') $badge = 'badge-danger';
+              ?>
+                    <span class="badge <?= $badge ?> badge-type mr-1"><?= htmlspecialchars($tClean) ?></span>
+              <?php
+                  endforeach;
+                }
+              ?>
+            </td>
             <td><?= htmlspecialchars($customer) ?></td>
+            
             
             <td><?= htmlspecialchars((string)($row['status'] ?? '')) ?></td>
             <td><?= htmlspecialchars((string)($row['categories'] ?? '')) ?></td>
-            <td>
-              <?php
-                $types = array_filter(array_map('trim', explode(',', $typesStr)));
-                if (!$types) $types = ['NULL'];
-                foreach ($types as $t):
-                  $tClean = strtoupper($t);
-                  $badge = 'badge-secondary';
-                  if (in_array($tClean, ['T','M'], true)) $badge = 'badge-warning';
-                  elseif ($tClean === 'G') $badge = 'badge-info';
-                  elseif ($tClean === 'P') $badge = 'badge-primary';
-                  elseif ($tClean === 'S') $badge = 'badge-success';
-                  elseif ($tClean === 'F') $badge = 'badge-danger';
-              ?>
-                <span class="badge <?= $badge ?> badge-type mr-1"><?= htmlspecialchars($tClean) ?></span>
-              <?php endforeach; ?>
-            </td>
+
             <td class="text-nowrap">
   <button type="button"
           class="btn btn-sm btn-outline-light btn-toggle-detail mr-1"

@@ -14,7 +14,7 @@ if (!isset($_SESSION['permission']) || (int)$_SESSION['permission'] < 400) {
 }
 
 $base = dirname(__DIR__, 2);
-require_once $base . '../includes/conn.php';
+require_once $base . '/includes/conn.php';
 
 $orderId = (int)($_POST['order_id'] ?? 0);
 $country = strtoupper(trim((string)($_POST['country'] ?? '')));
