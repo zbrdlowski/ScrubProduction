@@ -411,15 +411,37 @@ ob_start();
 </div>
 <?php endif; ?>
       <hr/>
+          <?php
+            $stmt = $conn->prepare("
+              SELECT tracking_number, carrier
+              FROM order_tracking_numbers
+              WHERE order_id = ? AND deleted_at IS NULL
+            ");
+            $stmt->bind_param('i', $orderId);
+            $stmt->execute();
+            $tr = $stmt->get_result();
+            ?>
 
+            <h6 class="text-muted">Tracking</h6>
+
+            <?php while ($t = $tr->fetch_assoc()): ?>
+              <div>
+                <b><?php echo h($t['tracking_number']); ?></b>
+                <?php if (!empty($t['carrier'])): ?>
+                  <span class="text-muted">(<?php echo h($t['carrier']); ?>)</span>
+                <?php endif; ?>
+              </div>
+            <?php endwhile; ?>
       <div class="row">
         <div class="col-md-6">
           <h6 class="text-muted"><span class="badge badge-secondary">Billing</span></h6>
           <?php $b = $addr['BILLING']; ?>
           <?php if ($b): ?>
             <?php
+            if (strtoupper($b['country'] ?? '') === 'US') {
             $billingZip = normalizeUsZipFromAddress($b);
             $billingState = usStateFromZip($billingZip);
+          }
 
             $fullBilling = trim(
               ($b['name'] ?? '') . "\n" .
@@ -459,7 +481,12 @@ ob_start();
             <?php if ($s): ?>
               <?php
                 $shippingZip = normalizeUsZipFromAddress($s);
-                $shippingState = usStateFromZip($shippingZip);
+                $shippingState = '';
+
+                  if (strtoupper($s['country'] ?? '') === 'US') {
+                    $shippingZip = normalizeUsZipFromAddress($s);
+                    $shippingState = usStateFromZip($shippingZip);
+                  }
                 $fullShipping = addressCopyText($s, $shippingState);
               ?>
 
@@ -494,10 +521,79 @@ ob_start();
             <?php else: ?>
               <div class="text-muted">—</div>
             <?php endif; ?>
+            <hr class="my-2">
+
+          <h6 class="text-muted mb-2">
+            <span class="badge badge-secondary">Tracking</span>
+          </h6>
+
+          <?php
+          $trackingStmt = $conn->prepare("
+            SELECT id, tracking_number, carrier
+            FROM order_tracking_numbers
+            WHERE order_id = ? AND deleted_at IS NULL
+            ORDER BY id DESC
+          ");
+          $trackingStmt->bind_param('i', $orderId);
+          $trackingStmt->execute();
+          $trackingRes = $trackingStmt->get_result();
+          ?>
+
+          <?php while ($t = $trackingRes->fetch_assoc()): ?>
+            <div class="small mb-1">
+              <b><?php echo h($t['tracking_number']); ?></b>
+              <?php if (!empty($t['carrier'])): ?>
+                <span class="text-muted">(<?php echo h($t['carrier']); ?>)</span>
+              <?php endif; ?>
+            </div>
+          <?php endwhile; ?>
+          <?php $trackingStmt->close(); ?>
+
+          <?php if ((int)($_SESSION['permission'] ?? 0) >= 400): ?>
+            <div class="form-row mt-2">
+              <div class="col-md-7">
+                <input class="form-control form-control-sm tracking-number"
+                      placeholder="Tracking number">
+              </div>
+              <div class="col-md-3">
+                <input class="form-control form-control-sm tracking-carrier"
+                      placeholder="Carrier">
+              </div>
+              <div class="col-md-2">
+                <button class="btn btn-sm btn-warning btn-block btn-add-tracking"
+                        data-order-id="<?php echo (int)$orderId; ?>">
+                  Add Tracking
+                </button>
+              </div>
+            </div>
+          <?php endif; ?>
           </div>
 
       </div>
+   
 
+          <?php
+          $trackingStmt = $conn->prepare("
+            SELECT tracking_number, carrier
+            FROM order_tracking_numbers
+            WHERE order_id = ? AND deleted_at IS NULL
+            ORDER BY id DESC
+          ");
+          $trackingStmt->bind_param('i', $orderId);
+          $trackingStmt->execute();
+          $trackingRes = $trackingStmt->get_result();
+          ?>
+
+          <?php while ($t = $trackingRes->fetch_assoc()): ?>
+            <div class="small mb-1">
+              <b><?php echo h($t['tracking_number']); ?></b>
+              <?php if (!empty($t['carrier'])): ?>
+                <span class="text-muted">(<?php echo h($t['carrier']); ?>)</span>
+              <?php endif; ?>
+            </div>
+          <?php endwhile; ?>
+          <?php $trackingStmt->close(); ?>
+          
       <hr/>
 
       <h6 class="text-muted mb-2">Položky</h6>

@@ -1040,7 +1040,36 @@ $(document).on('click', '.btn-save-order-header', function(){
       $btn.prop('disabled', false).text('Save changes');
     }
   });
-});s
+});
+$(document).on('click', '.btn-add-tracking', function(){
+  const orderId = $(this).data('order-id');
+  const $box = $(this).closest('.mt-2');
+
+  $box.find('.tracking-number').val('');
+  $box.find('.tracking-carrier').val('');
+
+  $.post('scripts/orders/add_tracking.php', {
+    order_id: orderId,
+    tracking_number: $box.find('.tracking-number').val(),
+    carrier: $box.find('.tracking-carrier').val()
+  }, function(res){
+    if (!res.ok) {
+      alert(res.error || 'Error');
+      return;
+    }
+
+    // reload detail
+    const $wrap = $('#detail-' + orderId);
+    $wrap.removeData('loaded').html('');
+    $('.btn-toggle-detail[data-order-id="'+orderId+'"]').click();
+
+  }, 'json');
+});
+$(document).on('keypress', '.tracking-number', function(e){
+  if (e.which === 13) {
+    $(this).closest('.form-row').find('.btn-add-tracking').click();
+  }
+});
 </script>
 <div class="modal fade" id="optionsModal" tabindex="-1" role="dialog" aria-hidden="true">
   <div class="modal-dialog modal-lg" role="document">
