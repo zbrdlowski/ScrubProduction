@@ -980,6 +980,67 @@ $(document).on('click', '.btn-edit-country', function(e) {
     }
   });
 });
+$(document).on('click', '.btn-edit-order-header', function(){
+  const $detail = $(this).closest('.detail-wrap');
+  $detail.find('.order-header-edit').slideDown(150);
+});
+
+$(document).on('click', '.btn-cancel-order-header', function(){
+  $(this).closest('.order-header-edit').slideUp(150);
+});
+
+$(document).on('click', '.btn-save-order-header', function(){
+  const $box = $(this).closest('.order-header-edit');
+  const orderId = $box.find('.edit-order-id').val();
+  const $btn = $(this);
+
+  $btn.prop('disabled', true).text('Saving...');
+
+  $.ajax({
+    url: 'scripts/orders/update_order_header.php',
+    method: 'POST',
+    dataType: 'json',
+    data: {
+      order_id: orderId,
+      delivery: $box.find('.edit-delivery').val(),
+      payment: $box.find('.edit-payment').val(),
+
+      'billing[name]': $box.find('.edit-billing-name').val(),
+      'billing[company]': $box.find('.edit-billing-company').val(),
+      'billing[street]': $box.find('.edit-billing-street').val(),
+      'billing[city]': $box.find('.edit-billing-city').val(),
+      'billing[zip]': $box.find('.edit-billing-zip').val(),
+      'billing[country]': $box.find('.edit-billing-country').val(),
+      'billing[email]': $box.find('.edit-billing-email').val(),
+      'billing[phone]': $box.find('.edit-billing-phone').val(),
+
+      'shipping[name]': $box.find('.edit-shipping-name').val(),
+      'shipping[company]': $box.find('.edit-shipping-company').val(),
+      'shipping[street]': $box.find('.edit-shipping-street').val(),
+      'shipping[city]': $box.find('.edit-shipping-city').val(),
+      'shipping[zip]': $box.find('.edit-shipping-zip').val(),
+      'shipping[country]': $box.find('.edit-shipping-country').val(),
+      'shipping[email]': $box.find('.edit-shipping-email').val(),
+      'shipping[phone]': $box.find('.edit-shipping-phone').val()
+    },
+    success: function(resp){
+      if (!resp || !resp.ok) {
+        alert('Save error: ' + (resp && resp.error ? resp.error : 'unknown'));
+        $btn.prop('disabled', false).text('Save changes');
+        return;
+      }
+
+      const $wrap = $('#detail-' + orderId);
+      $wrap.removeData('loaded');
+      $wrap.html('');
+      $('.btn-toggle-detail[data-order-id="' + orderId + '"]').trigger('click');
+    },
+    error: function(){
+      alert('Save request failed');
+      $btn.prop('disabled', false).text('Save changes');
+    }
+  });
+});s
 </script>
 <div class="modal fade" id="optionsModal" tabindex="-1" role="dialog" aria-hidden="true">
   <div class="modal-dialog modal-lg" role="document">
