@@ -53,8 +53,6 @@ $stmt->bind_param('sii', $note, $userId, $orderId);
 $stmt->execute();
 $stmt->close();
 
-out(['ok' => true]);
-
 require_once __DIR__ . '/activity_helper.php';
 
 log_order_activity(
@@ -70,3 +68,5 @@ log_order_activity(
   ],
   'Production note updated'
 );
+
+out(['ok' => true]);

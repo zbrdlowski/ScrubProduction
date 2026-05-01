@@ -3,6 +3,7 @@ session_start();
 header('Content-Type: application/json');
 
 require_once dirname(__DIR__,2).'/includes/conn.php';
+require_once __DIR__ . '/activity_helper.php';
 
 if ((int)($_SESSION['permission'] ?? 0) < 400) {
   echo json_encode(['ok'=>false,'error'=>'No permission']);
@@ -26,5 +27,20 @@ $stmt = $conn->prepare("
 
 $stmt->bind_param('isi', $orderId, $invoice, $userId);
 $stmt->execute();
+
+$invoiceId = (int)$conn->insert_id;
+
+log_order_activity(
+  $conn,
+  $orderId,
+  $userId,
+  'invoice_added',
+  'invoice',
+  $invoiceId,
+  [
+    'invoice_number' => $invoice
+  ],
+  'Invoice added'
+);
 
 echo json_encode(['ok'=>true]);

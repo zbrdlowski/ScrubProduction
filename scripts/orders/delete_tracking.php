@@ -49,9 +49,6 @@ $stmt->bind_param('i', $id);
 $stmt->execute();
 $stmt->close();
 
-out(['ok' => true]);
-
-
 //activity log
 $userId = (int)($_SESSION['user_id'] ?? 0);
 
@@ -68,3 +65,6 @@ log_order_activity(
   ],
   'Tracking deleted'
 );
+out(['ok' => true]);
+
+
