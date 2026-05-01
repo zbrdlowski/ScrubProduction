@@ -1175,6 +1175,39 @@ $(document).on('click', '.btn-save-production-note', function(){
 
   }, 'json');
 });
+
+$(document).on('click', '.btn-toggle-activity', function(){
+  $(this).closest('.card-body').find('.activity-log-panel').slideToggle(150);
+});
+
+$(document).on('click', '.btn-load-older-activity', function(){
+  const $btn = $(this);
+  const orderId = $btn.data('order-id');
+  const offset = parseInt($btn.data('offset') || 0, 10);
+  const $panel = $btn.closest('.activity-log-panel');
+  const $list = $panel.find('.activity-log-list');
+
+  $btn.prop('disabled', true).text('Loading...');
+
+  $.post('scripts/orders/load_activity_log.php', {
+    order_id: orderId,
+    offset: offset
+  }, function(res){
+    if (!res || !res.ok) {
+      alert(res && res.error ? res.error : 'Load failed');
+      $btn.prop('disabled', false).text('Load older');
+      return;
+    }
+
+    if (res.html) {
+      $list.append(res.html);
+      $btn.data('offset', offset + 30);
+      $btn.prop('disabled', false).text('Load older');
+    } else {
+      $btn.text('No older records').prop('disabled', true);
+    }
+  }, 'json');
+});
 </script>
 <div class="modal fade" id="optionsModal" tabindex="-1" role="dialog" aria-hidden="true">
   <div class="modal-dialog modal-lg" role="document">

@@ -271,6 +271,10 @@ ob_start();
   background: rgba(255, 193, 7, 0.22) !important;
   box-shadow: inset 4px 0 0 #ffc107;
 }
+.activity-log-row {
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+  padding: 6px 0;
+}
 </style>
 <div class="p-3">
   <div class="card card-dark mb-0" style="border-radius:14px; overflow:hidden;">
@@ -703,44 +707,60 @@ ob_start();
           <?php endforeach; ?>
           </tbody>
         </table>
-        <hr/>
+        <?php if ((int)($_SESSION['permission'] ?? 0) >= 400): ?>
+  <hr/>
 
-<h6 class="text-muted mb-2">Activity log</h6>
+  <button type="button"
+          class="btn btn-sm btn-outline-info btn-toggle-activity"
+          data-order-id="<?php echo (int)$orderId; ?>">
+    Activity log
+  </button>
 
-<?php
-$actStmt = $conn->prepare("
-  SELECT
-    oa.action,
-    oa.entity_type,
-    oa.entity_id,
-    oa.payload,
-    oa.note,
-    oa.created_at,
-    CONCAT(e.firstname, ' ', e.lastname) AS actor_name
-  FROM order_activity oa
-  LEFT JOIN employees e ON e.id = oa.actor_employee_id
-  WHERE oa.order_id = ?
-  ORDER BY oa.id DESC
-  LIMIT 30
-");
-$actStmt->bind_param('i', $orderId);
-$actStmt->execute();
-$actRes = $actStmt->get_result();
-?>
+  <div class="activity-log-panel mt-2" style="display:none;">
+    <?php
+    $actStmt = $conn->prepare("
+      SELECT
+        oa.id,
+        oa.action,
+        oa.entity_type,
+        oa.entity_id,
+        oa.payload,
+        oa.note,
+        oa.created_at,
+        CONCAT(e.firstname, ' ', e.lastname) AS actor_name
+      FROM order_activity oa
+      LEFT JOIN employees e ON e.id = oa.actor_employee_id
+      WHERE oa.order_id = ?
+      ORDER BY oa.id DESC
+      LIMIT 30
+    ");
+    $actStmt->bind_param('i', $orderId);
+    $actStmt->execute();
+    $actRes = $actStmt->get_result();
+    ?>
 
-<div class="small">
-  <?php while ($a = $actRes->fetch_assoc()): ?>
-    <div class="border-bottom py-1">
-      <span class="text-muted"><?php echo h($a['created_at']); ?></span>
-      —
-      <b><?php echo h($a['actor_name'] ?: 'System'); ?></b>
-      :
-      <span><?php echo h($a['note'] ?: $a['action']); ?></span>
+    <div class="small activity-log-list">
+      <?php while ($a = $actRes->fetch_assoc()): ?>
+        <div class="py-1 activity-log-row" style="border-bottom: 1px solid rgba(255,255,255,0.08);">
+          <span class="text-muted"><?php echo h($a['created_at']); ?></span>
+          —
+          <b><?php echo h($a['actor_name'] ?: 'System'); ?></b>
+          :
+          <span><?php echo h($a['note'] ?: $a['action']); ?></span>
+        </div>
+      <?php endwhile; ?>
     </div>
-  <?php endwhile; ?>
-</div>
 
-<?php $actStmt->close(); ?>
+    <?php $actStmt->close(); ?>
+
+    <button type="button"
+            class="btn btn-xs btn-outline-secondary mt-2 btn-load-older-activity"
+            data-order-id="<?php echo (int)$orderId; ?>"
+            data-offset="30">
+      Load older
+    </button>
+  </div>
+<?php endif; ?>
       </div>
 
     </div>
