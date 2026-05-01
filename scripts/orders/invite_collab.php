@@ -53,7 +53,25 @@ $roleToUse = ($perm >= 400 && $mode === 'assign')
 $stateToUse = ($perm >= 400 && $mode === 'assign')
   ? 'ASSIGNED'
   : 'INVITED';
+$isAdminAssign = ($perm >= 400 && $mode === 'assign');
 
+if ($isAdminAssign) {
+  // Reassign only PRIMARY role for this department.
+  // Collaborators stay untouched.
+  $rm = $conn->prepare("
+    UPDATE order_assignments
+    SET removed_at = NOW()
+    WHERE order_id = ?
+      AND role = ?
+      AND removed_at IS NULL
+  ");
+  if (!$rm) {
+    throw new Exception($conn->error);
+  }
+  $rm->bind_param('is', $orderId, $rolePrimary);
+  $rm->execute();
+  $rm->close();
+}
 try {
   $conn->begin_transaction();
 
@@ -76,21 +94,80 @@ try {
   }
 
   // insert or update via uq_order_employee
-  $sql = "INSERT INTO order_assignments
-            (order_id, employee_id, role, state, invited_by)
-          VALUES (?, ?, ?, ?, ?)
-          ON DUPLICATE KEY UPDATE
-            role=VALUES(role),
-            state=VALUES(state),
-            state='INVITED',
-            invited_by=VALUES(invited_by),
-            removed_at=NULL,
-            accepted_at=NULL";
+$sql = "INSERT INTO order_assignments
+          (order_id, employee_id, role, state, assigned_by, invited_by)
+        VALUES (?, ?, ?, ?, ?, ?)
+        ON DUPLICATE KEY UPDATE
+          role=VALUES(role),
+          state=VALUES(state),
+          assigned_by=VALUES(assigned_by),
+          invited_by=VALUES(invited_by),
+          removed_at=NULL,
+          accepted_at=NULL";
 
-  $st = $conn->prepare($sql);
-  $st->bind_param('iissi', $orderId, $employeeIdToInvite, $roleToUse, $stateToUse, $userId);
-  $st->execute();
+$assignedBy = $isAdminAssign ? $userId : null;
+$invitedBy  = $isAdminAssign ? null : $userId;
+
+$st = $conn->prepare($sql);
+if (!$st) {
+  throw new Exception($conn->error);
+}
+
+$st->bind_param(
+  'iissii',
+  $orderId,
+  $employeeIdToInvite,
+  $roleToUse,
+  $stateToUse,
+  $assignedBy,
+  $invitedBy
+);
+  $st->execute();  
   $st->close();
+
+  $assignmentId = (int)$conn->insert_id;
+
+if ($isAdminAssign) {
+  $upd = $conn->prepare("
+    UPDATE orders
+    SET status = 'IN_PROGRESS'
+    WHERE id = ?
+      AND status = 'NEW'
+  ");
+  $upd->bind_param('i', $orderId);
+  $upd->execute();
+  $upd->close();
+
+  log_order_activity(
+    $conn,
+    $orderId,
+    $userId,
+    'order_assigned',
+    'assignment',
+    $assignmentId,
+    [
+      'employee_id' => $employeeIdToInvite,
+      'role' => $roleToUse,
+      'state' => $stateToUse
+    ],
+    'Order assigned'
+  );
+} else {
+  log_order_activity(
+    $conn,
+    $orderId,
+    $userId,
+    'collaborator_invited',
+    'assignment',
+    $assignmentId,
+    [
+      'employee_id' => $employeeIdToInvite,
+      'role' => $roleToUse,
+      'state' => $stateToUse
+    ],
+    'Collaborator invited'
+  );
+}
 
   $conn->commit();
   echo json_encode(['ok'=>true], JSON_UNESCAPED_UNICODE);

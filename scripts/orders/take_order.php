@@ -10,6 +10,7 @@ if (!isset($_SESSION['permission'])) {
 }
 
 require_once __DIR__ . '/../../includes/conn.php';
+require_once __DIR__ . '/activity_helper.php';
 
 $orderId = (int)($_POST['order_id'] ?? 0);
 if ($orderId <= 0) {
@@ -85,8 +86,29 @@ try {
   $ins->execute();
   $ins->close();
 
-  // optional activity log (ak máš order_activity pripravené)
-  // $act = $conn->prepare("INSERT INTO order_activity (...) VALUES (...)");
+  // optional activity log 
+$upd = $conn->prepare("
+  UPDATE orders
+  SET status = 'IN_PROGRESS'
+  WHERE id = ?
+    AND status = 'NEW'
+");
+$upd->bind_param('i', $orderId);
+$upd->execute();
+$upd->close();
+
+log_order_activity(
+  $conn,
+  $orderId,
+  $userId,
+  'order_taken',
+  'assignment',
+  0,
+  [
+    'role' => $rolePrimary
+  ],
+  'Order taken'
+);
 
   $conn->commit();
   echo json_encode(['ok'=>true,'role'=>$rolePrimary], JSON_UNESCAPED_UNICODE);

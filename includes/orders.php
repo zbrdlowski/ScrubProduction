@@ -419,6 +419,10 @@ $deptOptions = [
 .assigned-photo.assigned-collab {
   border-color: rgba(255,255,255,.35);
 }
+.order-in-progress {
+  background: rgba(23,162,184,0.12) !important;
+  box-shadow: inset 4px 0 0 #17a2b8;
+}
 </style>
 
 <div class="card card-dark">
@@ -502,7 +506,16 @@ $deptOptions = [
           <?php
             $orderId = (int)$row['id'];
             $hasTM = (int)($row['has_tm'] ?? 0) === 1;
-            $rowClass = ($dpt === 6 && $hasTM) ? 'tm-highlight' : '';
+            $rowClass = '';
+
+              $statusUpper = strtoupper((string)($row['status'] ?? ''));
+
+              if ($statusUpper === 'IN_PROGRESS') {
+                $rowClass = 'order-in-progress';
+              } elseif ($dpt === 6 && $hasTM) {
+                $rowClass = 'tm-highlight';
+              }
+
             $typesStr = (string)($row['item_types'] ?? '');
             $customer = trim((string)($row['customer_name'] ?? ''));
             if ($customer === '') $customer = (string)($row['customer_email'] ?? '-');
@@ -579,7 +592,20 @@ $deptOptions = [
             <td><?= htmlspecialchars($customer) ?></td>
             
             
-            <td><?= htmlspecialchars((string)($row['status'] ?? '')) ?></td>
+            <td>
+            <?php
+              $status = strtoupper((string)($row['status'] ?? ''));
+              $statusBadge = 'badge-secondary';
+
+              if ($status === 'NEW') $statusBadge = 'badge-info';
+              elseif ($status === 'IN_PROGRESS') $statusBadge = 'badge-primary';
+              elseif ($status === 'HOLD') $statusBadge = 'badge-danger';
+              elseif ($status === 'DONE' || $status === 'SHIPPED') $statusBadge = 'badge-success';
+            ?>
+            <span class="badge <?= $statusBadge ?>">
+              <?= htmlspecialchars($status ?: '-') ?>
+            </span>
+          </td>
             <td>
              
   <?php
@@ -868,12 +894,15 @@ $(document).on('input', '#empSearch', function(){
 
         let html = '';
         items.forEach(function(it){
+          const mode = $('#inviteMode').val() || 'invite';
+          const label = mode === 'assign' ? 'Assign To' : 'Invite';
+
           html += `
             <button type="button"
                     class="list-group-item list-group-item-action bg-dark text-light d-flex justify-content-between align-items-center btn-emp-pick"
                     data-emp-id="${it.id}">
               <span>${it.name}</span>
-              <span class="btn btn-primary btn-sm">Invite</span>
+              <span class="btn btn-info btn-sm">${label}</span>
             </button>
           `;
         });
