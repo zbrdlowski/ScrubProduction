@@ -234,7 +234,28 @@ EXISTS (
       AND oa.role = ?
       AND oa.removed_at IS NULL
     LIMIT 1
-  ) AS primary_emp_name
+  ) AS primary_emp_name,
+
+(
+  SELECT GROUP_CONCAT(
+        CONCAT(
+          e.id, '|',
+          e.firstname, ' ', e.lastname, '|',
+          oa.role, '|',
+          oa.state, '|',
+          COALESCE(e.photo, '')
+        )
+    ORDER BY
+      CASE WHEN oa.role LIKE 'PRIMARY_%' THEN 0 ELSE 1 END,
+      e.firstname,
+      e.lastname
+    SEPARATOR ';;'
+  )
+  FROM order_assignments oa
+  JOIN employees e ON e.id = oa.employee_id
+  WHERE oa.order_id = o.id
+    AND oa.removed_at IS NULL
+) AS assigned_users
 
 FROM orders o
 JOIN order_sources os ON os.id = o.source_id
@@ -346,6 +367,58 @@ $deptOptions = [
   border-color: #17a2b8 !important;
   box-shadow: 0 0 0 0.1rem rgba(23,162,184,.25);
 }
+.assigned-users {
+  display: flex;
+  align-items: center;
+  justify-content: center; /* 👈 toto pridaj */
+  gap: 4px;
+  white-space: nowrap;
+  width: 100%;
+}
+
+.assigned-avatar,
+.assigned-more {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.72rem;
+  font-weight: 700;
+  cursor: default;
+  border: 1px solid rgba(255,255,255,.22);
+}
+
+.assigned-primary {
+  background: rgba(23,162,184,.35);
+  color: #fff;
+}
+
+.assigned-collab {
+  background: rgba(108,117,125,.45);
+  color: #fff;
+}
+
+.assigned-more {
+  background: rgba(255,255,255,.12);
+  color: #ddd;
+}
+.assigned-photo {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 1px solid rgba(255,255,255,.22);
+}
+
+.assigned-photo.assigned-primary {
+  border-color: #17a2b8;
+}
+
+.assigned-photo.assigned-collab {
+  border-color: rgba(255,255,255,.35);
+}
 </style>
 
 <div class="card card-dark">
@@ -420,7 +493,7 @@ $deptOptions = [
             <th>Types</th>
             <th>Customer</th>
             <th>Status</th>
-            <th>Category</th>
+            <th>Assigned</th>
             <th>Detail</th>
           </tr>
         </thead>
@@ -507,7 +580,68 @@ $deptOptions = [
             
             
             <td><?= htmlspecialchars((string)($row['status'] ?? '')) ?></td>
-            <td><?= htmlspecialchars((string)($row['categories'] ?? '')) ?></td>
+            <td>
+             
+  <?php
+    $assignedRaw = (string)($row['assigned_users'] ?? '');
+    $assigned = [];
+
+    if ($assignedRaw !== '') {
+      foreach (explode(';;', $assignedRaw) as $part) {
+        $bits = explode('|', $part);
+        if (count($bits) >= 5) {
+          $assigned[] = [
+            'id' => (int)$bits[0],
+            'name' => $bits[1],
+            'role' => $bits[2],
+            'state' => $bits[3],
+            'photo' => $bits[4],
+          ];
+        }
+      }
+    }
+
+    $maxVisible = 4;
+    $visible = array_slice($assigned, 0, $maxVisible);
+    $hiddenCount = max(0, count($assigned) - $maxVisible);
+  ?>
+
+  <?php if (!$assigned): ?>
+    <span class="text-muted">—</span>
+  <?php else: ?>
+    <div class="assigned-users">
+      <?php foreach ($visible as $a): ?>
+        <?php
+          $name = trim($a['name']);
+          $initials = '';
+          foreach (preg_split('/\s+/', $name) as $p) {
+            if ($p !== '') $initials .= mb_strtoupper(mb_substr($p, 0, 1));
+          }
+          $initials = mb_substr($initials, 0, 2);
+
+          $roleClass = (strpos($a['role'], 'PRIMARY_') === 0) ? 'assigned-primary' : 'assigned-collab';
+        ?>
+        <?php if (!empty($a['photo'])): ?>
+          <img src="images/<?= htmlspecialchars($a['photo']) ?>"
+              class="assigned-photo <?= $roleClass ?>"
+              title="<?= htmlspecialchars($name . ' — ' . $a['role']) ?>">
+        <?php else: ?>
+          <span class="assigned-avatar <?= $roleClass ?>"
+                title="<?= htmlspecialchars($name . ' — ' . $a['role']) ?>">
+            <?= htmlspecialchars($initials ?: '?') ?>
+          </span>
+<?php endif; ?>
+      <?php endforeach; ?>
+
+      <?php if ($hiddenCount > 0): ?>
+        <span class="assigned-more" title="<?= htmlspecialchars($assignedRaw) ?>">
+          +<?= (int)$hiddenCount ?>
+        </span>
+      <?php endif; ?>
+    </div>
+  <?php endif; ?>
+  
+</td>
 
             <td class="text-nowrap">
   <button type="button"
@@ -524,14 +658,27 @@ $deptOptions = [
 
   <?php if ($canUseDeptButtons): ?>
 
-    <?php if ($primaryId <= 0): ?>
-      <button type="button"
-              class="btn btn-sm btn-success btn-take-order"
-              data-order-id="<?= $orderId ?>">
-        TAKE
-      </button>
+<?php if ($primaryId <= 0): ?>
 
-    <?php else: ?>
+  <!-- TAKE (všetci) -->
+  <button type="button"
+          class="btn btn-sm btn-success btn-take-order mr-1"
+          data-order-id="<?= $orderId ?>">
+    TAKE
+  </button>
+
+  <!-- Assign To (len admin/mod) -->
+  <?php if ($perm >= 400): ?>
+    <button type="button"
+            class="btn btn-sm btn-info btn-invite-collab"
+            data-order-id="<?= $orderId ?>"
+            data-dept-code="<?= htmlspecialchars((string)$uiDeptCode) ?>"
+            data-mode="assign">
+      Assign To
+    </button>
+  <?php endif; ?>
+
+<?php else: ?>
       <?php if ($primaryId === $meUserId): ?>
         <span class="badge badge-warning mr-1 px-3 py-2" style="font-size:0.85rem;">
   MINE
@@ -546,11 +693,12 @@ $deptOptions = [
         $canInvite = ($perm >= 400) || ($primaryId === $meUserId);
       ?>
       <button type="button"
-              class="btn btn-sm btn-primary btn-invite-collab"
-              data-order-id="<?= $orderId ?>"
-              <?= $canInvite ? '' : 'disabled' ?>
-              title="<?= $canInvite ? 'Invite collaborator' : 'Only owner or admin can invite' ?>">
-        INVITE
+        class="btn btn-sm btn-info btn-invite-collab"
+        data-order-id="<?= $orderId ?>"
+        data-dept-code="<?= htmlspecialchars((string)$uiDeptCode) ?>"
+        data-mode="<?= ($perm >= 400 ? 'assign' : 'invite') ?>"
+        <?= $canInvite ? '' : 'disabled' ?>>
+        <?= ($perm >= 400 ? 'Assign To' : 'INVITE') ?>
       </button>
 
     <?php endif; ?>
@@ -679,6 +827,8 @@ $(document).on('click', '.btn-take-order', function(){
 $(document).on('click', '.btn-invite-collab', function(){
   const orderId = $(this).data('order-id');
   $('#inviteOrderId').val(orderId);
+  $('#inviteDeptCode').val($(this).data('dept-code') || '');
+  $('#inviteMode').val($(this).data('mode') || 'invite');
   $('#empSearch').val('');
   $('#empResults').html('');
   $('#inviteModal').modal('show');
@@ -746,7 +896,12 @@ $(document).on('click', '.btn-emp-pick', function(){
     url: 'scripts/orders/invite_collab.php',
     method: 'POST',
     dataType: 'json',
-    data: { order_id: orderId, employee_id: empId },
+    data: {
+    order_id: orderId,
+    employee_id: empId,
+    dept_code: $('#inviteDeptCode').val(),
+    mode: $('#inviteMode').val()
+  },
     success: function(resp){
       if (!resp || !resp.ok) {
         alert('Invite error: ' + (resp && resp.error ? resp.error : 'unknown'));
@@ -1269,7 +1424,8 @@ $(document).on('click', '.btn-load-older-activity', function(){
 
       <div class="modal-body">
         <input type="hidden" id="inviteOrderId" value="">
-
+        <input type="hidden" id="inviteDeptCode" value="">
+        <input type="hidden" id="inviteMode" value="invite">
         <div class="form-group">
           <label>Search employee</label>
           <input type="text" class="form-control" id="empSearch" placeholder="Meno / priezvisko / username...">

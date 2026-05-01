@@ -22,8 +22,7 @@ if (mb_strlen($q) < 2) {
 
 $like = '%' . $q . '%';
 
-$stmt = $conn->prepare("
-  SELECT id, firstname, lastname
+$stmt = $conn->prepare("SELECT id, firstname, lastname
   FROM employees
   WHERE firstname LIKE ?
      OR lastname LIKE ?

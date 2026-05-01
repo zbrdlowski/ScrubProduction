@@ -23,6 +23,8 @@ if ($orderId <= 0 || $employeeIdToInvite <= 0) {
 $userId = (int)($_SESSION['user_id'] ?? 0);
 $perm  = (int)($_SESSION['permission'] ?? 0);
 $dpt   = (int)($_SESSION['dpt'] ?? 0);
+$postDeptCode = strtoupper(trim((string)($_POST['dept_code'] ?? '')));
+$mode = trim((string)($_POST['mode'] ?? 'invite'));
 
 $deptMap = [
   2 => 'GRAPHICS',
@@ -31,6 +33,10 @@ $deptMap = [
   9 => 'FITTING',
 ];
 $deptCode = $deptMap[$dpt] ?? null;
+
+if ($perm >= 400 && in_array($postDeptCode, ['GRAPHICS','PLASTICS','SEATCOVER','FITTING'], true)) {
+  $deptCode = $postDeptCode;
+}
 if (!$deptCode) {
   http_response_code(403);
   echo json_encode(['ok'=>false,'error'=>'This department cannot invite']);
@@ -39,6 +45,14 @@ if (!$deptCode) {
 
 $rolePrimary = 'PRIMARY_' . $deptCode;
 $roleCollab  = 'COLLAB_'  . $deptCode;
+
+$roleToUse = ($perm >= 400 && $mode === 'assign')
+  ? $rolePrimary
+  : $roleCollab;
+
+$stateToUse = ($perm >= 400 && $mode === 'assign')
+  ? 'ASSIGNED'
+  : 'INVITED';
 
 try {
   $conn->begin_transaction();
@@ -64,16 +78,17 @@ try {
   // insert or update via uq_order_employee
   $sql = "INSERT INTO order_assignments
             (order_id, employee_id, role, state, invited_by)
-          VALUES (?, ?, ?, 'INVITED', ?)
+          VALUES (?, ?, ?, ?, ?)
           ON DUPLICATE KEY UPDATE
             role=VALUES(role),
+            state=VALUES(state),
             state='INVITED',
             invited_by=VALUES(invited_by),
             removed_at=NULL,
             accepted_at=NULL";
 
   $st = $conn->prepare($sql);
-  $st->bind_param('iisi', $orderId, $employeeIdToInvite, $roleCollab, $userId);
+  $st->bind_param('iissi', $orderId, $employeeIdToInvite, $roleToUse, $stateToUse, $userId);
   $st->execute();
   $st->close();
 
