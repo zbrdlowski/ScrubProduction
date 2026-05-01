@@ -469,9 +469,18 @@ ob_start();
                 ?>
 
                 <?php while ($inv = $invRes->fetch_assoc()): ?>
-                  <div class="small mb-1">
-                    <b><?php echo h($inv['invoice_number']); ?></b>
+                  <div class="small mb-1 d-flex align-items-center">
+
+                    <div>
+                      <b><?php echo h($inv['invoice_number']); ?></b>
+                    </div>
+
+                    <?php if ((int)($_SESSION['permission'] ?? 0) >= 400): ?>
+                      <button class="btn btn-xs btn-outline-danger ml-2 py-0 px-2 btn-delete-invoice" data-id="<?php echo (int)$inv['id']; ?>" data-order-id="<?php echo (int)$orderId; ?>"> × </button>
+                    <?php endif; ?>
+
                   </div>
+
                 <?php endwhile; ?>
                 <?php $invStmt->close(); ?>
 
@@ -482,7 +491,7 @@ ob_start();
                             placeholder="Invoice number">
                     </div>
                     <div class="col-md-4">
-                      <button class="btn btn-sm btn-warning btn-block btn-add-invoice"
+                      <button class="btn btn-sm btn-info btn-block btn-add-invoice"
                               data-order-id="<?php echo (int)$orderId; ?>">
                         Add Invoice
                       </button>
@@ -547,6 +556,7 @@ ob_start();
           <h6 class="text-muted mb-2">
             <span class="badge badge-secondary">Tracking</span>
           </h6>
+          
 
           <?php
           $trackingStmt = $conn->prepare("
@@ -561,12 +571,22 @@ ob_start();
           ?>
 
           <?php while ($t = $trackingRes->fetch_assoc()): ?>
-            <div class="small mb-1">
+            <div class="small mb-1 d-flex align-items-center">
+  
+            <div>
               <b><?php echo h($t['tracking_number']); ?></b>
               <?php if (!empty($t['carrier'])): ?>
                 <span class="text-muted">(<?php echo h($t['carrier']); ?>)</span>
               <?php endif; ?>
             </div>
+
+            <?php if ((int)($_SESSION['permission'] ?? 0) >= 400): ?>
+              <button class="btn btn-xs btn-outline-danger ml-2 py-0 px-2 btn-delete-tracking" data-id="<?php echo (int)$t['id']; ?>" data-order-id="<?php echo (int)$orderId; ?>">
+                ×
+              </button>
+            <?php endif; ?>
+
+          </div>
           <?php endwhile; ?>
           <?php $trackingStmt->close(); ?>
 
@@ -581,7 +601,7 @@ ob_start();
                       placeholder="Carrier">
               </div>
               <div class="col-md-2">
-                <button class="btn btn-sm btn-warning btn-block btn-add-tracking"
+                <button class="btn btn-sm btn-info btn-block btn-add-tracking"
                         data-order-id="<?php echo (int)$orderId; ?>">
                   Add Tracking
                 </button>
@@ -593,6 +613,30 @@ ob_start();
       </div>
           
       <hr/>
+
+<h6 class="text-muted mb-2">Production note</h6>
+
+        <div class="card bg-dark border-info p-2 production-note-box">
+          <div class="production-note-display text-light">
+            <?php echo nl2br(h($order['production_note'] ?? '')); ?>
+            <?php if (trim((string)($order['production_note'] ?? '')) === ''): ?>
+              <span class="text-muted">No production note.</span>
+            <?php endif; ?>
+          </div>
+
+          <?php if ((int)($_SESSION['permission'] ?? 0) >= 400): ?>
+            <textarea class="form-control form-control-sm mt-2 production-note-input production-note-textarea"
+                      rows="3"
+                      placeholder="Customer changes / production instructions..."><?php echo h($order['production_note'] ?? ''); ?></textarea>
+              <div class="mt-2">  
+            <button class="btn btn-sm btn-info mt-2 btn-save-production-note"
+              style="width:auto; display:inline-block;"
+              data-order-id="<?php echo (int)$orderId; ?>">
+              Save note
+            </button>
+            </div>
+          <?php endif; ?>
+      </div>
       <h6 class="text-muted mb-2">Položky</h6>
       <div class="table-responsive">
     <table class="table table-sm table-bordered mb-0 order-detail-table">
@@ -659,6 +703,44 @@ ob_start();
           <?php endforeach; ?>
           </tbody>
         </table>
+        <hr/>
+
+<h6 class="text-muted mb-2">Activity log</h6>
+
+<?php
+$actStmt = $conn->prepare("
+  SELECT
+    oa.action,
+    oa.entity_type,
+    oa.entity_id,
+    oa.payload,
+    oa.note,
+    oa.created_at,
+    CONCAT(e.firstname, ' ', e.lastname) AS actor_name
+  FROM order_activity oa
+  LEFT JOIN employees e ON e.id = oa.actor_employee_id
+  WHERE oa.order_id = ?
+  ORDER BY oa.id DESC
+  LIMIT 30
+");
+$actStmt->bind_param('i', $orderId);
+$actStmt->execute();
+$actRes = $actStmt->get_result();
+?>
+
+<div class="small">
+  <?php while ($a = $actRes->fetch_assoc()): ?>
+    <div class="border-bottom py-1">
+      <span class="text-muted"><?php echo h($a['created_at']); ?></span>
+      —
+      <b><?php echo h($a['actor_name'] ?: 'System'); ?></b>
+      :
+      <span><?php echo h($a['note'] ?: $a['action']); ?></span>
+    </div>
+  <?php endwhile; ?>
+</div>
+
+<?php $actStmt->close(); ?>
       </div>
 
     </div>

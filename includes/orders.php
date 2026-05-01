@@ -331,6 +331,21 @@ $deptOptions = [
   background: rgba(23, 162, 184, 0.18) !important;
   box-shadow: inset 4px 0 0 #17a2b8;
 }
+.btn-delete-tracking:hover {
+  background: #dc3545;
+  color: white;
+}
+.production-note-textarea {
+  background: rgba(255,255,255,0.06) !important;
+  border: 1px solid rgba(255,255,255,0.2) !important;
+  color: #fff !important;
+}
+
+.production-note-textarea:focus {
+  background: rgba(255,255,255,0.10) !important;
+  border-color: #17a2b8 !important;
+  box-shadow: 0 0 0 0.1rem rgba(23,162,184,.25);
+}
 </style>
 
 <div class="card card-dark">
@@ -1075,6 +1090,16 @@ $(document).on('keypress', '.tracking-number', function(e){
   }
 });
 
+$(document).on('click', '.btn-delete-tracking', function(){
+  const id = $(this).data('id');
+
+  if (!confirm('Delete tracking?')) return;
+
+  $.post('scripts/orders/delete_tracking.php', { id }, function(res){
+    location.reload();
+  }, 'json');
+});
+
 $(document).on('click', '.btn-add-invoice', function(){
   const orderId = $(this).data('order-id');
   const $box = $(this).closest('.form-row');
@@ -1095,6 +1120,67 @@ $(document).on('click', '.btn-add-invoice', function(){
     const $wrap = $('#detail-' + orderId);
     $wrap.removeData('loaded').html('');
     $('.btn-toggle-detail[data-order-id="'+orderId+'"]').click();
+
+  }, 'json');
+});
+function reloadOrderDetail(orderId) {
+  const $wrap = $('#detail-' + orderId);
+  $wrap.removeData('loaded').html('');
+  $('.btn-toggle-detail[data-order-id="' + orderId + '"]').click();
+}
+$(document).on('click', '.btn-delete-tracking', function(){
+  const id = $(this).data('id');
+  const orderId = $(this).data('order-id');
+
+  if (!confirm('Delete tracking?')) return;
+
+  $.post('scripts/orders/delete_tracking.php', { id: id }, function(res){
+    if (!res || !res.ok) {
+      alert(res && res.error ? res.error : 'Delete failed');
+      return;
+    }
+
+    reloadOrderDetail(orderId);
+  }, 'json');
+});
+
+$(document).on('click', '.btn-delete-invoice', function(){
+  const id = $(this).data('id');
+  const orderId = $(this).data('order-id');
+
+  if (!confirm('Delete invoice?')) return;
+
+  $.post('scripts/orders/delete_invoice.php', { id: id }, function(res){
+    if (!res || !res.ok) {
+      alert(res && res.error ? res.error : 'Delete failed');
+      return;
+    }
+
+    reloadOrderDetail(orderId);
+  }, 'json');
+});
+
+$(document).on('click', '.btn-save-production-note', function(){
+  const orderId = $(this).data('order-id');
+  const $box = $(this).closest('.production-note-box');
+  const note = $box.find('.production-note-input').val();
+  const $btn = $(this);
+
+  $btn.prop('disabled', true).text('Saving...');
+
+  $.post('scripts/orders/update_production_note.php', {
+    order_id: orderId,
+    production_note: note
+  }, function(res){
+    if (!res || !res.ok) {
+      alert(res && res.error ? res.error : 'Save failed');
+      $btn.prop('disabled', false).text('Save note');
+      return;
+    }
+
+    const $wrap = $('#detail-' + orderId);
+    $wrap.removeData('loaded').html('');
+    $('.btn-toggle-detail[data-order-id="' + orderId + '"]').click();
 
   }, 'json');
 });

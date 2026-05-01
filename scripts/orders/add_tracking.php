@@ -3,6 +3,8 @@ session_start();
 header('Content-Type: application/json');
 
 require_once dirname(__DIR__,2).'/includes/conn.php';
+require_once __DIR__ . '/activity_helper.php';
+
 
 if ((int)($_SESSION['permission'] ?? 0) < 400) {
   http_response_code(403);
@@ -30,3 +32,21 @@ $stmt->bind_param('issi', $orderId, $tracking, $carrier, $userId);
 $stmt->execute();
 
 echo json_encode(['ok'=>true]);
+
+//activity log
+
+$trackingId = (int)$conn->insert_id;
+
+log_order_activity(
+  $conn,
+  $orderId,
+  $userId,
+  'tracking_added',
+  'tracking',
+  $trackingId,
+  [
+    'tracking_number' => $tracking,
+    'carrier' => $carrier
+  ],
+  'Tracking added'
+);
