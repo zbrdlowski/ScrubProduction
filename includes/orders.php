@@ -1090,15 +1090,6 @@ $(document).on('keypress', '.tracking-number', function(e){
   }
 });
 
-$(document).on('click', '.btn-delete-tracking', function(){
-  const id = $(this).data('id');
-
-  if (!confirm('Delete tracking?')) return;
-
-  $.post('scripts/orders/delete_tracking.php', { id }, function(res){
-    location.reload();
-  }, 'json');
-});
 
 $(document).on('click', '.btn-add-invoice', function(){
   const orderId = $(this).data('order-id');
