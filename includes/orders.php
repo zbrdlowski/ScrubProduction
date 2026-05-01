@@ -687,7 +687,7 @@ $(document).on('click', '.btn-invite-collab', function(){
 // Debounced employee search
 let empTimer = null;
 
-$('#empSearch').on('input', function(){
+$(document).on('input', '#empSearch', function(){
   const q = $(this).val().trim();
   clearTimeout(empTimer);
 
