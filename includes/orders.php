@@ -19,11 +19,19 @@ function countryFlag($code) {
   );
 }
 function normalizeTypesOrder(string $types): string {
-  $order = ['G', 'F', 'P', 'S'];
+  $weights = [
+    'G' => 1,
+    'F' => 2,
+    'P' => 3,
+    'S' => 4
+  ];
+
   $typesArr = str_split(strtoupper($types));
 
-  usort($typesArr, function($a, $b) use ($order) {
-    return array_search($a, $order) <=> array_search($b, $order);
+  usort($typesArr, function($a, $b) use ($weights) {
+    $wa = $weights[$a] ?? 99;
+    $wb = $weights[$b] ?? 99;
+    return $wa <=> $wb;
   });
 
   return implode('', $typesArr);
