@@ -351,7 +351,7 @@ ob_start();
                           style="min-width:180px;">
                     <?php foreach ($typeOptions as $val => $label): ?>
                       <option value="<?php echo h($val); ?>" <?php echo ($manualTypes === $val ? 'selected' : ''); ?>>
-                        Types: <?php echo h($label); ?>
+                        <?php echo h($label); ?>
                       </option>
                     <?php endforeach; ?>
                   </select>
