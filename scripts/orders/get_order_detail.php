@@ -301,7 +301,57 @@ $stmt->close();
 
 $status = (string) ($order['status'] ?? '');
 $badgeClass = status_badge_class($status);
+function formatActivityText(string $text): string
+{
+  $text = preg_replace('/\[[^\]]*created_by\s*:\s*\d+[^\]]*\]/i', '', $text);
+  $text = preg_replace('/created_by\s*:\s*\d+/i', '', $text);
+  return trim($text);
+}
+function employeeNameById(mysqli $conn, int $id): string
+{
+  static $cache = [];
 
+  if ($id <= 0) return '';
+
+  if (isset($cache[$id])) {
+    return $cache[$id];
+  }
+
+  $stmt = $conn->prepare("
+    SELECT TRIM(CONCAT(firstname, ' ', lastname)) AS name
+    FROM employees
+    WHERE id = ?
+    LIMIT 1
+  ");
+  $stmt->bind_param('i', $id);
+  $stmt->execute();
+  $row = $stmt->get_result()->fetch_assoc();
+  $stmt->close();
+
+  $cache[$id] = trim((string)($row['name'] ?? ''));
+
+  return $cache[$id];
+}
+
+function prepareOptionsJsonForModal(mysqli $conn, string $json): string
+{
+  $data = json_decode($json ?: '{}', true);
+
+  if (!is_array($data)) {
+    return $json;
+  }
+
+  foreach (['created_by', 'updated_by'] as $key) {
+    if (isset($data[$key]) && is_numeric($data[$key])) {
+      $name = employeeNameById($conn, (int)$data[$key]);
+      if ($name !== '') {
+        $data[$key] = $name;
+      }
+    }
+  }
+
+  return json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+}
 // --- build HTML ---
 ob_start();
 ?>
@@ -390,6 +440,7 @@ ob_start();
           </select>
           <?php
           $manualTypes = strtoupper((string) ($order['manual_types_override'] ?? ''));
+          $hasManualTypes = $manualTypes !== '';
           $typeOptions = [
             '' => 'AUTO',
             'G' => 'G',
@@ -562,6 +613,7 @@ ob_start();
           <?php $b = $addr['BILLING']; ?>
           <?php if ($b): ?>
             <?php
+            $billingState = '';
             if (strtoupper($b['country'] ?? '') === 'US') {
               $billingZip = normalizeUsZipFromAddress($b);
               $billingState = usStateFromZip($billingZip);
@@ -937,7 +989,7 @@ ob_start();
                 </td>
                 <td class="text-center">
                   <button type="button" class="btn btn-xs btn-outline-info btn-view-options"
-                    data-options="<?php echo h($it['options_json'] ?? '{}'); ?>">
+                    data-options="<?php echo h(prepareOptionsJsonForModal($conn, (string)($it['options_json'] ?? '{}'))); ?>">
                     View
                   </button>
                 </td>
@@ -985,11 +1037,14 @@ ob_start();
         oa.payload,
         oa.note,
         oa.created_at,
-        COALESCE(NULLIF(TRIM(CONCAT(e.firstname, ' ', e.lastname)), ''),
-        CONCAT('Employee #', oa.actor_employee_id)
+        COALESCE(
+        NULLIF(TRIM(CONCAT(e.firstname, ' ', e.lastname)), ''),
+        NULLIF(TRIM(CONCAT(ec.firstname, ' ', ec.lastname)), ''),
+        CONCAT('Employee #', COALESCE(oa.actor_employee_id, JSON_UNQUOTE(JSON_EXTRACT(oa.payload, '$.created_by'))))
       ) AS actor_name
       FROM order_activity oa
       LEFT JOIN employees e ON e.id = oa.actor_employee_id
+      LEFT JOIN employees ec ON ec.id = CAST(JSON_UNQUOTE(JSON_EXTRACT(oa.payload, '$.created_by')) AS UNSIGNED)
       WHERE oa.order_id = ?
       ORDER BY oa.id DESC
       LIMIT 30
@@ -1006,7 +1061,18 @@ ob_start();
                   —
                   <b><?php echo h($a['actor_name'] ?? 'System'); ?></b>
                   :
-                  <span><?php echo h($a['note'] ?? $a['action']); ?></span>
+                  <?php
+                  $actorName = (string)($a['actor_name'] ?? 'System');
+                  $rawActivity = trim((string)($a['note'] ?? ''));
+
+                  if ($rawActivity === '') {
+                    $rawActivity = trim((string)($a['action'] ?? ''));
+                  }
+
+                  $activityText = preg_replace('/\s*\[created_by\s*:\s*\d+\]\s*/i', ' ', $rawActivity);
+                  $activityText = trim((string)$activityText);
+                ?>
+                <span><?php echo h($activityText); ?></span>
                 </div>
               <?php endwhile; ?>
             </div>
@@ -1026,14 +1092,5 @@ ob_start();
 </div>
 <?php
 $html = ob_get_clean();
-
 out(200, ['ok' => true, 'html' => $html]);
-try {
-  // ... celý tvoj existujúci kód (queries, build html) ...
-
-  out(200, ['ok' => true, 'html' => $html]);
-
-} catch (Throwable $e) {
-  out(500, ['ok' => false, 'error' => $e->getMessage()]);
-}
 ?>
