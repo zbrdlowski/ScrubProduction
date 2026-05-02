@@ -221,11 +221,12 @@ if (!empty($addr['SHIPPING']['country'])) {
 
 // --- items (no fetch_all to avoid mysqlnd dependency issues) ---
 $stmt = $conn->prepare("SELECT id, line_no, sku, title, custom_label, item_type_code, qty, options_json
-  FROM order_items
-  WHERE order_id=?
-    AND item_type_code IS NOT NULL
-    AND item_type_code <> ''
-  ORDER BY COALESCE(line_no, 999999), id
+FROM order_items
+WHERE order_id=?
+  AND deleted_at IS NULL
+  AND item_type_code IS NOT NULL
+  AND item_type_code <> ''
+ORDER BY COALESCE(line_no, 999999), id
 ");
 $stmt->bind_param('i', $orderId);
 $stmt->execute();
@@ -338,7 +339,7 @@ ob_start();
                   'PF' => 'PF',
                   'SF' => 'SF',
                   'GPS' => 'GPS',
-                  'GPF' => 'GPF',
+                  'GPF' => 'GFP',
                   'GSF' => 'GSF',
                   'PSF' => 'PSF',
                   'GPSF' => 'GFPS',
@@ -765,9 +766,10 @@ ob_start();
               <th>SKU</th>
               <th>Label</th>
               <th>Qty</th>
-              <th>Options</th>
+              <th>Edit</th>
               <?php if ((int)($_SESSION['permission'] ?? 0) >= 300): ?>
               <th>Actions</th>
+              <th>Delete</th>
             <?php endif; ?>
             </tr>
           </thead>
@@ -807,20 +809,50 @@ ob_start();
             <tr class="<?php echo h($rowClass); ?>">
               <td><?php echo (int)($it['line_no'] ?? 0); ?></td>
               <td><span class="badge <?php echo h($badge); ?>"><?php echo h($t); ?></span></td>
-              <td><?php echo h($it['title'] ?? ''); ?></td>
-              <td><?php echo h($it['sku'] ?? ''); ?></td>
-              <td><?php echo h($it['custom_label'] ?? ''); ?></td>
-              <td align="center"><?php echo (int)($it['qty'] ?? 1); ?></td>
+              <td>
+              <input class="form-control form-control-sm item-title"
+                    value="<?php echo h($it['title']); ?>">
+            </td>
+
+            <td>
+              <select class="form-control form-control-sm item-type">
+                <?php foreach (['G','P','S','F','T','M'] as $t): ?>
+                  <option value="<?= $t ?>" <?= ($it['item_type_code']===$t?'selected':'') ?>>
+                    <?= $t ?>
+                  </option>
+                <?php endforeach; ?>
+              </select>
+            </td>
+
+            <td>
+              <input type="number"
+                    class="form-control form-control-sm item-qty"
+                    value="<?php echo (int)$it['qty']; ?>">
+            </td>
+
+            <td>
+              <input class="form-control form-control-sm item-sku"
+                    value="<?php echo h($it['sku']); ?>">
+            </td>
+
+            <td>
+              <button class="btn btn-sm btn-outline-success btn-save-item"
+                      data-id="<?php echo (int)$it['id']; ?>"
+                      data-order-id="<?php echo (int)$orderId; ?>">
+                EDIT
+              </button>
+            </td>
               <td>
               <button class="btn btn-sm btn-outline-info btn-view-options"
                       data-options='<?php echo h($it['options_json'] ?? ''); ?>'>
                 VIEW
               </button>
 
-              <button class="btn btn-sm btn-outline-success btn-copy-options"
+              <button class="btn btn-sm btn-outline-warning btn-copy-options"
                       data-options='<?php echo h($it['options_json'] ?? ''); ?>'>
                 COPY
               </button>
+              </td>
               <?php if ((int)($_SESSION['permission'] ?? 0) >= 300): ?>
                 <td class="text-center">
                   <button type="button"
@@ -828,11 +860,12 @@ ob_start();
                           data-item-id="<?php echo (int)$it['id']; ?>"
                           data-order-id="<?php echo (int)$orderId; ?>">
                     DELETE
-                  </button>
-                </td>
+                  </button>                
               <?php endif; ?>
-
             </td>
+
+
+
             </tr>
           <?php endforeach; ?>
           </tbody>

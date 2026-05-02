@@ -1605,6 +1605,36 @@ $(document).on('click', '.btn-delete-order-item', function(){
   }, 'json').fail(function(){
     alert('Delete item request failed');
   });
+});$(document).on('click','.btn-save-item',function(){
+  const $tr = $(this).closest('tr');
+
+  const itemId = $(this).data('id');
+  const orderId = $(this).data('order-id');
+
+  const title = $tr.find('.item-title').val();
+  const type  = $tr.find('.item-type').val();
+  const qty   = $tr.find('.item-qty').val();
+  const sku   = $tr.find('.item-sku').val();
+
+  $.post('scripts/orders/update_order_item.php',{
+    item_id:itemId,
+    title:title,
+    type:type,
+    qty:qty,
+    sku:sku
+  },function(res){
+    if(!res.ok){
+      alert(res.error || 'Update failed');
+      return;
+    }
+
+    const $wrap = $('#detail-'+orderId);
+    $wrap.removeData('loaded').html('');
+    $('.btn-toggle-detail[data-order-id="'+orderId+'"]').click();
+
+  },'json').fail(()=>{
+    alert('Update request failed');
+  });
 });
 </script>
 <div class="modal fade" id="optionsModal" tabindex="-1" role="dialog" aria-hidden="true">
