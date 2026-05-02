@@ -56,6 +56,11 @@ ALTER TABLE `order_activity`
 ALTER TABLE orders
 ADD COLUMN manual_types_override VARCHAR(20) NULL AFTER status;
 
+ALTER TABLE orders
+  ADD COLUMN manual_types_override VARCHAR(20) NULL AFTER status,
+  ADD COLUMN manual_types_updated_by INT(11) NULL AFTER manual_types_override,
+  ADD COLUMN manual_types_updated_at DATETIME NULL AFTER manual_types_updated_by,
+  ADD KEY ix_orders_manual_types_updated_by (manual_types_updated_by);
 
 /*toto prebehlo OK*/
   ALTER TABLE orders
@@ -73,6 +78,16 @@ ADD COLUMN manual_types_override VARCHAR(20) NULL AFTER status;
   ALTER TABLE order_tracking_numbers
   ADD UNIQUE KEY ux_tracking_order_number_active (order_id, tracking_number, deleted_at);
   
+  /*toto prebehlo OK*/
+  ALTER TABLE orders
+  ADD COLUMN manual_types_updated_by INT(11) NULL AFTER manual_types_override,
+  ADD COLUMN manual_types_updated_at DATETIME NULL AFTER manual_types_updated_by,
+  ADD KEY ix_orders_manual_types_updated_by (manual_types_updated_by);
+
+/*toto prebehlo OK*/
+  ALTER TABLE orders
+  ADD CONSTRAINT fk_orders_manual_types_updated_by
+  FOREIGN KEY (manual_types_updated_by) REFERENCES employees(id);
   
   /*#1061 - Duplicate key name 'ix_orders_order_number'*/
   ALTER TABLE orders

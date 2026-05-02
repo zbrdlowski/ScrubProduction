@@ -323,6 +323,39 @@ ob_start();
                 </option>
               <?php endforeach; ?>
             </select>
+            <?php
+                $manualTypes = strtoupper((string)($order['manual_types_override'] ?? ''));
+                $typeOptions = [
+                  '' => 'AUTO',
+                  'G' => 'G',
+                  'P' => 'P',
+                  'S' => 'S',
+                  'F' => 'F',
+                  'GP' => 'GP',
+                  'GS' => 'GS',
+                  'GF' => 'GF',
+                  'PS' => 'PS',
+                  'PF' => 'PF',
+                  'SF' => 'SF',
+                  'GPS' => 'GPS',
+                  'GPF' => 'GPF',
+                  'GSF' => 'GSF',
+                  'PSF' => 'PSF',
+                  'GPSF' => 'GPSF / GFPS',
+                ];
+                ?>
+
+                <?php if ((int)($_SESSION['permission'] ?? 0) >= 300): ?>
+                  <select class="form-control form-control-sm order-types-select mt-1"
+                          data-order-id="<?php echo (int)$orderId; ?>"
+                          style="min-width:180px;">
+                    <?php foreach ($typeOptions as $val => $label): ?>
+                      <option value="<?php echo h($val); ?>" <?php echo ($manualTypes === $val ? 'selected' : ''); ?>>
+                        Types: <?php echo h($label); ?>
+                      </option>
+                    <?php endforeach; ?>
+                  </select>
+                <?php endif; ?>
         </div>
       </div>
     </div>
@@ -683,6 +716,9 @@ ob_start();
             </tr>
           </thead>
           <tbody>
+            <?php if ($hasManualTypes): ?>
+              <span class="badge badge-light mr-1" title="Manual types override">M</span>
+            <?php endif; ?>
           <?php foreach ($items as $it): ?>
             <?php
               $t = strtoupper((string)($it['item_type_code'] ?? 'NULL'));

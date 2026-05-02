@@ -168,6 +168,7 @@ $sql = " SELECT
   o.order_date,
   o.imported_at,
   o.status,
+  o.manual_types_override,
   o.payment_method,
   o.shipping_method,
   os.code AS source_code,
@@ -520,7 +521,8 @@ table th {
                 $rowClass = 'tm-highlight';
               }
 
-            $typesStr = (string)($row['item_types'] ?? '');
+            $typesStr = (string)($row['manual_types_override'] ?: ($row['item_types'] ?? ''));
+            $hasManualTypes = trim((string)($row['manual_types_override'] ?? '')) !== '';
             $customer = trim((string)($row['customer_name'] ?? ''));
             if ($customer === '') $customer = (string)($row['customer_email'] ?? '-');
           ?>
@@ -1484,6 +1486,29 @@ $(document).on('change', '.order-status-select', function(){
 
   }, 'json').fail(function(){
     alert('Status update request failed');
+    $select.prop('disabled', false);
+  });
+});
+$(document).on('change', '.order-types-select', function(){
+  const $select = $(this);
+  const orderId = $select.data('order-id');
+  const types = $select.val();
+
+  $select.prop('disabled', true);
+
+  $.post('scripts/orders/update_order_types.php', {
+    order_id: orderId,
+    types: types
+  }, function(res){
+    if (!res || !res.ok) {
+      alert(res && res.error ? res.error : 'Types update failed');
+      $select.prop('disabled', false);
+      return;
+    }
+
+    location.reload();
+  }, 'json').fail(function(){
+    alert('Types update request failed');
     $select.prop('disabled', false);
   });
 });
