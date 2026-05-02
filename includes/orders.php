@@ -1584,6 +1584,28 @@ $(document).on('click', '.btn-add-manual-item', function(){
     $btn.prop('disabled', false).text('Add item');
   });
 });
+$(document).on('click', '.btn-delete-order-item', function(){
+  const itemId = $(this).data('item-id');
+  const orderId = $(this).data('order-id');
+
+  if (!confirm('Delete this item?')) return;
+
+  $.post('scripts/orders/delete_order_item.php', {
+    item_id: itemId
+  }, function(res){
+    if (!res || !res.ok) {
+      alert(res && res.error ? res.error : 'Delete item failed');
+      return;
+    }
+
+    const $wrap = $('#detail-' + orderId);
+    $wrap.removeData('loaded').html('');
+    $('.btn-toggle-detail[data-order-id="' + orderId + '"]').click();
+
+  }, 'json').fail(function(){
+    alert('Delete item request failed');
+  });
+});
 </script>
 <div class="modal fade" id="optionsModal" tabindex="-1" role="dialog" aria-hidden="true">
   <div class="modal-dialog modal-lg" role="document">

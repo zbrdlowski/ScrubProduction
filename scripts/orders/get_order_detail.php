@@ -766,6 +766,9 @@ ob_start();
               <th>Label</th>
               <th>Qty</th>
               <th>Options</th>
+              <?php if ((int)($_SESSION['permission'] ?? 0) >= 300): ?>
+              <th>Actions</th>
+            <?php endif; ?>
             </tr>
           </thead>
           <tbody>
@@ -814,10 +817,21 @@ ob_start();
                 VIEW
               </button>
 
-              <button class="btn btn-sm btn-outline-secondary btn-copy-options"
+              <button class="btn btn-sm btn-outline-success btn-copy-options"
                       data-options='<?php echo h($it['options_json'] ?? ''); ?>'>
                 COPY
               </button>
+              <?php if ((int)($_SESSION['permission'] ?? 0) >= 300): ?>
+                <td class="text-center">
+                  <button type="button"
+                          class="btn btn-xs btn-outline-danger btn-delete-order-item"
+                          data-item-id="<?php echo (int)$it['id']; ?>"
+                          data-order-id="<?php echo (int)$orderId; ?>">
+                    DELETE
+                  </button>
+                </td>
+              <?php endif; ?>
+
             </td>
             </tr>
           <?php endforeach; ?>
