@@ -588,8 +588,19 @@ table th {
             </td>
              <td align="center">
             <?php
-              $types = array_filter(array_map('trim', explode(',', str_replace(' ', '', $typesStr))));
+              if ($hasManualTypes) {
+                  // manual override – napr. GFPS
+                  $types = [normalizeTypesOrder($typesStr)];
+                } else {
+                  // AUTO režim
+                  if ((int)($row['has_gfp'] ?? 0) === 1) {
+                    $types = ['GFP'];
+                  } else {
+                    $types = array_filter(array_map('trim', explode(',', str_replace(' ', '', $typesStr))));
+                  }
+                }
 
+                if (!$types) $types = ['NULL'];
 
               // Ak nie je manual override a detekovali sme GFP, ukáž GFP
               if (!$hasManualTypes && (int)($row['has_gfp'] ?? 0) === 1) {
