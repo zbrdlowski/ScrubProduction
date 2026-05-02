@@ -741,11 +741,19 @@ table th {
           data-order-id="<?= $orderId ?>">
     <i class="fas fa-search"></i>
   </button>
-
+        <?php if ($perm >= 400 && empty($uiDeptCode)): ?>
+    <span class="badge badge-info ml-2"
+          title="Select department filter first">
+      Select dept
+    </span>
+  <?php endif; ?>
   <?php
     $primaryId = isset($row['primary_emp_id']) ? (int)$row['primary_emp_id'] : 0;
     $primaryName = (string)($row['primary_emp_name'] ?? '');
     $canUseDeptButtons = !empty($uiDeptCode);
+    if ($perm >= 400 && empty($uiDeptCode)) {
+      $canUseDeptButtons = false;
+    }
     $isTakenAny = false;
     $takenByMe = false;
     $takenNameAny = '';

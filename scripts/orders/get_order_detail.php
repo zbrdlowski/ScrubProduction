@@ -285,7 +285,7 @@ ob_start();
           <b>#<?php echo h($order['order_number'] ?? $order['external_order_id'] ?? $orderId); ?></b>
           <span class="ml-2 badge badge-light"><?php echo h($order['source_code'] ?? ''); ?></span>
           <?php if (!empty($cats)): ?>
-            <span class="ml-2 text-dark badge badge-light"><?php echo h(implode(' · ', $cats)); ?></span>
+            <span class="ml-2 text-dark badge badge-dark"><?php echo h(implode(' · ', $cats)); ?></span>
           <?php endif; ?>
         </div>
             <?php if ((int)($_SESSION['permission'] ?? 0) >= 400): ?>
