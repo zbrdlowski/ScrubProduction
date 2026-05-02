@@ -753,12 +753,15 @@ table th {
 <?php if ($primaryId <= 0): ?>
 
   <!-- TAKE (všetci) -->
-  <button type="button"
-          class="btn btn-sm btn-success btn-take-order mr-1"
-          data-order-id="<?= $orderId ?>">
-    TAKE
-  </button>
+      <?php $isTaken = !empty($row['primary_emp_id']); ?>
 
+      <button type="button"
+              class="btn btn-sm <?php echo $isTaken ? 'btn-secondary' : 'btn-success'; ?> btn-take-order mr-1"
+              data-order-id="<?= $orderId ?>"
+              <?php echo $isTaken ? 'disabled' : ''; ?>
+              title="<?php echo $isTaken ? 'Already assigned' : 'Take order'; ?>">
+        TAKE
+      </button>
   <!-- Assign To (len admin/mod) -->
   <?php if ($perm >= 400): ?>
     <button type="button"
