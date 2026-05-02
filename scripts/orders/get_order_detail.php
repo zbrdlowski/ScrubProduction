@@ -702,6 +702,58 @@ ob_start();
           <?php endif; ?>
       </div>
       <h6 class="text-muted mb-2">Položky</h6>
+      <?php if ((int)($_SESSION['permission'] ?? 0) >= 300): ?>
+        <div class="card bg-dark border-info p-2 mb-3 manual-item-box">
+          <div class="d-flex justify-content-between align-items-center">
+            <b class="text-info">Add manual item</b>
+          </div>
+
+          <div class="form-row mt-2">
+            <div class="col-md-2">
+              <select class="form-control form-control-sm manual-item-type">
+                <option value="G">G - Graphics</option>
+                <option value="P">P - Plastics</option>
+                <option value="S">S - Seat Cover</option>
+                <option value="F">F - Fitting</option>
+                <option value="T">T - Trim Kit</option>
+                <option value="M">M - Bike Mats</option>
+              </select>
+            </div>
+
+            <div class="col-md-1">
+              <input type="number"
+                    class="form-control form-control-sm manual-item-qty"
+                    value="1"
+                    min="1"
+                    placeholder="Qty">
+            </div>
+
+            <div class="col-md-3">
+              <input class="form-control form-control-sm manual-item-sku"
+                    placeholder="SKU"
+                    value="MANUAL">
+            </div>
+
+            <div class="col-md-4">
+              <input class="form-control form-control-sm manual-item-title"
+                    placeholder="Item title / service name">
+            </div>
+
+            <div class="col-md-2">
+              <button type="button"
+                      class="btn btn-sm btn-info btn-block btn-add-manual-item"
+                      data-order-id="<?php echo (int)$orderId; ?>">
+                Add item
+              </button>
+            </div>
+          </div>
+
+          <div class="mt-2">
+            <input class="form-control form-control-sm manual-item-reason"
+                  placeholder="Reason / customer request note">
+          </div>
+        </div>
+        <?php endif; ?>
       <div class="table-responsive">
     <table class="table table-sm table-bordered mb-0 order-detail-table">
           <thead>

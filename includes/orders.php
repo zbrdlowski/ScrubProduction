@@ -538,7 +538,7 @@ table th {
                 $rowClass = 'tm-highlight';
               }
 
-            $typesStr = (string)($row['manual_types_override'] ?: ($row['item_types'] ?? ''));
+            $typesStr = normalizeTypesOrder((string)($row['manual_types_override'] ?: ($row['item_types'] ?? '')));
             $hasManualTypes = trim((string)($row['manual_types_override'] ?? '')) !== '';
             $customer = trim((string)($row['customer_name'] ?? ''));
             if ($customer === '') $customer = (string)($row['customer_email'] ?? '-');
@@ -1534,6 +1534,47 @@ $(document).on('change', '.order-types-select', function(){
   }, 'json').fail(function(){
     alert('Types update request failed');
     $select.prop('disabled', false);
+  });
+});
+$(document).on('click', '.btn-add-manual-item', function(){
+  const $box = $(this).closest('.manual-item-box');
+  const orderId = $(this).data('order-id');
+  const $btn = $(this);
+
+  const title = $box.find('.manual-item-title').val().trim();
+  const type = $box.find('.manual-item-type').val();
+  const qty = $box.find('.manual-item-qty').val();
+  const sku = $box.find('.manual-item-sku').val().trim();
+  const reason = $box.find('.manual-item-reason').val().trim();
+
+  if (!title) {
+    alert('Item title is required');
+    return;
+  }
+
+  $btn.prop('disabled', true).text('Adding...');
+
+  $.post('scripts/orders/add_order_item.php', {
+    order_id: orderId,
+    title: title,
+    item_type_code: type,
+    qty: qty,
+    sku: sku,
+    reason: reason
+  }, function(res){
+    if (!res || !res.ok) {
+      alert(res && res.error ? res.error : 'Add item failed');
+      $btn.prop('disabled', false).text('Add item');
+      return;
+    }
+
+    const $wrap = $('#detail-' + orderId);
+    $wrap.removeData('loaded').html('');
+    $('.btn-toggle-detail[data-order-id="' + orderId + '"]').click();
+
+  }, 'json').fail(function(){
+    alert('Add item request failed');
+    $btn.prop('disabled', false).text('Add item');
   });
 });
 </script>

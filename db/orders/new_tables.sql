@@ -89,6 +89,23 @@ ALTER TABLE orders
   ADD CONSTRAINT fk_orders_manual_types_updated_by
   FOREIGN KEY (manual_types_updated_by) REFERENCES employees(id);
   
+  /*toto prebehlo OK*/
+  ALTER TABLE order_items
+  ADD COLUMN deleted_at DATETIME NULL AFTER options_json,
+  ADD COLUMN created_by INT(11) NULL AFTER deleted_at,
+  ADD COLUMN updated_by INT(11) NULL AFTER created_by,
+  ADD COLUMN updated_at DATETIME NULL AFTER updated_by,
+  ADD KEY ix_order_items_deleted_at (deleted_at),
+  ADD KEY ix_order_items_created_by (created_by),
+  ADD KEY ix_order_items_updated_by (updated_by);
+
+  /*toto prebehlo OK*/
+  ALTER TABLE order_items
+  ADD CONSTRAINT fk_order_items_created_by
+    FOREIGN KEY (created_by) REFERENCES employees(id),
+  ADD CONSTRAINT fk_order_items_updated_by
+    FOREIGN KEY (updated_by) REFERENCES employees(id);
+
   /*#1061 - Duplicate key name 'ix_orders_order_number'*/
   ALTER TABLE orders
   ADD INDEX ix_orders_order_number (order_number),
