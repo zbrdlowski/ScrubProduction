@@ -341,7 +341,7 @@ ob_start();
                   'GPF' => 'GPF',
                   'GSF' => 'GSF',
                   'PSF' => 'PSF',
-                  'GPSF' => 'GPSF / GFPS',
+                  'GPSF' => 'GFPS',
                 ];
                 ?>
 
