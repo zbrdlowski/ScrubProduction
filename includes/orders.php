@@ -569,32 +569,41 @@ table th {
               <?php endif; ?>
               
             </td>
-                        <td align="center">
+             <td align="center">
+            <?php
+              $types = array_filter(array_map('trim', explode(',', str_replace(' ', '', $typesStr))));
+
+              // Ak je manual override napr. GFP, GFPS, GP, rozbijeme ho na jednotlivé písmená
+              if ($hasManualTypes && count($types) === 1) {
+                $types = str_split($types[0]);
+              }
+
+              // Ak nie je manual override a detekovali sme GFP, ukáž GFP
+              if (!$hasManualTypes && (int)($row['has_gfp'] ?? 0) === 1) {
+                $types = ['G', 'F', 'P'];
+              }
+
+              if (!$types) $types = ['NULL'];
+            ?>
+
+            <?php if ($hasManualTypes): ?>
+              <span class="badge badge-light mr-1" title="Manual types override">M</span>
+            <?php endif; ?>
+
+            <?php foreach ($types as $t): ?>
               <?php
-                $hasGfp = (int)($row['has_gfp'] ?? 0) === 1;
+                $tClean = strtoupper(trim($t));
+                $badge = 'badge-secondary';
 
-                if ($hasGfp) {
-                  echo '<span class="badge badge-danger badge-type mr-1">GFP</span>';
-                } else {
-                  $types = array_filter(array_map('trim', explode(',', $typesStr)));
-                  if (!$types) $types = ['NULL'];
-
-                  foreach ($types as $t):
-                    $tClean = strtoupper($t);
-                    $badge = 'badge-secondary';
-
-                    if (in_array($tClean, ['T','M'], true)) $badge = 'badge-warning';
-                    elseif ($tClean === 'G') $badge = 'badge-info';
-                    elseif ($tClean === 'P') $badge = 'badge-primary';
-                    elseif ($tClean === 'S') $badge = 'badge-success';
-                    elseif ($tClean === 'F') $badge = 'badge-danger';
+                if (in_array($tClean, ['T','M'], true)) $badge = 'badge-warning';
+                elseif ($tClean === 'G') $badge = 'badge-info';
+                elseif ($tClean === 'P') $badge = 'badge-primary';
+                elseif ($tClean === 'S') $badge = 'badge-success';
+                elseif ($tClean === 'F') $badge = 'badge-danger';
               ?>
-                    <span class="badge <?= $badge ?> badge-type mr-1"><?= htmlspecialchars($tClean) ?></span>
-              <?php
-                  endforeach;
-                }
-              ?>
-            </td>
+              <span class="badge <?= $badge ?> badge-type mr-1"><?= htmlspecialchars($tClean) ?></span>
+            <?php endforeach; ?>
+          </td>
             <td><?= htmlspecialchars($customer) ?></td>
             
             
