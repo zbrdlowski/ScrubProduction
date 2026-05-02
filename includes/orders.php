@@ -584,8 +584,7 @@ table th {
 
             <?php foreach ($types as $t): ?>
 
-              <?php
-              
+              <?php             
 
                 $tClean = strtoupper(trim($t));
                 $badge = 'badge-secondary';
