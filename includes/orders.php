@@ -18,7 +18,16 @@ function countryFlag($code) {
     'HTML-ENTITIES'
   );
 }
+function normalizeTypesOrder(string $types): string {
+  $order = ['G', 'F', 'P', 'S'];
+  $typesArr = str_split(strtoupper($types));
 
+  usort($typesArr, function($a, $b) use ($order) {
+    return array_search($a, $order) <=> array_search($b, $order);
+  });
+
+  return implode('', $typesArr);
+}
 $dpt = (int)($_SESSION['dpt'] ?? 0);
 $allAccess = in_array($dpt, [1,3,4,5,7], true);
 
