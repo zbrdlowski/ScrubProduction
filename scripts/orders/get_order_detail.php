@@ -835,14 +835,14 @@ ob_start();
                     value="<?php echo h($it['sku']); ?>">
             </td>
 
-            <td>
+            <td class="text-center">
               <button class="btn btn-sm btn-outline-success btn-save-item"
                       data-id="<?php echo (int)$it['id']; ?>"
                       data-order-id="<?php echo (int)$orderId; ?>">
                 EDIT
               </button>
             </td>
-              <td>
+              <td class="text-center">
               <button class="btn btn-sm btn-outline-info btn-view-options"
                       data-options='<?php echo h($it['options_json'] ?? ''); ?>'>
                 VIEW
