@@ -711,6 +711,7 @@ ob_start();
           <div class="form-row mt-2">
             <div class="col-md-2">
               <select class="form-control form-control-sm manual-item-type">
+                <option value="">Select type...</option>
                 <option value="G">G - Graphics</option>
                 <option value="P">P - Plastics</option>
                 <option value="S">S - Seat Cover</option>

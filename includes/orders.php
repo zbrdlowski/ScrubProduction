@@ -600,14 +600,7 @@ table th {
                   }
                 }
 
-                if (!$types) $types = ['NULL'];
-
-              // Ak nie je manual override a detekovali sme GFP, ukáž GFP
-              if (!$hasManualTypes && (int)($row['has_gfp'] ?? 0) === 1) {
-                $types = ['G', 'F', 'P'];
-              }
-
-              if (!$types) $types = ['NULL'];
+                if (!$types) $types = ['NULL'];                 
             ?>            
 
             <?php foreach ($types as $t): ?>
@@ -1554,14 +1547,17 @@ $(document).on('click', '.btn-add-manual-item', function(){
 
   const title = $box.find('.manual-item-title').val().trim();
   const type = $box.find('.manual-item-type').val();
-  const qty = $box.find('.manual-item-qty').val();
-  const sku = $box.find('.manual-item-sku').val().trim();
-  const reason = $box.find('.manual-item-reason').val().trim();
-
-  if (!title) {
+      if (!type) {
+      alert('Please select item type');
+      return;
+    }
+      if (!title) {
     alert('Item title is required');
     return;
   }
+  const qty = $box.find('.manual-item-qty').val();
+  const sku = $box.find('.manual-item-sku').val().trim();
+  const reason = $box.find('.manual-item-reason').val().trim();
 
   $btn.prop('disabled', true).text('Adding...');
 
