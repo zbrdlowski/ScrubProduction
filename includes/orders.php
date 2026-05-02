@@ -573,10 +573,6 @@ table th {
             <?php
               $types = array_filter(array_map('trim', explode(',', str_replace(' ', '', $typesStr))));
 
-              // Ak je manual override napr. GFP, GFPS, GP, rozbijeme ho na jednotlivé písmená
-              if ($hasManualTypes && count($types) === 1) {
-                $types = str_split($types[0]);
-              }
 
               // Ak nie je manual override a detekovali sme GFP, ukáž GFP
               if (!$hasManualTypes && (int)($row['has_gfp'] ?? 0) === 1) {
@@ -584,14 +580,13 @@ table th {
               }
 
               if (!$types) $types = ['NULL'];
-            ?>
-
-            <?php if ($hasManualTypes): ?>
-              <span class="badge badge-light mr-1" title="Manual types override">M</span>
-            <?php endif; ?>
+            ?>            
 
             <?php foreach ($types as $t): ?>
+
               <?php
+              
+
                 $tClean = strtoupper(trim($t));
                 $badge = 'badge-secondary';
 
@@ -600,6 +595,10 @@ table th {
                 elseif ($tClean === 'P') $badge = 'badge-primary';
                 elseif ($tClean === 'S') $badge = 'badge-success';
                 elseif ($tClean === 'F') $badge = 'badge-danger';
+                elseif (strpos($tClean, 'F') !== false) $badge = 'badge-danger';
+                elseif (strpos($tClean, 'S') !== false) $badge = 'badge-success';
+                elseif (strpos($tClean, 'P') !== false) $badge = 'badge-primary';
+                elseif (strpos($tClean, 'G') !== false) $badge = 'badge-info';
               ?>
               <span class="badge <?= $badge ?> badge-type mr-1"><?= htmlspecialchars($tClean) ?></span>
             <?php endforeach; ?>
