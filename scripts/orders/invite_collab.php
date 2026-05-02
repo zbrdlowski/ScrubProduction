@@ -10,6 +10,7 @@ if (!isset($_SESSION['permission'])) {
 }
 
 require_once __DIR__ . '/../../includes/conn.php';
+require_once __DIR__ . '/activity_helper.php';
 
 $orderId = (int)($_POST['order_id'] ?? 0);
 $employeeIdToInvite = (int)($_POST['employee_id'] ?? 0);
@@ -55,6 +56,9 @@ $stateToUse = ($perm >= 400 && $mode === 'assign')
   : 'INVITED';
 $isAdminAssign = ($perm >= 400 && $mode === 'assign');
 
+try {
+  $conn->begin_transaction();
+
 if ($isAdminAssign) {
   // Reassign only PRIMARY role for this department.
   // Collaborators stay untouched.
@@ -72,8 +76,7 @@ if ($isAdminAssign) {
   $rm->execute();
   $rm->close();
 }
-try {
-  $conn->begin_transaction();
+
 
   // allow invite if: (a) user is PRIMARY for this dept, OR (b) admin/moderator permission
   if ($perm < 400) {

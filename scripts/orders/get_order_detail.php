@@ -118,19 +118,19 @@ function addressCopyText(array $a, string $state = ''): string {
   );
 }
 
-// PHP 7 compatible (no match)
+// tu upraviť farbu badge podľa statusu, používa sa v detailoch objednávky a v zozname objednávok
 function status_badge_class($status): string {
   $s = strtoupper(trim((string)$status));
   switch ($s) {
     case 'NEW': return 'bg-info';
     case 'IN_PROGRESS': return 'bg-warning';
-    case 'HOLD': return 'bg-danger';
-    case 'DONE':
-    case 'COMPLETED':
-    case 'SHIPPED':
-      return 'bg-success';
-    default:
-      return 'bg-secondary';
+    case 'HOLD': return 'bg-secondary';
+    case 'DONE': return 'bg-success';
+    case 'COMPLETED': return 'bg-success';
+    case 'SHIPPED': return 'bg-success';
+    case 'NEED_INFO': return 'bg-danger';
+    case 'CANCELLED': return 'bg-secondary';
+    default: return 'bg-secondary';
   }
 }
 
@@ -295,7 +295,34 @@ ob_start();
       </button>
     <?php endif; ?>
         <div class="text-right">
-          <span class="badge badge-light"><?php echo h($status ?: '—'); ?></span>
+          <?php
+            $statusOptions = [
+              'NEW',
+              'IN_PROGRESS',
+              'NEED_INFO',
+              'DRAFT_REQUESTED',
+              'DRAFT_READY',
+              'RIPPED',
+              'PRINT_QUEUE',
+              'PRODUCTION',
+              'READY_TO_SHIP',
+              'SHIPPED',
+              'HOLD',
+              'CANCELLED',
+            ];
+
+            $currentStatus = strtoupper((string)($order['status'] ?? 'NEW'));
+            ?>
+
+            <select class="form-control form-control-sm order-status-select"
+                    data-order-id="<?php echo (int)$orderId; ?>"
+                    style="min-width:180px;">
+              <?php foreach ($statusOptions as $st): ?>
+                <option value="<?php echo h($st); ?>" <?php echo ($currentStatus === $st ? 'selected' : ''); ?>>
+                  <?php echo h(str_replace('_', ' ', $st)); ?>
+                </option>
+              <?php endforeach; ?>
+            </select>
         </div>
       </div>
     </div>

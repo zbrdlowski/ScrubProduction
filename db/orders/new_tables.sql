@@ -42,3 +42,39 @@ ALTER TABLE `order_activity`
   ADD COLUMN `entity_id` bigint(20) DEFAULT NULL AFTER `entity_type`,
   ADD COLUMN `note` varchar(255) DEFAULT NULL AFTER `payload`,
   ADD KEY `ix_act_entity` (`entity_type`, `entity_id`);
+
+  CREATE TABLE order_assignments (
+  id BIGINT AUTO_INCREMENT PRIMARY KEY,
+  order_id BIGINT NOT NULL,
+  employee_id INT NOT NULL,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY ux_order_employee (order_id, employee_id),
+  INDEX ix_order (order_id),
+  INDEX ix_employee (employee_id)
+);
+/*kvoli zmene type => GP => GFP, etc... */
+ALTER TABLE orders
+ADD COLUMN manual_types_override VARCHAR(20) NULL AFTER status;
+
+
+/*toto prebehlo OK*/
+  ALTER TABLE orders
+  ADD CONSTRAINT fk_orders_production_note_updated_by
+  FOREIGN KEY (production_note_updated_by) REFERENCES employees(id);
+
+/*toto prebehlo OK*/
+  ALTER TABLE orders
+  ADD COLUMN production_note TEXT NULL AFTER status,
+  ADD COLUMN production_note_updated_by INT(11) NULL AFTER production_note,
+  ADD COLUMN production_note_updated_at DATETIME NULL AFTER production_note_updated_by,
+  ADD KEY ix_orders_production_note_updated_by (production_note_updated_by);
+
+/*toto prebehlo OK*/
+  ALTER TABLE order_tracking_numbers
+  ADD UNIQUE KEY ux_tracking_order_number_active (order_id, tracking_number, deleted_at);
+  
+  
+  /*#1061 - Duplicate key name 'ix_orders_order_number'*/
+  ALTER TABLE orders
+  ADD INDEX ix_orders_order_number (order_number),
+  ADD INDEX ix_orders_external_order_id (external_order_id);

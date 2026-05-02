@@ -294,6 +294,10 @@ $deptOptions = [
 ];
 ?>
 <style>
+table td,
+table th {
+  vertical-align: middle;
+}
 .tm-highlight { background: rgba(255,193,7,0.12) !important; }
 .badge-type { font-size: 0.85rem; padding: .35em .55em; }
 .order-detail-row td { padding: 0 !important; border-top: none !important; }
@@ -496,7 +500,7 @@ $deptOptions = [
             <th width="8%">Order #</th>
             <th>Types</th>
             <th>Customer</th>
-            <th>Status</th>
+            <th class="text-center">Status</th>
             <th>Assigned</th>
             <th>Detail</th>
           </tr>
@@ -592,7 +596,7 @@ $deptOptions = [
             <td><?= htmlspecialchars($customer) ?></td>
             
             
-            <td>
+            <td class="text-center">
             <?php
               $status = strtoupper((string)($row['status'] ?? ''));
               $statusBadge = 'badge-secondary';
@@ -602,9 +606,41 @@ $deptOptions = [
               elseif ($status === 'HOLD') $statusBadge = 'badge-danger';
               elseif ($status === 'DONE' || $status === 'SHIPPED') $statusBadge = 'badge-success';
             ?>
-            <span class="badge <?= $statusBadge ?>">
-              <?= htmlspecialchars($status ?: '-') ?>
-            </span>
+            <?php
+              $status = strtoupper((string)($row['status'] ?? ''));
+
+              switch ($status) {
+                case 'NEW':
+                  $btnClass = 'btn-outline-info';
+                  break;
+
+                case 'IN_PROGRESS':
+                  $btnClass = 'btn-outline-warning';
+                  break;
+
+                case 'HOLD':
+                case 'CANCELLED':
+                  $btnClass = 'btn-outline-secondary';
+                  break;
+
+                case 'DONE':
+                case 'COMPLETED':
+                case 'SHIPPED':
+                  $btnClass = 'btn-outline-success';
+                  break;
+
+                case 'NEED_INFO':
+                  $btnClass = 'btn-outline-danger';
+                  break;
+
+                default:
+                  $btnClass = 'btn-outline-secondary';
+                  break;
+              }
+            ?>
+          <button class="btn btn-xs <?= $btnClass ?>" style="pointer-events:none;">
+            <?= htmlspecialchars(str_replace('_', ' ', $status) ?: '-') ?>
+          </button>
           </td>
             <td>
              
@@ -1426,6 +1462,30 @@ $(document).on('click', '.btn-load-older-activity', function(){
       $btn.text('No older records').prop('disabled', true);
     }
   }, 'json');
+});
+$(document).on('change', '.order-status-select', function(){
+  const $select = $(this);
+  const orderId = $select.data('order-id');
+  const status = $select.val();
+
+  $select.prop('disabled', true);
+
+  $.post('scripts/orders/update_order_status.php', {
+    order_id: orderId,
+    status: status
+  }, function(res){
+    if (!res || !res.ok) {
+      alert(res && res.error ? res.error : 'Status update failed');
+      $select.prop('disabled', false);
+      return;
+    }
+
+    location.reload();
+
+  }, 'json').fail(function(){
+    alert('Status update request failed');
+    $select.prop('disabled', false);
+  });
 });
 </script>
 <div class="modal fade" id="optionsModal" tabindex="-1" role="dialog" aria-hidden="true">
