@@ -5,6 +5,7 @@ header('Content-Type: application/json; charset=utf-8');
 
 require_once dirname(__DIR__, 2) . '/includes/conn.php';
 require_once __DIR__ . '/activity_helper.php';
+require_once __DIR__ . '/category_sync_helper.php';
 
 function out(array $payload): void {
   echo json_encode($payload, JSON_UNESCAPED_UNICODE);
@@ -56,6 +57,7 @@ if (!$stmt) {
 $stmt->bind_param('ii', $userId, $itemId);
 $stmt->execute();
 $stmt->close();
+sync_order_categories($conn, $orderId);
 
 log_order_activity(
   $conn,

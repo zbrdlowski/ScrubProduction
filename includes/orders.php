@@ -1618,12 +1618,13 @@ $(document).on('click', '.btn-delete-order-item', function(){
   const label = $tr.find('.item-label').val();
 
   $.post('scripts/orders/update_order_item.php',{
-    item_id:itemId,
-    title:title,
-    type:type,
-    qty:qty,
-    sku:sku
-  },function(res){
+  item_id: itemId,
+  title: title,
+  type: type,
+  qty: qty,
+  sku: sku,
+  custom_label: label
+}, function(res){
     if(!res.ok){
       alert(res.error || 'Update failed');
       return;

@@ -5,6 +5,7 @@ header('Content-Type: application/json; charset=utf-8');
 
 require_once dirname(__DIR__, 2) . '/includes/conn.php';
 require_once __DIR__ . '/activity_helper.php';
+require_once __DIR__ . '/category_sync_helper.php';
 
 function out($p){ echo json_encode($p); exit; }
 
@@ -26,7 +27,7 @@ if ($itemId <= 0 || $title === '' || $type === '') {
 }
 
 $stmt = $conn->prepare("
-  SELECT order_id, title, item_type_code, qty, sku
+  SELECT order_id, title, item_type_code, qty, sku, custom_label
   FROM order_items
   WHERE id=? AND deleted_at IS NULL
 ");
@@ -60,6 +61,7 @@ $stmt->bind_param(
 );
 $stmt->execute();
 $stmt->close();
+sync_order_categories($conn, (int)$old['order_id']);
 
 log_order_activity(
   $conn,
@@ -72,7 +74,8 @@ log_order_activity(
     'title'=>$title,
     'type'=>$type,
     'qty'=>$qty,
-    'sku'=>$sku
+    'sku'=>$sku,
+    'custom_label' => $customLabel
   ]],
   'Item updated'
 );

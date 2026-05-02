@@ -766,6 +766,8 @@ ob_start();
               <th>SKU</th>
               <th>Label</th>
               <th>Qty</th>
+              <th class="text-center">View</th>
+              <th class="text-center">Copy</th>
               <?php if ((int)($_SESSION['permission'] ?? 0) >= 300): ?>
                 <th class="text-center">Save</th>
                 <th class="text-center">Delete</th>
@@ -859,7 +861,21 @@ ob_start();
                   <?php echo (int)$it['qty']; ?>
                 <?php endif; ?>
               </td>
+                    <td class="text-center">
+                    <button type="button"
+                            class="btn btn-xs btn-outline-info btn-view-options"
+                            data-options="<?php echo h($it['options_json'] ?? '{}'); ?>">
+                      View
+                    </button>
+                  </td>
 
+                  <td class="text-center">
+                    <button type="button"
+                             class="btn btn-xs btn-outline-warning"
+                            data-copy="<?php echo h($it['options_json'] ?? ''); ?>">
+                      Copy
+                    </button>
+                  </td>
               <?php if ((int)($_SESSION['permission'] ?? 0) >= 300): ?>
                 <td class="text-center">
                   <button type="button"
