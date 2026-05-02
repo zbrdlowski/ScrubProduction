@@ -1615,6 +1615,7 @@ $(document).on('click', '.btn-delete-order-item', function(){
   const type  = $tr.find('.item-type').val();
   const qty   = $tr.find('.item-qty').val();
   const sku   = $tr.find('.item-sku').val();
+  const label = $tr.find('.item-label').val();
 
   $.post('scripts/orders/update_order_item.php',{
     item_id:itemId,

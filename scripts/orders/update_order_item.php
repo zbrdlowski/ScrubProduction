@@ -17,6 +17,7 @@ $title = trim((string)($_POST['title'] ?? ''));
 $type  = strtoupper(trim((string)($_POST['type'] ?? '')));
 $qty   = max(1, (int)($_POST['qty'] ?? 1));
 $sku   = trim((string)($_POST['sku'] ?? ''));
+$customLabel = trim((string)($_POST['custom_label'] ?? ''));
 
 $userId = (int)($_SESSION['user_id'] ?? 0);
 
@@ -38,12 +39,24 @@ if (!$old) out(['ok'=>false,'error'=>'Item not found']);
 
 $stmt = $conn->prepare("
   UPDATE order_items
-  SET title=?, item_type_code=?, qty=?, sku=?,
-      updated_by=?, updated_at=NOW()
+  SET title=?,
+      item_type_code=?,
+      qty=?,
+      sku=?,
+      custom_label=?,
+      updated_by=?,
+      updated_at=NOW()
   WHERE id=?
 ");
-$stmt->bind_param('ssissi',
-  $title,$type,$qty,$sku,$userId,$itemId
+$stmt->bind_param(
+  'ssissii',
+  $title,
+  $type,
+  $qty,
+  $sku,
+  $customLabel,
+  $userId,
+  $itemId
 );
 $stmt->execute();
 $stmt->close();

@@ -766,11 +766,10 @@ ob_start();
               <th>SKU</th>
               <th>Label</th>
               <th>Qty</th>
-              <th>Edit</th>
               <?php if ((int)($_SESSION['permission'] ?? 0) >= 300): ?>
-              <th>Actions</th>
-              <th>Delete</th>
-            <?php endif; ?>
+                <th class="text-center">Save</th>
+                <th class="text-center">Delete</th>
+              <?php endif; ?>
             </tr>
           </thead>
           <tbody>
@@ -806,66 +805,80 @@ ob_start();
                 }
               }
             ?>
-            <tr class="<?php echo h($rowClass); ?>">
-              <td><?php echo (int)($it['line_no'] ?? 0); ?></td>
-              <td><span class="badge <?php echo h($badge); ?>"><?php echo h($t); ?></span></td>
+            <tr class="<?php echo ((int)$it['qty'] > 1 ? 'qty-warning-row' : ''); ?>">
+              <td><?php echo h($it['line_no'] ?? ''); ?></td>
+
               <td>
-              <input class="form-control form-control-sm item-title"
-                    value="<?php echo h($it['title']); ?>">
-            </td>
-
-            <td>
-              <select class="form-control form-control-sm item-type">
-                <?php foreach (['G','P','S','F','T','M'] as $t): ?>
-                  <option value="<?= $t ?>" <?= ($it['item_type_code']===$t?'selected':'') ?>>
-                    <?= $t ?>
-                  </option>
-                <?php endforeach; ?>
-              </select>
-            </td>
-
-            <td>
-              <input type="number"
-                    class="form-control form-control-sm item-qty"
-                    value="<?php echo (int)$it['qty']; ?>">
-            </td>
-
-            <td>
-              <input class="form-control form-control-sm item-sku"
-                    value="<?php echo h($it['sku']); ?>">
-            </td>
-
-            <td class="text-center">
-              <button class="btn btn-sm btn-outline-success btn-save-item"
-                      data-id="<?php echo (int)$it['id']; ?>"
-                      data-order-id="<?php echo (int)$orderId; ?>">
-                EDIT
-              </button>
-            </td>
-              <td class="text-center">
-              <button class="btn btn-sm btn-outline-info btn-view-options"
-                      data-options='<?php echo h($it['options_json'] ?? ''); ?>'>
-                VIEW
-              </button>
-
-              <button class="btn btn-sm btn-outline-warning btn-copy-options"
-                      data-options='<?php echo h($it['options_json'] ?? ''); ?>'>
-                COPY
-              </button>
+                <?php if ((int)($_SESSION['permission'] ?? 0) >= 300): ?>
+                  <select class="form-control form-control-sm item-type">
+                    <?php foreach (['G','P','S','F','T','M'] as $t): ?>
+                      <option value="<?php echo h($t); ?>" <?php echo (strtoupper((string)$it['item_type_code']) === $t ? 'selected' : ''); ?>>
+                        <?php echo h($t); ?>
+                      </option>
+                    <?php endforeach; ?>
+                  </select>
+                <?php else: ?>
+                  <?php echo h($it['item_type_code']); ?>
+                <?php endif; ?>
               </td>
+
+              <td>
+                <?php if ((int)($_SESSION['permission'] ?? 0) >= 300): ?>
+                  <input class="form-control form-control-sm item-title"
+                        value="<?php echo h($it['title'] ?? ''); ?>">
+                <?php else: ?>
+                  <?php echo h($it['title'] ?? ''); ?>
+                <?php endif; ?>
+              </td>
+
+              <td>
+                <?php if ((int)($_SESSION['permission'] ?? 0) >= 300): ?>
+                  <input class="form-control form-control-sm item-sku"
+                        value="<?php echo h($it['sku'] ?? ''); ?>">
+                <?php else: ?>
+                  <?php echo h($it['sku'] ?? ''); ?>
+                <?php endif; ?>
+              </td>
+
+              <td>
+                <?php if ((int)($_SESSION['permission'] ?? 0) >= 300): ?>
+                  <input class="form-control form-control-sm item-label"
+                        value="<?php echo h($it['custom_label'] ?? ''); ?>">
+                <?php else: ?>
+                  <?php echo h($it['custom_label'] ?? ''); ?>
+                <?php endif; ?>
+              </td>
+
+              <td>
+                <?php if ((int)($_SESSION['permission'] ?? 0) >= 300): ?>
+                  <input type="number"
+                        class="form-control form-control-sm item-qty"
+                        value="<?php echo (int)$it['qty']; ?>"
+                        min="1">
+                <?php else: ?>
+                  <?php echo (int)$it['qty']; ?>
+                <?php endif; ?>
+              </td>
+
               <?php if ((int)($_SESSION['permission'] ?? 0) >= 300): ?>
+                <td class="text-center">
+                  <button type="button"
+                          class="btn btn-xs btn-outline-success btn-save-item"
+                          data-id="<?php echo (int)$it['id']; ?>"
+                          data-order-id="<?php echo (int)$orderId; ?>">
+                    Save
+                  </button>
+                </td>
+
                 <td class="text-center">
                   <button type="button"
                           class="btn btn-xs btn-outline-danger btn-delete-order-item"
                           data-item-id="<?php echo (int)$it['id']; ?>"
                           data-order-id="<?php echo (int)$orderId; ?>">
-                    DELETE
-                  </button>                
+                    Delete
+                  </button>
+                </td>
               <?php endif; ?>
-            </td>
-
-
-
             </tr>
           <?php endforeach; ?>
           </tbody>
