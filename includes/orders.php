@@ -722,7 +722,7 @@ table th {
                 title="<?= htmlspecialchars($name . ' — ' . $a['role']) ?>">
             <?= htmlspecialchars($initials ?: '?') ?>
           </span>
-<?php endif; ?>
+  <?php endif; ?>
       <?php endforeach; ?>
 
       <?php if ($hiddenCount > 0): ?>
@@ -732,10 +732,10 @@ table th {
       <?php endif; ?>
     </div>
   <?php endif; ?>
-  
+
 </td>
 
-            <td class="text-nowrap">
+<td class="text-nowrap">
   <button type="button"
           class="btn btn-sm btn-outline-light btn-toggle-detail mr-1"
           data-order-id="<?= $orderId ?>">
@@ -767,18 +767,14 @@ table th {
 
   <?php if ($canUseDeptButtons): ?>
 
-<?php if (!$isTakenAny): ?>
+  <?php if (!$isTakenAny): ?>
 
-  <!-- TAKE (všetci) -->
-      <?php $isTaken = !empty($row['primary_emp_id']); ?>
-
-      <button type="button"
-              class="btn btn-sm <?php echo $isTaken ? 'btn-secondary' : 'btn-success'; ?> btn-take-order mr-1"
-              data-order-id="<?= $orderId ?>"
-              <?php echo $isTaken ? 'disabled' : ''; ?>
-              title="<?php echo $isTaken ? 'Already assigned' : 'Take order'; ?>">
-        TAKE
-      </button>
+  <button type="button"
+          class="btn btn-sm btn-success btn-take-order mr-1"
+          data-order-id="<?= $orderId ?>"
+          title="Take order">
+    TAKE
+  </button>
   <!-- Assign To (len admin/mod) -->
   <?php if ($perm >= 400): ?>
     <button type="button"
@@ -790,7 +786,7 @@ table th {
     </button>
   <?php endif; ?>
 
-<?php else: ?>
+  <?php else: ?>
 
       <button type="button"
               class="btn btn-sm btn-secondary btn-take-order mr-1"
@@ -803,7 +799,7 @@ table th {
      <?php if ($takenByMe): ?>
         <span class="badge badge-warning mr-1 px-3 py-2" style="font-size:0.85rem;">
   MINE
-</span>
+    </span>
       <?php else: ?>
         <span class="badge badge-warning mr-1">
           Taken<?= $takenNameAny ? ': '.htmlspecialchars($takenNameAny) : '' ?>

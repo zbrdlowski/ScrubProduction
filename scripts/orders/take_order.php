@@ -78,6 +78,20 @@ try {
     exit;
   }
 
+  $roleCollab = 'COLLAB_' . $deptCode;
+
+$rm = $conn->prepare("
+  UPDATE order_assignments
+  SET removed_at = NOW()
+  WHERE order_id = ?
+    AND employee_id = ?
+    AND role = ?
+    AND removed_at IS NULL
+");
+$rm->bind_param('iis', $orderId, $userId, $roleCollab);
+$rm->execute();
+$rm->close();
+
   // insert assignment (uq_order_employee prevents duplicates for same employee+order)
   $ins = $conn->prepare("INSERT INTO order_assignments
         (order_id, employee_id, role, state, assigned_by)
