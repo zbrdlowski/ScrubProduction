@@ -746,11 +746,28 @@ table th {
     $primaryId = isset($row['primary_emp_id']) ? (int)$row['primary_emp_id'] : 0;
     $primaryName = (string)($row['primary_emp_name'] ?? '');
     $canUseDeptButtons = !empty($uiDeptCode);
+    $isTakenAny = false;
+    $takenByMe = false;
+    $takenNameAny = '';
+
+    foreach ($assigned as $a) {
+      if (strpos($a['role'], 'PRIMARY_') === 0) {
+        $isTakenAny = true;
+
+        if ((int)$a['id'] === $meUserId) {
+          $takenByMe = true;
+        }
+
+        if ($takenNameAny === '') {
+          $takenNameAny = $a['name'];
+        }
+      }
+    }
   ?>
 
   <?php if ($canUseDeptButtons): ?>
 
-<?php if ($primaryId <= 0): ?>
+<?php if (!$isTakenAny): ?>
 
   <!-- TAKE (všetci) -->
       <?php $isTaken = !empty($row['primary_emp_id']); ?>
@@ -774,13 +791,22 @@ table th {
   <?php endif; ?>
 
 <?php else: ?>
-      <?php if ($primaryId === $meUserId): ?>
+
+      <button type="button"
+              class="btn btn-sm btn-secondary btn-take-order mr-1"
+              data-order-id="<?= $orderId ?>"
+              disabled
+              title="Already assigned">
+        TAKE
+      </button>
+
+     <?php if ($takenByMe): ?>
         <span class="badge badge-warning mr-1 px-3 py-2" style="font-size:0.85rem;">
   MINE
 </span>
       <?php else: ?>
         <span class="badge badge-warning mr-1">
-          Taken<?= $primaryName ? ': '.htmlspecialchars($primaryName) : '' ?>
+          Taken<?= $takenNameAny ? ': '.htmlspecialchars($takenNameAny) : '' ?>
         </span>
       <?php endif; ?>
 
