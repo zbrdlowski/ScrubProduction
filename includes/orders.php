@@ -186,6 +186,7 @@ $sql = " SELECT
   o.imported_at,
   o.status,
   o.traffic_light,
+  o.traffic_blocker,
   o.manual_types_override,
   o.payment_method,
   o.shipping_method,

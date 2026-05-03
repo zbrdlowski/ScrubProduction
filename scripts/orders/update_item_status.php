@@ -1,8 +1,10 @@
 <?php
 session_start();
 
-require_once '../../includes/conn.php';
-require_once '../../includes/orders_status_helpers.php';
+$base = dirname(__DIR__, 2);
+
+require_once $base . '/includes/conn.php';
+require_once $base . '/includes/orders_status_helpers.php';
 require_once $base . '/includes/orders_workflow_helpers.php';
 
 header('Content-Type: application/json');
