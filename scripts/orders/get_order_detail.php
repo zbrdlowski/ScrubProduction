@@ -281,6 +281,15 @@ if (!empty($addr['SHIPPING']['country'])) {
 } elseif (!empty($addr['BILLING']['country'])) {
   $orderCountry = strtoupper((string) $addr['BILLING']['country']);
 }
+$displayCustomerPhone = '';
+
+if (!empty($addr['SHIPPING']['phone'])) {
+  $displayCustomerPhone = (string)$addr['SHIPPING']['phone'];
+} elseif (!empty($addr['BILLING']['phone'])) {
+  $displayCustomerPhone = (string)$addr['BILLING']['phone'];
+} else {
+  $displayCustomerPhone = (string)($order['customer_phone'] ?? '');
+}
 
 // --- items (no fetch_all to avoid mysqlnd dependency issues) ---
 $stmt = $conn->prepare("SELECT id, line_no, sku, title, custom_label, item_type_code, qty, options_json
@@ -494,13 +503,13 @@ ob_start();
                 data-copy="<?php echo h($order['customer_email']); ?>">📋</button>
             </div>
           <?php endif; ?>
-          <?php if (!empty($order['customer_phone'])): ?>
-            <div class="text-muted">
-              <?php echo h($order['customer_phone']); ?>
-              <button class="btn btn-xs btn-copy-inline ml-1"
-                data-copy="<?php echo h($order['customer_phone']); ?>">📋</button>
-            </div>
-          <?php endif; ?>
+          <?php if ($displayCustomerPhone !== ''): ?>
+  <div class="text-muted">
+    <?php echo h($displayCustomerPhone); ?>
+    <button class="btn btn-xs btn-copy-inline ml-1"
+      data-copy="<?php echo h($displayCustomerPhone); ?>">📋</button>
+  </div>
+<?php endif; ?>
         </div>
         <div class="col-md-6">
           <div><b>Shipping:</b> <?php echo h($order['shipping_method'] ?? '-'); ?></div>
@@ -525,86 +534,89 @@ ob_start();
         </div>
       </div>
 
-      <?php if ((int) ($_SESSION['permission'] ?? 0) >= 400): ?>
-        <div class="order-header-edit mt-3" style="display:none;">
-          <div class="card bg-dark border-warning">
-            <div class="card-header">
-              <b>Edit order header</b>
-            </div>
+ <?php if ((int) ($_SESSION['permission'] ?? 0) >= 400): ?>
+  <div class="order-header-edit mt-3" style="display:none;">
+    <div class="card bg-dark border-warning">
+      <div class="card-header">
+        <b>Edit order header</b>
+      </div>
 
-            <div class="card-body">
-              <input type="hidden" class="edit-order-id" value="<?php echo (int) $orderId; ?>">
+      <div class="card-body">
+        <input type="hidden" class="edit-order-id" value="<?php echo (int) $orderId; ?>">
 
-              <div class="form-row">
-                <div class="form-group col-md-6">
-                  <label>Shipping</label>
-                  <input class="form-control form-control-sm edit-delivery"
-                    value="<?php echo h($order['shipping_method'] ?? ''); ?>">
-                </div>
+        <div class="form-row">
+          <div class="form-group col-md-6">
+            <label>Payment</label>
+            <input class="form-control form-control-sm edit-payment"
+              value="<?php echo h($order['payment_method'] ?? ''); ?>">
+          </div>
 
-                <div class="form-group col-md-6">
-                  <label>Payment</label>
-                  <input class="form-control form-control-sm edit-payment"
-                    value="<?php echo h($order['payment_method'] ?? ''); ?>">
-                </div>
-              </div>
-
-              <?php $b = $addr['BILLING'] ?? []; ?>
-              <?php $s = $addr['SHIPPING'] ?? []; ?>
-
-              <div class="row">
-                <div class="col-md-6">
-                  <h6>Billing</h6>
-                  <input class="form-control form-control-sm mb-1 edit-billing-name" placeholder="Name"
-                    value="<?php echo h($b['name'] ?? ''); ?>">
-                  <input class="form-control form-control-sm mb-1 edit-billing-company" placeholder="Company"
-                    value="<?php echo h($b['company'] ?? ''); ?>">
-                  <input class="form-control form-control-sm mb-1 edit-billing-street" placeholder="Street"
-                    value="<?php echo h($b['street'] ?? ''); ?>">
-                  <input class="form-control form-control-sm mb-1 edit-billing-city" placeholder="City"
-                    value="<?php echo h($b['city'] ?? ''); ?>">
-                  <input class="form-control form-control-sm mb-1 edit-billing-zip" placeholder="ZIP"
-                    value="<?php echo h($b['zip'] ?? ''); ?>">
-                  <input class="form-control form-control-sm mb-1 edit-billing-country" placeholder="Country"
-                    value="<?php echo h($b['country'] ?? ''); ?>">
-                  <input class="form-control form-control-sm mb-1 edit-billing-email" placeholder="Email"
-                    value="<?php echo h($b['email'] ?? ''); ?>">
-                  <input class="form-control form-control-sm mb-1 edit-billing-phone" placeholder="Phone"
-                    value="<?php echo h($b['phone'] ?? ''); ?>">
-                </div>
-
-                <div class="col-md-6">
-                  <h6>Shipping</h6>
-                  <input class="form-control form-control-sm mb-1 edit-shipping-name" placeholder="Name"
-                    value="<?php echo h($s['name'] ?? ''); ?>">
-                  <input class="form-control form-control-sm mb-1 edit-shipping-company" placeholder="Company"
-                    value="<?php echo h($s['company'] ?? ''); ?>">
-                  <input class="form-control form-control-sm mb-1 edit-shipping-street" placeholder="Street"
-                    value="<?php echo h($s['street'] ?? ''); ?>">
-                  <input class="form-control form-control-sm mb-1 edit-shipping-city" placeholder="City"
-                    value="<?php echo h($s['city'] ?? ''); ?>">
-                  <input class="form-control form-control-sm mb-1 edit-shipping-zip" placeholder="ZIP"
-                    value="<?php echo h($s['zip'] ?? ''); ?>">
-                  <input class="form-control form-control-sm mb-1 edit-shipping-country" placeholder="Country"
-                    value="<?php echo h($s['country'] ?? ''); ?>">
-                  <input class="form-control form-control-sm mb-1 edit-shipping-email" placeholder="Email"
-                    value="<?php echo h($s['email'] ?? ''); ?>">
-                  <input class="form-control form-control-sm mb-1 edit-shipping-phone" placeholder="Phone"
-                    value="<?php echo h($s['phone'] ?? ''); ?>">
-                </div>
-              </div>
-
-              <button type="button" class="btn btn-warning btn-sm mt-2 btn-save-order-header">
-                Save changes
-              </button>
-
-              <button type="button" class="btn btn-secondary btn-sm mt-2 btn-cancel-order-header">
-                Cancel
-              </button>
-            </div>
+          <div class="form-group col-md-6">
+            <label>Shipping</label>
+            <input class="form-control form-control-sm edit-delivery"
+              value="<?php echo h($order['shipping_method'] ?? ''); ?>">
           </div>
         </div>
-      <?php endif; ?>
+
+        <?php $b = $addr['BILLING'] ?? []; ?>
+        <?php $s = $addr['SHIPPING'] ?? []; ?>
+
+       <div class="row">
+          <!-- LEFT: Billing -->
+          <div class="col-md-6">
+            <h6>Billing</h6>
+            <input class="form-control form-control-sm mb-1 edit-billing-name" placeholder="Name"
+              value="<?php echo h($b['name'] ?? ''); ?>">
+            <input class="form-control form-control-sm mb-1 edit-billing-company" placeholder="Company"
+              value="<?php echo h($b['company'] ?? ''); ?>">
+            <input class="form-control form-control-sm mb-1 edit-billing-street" placeholder="Street"
+              value="<?php echo h($b['street'] ?? ''); ?>">
+            <input class="form-control form-control-sm mb-1 edit-billing-city" placeholder="City"
+              value="<?php echo h($b['city'] ?? ''); ?>">
+            <input class="form-control form-control-sm mb-1 edit-billing-zip" placeholder="ZIP"
+              value="<?php echo h($b['zip'] ?? ''); ?>">
+            <input class="form-control form-control-sm mb-1 edit-billing-country" placeholder="Country"
+              value="<?php echo h($b['country'] ?? ''); ?>">
+            <input class="form-control form-control-sm mb-1 edit-billing-email" placeholder="Email"
+              value="<?php echo h($b['email'] ?? ''); ?>">
+            <input class="form-control form-control-sm mb-1 edit-billing-phone" placeholder="Phone"
+              value="<?php echo h($b['phone'] ?? ''); ?>">
+          </div>
+
+          <!-- RIGHT: Shipping -->
+          <div class="col-md-6">
+            <h6>Shipping</h6>
+            <input class="form-control form-control-sm mb-1 edit-shipping-name" placeholder="Name"
+              value="<?php echo h($s['name'] ?? ''); ?>">
+            <input class="form-control form-control-sm mb-1 edit-shipping-company" placeholder="Company"
+              value="<?php echo h($s['company'] ?? ''); ?>">
+            <input class="form-control form-control-sm mb-1 edit-shipping-street" placeholder="Street"
+              value="<?php echo h($s['street'] ?? ''); ?>">
+            <input class="form-control form-control-sm mb-1 edit-shipping-city" placeholder="City"
+              value="<?php echo h($s['city'] ?? ''); ?>">
+            <input class="form-control form-control-sm mb-1 edit-shipping-zip" placeholder="ZIP"
+              value="<?php echo h($s['zip'] ?? ''); ?>">
+            <input class="form-control form-control-sm mb-1 edit-shipping-country" placeholder="Country"
+              value="<?php echo h($s['country'] ?? ''); ?>">
+            <input class="form-control form-control-sm mb-1 edit-shipping-email" placeholder="Email"
+              value="<?php echo h($s['email'] ?? ''); ?>">
+            <input class="form-control form-control-sm mb-1 edit-shipping-phone" placeholder="Phone"
+              value="<?php echo h($s['phone'] ?? ''); ?>">
+          </div>
+        </div>
+
+
+        <button type="button" class="btn btn-warning btn-sm mt-2 btn-save-order-header">
+          Save changes
+        </button>
+
+        <button type="button" class="btn btn-secondary btn-sm mt-2 btn-cancel-order-header">
+          Cancel
+        </button>
+      </div>
+    </div>
+  </div>
+<?php endif; ?>
       <hr />
 
       <div class="row">
@@ -634,7 +646,12 @@ ob_start();
             </div>
             <div class="text-muted">
               <?php echo h(trim(($b['street'] ?? '') . ', ' . ($b['city'] ?? '') . ' ' . ($b['zip'] ?? ''))); ?></div>
-
+<?php if (!empty($b['phone'])): ?>
+  <div class="text-muted">
+    <b>Phone:</b> <?php echo h($b['phone']); ?>
+    <button class="btn btn-xs btn-copy-inline ml-1" data-copy="<?php echo h($b['phone']); ?>">📋</button>
+  </div>
+<?php endif; ?>
             <?php if (!empty($b['country'])): ?>
               <div class="text-muted">
                 <?php if ($billingState !== ''): ?>
@@ -736,7 +753,12 @@ ob_start();
                 <span><?php echo h($shippingState); ?></span>
               </div>
             <?php endif; ?>
-
+<?php if (!empty($s['phone'])): ?>
+  <div class="text-muted">
+    <b>Phone:</b> <?php echo h($s['phone']); ?>
+    <button class="btn btn-xs btn-copy-inline ml-1" data-copy="<?php echo h($s['phone']); ?>">📋</button>
+  </div>
+<?php endif; ?>
             <?php if (!empty($s['country'])): ?>
               <div class="text-muted">
                 <?php
