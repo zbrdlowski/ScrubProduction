@@ -6,6 +6,7 @@ header('Content-Type: application/json; charset=utf-8');
 require_once dirname(__DIR__, 2) . '/includes/conn.php';
 require_once __DIR__ . '/activity_helper.php';
 require_once __DIR__ . '/category_sync_helper.php';
+require_once dirname(__DIR__, 2) . '/includes/orders_workflow_helpers.php';
 
 function out($p){ echo json_encode($p); exit; }
 
@@ -79,5 +80,5 @@ log_order_activity(
   ]],
   'Item updated'
 );
-
+recalculateOrderWorkflow($conn, (int)$old['order_id']);
 out(['ok'=>true]);

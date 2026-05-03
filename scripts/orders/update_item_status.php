@@ -6,6 +6,7 @@ $base = dirname(__DIR__, 2);
 require_once $base . '/includes/conn.php';
 require_once $base . '/includes/orders_status_helpers.php';
 require_once $base . '/includes/orders_workflow_helpers.php';
+require_once __DIR__ . '/activity_helper.php';
 
 header('Content-Type: application/json');
 
@@ -21,6 +22,7 @@ $expectedDate = trim($_POST['expected_date'] ?? '');
 
 $allowed = [
     'NEW',
+    'PROCESSING',
     'RTP',
     'PRINT_QUEUE',
     'PRINTED',
@@ -82,7 +84,7 @@ $history->execute([
     $expectedDate,
     $userId
 ]);
-addOrderActivity(
+log_order_activity(
     $conn,
     $orderId,
     $userId,

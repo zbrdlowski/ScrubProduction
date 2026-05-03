@@ -6,6 +6,7 @@ header('Content-Type: application/json; charset=utf-8');
 require_once dirname(__DIR__, 2) . '/includes/conn.php';
 require_once __DIR__ . '/activity_helper.php';
 require_once __DIR__ . '/category_sync_helper.php';
+require_once dirname(__DIR__, 2) . '/includes/orders_workflow_helpers.php';
 
 function out(array $payload): void {
   echo json_encode($payload, JSON_UNESCAPED_UNICODE);
@@ -99,5 +100,6 @@ log_order_activity(
   ],
   'Manual item added: ' . $title
 );
-
+require_once $base . '/includes/orders_workflow_helpers.php';
+recalculateOrderWorkflow($conn, $orderId);
 out(['ok' => true, 'item_id' => $itemId]);
