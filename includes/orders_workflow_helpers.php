@@ -133,3 +133,33 @@ function recalculateOrderWorkflow(mysqli $conn, int $orderId): void {
     $stmt->execute();
     $stmt->close();
 }
+function addOrderActivity(
+    mysqli $conn,
+    int $orderId,
+    ?int $actorEmployeeId,
+    string $action,
+    ?string $entityType = null,
+    ?int $entityId = null,
+    array $payload = [],
+    ?string $note = null
+): void {
+    $payloadJson = $payload ? json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) : null;
+
+    $stmt = $conn->prepare("
+        INSERT INTO order_activity
+        (order_id, actor_employee_id, action, entity_type, entity_id, payload, note)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+    ");
+    $stmt->bind_param(
+        'iississ',
+        $orderId,
+        $actorEmployeeId,
+        $action,
+        $entityType,
+        $entityId,
+        $payloadJson,
+        $note
+    );
+    $stmt->execute();
+    $stmt->close();
+}

@@ -82,7 +82,21 @@ $history->execute([
     $expectedDate,
     $userId
 ]);
-
+addOrderActivity(
+    $conn,
+    $orderId,
+    $userId,
+    'ITEM_STATUS_CHANGED',
+    'order_item',
+    $itemId,
+    [
+        'old_status' => $oldStatus,
+        'new_status' => $newStatus,
+        'note' => $note,
+        'expected_date' => $expectedDate
+    ],
+    'Item status changed: ' . $oldStatus . ' → ' . $newStatus
+);
 //recalculateOrderStatus($pdo, $orderId);
 recalculateOrderWorkflow($conn, $orderId);
 echo json_encode(['success' => true]);
