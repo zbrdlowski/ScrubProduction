@@ -301,7 +301,20 @@ if (!empty($addr['SHIPPING']['phone'])) {
 }
 
 // --- items (no fetch_all to avoid mysqlnd dependency issues) ---
-$stmt = $conn->prepare("SELECT id, line_no, sku, title, custom_label, item_type_code, qty, options_json
+$stmt = $conn->prepare("SELECT 
+    id,
+    line_no,
+    sku,
+    title,
+    custom_label,
+    item_type_code,
+    qty,
+    options_json,
+    status,
+    waiting_note,
+    expected_date,
+    completed_by,
+    completed_at
 FROM order_items
 WHERE order_id=?
   AND deleted_at IS NULL
