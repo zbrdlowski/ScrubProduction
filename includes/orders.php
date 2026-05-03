@@ -1683,21 +1683,8 @@ $(document).on('change', '.item-status-select', function () {
     const itemId = $(this).data('item-id');
     const status = $(this).val();
 
-    let note = '';
-    let expectedDate = '';
-
-    if (status === 'WAITING') {
-        note = prompt('Na čo čakáme?');
-        if (note === null || note.trim() === '') {
-            alert('Pri WAITING musíš zadať poznámku.');
-            return;
-        }
-
-        expectedDate = prompt('Kedy to má prísť? Formát YYYY-MM-DD');
-        if (expectedDate === null) {
-            expectedDate = '';
-        }
-    }
+    const note = $('.item-waiting-note[data-item-id="' + itemId + '"]').val() || '';
+    const expectedDate = $('.item-expected-date[data-item-id="' + itemId + '"]').val() || '';
 
     $.ajax({
         url: 'scripts/orders/update_item_status.php',
