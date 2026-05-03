@@ -3,6 +3,7 @@ session_start();
 
 require_once '../../includes/conn.php';
 require_once '../../includes/orders_status_helpers.php';
+require_once $base . '/includes/orders_workflow_helpers.php';
 
 header('Content-Type: application/json');
 
@@ -81,5 +82,5 @@ $history->execute([
 ]);
 
 recalculateOrderStatus($pdo, $orderId);
-
+recalculateOrderWorkflow($conn, $orderId);
 echo json_encode(['success' => true]);

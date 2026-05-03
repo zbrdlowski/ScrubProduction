@@ -185,6 +185,7 @@ $sql = " SELECT
   o.order_date,
   o.imported_at,
   o.status,
+  o.traffic_light,
   o.manual_types_override,
   o.payment_method,
   o.shipping_method,
@@ -518,6 +519,7 @@ table th {
             <th width="8%">Order #</th>
             <th>Types</th>
             <th>Customer</th>
+            <th class="text-center">Semafor</th>
             <th class="text-center">Status</th>
             <th>Assigned</th>
             <th>Detail</th>
@@ -625,6 +627,34 @@ table th {
           </td>
             <td><?= htmlspecialchars($customer) ?></td>
             
+<td class="text-center">
+<?php
+$traffic = strtoupper((string)($row['traffic_light'] ?? 'RED'));
+$blocker = strtoupper((string)($row['traffic_blocker'] ?? ''));
+
+$map = [
+    'G' => ['badge-info', 'G'],
+    'P' => ['badge-primary', 'P'],
+    'S' => ['badge-success', 'S'],
+    'F' => ['badge-danger', 'F'],
+];
+
+$badgeType = $map[$blocker][0] ?? 'badge-secondary';
+$label = $map[$blocker][1] ?? '-';
+
+if ($traffic === 'GREEN') {
+    $color = 'badge-success';
+} elseif ($traffic === 'ORANGE') {
+    $color = 'badge-warning';
+} else {
+    $color = 'badge-danger';
+}
+?>
+
+<span class="badge <?= $color ?>" style="font-size:1rem; padding:.5em .7em;">
+    <?= $label ?>
+</span>
+</td>
             
             <td class="text-center">
             <?php
