@@ -1679,6 +1679,31 @@ $(document).on('click', '.btn-delete-order-item', function(){
     alert('Update request failed');
   });
 });
+$(document).on('change', '.item-status-select', function () {
+    const itemId = $(this).data('item-id');
+    const status = $(this).val();
+
+    $.ajax({
+        url: 'scripts/orders/update_item_status.php',
+        method: 'POST',
+        dataType: 'json',
+        data: {
+            item_id: itemId,
+            status: status
+        },
+        success: function (resp) {
+            if (!resp || !resp.success) {
+                alert(resp && resp.message ? resp.message : 'Status update failed');
+                return;
+            }
+
+            location.reload();
+        },
+        error: function () {
+            alert('Status update request failed');
+        }
+    });
+});
 </script>
 <div class="modal fade" id="optionsModal" tabindex="-1" role="dialog" aria-hidden="true">
   <div class="modal-dialog modal-lg" role="document">

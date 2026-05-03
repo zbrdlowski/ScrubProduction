@@ -193,17 +193,26 @@ function status_badge_class($status): string
 }
 
 // --- order header ---
-$stmt = $conn->prepare("SELECT
-    o.*,
-    os.code AS source_code,
-    cu.name AS customer_name,
-    cu.email AS customer_email,
-    cu.phone AS customer_phone
-  FROM orders o
-  JOIN order_sources os ON os.id=o.source_id
-  LEFT JOIN customers cu ON cu.id=o.customer_id
-  WHERE o.id=?
-  LIMIT 1
+$stmt = $conn->prepare("SELECT 
+        id,
+        line_no,
+        sku,
+        title,
+        custom_label,
+        item_type_code,
+        qty,
+        options_json,
+        status,
+        waiting_note,
+        expected_date,
+        completed_by,
+        completed_at
+    FROM order_items
+    WHERE order_id=?
+      AND deleted_at IS NULL
+      AND item_type_code IS NOT NULL
+      AND item_type_code <> ''
+    ORDER BY COALESCE(line_no, 999999), id
 ");
 if (!$stmt)
   out(500, ['ok' => false, 'error' => 'SQL prepare failed: ' . $conn->error]);
@@ -910,6 +919,9 @@ ob_start();
               <th>SKU</th>
               <th>Label</th>
               <th>Qty</th>
+              <th>Status</th>
+              <th>Waiting</th>
+              <th>Action</th>
               <th class="text-center">View</th>
               <th class="text-center">Copy</th>
               <?php if ((int) ($_SESSION['permission'] ?? 0) >= 300): ?>
@@ -1009,19 +1021,55 @@ ob_start();
                     <?php echo (int) $it['qty']; ?>
                   <?php endif; ?>
                 </td>
+
+                <td>
+    <span class="badge badge-secondary">
+        <?= h($it['status'] ?? 'NEW') ?>
+    </span>
+</td>
+
+<td>
+    <?php if (($it['status'] ?? '') === 'WAITING'): ?>
+        <small class="text-warning">
+            <?= h($it['waiting_note'] ?? '') ?>
+            <?php if (!empty($it['expected_date'])): ?>
+                <br>ETA: <?= h($it['expected_date']) ?>
+            <?php endif; ?>
+        </small>
+    <?php else: ?>
+        <span class="text-muted">—</span>
+    <?php endif; ?>
+</td>
+
+<td>
+    <select class="form-control form-control-sm item-status-select"
+            data-item-id="<?= (int)$it['id'] ?>">
+        <?php
+        $currentStatus = $it['status'] ?? 'NEW';
+        $statuses = ['NEW', 'RTP', 'PRINT_QUEUE', 'PRINTED', 'CUT', 'READY', 'WAITING', 'DONE'];
+        foreach ($statuses as $s):
+        ?>
+            <option value="<?= h($s) ?>" <?= $currentStatus === $s ? 'selected' : '' ?>>
+                <?= h($s) ?>
+            </option>
+        <?php endforeach; ?>
+    </select>
+</td>
+
                 <td class="text-center">
                   <button type="button" class="btn btn-xs btn-outline-info btn-view-options"
                     data-options="<?php echo h(prepareOptionsJsonForModal($conn, (string)($it['options_json'] ?? '{}'))); ?>">
                     View
                   </button>
                 </td>
-
+                        
                 <td class="text-center">
                   <button type="button" class="btn btn-xs btn-outline-warning"
                     data-copy="<?php echo h($it['options_json'] ?? ''); ?>">
                     Copy
                   </button>
                 </td>
+                
                 <?php if ((int) ($_SESSION['permission'] ?? 0) >= 300): ?>
                   <td class="text-center">
                     <button type="button" class="btn btn-xs btn-outline-success btn-save-item"
