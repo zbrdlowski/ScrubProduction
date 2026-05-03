@@ -283,7 +283,7 @@ LEFT JOIN order_addresses oa_ship
 LEFT JOIN order_addresses oa_bill
   ON oa_bill.order_id = o.id AND UPPER(oa_bill.type) = 'BILLING'
 $whereSql
-ORDER BY o.id DESC
+ORDER BY o.id ASC
 LIMIT 500
 ";
 
@@ -630,10 +630,10 @@ table th {
             <?php
               $status = strtoupper((string)($row['status'] ?? ''));
               $statusBadge = 'badge-secondary';
-
-              if ($status === 'NEW') $statusBadge = 'badge-info';
+              // nastavenie farby badge podľa statusu
+              if ($status === 'NEW') $statusBadge = 'badge-danger';
               elseif ($status === 'IN_PROGRESS') $statusBadge = 'badge-primary';
-              elseif ($status === 'HOLD') $statusBadge = 'badge-danger';
+              elseif ($status === 'HOLD') $statusBadge = 'badge-info';
               elseif ($status === 'DONE' || $status === 'SHIPPED') $statusBadge = 'badge-success';
             ?>
             <?php
@@ -641,7 +641,7 @@ table th {
 
               switch ($status) {
                 case 'NEW':
-                  $btnClass = 'btn-outline-info';
+                  $btnClass = 'btn-outline-danger';
                   break;
 
                 case 'IN_PROGRESS':
@@ -1053,6 +1053,14 @@ $(document).on('click', '.order-row', function(e) {
 
   const orderId = $(this).data('order-id');
   const $btn = $(this).find('.btn-toggle-detail');
+  const $row = $(this).closest('tr.order-row');
+
+if ($row.hasClass('order-row-open')) {
+  $row.removeClass('order-row-open');
+} else {
+  $('.order-row').removeClass('order-row-open');
+  $row.addClass('order-row-open');
+}
 
   if ($btn.length) {
     $btn.trigger('click');
