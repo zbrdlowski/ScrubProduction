@@ -644,7 +644,11 @@ table th {
                   $btnClass = 'btn-outline-danger';
                   break;
 
-                case 'IN_PROGRESS':
+                case 'IN_PROGRESS':                
+                  $btnClass = 'btn-outline-warning';
+                  break;
+                
+                case 'WAITING_PARTS':
                   $btnClass = 'btn-outline-warning';
                   break;
 

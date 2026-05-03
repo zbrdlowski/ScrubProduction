@@ -1,7 +1,7 @@
 <?php
 session_start();
 
-require_once '../../includes/db.php';
+require_once '../../includes/conn.php';
 require_once '../../includes/orders_status_helpers.php';
 
 header('Content-Type: application/json');

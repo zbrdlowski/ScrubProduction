@@ -1032,24 +1032,24 @@ ob_start();
     </span>
 </td>
 
-<td>
-    <?php if (($it['status'] ?? '') === 'WAITING'): ?>
-        <small class="text-warning">
-            <?= h($it['waiting_note'] ?? '') ?>
-            <?php if (!empty($it['expected_date'])): ?>
-                <br>ETA: <?= h($it['expected_date']) ?>
-            <?php endif; ?>
-        </small>
-    <?php else: ?>
-        <span class="text-muted">—</span>
-    <?php endif; ?>
+<td style="min-width:220px;">
+    <input type="text"
+           class="form-control form-control-sm item-waiting-note"
+           data-item-id="<?= (int)$it['id'] ?>"
+           value="<?= h($it['waiting_note'] ?? '') ?>"
+           placeholder="Na čo čakáme?">
+
+    <input type="date"
+           class="form-control form-control-sm mt-1 item-expected-date"
+           data-item-id="<?= (int)$it['id'] ?>"
+           value="<?= h($it['expected_date'] ?? '') ?>">
 </td>
 
 <td>
     <select class="form-control form-control-sm item-status-select"
             data-item-id="<?= (int)$it['id'] ?>">
         <?php
-        $currentStatus = $it['status'] ?? 'NEW';
+        $currentStatus = strtoupper((string)($it['status'] ?? 'NEW'));
         $statuses = ['NEW', 'RTP', 'PRINT_QUEUE', 'PRINTED', 'CUT', 'READY', 'WAITING', 'DONE'];
         foreach ($statuses as $s):
         ?>
