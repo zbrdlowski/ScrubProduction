@@ -106,6 +106,28 @@ ALTER TABLE orders
   ADD CONSTRAINT fk_order_items_updated_by
     FOREIGN KEY (updated_by) REFERENCES employees(id);
 
+  /*toto prebehlo OK*/
+    ALTER TABLE orders
+ADD COLUMN traffic_light VARCHAR(20) DEFAULT 'RED';
+
+ALTER TABLE order_items
+ADD COLUMN status VARCHAR(50) DEFAULT 'NEW',
+ADD COLUMN waiting_note TEXT NULL,
+ADD COLUMN expected_date DATE NULL,
+ADD COLUMN completed_by INT NULL,
+ADD COLUMN completed_at DATETIME NULL;
+
+CREATE TABLE order_item_statuses (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    order_item_id INT NOT NULL,
+    old_status VARCHAR(50) NULL,
+    new_status VARCHAR(50) NOT NULL,
+    note TEXT NULL,
+    expected_date DATE NULL,
+    changed_by INT NULL,
+    changed_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
   /*#1061 - Duplicate key name 'ix_orders_order_number'*/
   ALTER TABLE orders
   ADD INDEX ix_orders_order_number (order_number),

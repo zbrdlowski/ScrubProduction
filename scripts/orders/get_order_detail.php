@@ -193,26 +193,17 @@ function status_badge_class($status): string
 }
 
 // --- order header ---
-$stmt = $conn->prepare("SELECT 
-        id,
-        line_no,
-        sku,
-        title,
-        custom_label,
-        item_type_code,
-        qty,
-        options_json,
-        status,
-        waiting_note,
-        expected_date,
-        completed_by,
-        completed_at
-    FROM order_items
-    WHERE order_id=?
-      AND deleted_at IS NULL
-      AND item_type_code IS NOT NULL
-      AND item_type_code <> ''
-    ORDER BY COALESCE(line_no, 999999), id
+$stmt = $conn->prepare(" SELECT 
+    o.*,
+    os.code AS source_code,
+    cu.name AS customer_name,
+    cu.email AS customer_email,
+    cu.phone AS customer_phone
+  FROM orders o
+  JOIN order_sources os ON os.id = o.source_id
+  LEFT JOIN customers cu ON cu.id = o.customer_id
+  WHERE o.id = ?
+  LIMIT 1
 ");
 if (!$stmt)
   out(500, ['ok' => false, 'error' => 'SQL prepare failed: ' . $conn->error]);
