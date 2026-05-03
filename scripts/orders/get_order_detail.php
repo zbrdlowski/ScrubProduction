@@ -435,18 +435,15 @@ ob_start();
         <div class="d-flex justify-content-end align-items-center" style="gap:6px;">
           <?php
           $statusOptions = [
-            'NEW',
-            'IN_PROGRESS',
-            'NEED_INFO',
-            'DRAFT_REQUESTED',
-            'DRAFT_READY',
-            'RIPPED',
-            'PRINT_QUEUE',
-            'PRODUCTION',
-            'READY_TO_SHIP',
-            'SHIPPED',
-            'HOLD',
-            'CANCELLED',
+              'NEW',
+              'IN_PROGRESS',
+              'NEED_INFO',
+              'DRAFT_READY',
+              'READY_TO_INVOICE',
+              'READY_TO_SHIP',
+              'SHIPPED',
+              'HOLD',
+              'CANCELLED'
           ];
 
           $currentStatus = strtoupper((string) ($order['status'] ?? 'NEW'));

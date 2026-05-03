@@ -83,6 +83,6 @@ $history->execute([
     $userId
 ]);
 
-recalculateOrderStatus($pdo, $orderId);
+//recalculateOrderStatus($pdo, $orderId);
 recalculateOrderWorkflow($conn, $orderId);
 echo json_encode(['success' => true]);

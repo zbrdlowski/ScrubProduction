@@ -63,7 +63,7 @@ function recalculateOrderWorkflow(mysqli $conn, int $orderId): void {
         $orderStatus = 'WAITING_PARTS';
         $traffic = 'ORANGE';
     } elseif ($allReady) {
-        $orderStatus = 'READY';
+        $orderStatus = 'READY_TO_INVOICE';
         $traffic = 'GREEN';
     } elseif ($hasInProgress) {
         $orderStatus = 'IN_PROGRESS';
