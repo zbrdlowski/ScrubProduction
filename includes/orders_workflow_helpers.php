@@ -5,7 +5,7 @@ function isOrderItemReady(string $type, string $status): bool {
     $status = strtoupper($status);
 
     if ($type === 'G') {
-        return in_array($status, ['CUT', 'READY'], true);
+        return in_array($status, ['PRINTED', 'CUT', 'READY'], true);
     }
 
     if ($type === 'F') {
@@ -13,6 +13,41 @@ function isOrderItemReady(string $type, string $status): bool {
     }
 
     return $status === 'READY';
+}
+
+function itemTrafficState(string $type, array $statuses): string {
+    $total = count($statuses);
+    $ready = 0;
+    $started = 0;
+    $waiting = 0;
+
+    foreach ($statuses as $status) {
+        $status = strtoupper((string)$status);
+
+        if ($status === 'WAITING') {
+            $waiting++;
+            $started++;
+        }
+
+        if (isOrderItemReady($type, $status)) {
+            $ready++;
+            $started++;
+        }
+
+        if (in_array($status, ['PROCESSING', 'RTP', 'PRINT_QUEUE', 'PRINTED'], true)) {
+            $started++;
+        }
+    }
+
+    if ($total > 0 && $ready === $total) {
+        return 'GREEN';
+    }
+
+    if ($waiting > 0 || $started > 0) {
+        return 'ORANGE';
+    }
+
+    return 'RED';
 }
 
 function recalculateOrderWorkflow(mysqli $conn, int $orderId): void {
@@ -29,58 +64,72 @@ function recalculateOrderWorkflow(mysqli $conn, int $orderId): void {
     $stmt->execute();
     $res = $stmt->get_result();
 
-    $hasWaiting = false;
-    $hasInProgress = false;
-    $allReady = true;
-    $blocker = null;
+    $groups = [];
 
     while ($item = $res->fetch_assoc()) {
         $type = strtoupper((string)$item['item_type_code']);
         $status = strtoupper((string)($item['status'] ?? 'NEW'));
 
-        if ($status === 'WAITING') {
-            $hasWaiting = true;
-            if ($blocker === null) $blocker = $type;
+        if (!isset($groups[$type])) {
+            $groups[$type] = [];
         }
 
-        if (!isOrderItemReady($type, $status)) {
-            $allReady = false;
-            if ($blocker === null) $blocker = $type;
-        }
-
-        if (!in_array($status, ['NEW', 'WAITING', 'READY', 'CUT', 'DONE'], true)) {
-            $hasInProgress = true;
-        }
+        $groups[$type][] = $status;
     }
 
     $stmt->close();
 
-    if ($blocker === null) {
-        $blocker = '';
-    }
+    $summary = [];
+    $allGreen = true;
+    $hasOrange = false;
+    $hasGreen = false;
+    $firstBlocker = '';
 
-    if ($hasWaiting) {
-        $orderStatus = 'WAITING_PARTS';
-        $traffic = 'ORANGE';
-    } elseif ($allReady) {
-        $orderStatus = 'READY_TO_INVOICE';
-        $traffic = 'GREEN';
-    } elseif ($hasInProgress) {
-        $orderStatus = 'IN_PROGRESS';
-        $traffic = 'ORANGE';
-    } else {
-        $orderStatus = 'NEW';
-        $traffic = 'RED';
-    }
+            foreach ($groups as $type => $statuses) {
+                $state = itemTrafficState($type, $statuses);
+                $summary[$type] = $state;
+
+                if ($state === 'GREEN') {
+                    $hasGreen = true;
+                }
+
+                if ($state !== 'GREEN') {
+                    $allGreen = false;
+                    if ($firstBlocker === '') {
+                        $firstBlocker = $type;
+                    }
+                }
+
+                if ($state === 'ORANGE') {
+                    $hasOrange = true;
+                }
+            }
+
+            if (!$groups) {
+                $orderStatus = 'NEW';
+                $traffic = 'RED';
+            } elseif ($allGreen) {
+                $orderStatus = 'READY_TO_INVOICE';
+                $traffic = 'GREEN';
+            } elseif ($hasOrange || $hasGreen) {
+                $orderStatus = 'IN_PROGRESS';
+                $traffic = 'ORANGE';
+            } else {
+                $orderStatus = 'NEW';
+                $traffic = 'RED';
+            }
+
+    $summaryJson = json_encode($summary, JSON_UNESCAPED_UNICODE);
 
     $stmt = $conn->prepare("
         UPDATE orders
         SET status = ?,
             traffic_light = ?,
-            traffic_blocker = ?
+            traffic_blocker = ?,
+            traffic_summary_json = ?
         WHERE id = ?
     ");
-    $stmt->bind_param('sssi', $orderStatus, $traffic, $blocker, $orderId);
+    $stmt->bind_param('ssssi', $orderStatus, $traffic, $firstBlocker, $summaryJson, $orderId);
     $stmt->execute();
     $stmt->close();
 }

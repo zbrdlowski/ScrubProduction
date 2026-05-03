@@ -187,6 +187,7 @@ $sql = " SELECT
   o.status,
   o.traffic_light,
   o.traffic_blocker,
+  o.traffic_summary_json,
   o.manual_types_override,
   o.payment_method,
   o.shipping_method,
@@ -627,35 +628,48 @@ table th {
             <?php endforeach; ?>
           </td>
             <td><?= htmlspecialchars($customer) ?></td>
+
+            <!-- semafor -->
             
-<td class="text-center">
-<?php
-$traffic = strtoupper((string)($row['traffic_light'] ?? 'RED'));
-$blocker = strtoupper((string)($row['traffic_blocker'] ?? ''));
+          <td class="text-center">
+          <?php
+          $summaryRaw = (string)($row['traffic_summary_json'] ?? '');
+          $summary = json_decode($summaryRaw, true);
 
-$map = [
-    'G' => ['badge-info', 'G'],
-    'P' => ['badge-primary', 'P'],
-    'S' => ['badge-success', 'S'],
-    'F' => ['badge-danger', 'F'],
-];
+          if (!is_array($summary) || !$summary) {
+              $typesFallback = strtoupper((string)($row['item_types'] ?? ''));
+              $typesFallback = str_replace([' ', ','], '', $typesFallback);
 
-$badgeType = $map[$blocker][0] ?? 'badge-secondary';
-$label = $map[$blocker][1] ?? '-';
+              $summary = [];
+              foreach (str_split($typesFallback) as $t) {
+                  if ($t !== '') {
+                      $summary[$t] = strtoupper((string)($row['traffic_light'] ?? 'RED'));
+                  }
+              }
+          }
 
-if ($traffic === 'GREEN') {
-    $color = 'badge-success';
-} elseif ($traffic === 'ORANGE') {
-    $color = 'badge-warning';
-} else {
-    $color = 'badge-danger';
-}
-?>
+          $order = ['G', 'F', 'P', 'S'];
 
-<span class="badge <?= $color ?>" style="font-size:1rem; padding:.5em .7em;">
-    <?= $label ?>
-</span>
-</td>
+          foreach ($order as $type):
+              if (!isset($summary[$type])) continue;
+
+              $state = strtoupper((string)$summary[$type]);
+
+              if ($state === 'GREEN') {
+                  $color = 'badge-success';
+              } elseif ($state === 'ORANGE') {
+                  $color = 'badge-warning';
+              } else {
+                  $color = 'badge-danger';
+              }
+          ?>
+              <span class="badge <?= $color ?> mr-1"
+                    style="font-size:1rem; padding:.5em .7em;"
+                    title="<?= htmlspecialchars($type . ' ' . $state) ?>">
+                  <?= htmlspecialchars($type) ?>
+              </span>
+          <?php endforeach; ?>
+          </td>
             
             <td class="text-center">
             <?php
@@ -674,6 +688,10 @@ if ($traffic === 'GREEN') {
                 case 'NEW':
                   $btnClass = 'btn-outline-danger';
                   break;
+                case 'READY_TO_INVOICE':
+                case 'READY_TO_SHIP':
+                    $btnClass = 'btn-outline-warning';
+                    break;
 
                 case 'IN_PROGRESS':                
                   $btnClass = 'btn-outline-warning';

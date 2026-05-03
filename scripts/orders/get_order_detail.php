@@ -1047,7 +1047,7 @@ ob_start();
             data-item-id="<?= (int)$it['id'] ?>">
         <?php
         $currentStatus = strtoupper((string)($it['status'] ?? 'NEW'));
-        $statuses = ['NEW', 'RTP', 'PRINT_QUEUE', 'PRINTED', 'CUT', 'READY', 'WAITING', 'DONE'];
+        $statuses = ['NEW', 'RTP', 'PRINT_QUEUE', 'PRINTED', 'CUT', 'READY', 'PROCESSING', 'WAITING'];
         foreach ($statuses as $s):
         ?>
             <option value="<?= h($s) ?>" <?= $currentStatus === $s ? 'selected' : '' ?>>
