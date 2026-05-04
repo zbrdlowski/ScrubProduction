@@ -1123,9 +1123,12 @@ ob_start();
 
                 <td class="text-center">
                   <?php if ($productUrl !== ''): ?>
-                    <a href="<?= h($productUrl) ?>" target="_blank" rel="noopener" class="btn btn-sm btn-outline-info"
-                      title="Open product">
-                      Product
+                    <a href="<?= h($productUrl) ?>"
+                      target="_blank"
+                      rel="noopener"
+                      class="btn btn-sm btn-outline-info"
+                      title="<?= h($productUrl) ?>">
+                      <i class="fas fa-external-link-alt mr-1"></i> Product
                     </a>
                   <?php else: ?>
                     <button type="button" class="btn btn-sm btn-outline-warning btn-set-product-url"
