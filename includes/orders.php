@@ -688,8 +688,7 @@ table th {
                 case 'NEW':
                   $btnClass = 'btn-outline-danger';
                   break;
-                case 'READY_TO_INVOICE':
-                case 'READY_TO_SHIP':
+                case 'READY_TO_INVOICE':                
                     $btnClass = 'btn-outline-warning';
                     break;
 
@@ -709,6 +708,8 @@ table th {
                 case 'DONE':
                 case 'COMPLETED':
                 case 'SHIPPED':
+                case 'READY':
+                case 'READY_TO_SHIP':
                   $btnClass = 'btn-outline-success';
                   break;
 

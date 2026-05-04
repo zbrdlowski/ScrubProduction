@@ -100,6 +100,6 @@ log_order_activity(
   ],
   'Manual item added: ' . $title
 );
-require_once $base . '/includes/orders_workflow_helpers.php';
+
 recalculateOrderWorkflow($conn, $orderId);
 out(['ok' => true, 'item_id' => $itemId]);
