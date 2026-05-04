@@ -284,11 +284,11 @@ if (!empty($addr['SHIPPING']['country'])) {
 $displayCustomerPhone = '';
 
 if (!empty($addr['SHIPPING']['phone'])) {
-  $displayCustomerPhone = (string)$addr['SHIPPING']['phone'];
+  $displayCustomerPhone = (string) $addr['SHIPPING']['phone'];
 } elseif (!empty($addr['BILLING']['phone'])) {
-  $displayCustomerPhone = (string)$addr['BILLING']['phone'];
+  $displayCustomerPhone = (string) $addr['BILLING']['phone'];
 } else {
-  $displayCustomerPhone = (string)($order['customer_phone'] ?? '');
+  $displayCustomerPhone = (string) ($order['customer_phone'] ?? '');
 }
 
 // --- items (no fetch_all to avoid mysqlnd dependency issues) ---
@@ -334,7 +334,8 @@ function employeeNameById(mysqli $conn, int $id): string
 {
   static $cache = [];
 
-  if ($id <= 0) return '';
+  if ($id <= 0)
+    return '';
 
   if (isset($cache[$id])) {
     return $cache[$id];
@@ -351,7 +352,7 @@ function employeeNameById(mysqli $conn, int $id): string
   $row = $stmt->get_result()->fetch_assoc();
   $stmt->close();
 
-  $cache[$id] = trim((string)($row['name'] ?? ''));
+  $cache[$id] = trim((string) ($row['name'] ?? ''));
 
   return $cache[$id];
 }
@@ -366,7 +367,7 @@ function prepareOptionsJsonForModal(mysqli $conn, string $json): string
 
   foreach (['created_by', 'updated_by'] as $key) {
     if (isset($data[$key]) && is_numeric($data[$key])) {
-      $name = employeeNameById($conn, (int)$data[$key]);
+      $name = employeeNameById($conn, (int) $data[$key]);
       if ($name !== '') {
         $data[$key] = $name;
       }
@@ -375,19 +376,21 @@ function prepareOptionsJsonForModal(mysqli $conn, string $json): string
 
   return json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 }
-function optionValue(array $data, array $keys): string {
+function optionValue(array $data, array $keys): string
+{
   foreach ($keys as $key) {
-    if (isset($data[$key]) && trim((string)$data[$key]) !== '') {
-      return trim((string)$data[$key]);
+    if (isset($data[$key]) && trim((string) $data[$key]) !== '') {
+      return trim((string) $data[$key]);
     }
   }
   return '';
 }
 
-function itemProductUrl(array $order, array $item): string {
-  $source = strtoupper((string)($order['source_code'] ?? ''));
-  $sku = trim((string)($item['sku'] ?? ''));
-  $manualUrl = trim((string)($item['product_url'] ?? ''));
+function itemProductUrl(array $order, array $item): string
+{
+  $source = strtoupper((string) ($order['source_code'] ?? ''));
+  $sku = trim((string) ($item['sku'] ?? ''));
+  $manualUrl = trim((string) ($item['product_url'] ?? ''));
 
   if ($manualUrl !== '') {
     return $manualUrl;
@@ -398,7 +401,7 @@ function itemProductUrl(array $order, array $item): string {
   }
 
   if (strpos($source, 'EBAY') !== false) {
-    $data = json_decode((string)($item['options_json'] ?? ''), true);
+    $data = json_decode((string) ($item['options_json'] ?? ''), true);
     if (!is_array($data)) {
       $data = [];
     }
@@ -414,7 +417,7 @@ function itemProductUrl(array $order, array $item): string {
 
     if ($itemNumber === '') {
       foreach (['sku', 'custom_label', 'title'] as $field) {
-        if (preg_match('/\b([13][0-9]{8,15})\b/', (string)($item[$field] ?? ''), $m)) {
+        if (preg_match('/\b([13][0-9]{8,15})\b/', (string) ($item[$field] ?? ''), $m)) {
           $itemNumber = $m[1];
           break;
         }
@@ -495,15 +498,15 @@ ob_start();
         <div class="d-flex justify-content-end align-items-center" style="gap:6px;">
           <?php
           $statusOptions = [
-              'NEW',
-              'IN_PROGRESS',
-              'NEED_INFO',
-              'DRAFT_READY',
-              'READY_TO_INVOICE',
-              'READY_TO_SHIP',
-              'SHIPPED',
-              'HOLD',
-              'CANCELLED'
+            'NEW',
+            'IN_PROGRESS',
+            'NEED_INFO',
+            'DRAFT_READY',
+            'READY_TO_INVOICE',
+            'READY_TO_SHIP',
+            'SHIPPED',
+            'HOLD',
+            'CANCELLED'
           ];
 
           $currentStatus = strtoupper((string) ($order['status'] ?? 'NEW'));
@@ -574,12 +577,12 @@ ob_start();
             </div>
           <?php endif; ?>
           <?php if ($displayCustomerPhone !== ''): ?>
-  <div class="text-muted">
-    <?php echo h($displayCustomerPhone); ?>
-    <button class="btn btn-xs btn-copy-inline ml-1"
-      data-copy="<?php echo h($displayCustomerPhone); ?>">📋</button>
-  </div>
-<?php endif; ?>
+            <div class="text-muted">
+              <?php echo h($displayCustomerPhone); ?>
+              <button class="btn btn-xs btn-copy-inline ml-1"
+                data-copy="<?php echo h($displayCustomerPhone); ?>">📋</button>
+            </div>
+          <?php endif; ?>
         </div>
         <div class="col-md-6">
           <div><b>Shipping:</b> <?php echo h($order['shipping_method'] ?? '-'); ?></div>
@@ -604,89 +607,89 @@ ob_start();
         </div>
       </div>
 
- <?php if ((int) ($_SESSION['permission'] ?? 0) >= 400): ?>
-  <div class="order-header-edit mt-3" style="display:none;">
-    <div class="card bg-dark border-warning">
-      <div class="card-header">
-        <b>Edit order header</b>
-      </div>
+      <?php if ((int) ($_SESSION['permission'] ?? 0) >= 400): ?>
+        <div class="order-header-edit mt-3" style="display:none;">
+          <div class="card bg-dark border-warning">
+            <div class="card-header">
+              <b>Edit order header</b>
+            </div>
 
-      <div class="card-body">
-        <input type="hidden" class="edit-order-id" value="<?php echo (int) $orderId; ?>">
+            <div class="card-body">
+              <input type="hidden" class="edit-order-id" value="<?php echo (int) $orderId; ?>">
 
-        <div class="form-row">
-          <div class="form-group col-md-6">
-            <label>Payment</label>
-            <input class="form-control form-control-sm edit-payment"
-              value="<?php echo h($order['payment_method'] ?? ''); ?>">
-          </div>
+              <div class="form-row">
+                <div class="form-group col-md-6">
+                  <label>Payment</label>
+                  <input class="form-control form-control-sm edit-payment"
+                    value="<?php echo h($order['payment_method'] ?? ''); ?>">
+                </div>
 
-          <div class="form-group col-md-6">
-            <label>Shipping</label>
-            <input class="form-control form-control-sm edit-delivery"
-              value="<?php echo h($order['shipping_method'] ?? ''); ?>">
+                <div class="form-group col-md-6">
+                  <label>Shipping</label>
+                  <input class="form-control form-control-sm edit-delivery"
+                    value="<?php echo h($order['shipping_method'] ?? ''); ?>">
+                </div>
+              </div>
+
+              <?php $b = $addr['BILLING'] ?? []; ?>
+              <?php $s = $addr['SHIPPING'] ?? []; ?>
+
+              <div class="row">
+                <!-- LEFT: Billing -->
+                <div class="col-md-6">
+                  <h6>Billing</h6>
+                  <input class="form-control form-control-sm mb-1 edit-billing-name" placeholder="Name"
+                    value="<?php echo h($b['name'] ?? ''); ?>">
+                  <input class="form-control form-control-sm mb-1 edit-billing-company" placeholder="Company"
+                    value="<?php echo h($b['company'] ?? ''); ?>">
+                  <input class="form-control form-control-sm mb-1 edit-billing-street" placeholder="Street"
+                    value="<?php echo h($b['street'] ?? ''); ?>">
+                  <input class="form-control form-control-sm mb-1 edit-billing-city" placeholder="City"
+                    value="<?php echo h($b['city'] ?? ''); ?>">
+                  <input class="form-control form-control-sm mb-1 edit-billing-zip" placeholder="ZIP"
+                    value="<?php echo h($b['zip'] ?? ''); ?>">
+                  <input class="form-control form-control-sm mb-1 edit-billing-country" placeholder="Country"
+                    value="<?php echo h($b['country'] ?? ''); ?>">
+                  <input class="form-control form-control-sm mb-1 edit-billing-email" placeholder="Email"
+                    value="<?php echo h($b['email'] ?? ''); ?>">
+                  <input class="form-control form-control-sm mb-1 edit-billing-phone" placeholder="Phone"
+                    value="<?php echo h($b['phone'] ?? ''); ?>">
+                </div>
+
+                <!-- RIGHT: Shipping -->
+                <div class="col-md-6">
+                  <h6>Shipping</h6>
+                  <input class="form-control form-control-sm mb-1 edit-shipping-name" placeholder="Name"
+                    value="<?php echo h($s['name'] ?? ''); ?>">
+                  <input class="form-control form-control-sm mb-1 edit-shipping-company" placeholder="Company"
+                    value="<?php echo h($s['company'] ?? ''); ?>">
+                  <input class="form-control form-control-sm mb-1 edit-shipping-street" placeholder="Street"
+                    value="<?php echo h($s['street'] ?? ''); ?>">
+                  <input class="form-control form-control-sm mb-1 edit-shipping-city" placeholder="City"
+                    value="<?php echo h($s['city'] ?? ''); ?>">
+                  <input class="form-control form-control-sm mb-1 edit-shipping-zip" placeholder="ZIP"
+                    value="<?php echo h($s['zip'] ?? ''); ?>">
+                  <input class="form-control form-control-sm mb-1 edit-shipping-country" placeholder="Country"
+                    value="<?php echo h($s['country'] ?? ''); ?>">
+                  <input class="form-control form-control-sm mb-1 edit-shipping-email" placeholder="Email"
+                    value="<?php echo h($s['email'] ?? ''); ?>">
+                  <input class="form-control form-control-sm mb-1 edit-shipping-phone" placeholder="Phone"
+                    value="<?php echo h($s['phone'] ?? ''); ?>">
+                </div>
+              </div>
+
+
+              <button type="button" class="btn btn-warning btn-sm mt-2 btn-save-order-header">
+                Save changes
+              </button>
+
+              <button type="button" class="btn btn-secondary btn-sm mt-2 btn-cancel-order-header">
+                Cancel
+              </button>
+            </div>
           </div>
         </div>
-
-        <?php $b = $addr['BILLING'] ?? []; ?>
-        <?php $s = $addr['SHIPPING'] ?? []; ?>
-
-       <div class="row">
-          <!-- LEFT: Billing -->
-          <div class="col-md-6">
-            <h6>Billing</h6>
-            <input class="form-control form-control-sm mb-1 edit-billing-name" placeholder="Name"
-              value="<?php echo h($b['name'] ?? ''); ?>">
-            <input class="form-control form-control-sm mb-1 edit-billing-company" placeholder="Company"
-              value="<?php echo h($b['company'] ?? ''); ?>">
-            <input class="form-control form-control-sm mb-1 edit-billing-street" placeholder="Street"
-              value="<?php echo h($b['street'] ?? ''); ?>">
-            <input class="form-control form-control-sm mb-1 edit-billing-city" placeholder="City"
-              value="<?php echo h($b['city'] ?? ''); ?>">
-            <input class="form-control form-control-sm mb-1 edit-billing-zip" placeholder="ZIP"
-              value="<?php echo h($b['zip'] ?? ''); ?>">
-            <input class="form-control form-control-sm mb-1 edit-billing-country" placeholder="Country"
-              value="<?php echo h($b['country'] ?? ''); ?>">
-            <input class="form-control form-control-sm mb-1 edit-billing-email" placeholder="Email"
-              value="<?php echo h($b['email'] ?? ''); ?>">
-            <input class="form-control form-control-sm mb-1 edit-billing-phone" placeholder="Phone"
-              value="<?php echo h($b['phone'] ?? ''); ?>">
-          </div>
-
-          <!-- RIGHT: Shipping -->
-          <div class="col-md-6">
-            <h6>Shipping</h6>
-            <input class="form-control form-control-sm mb-1 edit-shipping-name" placeholder="Name"
-              value="<?php echo h($s['name'] ?? ''); ?>">
-            <input class="form-control form-control-sm mb-1 edit-shipping-company" placeholder="Company"
-              value="<?php echo h($s['company'] ?? ''); ?>">
-            <input class="form-control form-control-sm mb-1 edit-shipping-street" placeholder="Street"
-              value="<?php echo h($s['street'] ?? ''); ?>">
-            <input class="form-control form-control-sm mb-1 edit-shipping-city" placeholder="City"
-              value="<?php echo h($s['city'] ?? ''); ?>">
-            <input class="form-control form-control-sm mb-1 edit-shipping-zip" placeholder="ZIP"
-              value="<?php echo h($s['zip'] ?? ''); ?>">
-            <input class="form-control form-control-sm mb-1 edit-shipping-country" placeholder="Country"
-              value="<?php echo h($s['country'] ?? ''); ?>">
-            <input class="form-control form-control-sm mb-1 edit-shipping-email" placeholder="Email"
-              value="<?php echo h($s['email'] ?? ''); ?>">
-            <input class="form-control form-control-sm mb-1 edit-shipping-phone" placeholder="Phone"
-              value="<?php echo h($s['phone'] ?? ''); ?>">
-          </div>
-        </div>
-
-
-        <button type="button" class="btn btn-warning btn-sm mt-2 btn-save-order-header">
-          Save changes
-        </button>
-
-        <button type="button" class="btn btn-secondary btn-sm mt-2 btn-cancel-order-header">
-          Cancel
-        </button>
-      </div>
-    </div>
-  </div>
-<?php endif; ?>
+      <?php endif; ?>
       <hr />
 
       <div class="row">
@@ -712,16 +715,18 @@ ob_start();
             <button class="btn btn-xs btn-copy-inline mb-2" data-copy="<?php echo h($fullBilling); ?>">
               📋 Copy address
             </button>
-            <div><?php echo h($b['name'] ?? '-'); ?><?php echo !empty($b['company']) ? ' (' . h($b['company']) . ')' : ''; ?>
+            <div>
+              <?php echo h($b['name'] ?? '-'); ?>  <?php echo !empty($b['company']) ? ' (' . h($b['company']) . ')' : ''; ?>
             </div>
             <div class="text-muted">
-              <?php echo h(trim(($b['street'] ?? '') . ', ' . ($b['city'] ?? '') . ' ' . ($b['zip'] ?? ''))); ?></div>
-<?php if (!empty($b['phone'])): ?>
-  <div class="text-muted">
-    <b>Phone:</b> <?php echo h($b['phone']); ?>
-    <button class="btn btn-xs btn-copy-inline ml-1" data-copy="<?php echo h($b['phone']); ?>">📋</button>
-  </div>
-<?php endif; ?>
+              <?php echo h(trim(($b['street'] ?? '') . ', ' . ($b['city'] ?? '') . ' ' . ($b['zip'] ?? ''))); ?>
+            </div>
+            <?php if (!empty($b['phone'])): ?>
+              <div class="text-muted">
+                <b>Phone:</b> <?php echo h($b['phone']); ?>
+                <button class="btn btn-xs btn-copy-inline ml-1" data-copy="<?php echo h($b['phone']); ?>">📋</button>
+              </div>
+            <?php endif; ?>
             <?php if (!empty($b['country'])): ?>
               <div class="text-muted">
                 <?php if ($billingState !== ''): ?>
@@ -823,12 +828,12 @@ ob_start();
                 <span><?php echo h($shippingState); ?></span>
               </div>
             <?php endif; ?>
-<?php if (!empty($s['phone'])): ?>
-  <div class="text-muted">
-    <b>Phone:</b> <?php echo h($s['phone']); ?>
-    <button class="btn btn-xs btn-copy-inline ml-1" data-copy="<?php echo h($s['phone']); ?>">📋</button>
-  </div>
-<?php endif; ?>
+            <?php if (!empty($s['phone'])): ?>
+              <div class="text-muted">
+                <b>Phone:</b> <?php echo h($s['phone']); ?>
+                <button class="btn btn-xs btn-copy-inline ml-1" data-copy="<?php echo h($s['phone']); ?>">📋</button>
+              </div>
+            <?php endif; ?>
             <?php if (!empty($s['country'])): ?>
               <div class="text-muted">
                 <?php
@@ -1085,74 +1090,65 @@ ob_start();
                 </td>
 
                 <td>
-    <span class="badge badge-secondary">
-        <?= h($it['status'] ?? 'NEW') ?>
-    </span>
-</td>
+                  <span class="badge badge-secondary">
+                    <?= h($it['status'] ?? 'NEW') ?>
+                  </span>
+                </td>
 
-<td style="min-width:220px;">
-    <input type="text"
-           class="form-control form-control-sm item-waiting-note"
-           data-item-id="<?= (int)$it['id'] ?>"
-           value="<?= h($it['waiting_note'] ?? '') ?>"
-           placeholder="Na čo čakáme?">
+                <td style="min-width:220px;">
+                  <input type="text" class="form-control form-control-sm item-waiting-note"
+                    data-item-id="<?= (int) $it['id'] ?>" value="<?= h($it['waiting_note'] ?? '') ?>"
+                    placeholder="Na čo čakáme?">
 
-    <input type="date"
-           class="form-control form-control-sm mt-1 item-expected-date"
-           data-item-id="<?= (int)$it['id'] ?>"
-           value="<?= h($it['expected_date'] ?? '') ?>">
-</td>
+                  <input type="date" class="form-control form-control-sm mt-1 item-expected-date"
+                    data-item-id="<?= (int) $it['id'] ?>" value="<?= h($it['expected_date'] ?? '') ?>">
+                </td>
 
-<td>
-    <select class="form-control form-control-sm item-status-select"
-            data-item-id="<?= (int)$it['id'] ?>">
-        <?php
-        $currentStatus = strtoupper((string)($it['status'] ?? 'NEW'));
-        $statuses = ['NEW', 'RTP', 'PRINT_QUEUE', 'PRINTED', 'CUT', 'READY', 'PROCESSING', 'WAITING'];
-        foreach ($statuses as $s):
-        ?>
-            <option value="<?= h($s) ?>" <?= $currentStatus === $s ? 'selected' : '' ?>>
-                <?= h($s) ?>
-            </option>
-        <?php endforeach; ?>
-    </select>
-</td>
-<?php
-$productUrl = itemProductUrl($order, $it);
-?>
+                <td>
+                  <select class="form-control form-control-sm item-status-select" data-item-id="<?= (int) $it['id'] ?>">
+                    <?php
+                    $currentStatus = strtoupper((string) ($it['status'] ?? 'NEW'));
+                    $statuses = ['NEW', 'RTP', 'PRINT_QUEUE', 'PRINTED', 'CUT', 'READY', 'PROCESSING', 'WAITING'];
+                    foreach ($statuses as $s):
+                      ?>
+                      <option value="<?= h($s) ?>" <?= $currentStatus === $s ? 'selected' : '' ?>>
+                        <?= h($s) ?>
+                      </option>
+                    <?php endforeach; ?>
+                  </select>
+                </td>
+                <?php
+                $productUrl = itemProductUrl($order, $it);
+                ?>
 
-<td class="text-center">
-  <?php if ($productUrl !== ''): ?>
-    <a href="<?= h($productUrl) ?>"
-       target="_blank"
-       rel="noopener"
-       class="btn btn-sm btn-outline-info"
-       title="Open product">
-      Product
-    </a>
-  <?php else: ?>
-    <button type="button"
-            class="btn btn-sm btn-outline-warning btn-set-product-url"
-            data-item-id="<?= (int)$it['id'] ?>">
-      Set URL
-    </button>
-  <?php endif; ?>
-</td>
+                <td class="text-center">
+                  <?php if ($productUrl !== ''): ?>
+                    <a href="<?= h($productUrl) ?>" target="_blank" rel="noopener" class="btn btn-sm btn-outline-info"
+                      title="Open product">
+                      Product
+                    </a>
+                  <?php else: ?>
+                    <button type="button" class="btn btn-sm btn-outline-warning btn-set-product-url"
+                      data-item-id="<?= (int) $it['id'] ?>">
+                      Set URL
+                    </button>
+                  <?php endif; ?>
+                </td>
 
                 <td class="text-center">
                   <button type="button" class="btn btn-xs btn-outline-info btn-view-options"
-                    data-options="<?php echo h(prepareOptionsJsonForModal($conn, (string)($it['options_json'] ?? '{}'))); ?>">
+                    data-options="<?php echo h(prepareOptionsJsonForModal($conn, (string) ($it['options_json'] ?? '{}'))); ?>">
                     View
                   </button>
                 </td>
-                        
+
                 <td class="text-center">
                   <button type="button" class="btn btn-xs btn-outline-warning"
                     data-copy="<?php echo h($it['options_json'] ?? ''); ?>">
                     Copy
                   </button>
                 </td>
-                
+
                 <?php if ((int) ($_SESSION['permission'] ?? 0) >= 300): ?>
                   <td class="text-center">
                     <button type="button" class="btn btn-xs btn-outline-success btn-save-item"
@@ -1215,17 +1211,17 @@ $productUrl = itemProductUrl($order, $it);
                   <b><?php echo h($a['actor_name'] ?? 'System'); ?></b>
                   :
                   <?php
-                  $actorName = (string)($a['actor_name'] ?? 'System');
-                  $rawActivity = trim((string)($a['note'] ?? ''));
+                  $actorName = (string) ($a['actor_name'] ?? 'System');
+                  $rawActivity = trim((string) ($a['note'] ?? ''));
 
                   if ($rawActivity === '') {
-                    $rawActivity = trim((string)($a['action'] ?? ''));
+                    $rawActivity = trim((string) ($a['action'] ?? ''));
                   }
 
                   $activityText = preg_replace('/\s*\[created_by\s*:\s*\d+\]\s*/i', ' ', $rawActivity);
-                  $activityText = trim((string)$activityText);
-                ?>
-                <span><?php echo h($activityText); ?></span>
+                  $activityText = trim((string) $activityText);
+                  ?>
+                  <span><?php echo h($activityText); ?></span>
                 </div>
               <?php endwhile; ?>
             </div>
