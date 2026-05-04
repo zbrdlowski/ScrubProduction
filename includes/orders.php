@@ -1846,6 +1846,34 @@ $(document).on('change', '.item-status-select', function () {
         }
     });
 });
+$(document).on('click', '.btn-set-product-url', function () {
+  const itemId = $(this).data('item-id');
+  const url = prompt('Paste product URL');
+
+  if (url === null) return;
+
+  $.ajax({
+    url: 'scripts/orders/update_item_product_url.php',
+    method: 'POST',
+    dataType: 'json',
+    data: {
+      item_id: itemId,
+      product_url: url
+    },
+    success: function (resp) {
+      if (!resp || !resp.ok) {
+        alert(resp && resp.error ? resp.error : 'Product URL save failed');
+        return;
+      }
+
+      location.reload();
+    },
+    error: function (xhr) {
+      console.log(xhr.responseText);
+      alert('Product URL request failed');
+    }
+  });
+});
 </script>
 <div class="modal fade" id="optionsModal" tabindex="-1" role="dialog" aria-hidden="true">
   <div class="modal-dialog modal-lg" role="document">

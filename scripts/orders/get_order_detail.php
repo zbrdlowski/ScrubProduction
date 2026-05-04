@@ -301,6 +301,7 @@ $stmt = $conn->prepare("SELECT
     item_type_code,
     qty,
     options_json,
+    product_url
     status,
     waiting_note,
     expected_date,
@@ -373,6 +374,65 @@ function prepareOptionsJsonForModal(mysqli $conn, string $json): string
   }
 
   return json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+}
+function optionValue(array $data, array $keys): string {
+  foreach ($keys as $key) {
+    if (isset($data[$key]) && trim((string)$data[$key]) !== '') {
+      return trim((string)$data[$key]);
+    }
+  }
+  return '';
+}
+
+function itemProductUrl(array $order, array $item): string {
+  $source = strtoupper((string)($order['source_code'] ?? ''));
+  $sku = trim((string)($item['sku'] ?? ''));
+  $manualUrl = trim((string)($item['product_url'] ?? ''));
+
+  if ($manualUrl !== '') {
+    return $manualUrl;
+  }
+
+  if (strpos($source, 'SHOPTET') !== false && $sku !== '') {
+    return 'https://www.scrubdesignz.com/search/?string=' . rawurlencode($sku);
+  }
+
+  if (strpos($source, 'EBAY') !== false) {
+    $data = json_decode((string)($item['options_json'] ?? ''), true);
+    if (!is_array($data)) {
+      $data = [];
+    }
+
+    $itemNumber = optionValue($data, [
+      'item_number',
+      'Item number',
+      'item_id',
+      'Item ID',
+      'ebay_item_id',
+      'legacy_item_id'
+    ]);
+
+    if ($itemNumber === '') {
+      foreach (['sku', 'custom_label', 'title'] as $field) {
+        if (preg_match('/\b([13][0-9]{8,15})\b/', (string)($item[$field] ?? ''), $m)) {
+          $itemNumber = $m[1];
+          break;
+        }
+      }
+    }
+
+    if ($itemNumber !== '') {
+      if (strpos($itemNumber, '3') === 0) {
+        return 'https://www.ebay.co.uk/itm/' . rawurlencode($itemNumber);
+      }
+
+      if (strpos($itemNumber, '1') === 0) {
+        return 'https://www.ebay.de/itm/' . rawurlencode($itemNumber);
+      }
+    }
+  }
+
+  return '';
 }
 // --- build HTML ---
 ob_start();
@@ -923,6 +983,7 @@ ob_start();
               <th>Status</th>
               <th>Waiting</th>
               <th>Action</th>
+              <th>Product</th>
               <th class="text-center">View</th>
               <th class="text-center">Copy</th>
               <?php if ((int) ($_SESSION['permission'] ?? 0) >= 300): ?>
@@ -1055,6 +1116,27 @@ ob_start();
             </option>
         <?php endforeach; ?>
     </select>
+</td>
+<?php
+$productUrl = itemProductUrl($order, $it);
+?>
+
+<td class="text-center">
+  <?php if ($productUrl !== ''): ?>
+    <a href="<?= h($productUrl) ?>"
+       target="_blank"
+       rel="noopener"
+       class="btn btn-sm btn-outline-info"
+       title="Open product">
+      Product
+    </a>
+  <?php else: ?>
+    <button type="button"
+            class="btn btn-sm btn-outline-warning btn-set-product-url"
+            data-item-id="<?= (int)$it['id'] ?>">
+      Set URL
+    </button>
+  <?php endif; ?>
 </td>
 
                 <td class="text-center">
