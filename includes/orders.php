@@ -273,9 +273,19 @@ EXISTS (
           COALESCE(e.photo, '')
         )
     ORDER BY
-      CASE WHEN oa.role LIKE 'PRIMARY_%' THEN 0 ELSE 1 END,
-      e.firstname,
-      e.lastname
+    CASE oa.role
+    WHEN 'PRIMARY_GRAPHICS' THEN 10
+    WHEN 'COLLAB_GRAPHICS' THEN 11
+    WHEN 'PRIMARY_FITTING' THEN 20
+    WHEN 'COLLAB_FITTING' THEN 21
+    WHEN 'PRIMARY_PLASTICS' THEN 30
+    WHEN 'COLLAB_PLASTICS' THEN 31
+    WHEN 'PRIMARY_SEATCOVER' THEN 40
+    WHEN 'COLLAB_SEATCOVER' THEN 41
+    ELSE 99
+  END,
+  e.firstname,
+  e.lastname
     SEPARATOR ';;'
   )
   FROM order_assignments oa
@@ -785,6 +795,8 @@ $deptOptions = [
 
                 <?php
                 $assignedRaw = (string) ($row['assigned_users'] ?? '');
+                // debug: zobrazit surová data v title pro případ problémů s parsováním
+                 htmlspecialchars($assignedRaw) ;
                 $assigned = [];
 
                 if ($assignedRaw !== '') {
@@ -802,7 +814,7 @@ $deptOptions = [
                   }
                 }
 
-                $maxVisible = 4;
+                $maxVisible = 12;
                 $visible = array_slice($assigned, 0, $maxVisible);
                 $hiddenCount = max(0, count($assigned) - $maxVisible);
                 ?>
@@ -811,27 +823,41 @@ $deptOptions = [
                   <span class="text-muted">—</span>
                 <?php else: ?>
                   <div class="assigned-users">
-                    <?php foreach ($visible as $a): ?>
-                      <?php
-                      $name = trim($a['name']);
+                  <?php foreach ($visible as $a): ?>
+                    <?php
+                      $name = trim((string)$a['name']);
+                      $role = trim((string)$a['role']);
+                      $photo = trim((string)($a['photo'] ?? ''));
+
                       $initials = '';
                       foreach (preg_split('/\s+/', $name) as $p) {
-                        if ($p !== '')
+                        if ($p !== '') {
                           $initials .= mb_strtoupper(mb_substr($p, 0, 1));
+                        }
                       }
                       $initials = mb_substr($initials, 0, 2);
 
-                      $roleClass = (strpos($a['role'], 'PRIMARY_') === 0) ? 'assigned-primary' : 'assigned-collab';
-                      ?>
-                      <?php if (!empty($a['photo'])): ?>
-                        <img src="images/<?= htmlspecialchars($a['photo']) ?>" class="assigned-photo <?= $roleClass ?>"
-                          title="<?= htmlspecialchars($name . ' — ' . str_replace('PRIMARY_', '', $a['role'])) ?>" <?php else: ?>
-          <span class="assigned-avatar <?= $roleClass ?>"
-                title="<?= htmlspecialchars($name . ' — ' . str_replace('PRIMARY_', '', $a['role'])) ?>">
-            <?= htmlspecialchars($initials ?: '?') ?>
-          </span>
-  <?php endif; ?>
-      <?php endforeach; ?>
+                      $roleLabel = str_replace(
+                        ['PRIMARY_', 'COLLAB_', '_'],
+                        ['', 'Collab ', ' '],
+                        $role
+                      );
+
+                      $roleClass = (strpos($role, 'PRIMARY_') === 0) ? 'assigned-primary' : 'assigned-collab';
+                    ?>
+
+                    <?php if ($photo !== ''): ?>
+                      <img src="images/<?= htmlspecialchars($photo) ?>"
+                          class="assigned-photo <?= htmlspecialchars($roleClass) ?>"
+                          title="<?= htmlspecialchars($name . ' — ' . $roleLabel) ?>"
+                          alt="<?= htmlspecialchars($initials ?: $name) ?>">
+                    <?php else: ?>
+                      <span class="assigned-avatar <?= htmlspecialchars($roleClass) ?>"
+                            title="<?= htmlspecialchars($name . ' — ' . $roleLabel) ?>">
+                        <?= htmlspecialchars($initials ?: '?') ?>
+                      </span>
+                    <?php endif; ?>
+                  <?php endforeach; ?>
 
       <?php if ($hiddenCount > 0): ?>
         <span class="assigned-more" title="<?= htmlspecialchars($assignedRaw) ?>">
