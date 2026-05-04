@@ -96,7 +96,7 @@ if ($isAdminAssign) {
     }
   }
 
-  // insert or update via uq_order_employee
+ // insert or update via uq_order_employee_role
 $sql = "INSERT INTO order_assignments
           (order_id, employee_id, role, state, assigned_by, invited_by)
         VALUES (?, ?, ?, ?, ?, ?)
