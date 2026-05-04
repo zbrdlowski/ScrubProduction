@@ -157,7 +157,7 @@ function isMenuOpen($pages = []) {
             ]) ? 'menu-open' : '' ?>">
             <a href="#" class="nav-link" style="background-color:#2a3036;"><i class="nav-icon fas fa-globe-africa"  style="color:#ffc107;"></i><p>Scrub Orders<i class="right fas fa-angle-left"></i></p></a> 
       <ul class="nav nav-treeview">
-              <li class="nav-item"><? if($path == 'tab'){ echo '<a href=pages/fetch_data.php" class="nav-link '. isActive('fetch_data') .'">';}else{echo '<a href="'.$path.'?page=system" class="nav-link '. isActive('system') .'">';}?><i class="far fa fa-caret-right nav-icon"></i><p>Unasigned Orders</p></a></li>
+              <li class="nav-item"><a href="index.php?page=orders_dashboard" class="nav-link <?= ($_GET['page'] ?? '') === 'orders_dashboard' ? 'active' : '' ?>"><i class="nav-icon fas fa-chart-line"></i>DASHBOARD</a></li>
               <li class="nav-item"><? if($path == 'tab'){echo '<a href=pages/orders.php" class="nav-link">';}else{echo '<a href="'.$path.'?page=orders" class="nav-link '. isActive('orders') .'">';}?><i class="far fa fa-caret-right nav-icon"></i><p>Open Orders</p></a></li>
               <li class="nav-item"><?if($path == 'tab'){echo '<a href=pages/orders_g.php" class="nav-link">';}else{echo '<a href="'.$path.'?page=orders&type=g" class="nav-link '. isActive('orders') .'">';}?><i class="far fa fa-caret-right nav-icon"></i><p>Graphics</p></a></li>
               <li class="nav-item"><? if($path == 'tab'){echo '<a href=pages/orders_p.php" class="nav-link">';}else{echo '<a href="'.$path.'?page=orders&type=p" class="nav-link '. isActive('orders') .'">';}?><i class="far fa fa-caret-right nav-icon"></i><p>Plastics</p></a></li>

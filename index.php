@@ -55,6 +55,7 @@ session_start();
     'intake_print_labels'   => 'Print Intake Labels',
     'logs'                   => 'System Logs',
     'calendar'               => 'Dochádzka',
+    'orders_dashboard' => 'Orders Dashboard',
     'cleanup'                => 'Cleanup',
     'chat' => 'Interný chat',
     'shoptet_order_download' => 'Shoptet Order Download'
