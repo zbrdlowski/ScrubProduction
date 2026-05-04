@@ -519,8 +519,8 @@ $deptOptions = [
               <?php endforeach; ?>
             </select>
           <?php else: ?>
-            <input class="form-control" value="<?= htmlspecialchars((string) ($_SESSION['dpt_name'] ?? ('dpt ' . $dpt))) ?>"
-              disabled />
+            <input class="form-control"
+              value="<?= htmlspecialchars((string) ($_SESSION['dpt_name'] ?? ('dpt ' . $dpt))) ?>" disabled />
           <?php endif; ?>
         </div>
 
@@ -540,7 +540,8 @@ $deptOptions = [
           <select class="form-control" name="type">
             <option value="" <?= ($fType === '' ? 'selected' : '') ?>>All</option>
             <?php foreach (['G', 'T', 'M', 'P', 'S', 'F', '(NULL)'] as $t): ?>
-              <option value="<?= htmlspecialchars($t) ?>" <?= ($fType === $t ? 'selected' : '') ?>><?= htmlspecialchars($t) ?>
+              <option value="<?= htmlspecialchars($t) ?>" <?= ($fType === $t ? 'selected' : '') ?>>
+                <?= htmlspecialchars($t) ?>
               </option>
             <?php endforeach; ?>
           </select>
@@ -796,7 +797,7 @@ $deptOptions = [
                 <?php
                 $assignedRaw = (string) ($row['assigned_users'] ?? '');
                 // debug: zobrazit surová data v title pro případ problémů s parsováním
-                 htmlspecialchars($assignedRaw) ;
+                htmlspecialchars($assignedRaw);
                 $assigned = [];
 
                 if ($assignedRaw !== '') {
@@ -823,11 +824,11 @@ $deptOptions = [
                   <span class="text-muted">—</span>
                 <?php else: ?>
                   <div class="assigned-users">
-                  <?php foreach ($visible as $a): ?>
-                    <?php
-                      $name = trim((string)$a['name']);
-                      $role = trim((string)$a['role']);
-                      $photo = trim((string)($a['photo'] ?? ''));
+                    <?php foreach ($visible as $a): ?>
+                      <?php
+                      $name = trim((string) $a['name']);
+                      $role = trim((string) $a['role']);
+                      $photo = trim((string) ($a['photo'] ?? ''));
 
                       $initials = '';
                       foreach (preg_split('/\s+/', $name) as $p) {
@@ -844,145 +845,133 @@ $deptOptions = [
                       );
 
                       $roleClass = (strpos($role, 'PRIMARY_') === 0) ? 'assigned-primary' : 'assigned-collab';
-                    ?>
+                      ?>
 
-                    <?php if ($photo !== ''): ?>
-                      <img src="images/<?= htmlspecialchars($photo) ?>"
+                      <?php if ($photo !== ''): ?>
+                        <img src="images/<?= htmlspecialchars($photo) ?>"
                           class="assigned-photo <?= htmlspecialchars($roleClass) ?>"
                           title="<?= htmlspecialchars($name . ' — ' . $roleLabel) ?>"
                           alt="<?= htmlspecialchars($initials ?: $name) ?>">
-                    <?php else: ?>
-                      <span class="assigned-avatar <?= htmlspecialchars($roleClass) ?>"
-                            title="<?= htmlspecialchars($name . ' — ' . $roleLabel) ?>">
-                        <?= htmlspecialchars($initials ?: '?') ?>
+                      <?php else: ?>
+                        <span class="assigned-avatar <?= htmlspecialchars($roleClass) ?>"
+                          title="<?= htmlspecialchars($name . ' — ' . $roleLabel) ?>">
+                          <?= htmlspecialchars($initials ?: '?') ?>
+                        </span>
+                      <?php endif; ?>
+                    <?php endforeach; ?>
+
+                    <?php if ($hiddenCount > 0): ?>
+                      <span class="assigned-more" title="<?= htmlspecialchars($assignedRaw) ?>">
+                        +<?= (int) $hiddenCount ?>
                       </span>
                     <?php endif; ?>
-                  <?php endforeach; ?>
+                  </div>
+                <?php endif; ?>
 
-      <?php if ($hiddenCount > 0): ?>
-        <span class="assigned-more" title="<?= htmlspecialchars($assignedRaw) ?>">
-          +<?= (int) $hiddenCount ?>
-        </span>
-      <?php endif; ?>
-    </div>
-  <?php endif; ?>
+              </td>
 
-</td>
+              <td class="text-nowrap">
+                <button type="button" class="btn btn-sm btn-outline-light btn-toggle-detail mr-1"
+                  data-order-id="<?= $orderId ?>">
+                  <i class="fas fa-search"></i>
+                </button>
+                <?php if ($perm >= 400 && empty($uiDeptCode)): ?>
+                  <span class="badge badge-info ml-2" title="Select department filter first">
+                    Select dept
+                  </span>
+                <?php endif; ?>
+                <?php
+                $primaryId = isset($row['primary_emp_id']) ? (int) $row['primary_emp_id'] : 0;
+                $primaryName = (string) ($row['primary_emp_name'] ?? '');
+                $canUseDeptButtons = !empty($uiDeptCode);
+                if ($perm >= 400 && empty($uiDeptCode)) {
+                  $canUseDeptButtons = false;
+                }
+                $currentPrimaryRole = $uiDeptCode ? ('PRIMARY_' . $uiDeptCode) : '';
 
-<td class="text-nowrap">
-  <button type="button"
-          class="btn btn-sm btn-outline-light btn-toggle-detail mr-1"
-          data-order-id="<?= $orderId ?>">
-    <i class="fas fa-search"></i>
-  </button>
-        <?php if ($perm >= 400 && empty($uiDeptCode)): ?>
-    <span class="badge badge-info ml-2"
-          title="Select department filter first">
-      Select dept
-    </span>
-  <?php endif; ?>
-  <?php
-  $primaryId = isset($row['primary_emp_id']) ? (int) $row['primary_emp_id'] : 0;
-  $primaryName = (string) ($row['primary_emp_name'] ?? '');
-  $canUseDeptButtons = !empty($uiDeptCode);
-  if ($perm >= 400 && empty($uiDeptCode)) {
-    $canUseDeptButtons = false;
-  }
-  $currentPrimaryRole = $uiDeptCode ? ('PRIMARY_' . $uiDeptCode) : '';
+                $isTakenForDept = false;
+                $takenByMeForDept = false;
+                $takenNameForDept = '';
 
-  $isTakenForDept = false;
-  $takenByMeForDept = false;
-  $takenNameForDept = '';
+                foreach ($assigned as $a) {
+                  if ($currentPrimaryRole !== '' && $a['role'] === $currentPrimaryRole) {
+                    $isTakenForDept = true;
 
-  foreach ($assigned as $a) {
-    if ($currentPrimaryRole !== '' && $a['role'] === $currentPrimaryRole) {
-      $isTakenForDept = true;
+                    if ((int) $a['id'] === $meUserId) {
+                      $takenByMeForDept = true;
+                    }
 
-      if ((int) $a['id'] === $meUserId) {
-        $takenByMeForDept = true;
-      }
+                    if ($takenNameForDept === '') {
+                      $takenNameForDept = $a['name'];
+                    }
+                  }
+                }
+                ?>
 
-      if ($takenNameForDept === '') {
-        $takenNameForDept = $a['name'];
-      }
-    }
-  }
-  ?>
+                <?php if ($canUseDeptButtons): ?>
 
-  <?php if ($canUseDeptButtons): ?>
+                  <?php if (!$isTakenForDept): ?>
 
-  <?php if (!$isTakenForDept): ?>
+                    <button type="button" class="btn btn-sm btn-success btn-take-order mr-1" data-order-id="<?= $orderId ?>"
+                      title="Take order">
+                      TAKE
+                    </button>
+                    <!-- Assign To (len admin/mod) -->
+                    <?php if ($perm >= 400): ?>
+                      <button type="button" class="btn btn-sm btn-info btn-invite-collab" data-order-id="<?= $orderId ?>"
+                        data-dept-code="<?= htmlspecialchars((string) $uiDeptCode) ?>" data-mode="assign">
+                        Assign To
+                      </button>
+                    <?php endif; ?>
 
-  <button type="button"
-          class="btn btn-sm btn-success btn-take-order mr-1"
-          data-order-id="<?= $orderId ?>"
-          title="Take order">
-    TAKE
-  </button>
-  <!-- Assign To (len admin/mod) -->
-  <?php if ($perm >= 400): ?>
-    <button type="button"
-            class="btn btn-sm btn-info btn-invite-collab"
-            data-order-id="<?= $orderId ?>"
-            data-dept-code="<?= htmlspecialchars((string) $uiDeptCode) ?>"
-            data-mode="assign">
-      Assign To
-    </button>
-  <?php endif; ?>
+                  <?php else: ?>
 
-  <?php else: ?>
+                    <button type="button" class="btn btn-sm btn-secondary btn-take-order mr-1" data-order-id="<?= $orderId ?>"
+                      disabled title="Already assigned">
+                      TAKE
+                    </button>
 
-      <button type="button"
-              class="btn btn-sm btn-secondary btn-take-order mr-1"
-              data-order-id="<?= $orderId ?>"
-              disabled
-              title="Already assigned">
-        TAKE
-      </button>
+                    <?php if ($takenByMeForDept): ?>
+                      <span class="badge badge-warning mr-1 px-3 py-2" style="font-size:0.85rem;">
+                        MINE
+                      </span>
+                    <?php else: ?>
+                      <span class="badge badge-warning mr-1">
+                        Taken<?= $takenNameForDept ? ': ' . htmlspecialchars($takenNameForDept) : '' ?>
+                      </span>
+                    <?php endif; ?>
 
-     <?php if ($takenByMeForDept): ?>
-        <span class="badge badge-warning mr-1 px-3 py-2" style="font-size:0.85rem;">
-  MINE
-    </span>
-      <?php else: ?>
-        <span class="badge badge-warning mr-1">
-          Taken<?= $takenNameForDept ? ': ' . htmlspecialchars($takenNameForDept) : '' ?>
-        </span>
-      <?php endif; ?>
+                    <?php
+                    $canInvite = ($perm >= 400) || ($primaryId === $meUserId);
+                    ?>
+                    <button type="button" class="btn btn-sm btn-info btn-invite-collab" data-order-id="<?= $orderId ?>"
+                      data-dept-code="<?= htmlspecialchars((string) $uiDeptCode) ?>"
+                      data-mode="<?= ($perm >= 400 ? 'assign' : 'invite') ?>" <?= $canInvite ? '' : 'disabled' ?>>
+                      <?= ($perm >= 400 ? 'Assign To' : 'INVITE') ?>
+                    </button>
 
-      <?php
-      $canInvite = ($perm >= 400) || ($primaryId === $meUserId);
-      ?>
-      <button type="button"
-        class="btn btn-sm btn-info btn-invite-collab"
-        data-order-id="<?= $orderId ?>"
-        data-dept-code="<?= htmlspecialchars((string) $uiDeptCode) ?>"
-        data-mode="<?= ($perm >= 400 ? 'assign' : 'invite') ?>"
-        <?= $canInvite ? '' : 'disabled' ?>>
-        <?= ($perm >= 400 ? 'Assign To' : 'INVITE') ?>
-      </button>
+                  <?php endif; ?>
 
-    <?php endif; ?>
+                <?php endif; ?>
+              </td>
+            </tr>
 
-  <?php endif; ?>
-</td>
-          </tr>
+            <!-- Detail row (hidden, will be filled via AJAX) -->
+            <tr class="order-detail-row">
+              <td colspan="10">
+                <div id="detail-<?= $orderId ?>" class="detail-wrap"></div>
+              </td>
+            </tr>
 
-          <!-- Detail row (hidden, will be filled via AJAX) -->
-          <tr class="order-detail-row">
-            <td colspan="10">
-              <div id="detail-<?= $orderId ?>" class="detail-wrap"></div>
-            </td>
-          </tr>
-
-        <?php endwhile; ?>
+          <?php endwhile; ?>
         </tbody>
       </table>
     </div>
 
   </div>
 </div>
-<div class="modal fade" id="inviteModal" tabindex="-1" role="dialog" aria-labelledby="inviteModalLabel" aria-hidden="true">
+<div class="modal fade" id="inviteModal" tabindex="-1" role="dialog" aria-labelledby="inviteModalLabel"
+  aria-hidden="true">
   <div class="modal-dialog modal-md" role="document">
     <div class="modal-content bg-dark text-light">
 
@@ -997,10 +986,8 @@ $deptOptions = [
         <input type="hidden" id="inviteOrderId" value="">
 
         <label class="text-muted">Search employee</label>
-        <input type="text"
-               id="empSearch"
-               class="form-control form-control-sm bg-dark text-light"
-               placeholder="Type name, e.g. Andrej">
+        <input type="text" id="empSearch" class="form-control form-control-sm bg-dark text-light"
+          placeholder="Type name, e.g. Andrej">
 
         <div id="empResults" class="list-group mt-2"></div>
 
@@ -1019,120 +1006,120 @@ $deptOptions = [
   </div>
 </div>
 <script>
-$(function () {
+  $(function () {
 
-  function escapeHtml(s){
-    return (''+s).replace(/[&<>"']/g, (m)=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;' }[m]));
-  }
-
-  $('.btn-toggle-detail').on('click', function(){
-    const orderId = $(this).data('order-id');
-    const $wrap = $('#detail-' + orderId);
-
-    // toggle if already loaded
-    if ($wrap.data('loaded')) {
-      $wrap.slideToggle(120);
-      return;
+    function escapeHtml(s) {
+      return ('' + s).replace(/[&<>"']/g, (m) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }[m]));
     }
 
-    $wrap.html('<div class="p-3 text-muted"><span class="spinner-border spinner-border-sm"></span> Načítavam detail…</div>');
-    $wrap.show();
+    $('.btn-toggle-detail').on('click', function () {
+      const orderId = $(this).data('order-id');
+      const $wrap = $('#detail-' + orderId);
+
+      // toggle if already loaded
+      if ($wrap.data('loaded')) {
+        $wrap.slideToggle(120);
+        return;
+      }
+
+      $wrap.html('<div class="p-3 text-muted"><span class="spinner-border spinner-border-sm"></span> Načítavam detail…</div>');
+      $wrap.show();
+
+      $.ajax({
+        url: 'scripts/orders/get_order_detail.php',
+        method: 'POST',
+        dataType: 'json',
+        data: { order_id: orderId },
+        success: function (resp) {
+          if (!resp || !resp.ok) {
+            $wrap.html('<div class="p-3"><div class="alert alert-danger mb-0">Chyba: ' + escapeHtml(resp && resp.error ? resp.error : 'unknown') + '</div></div>');
+            return;
+          }
+          $wrap.html(resp.html);
+          $wrap.data('loaded', true);
+        },
+        error: function (xhr) {
+          $wrap.html('<div class="p-3"><div class="alert alert-danger mb-0">Chyba pri načítaní detailu</div></div>');
+        }
+      });
+    });
+  });
+  // TAKE order
+  $(document).on('click', '.btn-take-order', function () {
+    const orderId = $(this).data('order-id');
+    const $btn = $(this);
+    $btn.prop('disabled', true).text('...');
 
     $.ajax({
-      url: 'scripts/orders/get_order_detail.php',
+      url: 'scripts/orders/take_order.php',
       method: 'POST',
       dataType: 'json',
       data: { order_id: orderId },
-      success: function(resp){
+      success: function (resp) {
         if (!resp || !resp.ok) {
-          $wrap.html('<div class="p-3"><div class="alert alert-danger mb-0">Chyba: ' + escapeHtml(resp && resp.error ? resp.error : 'unknown') + '</div></div>');
+          alert('TAKE error: ' + (resp && resp.error ? resp.error : 'unknown'));
+          $btn.prop('disabled', false).text('TAKE');
           return;
         }
-        $wrap.html(resp.html);
-        $wrap.data('loaded', true);
+        // najjednoduchšie: refresh page (aby sa načítali badges)
+        location.reload();
       },
-      error: function(xhr){
-        $wrap.html('<div class="p-3"><div class="alert alert-danger mb-0">Chyba pri načítaní detailu</div></div>');
+      error: function () {
+        alert('TAKE error (request failed)');
+        $btn.prop('disabled', false).text('TAKE');
       }
     });
   });
-});
-// TAKE order
-$(document).on('click', '.btn-take-order', function(){
-  const orderId = $(this).data('order-id');
-  const $btn = $(this);
-  $btn.prop('disabled', true).text('...');
 
-  $.ajax({
-    url: 'scripts/orders/take_order.php',
-    method: 'POST',
-    dataType: 'json',
-    data: { order_id: orderId },
-    success: function(resp){
-      if (!resp || !resp.ok) {
-        alert('TAKE error: ' + (resp && resp.error ? resp.error : 'unknown'));
-        $btn.prop('disabled', false).text('TAKE');
+  // Open invite modal
+  $(document).on('click', '.btn-invite-collab', function () {
+    const orderId = $(this).data('order-id');
+    $('#inviteOrderId').val(orderId);
+    $('#inviteDeptCode').val($(this).data('dept-code') || '');
+    $('#inviteMode').val($(this).data('mode') || 'invite');
+    $('#empSearch').val('');
+    $('#empResults').html('');
+    $('#inviteModal').modal('show');
+  });
+
+  // Debounced employee search
+  let empTimer = null;
+
+  $(document).on('input', '#empSearch', function () {
+    const q = $(this).val().trim();
+    clearTimeout(empTimer);
+
+    empTimer = setTimeout(function () {
+      if (q.length < 2) {
+        $('#empResults').html('');
         return;
       }
-      // najjednoduchšie: refresh page (aby sa načítali badges)
-      location.reload();
-    },
-    error: function(){
-      alert('TAKE error (request failed)');
-      $btn.prop('disabled', false).text('TAKE');
-    }
-  });
-});
 
-// Open invite modal
-$(document).on('click', '.btn-invite-collab', function(){
-  const orderId = $(this).data('order-id');
-  $('#inviteOrderId').val(orderId);
-  $('#inviteDeptCode').val($(this).data('dept-code') || '');
-  $('#inviteMode').val($(this).data('mode') || 'invite');
-  $('#empSearch').val('');
-  $('#empResults').html('');
-  $('#inviteModal').modal('show');
-});
+      $('#empResults').html('<div class="text-muted p-2"><span class="spinner-border spinner-border-sm"></span> Searching…</div>');
 
-// Debounced employee search
-let empTimer = null;
+      $.ajax({
+        url: 'scripts/employees/employees_search.php',
+        method: 'GET',
+        dataType: 'json',
+        data: { q: q },
+        success: function (resp) {
+          if (!resp || !resp.ok) {
+            $('#empResults').html('<div class="text-danger p-2">Search error</div>');
+            return;
+          }
 
-$(document).on('input', '#empSearch', function(){
-  const q = $(this).val().trim();
-  clearTimeout(empTimer);
+          const items = resp.items || [];
+          if (!items.length) {
+            $('#empResults').html('<div class="text-muted p-2">No results</div>');
+            return;
+          }
 
-  empTimer = setTimeout(function(){
-    if (q.length < 2) {
-      $('#empResults').html('');
-      return;
-    }
+          let html = '';
+          items.forEach(function (it) {
+            const mode = $('#inviteMode').val() || 'invite';
+            const label = mode === 'assign' ? 'Assign To' : 'Invite';
 
-    $('#empResults').html('<div class="text-muted p-2"><span class="spinner-border spinner-border-sm"></span> Searching…</div>');
-
-    $.ajax({
-      url: 'scripts/employees/employees_search.php',
-      method: 'GET',
-      dataType: 'json',
-      data: { q: q },
-      success: function(resp){
-        if (!resp || !resp.ok) {
-          $('#empResults').html('<div class="text-danger p-2">Search error</div>');
-          return;
-        }
-
-        const items = resp.items || [];
-        if (!items.length) {
-          $('#empResults').html('<div class="text-muted p-2">No results</div>');
-          return;
-        }
-
-        let html = '';
-        items.forEach(function(it){
-          const mode = $('#inviteMode').val() || 'invite';
-          const label = mode === 'assign' ? 'Assign To' : 'Invite';
-
-          html += `
+            html += `
             <button type="button"
                     class="list-group-item list-group-item-action bg-dark text-light d-flex justify-content-between align-items-center btn-emp-pick"
                     data-emp-id="${it.id}">
@@ -1140,97 +1127,97 @@ $(document).on('input', '#empSearch', function(){
               <span class="btn btn-info btn-sm">${label}</span>
             </button>
           `;
-        });
-        $('#empResults').html(html);
+          });
+          $('#empResults').html(html);
+        },
+        error: function () {
+          $('#empResults').html('<div class="text-danger p-2">Search request failed</div>');
+        }
+      });
+
+    }, 220);
+  });
+
+  // Click on employee -> invite
+  $(document).on('click', '.btn-emp-pick', function () {
+    const empId = $(this).data('emp-id');
+    const orderId = $('#inviteOrderId').val();
+
+    $.ajax({
+      url: 'scripts/orders/invite_collab.php',
+      method: 'POST',
+      dataType: 'json',
+      data: {
+        order_id: orderId,
+        employee_id: empId,
+        dept_code: $('#inviteDeptCode').val(),
+        mode: $('#inviteMode').val()
       },
-      error: function(){
-        $('#empResults').html('<div class="text-danger p-2">Search request failed</div>');
+      success: function (resp) {
+        if (!resp || !resp.ok) {
+          alert('Invite error: ' + (resp && resp.error ? resp.error : 'unknown'));
+          return;
+        }
+        $('#inviteModal').modal('hide');
+        location.reload();
+      },
+      error: function () {
+        alert('Invite error (request failed)');
       }
     });
+  });
+  // klik na celý riadok otvorí detail
+  $(document).on('click', '.order-row', function (e) {
 
-  }, 220);
-});
+    // ak klikol na tlačidlo alebo ikonku → ignoruj
+    if ($(e.target).closest('button, a, .btn').length) {
+      return;
+    }
 
-// Click on employee -> invite
-$(document).on('click', '.btn-emp-pick', function(){
-  const empId = $(this).data('emp-id');
-  const orderId = $('#inviteOrderId').val();
+    const orderId = $(this).data('order-id');
+    const $btn = $(this).find('.btn-toggle-detail');
+    const $row = $(this).closest('tr.order-row');
 
-  $.ajax({
-    url: 'scripts/orders/invite_collab.php',
-    method: 'POST',
-    dataType: 'json',
-    data: {
-    order_id: orderId,
-    employee_id: empId,
-    dept_code: $('#inviteDeptCode').val(),
-    mode: $('#inviteMode').val()
-  },
-    success: function(resp){
-      if (!resp || !resp.ok) {
-        alert('Invite error: ' + (resp && resp.error ? resp.error : 'unknown'));
-        return;
-      }
-      $('#inviteModal').modal('hide');
-      location.reload();
-    },
-    error: function(){
-      alert('Invite error (request failed)');
+    if ($row.hasClass('order-row-open')) {
+      $row.removeClass('order-row-open');
+    } else {
+      $('.order-row').removeClass('order-row-open');
+      $row.addClass('order-row-open');
+    }
+
+    if ($btn.length) {
+      $btn.trigger('click');
     }
   });
-});
-// klik na celý riadok otvorí detail
-$(document).on('click', '.order-row', function(e) {
+  function renderOptionsPretty(data) {
+    if (!data || Object.keys(data).length === 0) {
+      return '<div class="text-muted">No options</div>';
+    }
 
-  // ak klikol na tlačidlo alebo ikonku → ignoruj
-  if ($(e.target).closest('button, a, .btn').length) {
-    return;
-  }
+    function esc(s) {
+      return ('' + s).replace(/[&<>"']/g, m => ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#039;'
+      }[m]));
+    }
 
-  const orderId = $(this).data('order-id');
-  const $btn = $(this).find('.btn-toggle-detail');
-  const $row = $(this).closest('tr.order-row');
+    function section(title, obj) {
+      if (!obj || Object.keys(obj).length === 0) return '';
 
-if ($row.hasClass('order-row-open')) {
-  $row.removeClass('order-row-open');
-} else {
-  $('.order-row').removeClass('order-row-open');
-  $row.addClass('order-row-open');
-}
-
-  if ($btn.length) {
-    $btn.trigger('click');
-  }
-});
-function renderOptionsPretty(data) {
-  if (!data || Object.keys(data).length === 0) {
-    return '<div class="text-muted">No options</div>';
-  }
-
-  function esc(s) {
-    return ('' + s).replace(/[&<>"']/g, m => ({
-      '&': '&amp;',
-      '<': '&lt;',
-      '>': '&gt;',
-      '"': '&quot;',
-      "'": '&#039;'
-    }[m]));
-  }
-
-  function section(title, obj) {
-    if (!obj || Object.keys(obj).length === 0) return '';
-
-    let rows = '';
-    for (let k in obj) {
-      rows += `
+      let rows = '';
+      for (let k in obj) {
+        rows += `
         <div class="mb-1">
           <span class="text-muted">${esc(k)}:</span>
           <b>${esc(obj[k])}</b>
         </div>
       `;
-    }
+      }
 
-    return `
+      return `
       <div class="card bg-secondary mb-3">
         <div class="card-header py-2">
           <b>${esc(title)}</b>
@@ -1240,86 +1227,86 @@ function renderOptionsPretty(data) {
         </div>
       </div>
     `;
-  }
-
-  const bike = {};
-  const personal = {};
-  const graphics = {};
-  const seat = {};
-  const files = {};
-  const other = {};
-
-for (let k in data) {
-  let v = data[k];
-  let displayKey = k;
-
-  if (k === 'name-color') {
-    displayKey = 'number plates color';
-  }
-
-  if (k === 'applyinggraphics') {
-  displayKey = 'Fitting';
-}
-
-  if (k === 'number-font' || k === 'name-font') {
-    const match = ('' + v).match(/(\d+)$/);
-    if (match) {
-      v = match[1];
     }
-  }
 
-  if (v === null || v === '' || typeof v === 'object') continue;
+    const bike = {};
+    const personal = {};
+    const graphics = {};
+    const seat = {};
+    const files = {};
+    const other = {};
 
-  const key = k.toLowerCase();
+    for (let k in data) {
+      let v = data[k];
+      let displayKey = k;
 
-  if (k === 'Category Info' || key.includes('category')) {
-    bike[displayKey] = v;
-  } else if (key.includes('name') || key.includes('number')) {
-    personal[displayKey] = v;
-  } else if (
-    key.includes('material') ||
-    key.includes('finish') ||
-    key.includes('fork') ||
-    key.includes('draft')
-  ) {
-    graphics[displayKey] = v;
-  } else if (key.includes('seat')) {
-    seat[displayKey] = v;
-  } else if (key === 'file' || key.includes('image') || key.includes('upload')) {
-    files[displayKey] = v;
-  } else if (!k.startsWith('_')) {
-    other[displayKey] = v;
-  }
-}
+      if (k === 'name-color') {
+        displayKey = 'number plates color';
+      }
 
-  let warnings = [];
+      if (k === 'applyinggraphics') {
+        displayKey = 'Fitting';
+      }
 
-  if (!data['Category Info']) warnings.push('Missing category / bike info');
-  if (!data['name']) warnings.push('Missing rider name');
-  if (!data['number']) warnings.push('Missing number');
-  if (!data['file']) warnings.push('Missing uploaded file / logo');
+      if (k === 'number-font' || k === 'name-font') {
+        const match = ('' + v).match(/(\d+)$/);
+        if (match) {
+          v = match[1];
+        }
+      }
 
-  let html = '';
+      if (v === null || v === '' || typeof v === 'object') continue;
 
-  if (warnings.length) {
-    html += `
+      const key = k.toLowerCase();
+
+      if (k === 'Category Info' || key.includes('category')) {
+        bike[displayKey] = v;
+      } else if (key.includes('name') || key.includes('number')) {
+        personal[displayKey] = v;
+      } else if (
+        key.includes('material') ||
+        key.includes('finish') ||
+        key.includes('fork') ||
+        key.includes('draft')
+      ) {
+        graphics[displayKey] = v;
+      } else if (key.includes('seat')) {
+        seat[displayKey] = v;
+      } else if (key === 'file' || key.includes('image') || key.includes('upload')) {
+        files[displayKey] = v;
+      } else if (!k.startsWith('_')) {
+        other[displayKey] = v;
+      }
+    }
+
+    let warnings = [];
+
+    if (!data['Category Info']) warnings.push('Missing category / bike info');
+    if (!data['name']) warnings.push('Missing rider name');
+    if (!data['number']) warnings.push('Missing number');
+    if (!data['file']) warnings.push('Missing uploaded file / logo');
+
+    let html = '';
+
+    if (warnings.length) {
+      html += `
       <div class="alert alert-warning">
         <b>Check before production:</b><br>
         ${warnings.map(w => `<span class="badge badge-danger mr-1 mb-1">${esc(w)}</span>`).join('')}
       </div>
     `;
-  } else {
-    html += `
+    } else {
+      html += `
       <div class="alert alert-success py-2">
         <b>Production data looks complete.</b>
       </div>
     `;
-  }
+    }
 
-  if (data['file']) {
-    const url = esc(data['file']);
+    if (data['file']) {
+      const url = esc(data['file']);
 
-    html += `
+      html += `
       <div class="card bg-dark border-info mb-3">
         <div class="card-header py-2">
           <b>Uploaded File / Logo Preview</b>
@@ -1338,484 +1325,484 @@ for (let k in data) {
         </div>
       </div>
     `;
+    }
+
+    html += section('Bike / Category', bike);
+    html += section('Personalization', personal);
+    html += section('Graphics', graphics);
+    html += section('Seat Cover', seat);
+    html += section('Files', files);
+    html += section('Other', other);
+
+    return html;
   }
 
-  html += section('Bike / Category', bike);
-  html += section('Personalization', personal);
-  html += section('Graphics', graphics);
-  html += section('Seat Cover', seat);
-  html += section('Files', files);
-  html += section('Other', other);
+  // ===== FIX JSON + MODAL =====
 
-  return html;
-}
+  // helper – vždy bezpečne načíta JSON
+  function getOptionsData($btn) {
+    const raw = $btn.attr('data-options') || '';
 
-// ===== FIX JSON + MODAL =====
-
-// helper – vždy bezpečne načíta JSON
-function getOptionsData($btn) {
-  const raw = $btn.attr('data-options') || '';
-
-  try {
-    return JSON.parse(raw);
-  } catch(e) {
-    return {};
-  }
-}
-
-// VIEW
-$(document).on('click', '.btn-view-options', function(e) {
-  e.stopPropagation(); // aby neklikol row
-
-  const data = getOptionsData($(this));
-
-  $('#optionsModalBody').html(renderOptionsPretty(data));
-  $('#optionsModal').modal('show');
-});
-
-// COPY
-$(document).on('click', '.btn-copy-options', function(e) {
-  e.stopPropagation();
-
-  const data = getOptionsData($(this));
-  let text = '';
-
-  for (let k in data) {
-    if (k.startsWith('_')) continue;
-    if (typeof data[k] === 'object') continue;
-    text += `${k}: ${data[k]}\n`;
+    try {
+      return JSON.parse(raw);
+    } catch (e) {
+      return {};
+    }
   }
 
-  navigator.clipboard.writeText(text);
+  // VIEW
+  $(document).on('click', '.btn-view-options', function (e) {
+    e.stopPropagation(); // aby neklikol row
 
-  const $btn = $(this);
-  $btn.text('COPIED');
-  setTimeout(() => $btn.text('COPY'), 1000);
-});
+    const data = getOptionsData($(this));
 
-// fallback pre zatváranie modalu
-$(document).on('click', '[data-dismiss="modal"], [data-bs-dismiss="modal"]', function(e) {
-  e.preventDefault();
-  $(this).closest('.modal').modal('hide');
-});
-$(document).on('click', '.btn-copy-inline', function(e) {
-  e.stopPropagation();
+    $('#optionsModalBody').html(renderOptionsPretty(data));
+    $('#optionsModal').modal('show');
+  });
 
-  const text = $(this).attr('data-copy') || '';
+  // COPY
+  $(document).on('click', '.btn-copy-options', function (e) {
+    e.stopPropagation();
 
-  navigator.clipboard.writeText(text);
+    const data = getOptionsData($(this));
+    let text = '';
 
-  const $btn = $(this);
-  $btn.text('✔');
+    for (let k in data) {
+      if (k.startsWith('_')) continue;
+      if (typeof data[k] === 'object') continue;
+      text += `${k}: ${data[k]}\n`;
+    }
 
-  setTimeout(() => {
-    $btn.text('📋');
-  }, 800);
-});
-$(document).on('click', '.btn-edit-country', function(e) {
-  e.stopPropagation();
+    navigator.clipboard.writeText(text);
 
-  const $btn = $(this);
-  const orderId = $btn.data('order-id');
-  const current = ($btn.attr('data-country') || '').toUpperCase();
+    const $btn = $(this);
+    $btn.text('COPIED');
+    setTimeout(() => $btn.text('COPY'), 1000);
+  });
 
-  const next = prompt('New country code (2 letters, e.g. GB, US, DE):', current);
-  if (next === null) return;
+  // fallback pre zatváranie modalu
+  $(document).on('click', '[data-dismiss="modal"], [data-bs-dismiss="modal"]', function (e) {
+    e.preventDefault();
+    $(this).closest('.modal').modal('hide');
+  });
+  $(document).on('click', '.btn-copy-inline', function (e) {
+    e.stopPropagation();
 
-  const country = next.trim().toUpperCase();
-  if (!/^[A-Z]{2}$/.test(country)) {
-    alert('Country must be 2-letter code, e.g. GB, US, DE');
-    return;
-  }
+    const text = $(this).attr('data-copy') || '';
 
-  $.ajax({
-    url: 'scripts/orders/update_order_country.php',
-    method: 'POST',
-    dataType: 'json',
-    data: {
+    navigator.clipboard.writeText(text);
+
+    const $btn = $(this);
+    $btn.text('✔');
+
+    setTimeout(() => {
+      $btn.text('📋');
+    }, 800);
+  });
+  $(document).on('click', '.btn-edit-country', function (e) {
+    e.stopPropagation();
+
+    const $btn = $(this);
+    const orderId = $btn.data('order-id');
+    const current = ($btn.attr('data-country') || '').toUpperCase();
+
+    const next = prompt('New country code (2 letters, e.g. GB, US, DE):', current);
+    if (next === null) return;
+
+    const country = next.trim().toUpperCase();
+    if (!/^[A-Z]{2}$/.test(country)) {
+      alert('Country must be 2-letter code, e.g. GB, US, DE');
+      return;
+    }
+
+    $.ajax({
+      url: 'scripts/orders/update_order_country.php',
+      method: 'POST',
+      dataType: 'json',
+      data: {
+        order_id: orderId,
+        country: country
+      },
+      success: function (resp) {
+        if (!resp || !resp.ok) {
+          alert('Country update error: ' + (resp && resp.error ? resp.error : 'unknown'));
+          return;
+        }
+
+        const finalCountry = resp.country || country;
+
+        $btn.attr('data-country', finalCountry);
+        $btn.closest('div').find('.order-country-display').text(finalCountry);
+
+        // grid country column sa najistejšie zosúladí refreshom
+        setTimeout(function () {
+          location.reload();
+        }, 300);
+      },
+      error: function () {
+        alert('Country update request failed');
+      }
+    });
+  });
+  $(document).on('click', '.btn-edit-order-header', function () {
+    const $detail = $(this).closest('.detail-wrap');
+    $detail.find('.order-header-edit').slideDown(150);
+  });
+
+  $(document).on('click', '.btn-cancel-order-header', function () {
+    $(this).closest('.order-header-edit').slideUp(150);
+  });
+
+  $(document).on('click', '.btn-save-order-header', function () {
+    const $box = $(this).closest('.order-header-edit');
+    const orderId = $box.find('.edit-order-id').val();
+    const $btn = $(this);
+
+    $btn.prop('disabled', true).text('Saving...');
+
+    $.ajax({
+      url: 'scripts/orders/update_order_header.php',
+      method: 'POST',
+      dataType: 'json',
+      data: {
+        order_id: orderId,
+        delivery: $box.find('.edit-delivery').val(),
+        payment: $box.find('.edit-payment').val(),
+
+        'billing[name]': $box.find('.edit-billing-name').val(),
+        'billing[company]': $box.find('.edit-billing-company').val(),
+        'billing[street]': $box.find('.edit-billing-street').val(),
+        'billing[city]': $box.find('.edit-billing-city').val(),
+        'billing[zip]': $box.find('.edit-billing-zip').val(),
+        'billing[country]': $box.find('.edit-billing-country').val(),
+        'billing[email]': $box.find('.edit-billing-email').val(),
+        'billing[phone]': $box.find('.edit-billing-phone').val(),
+
+        'shipping[name]': $box.find('.edit-shipping-name').val(),
+        'shipping[company]': $box.find('.edit-shipping-company').val(),
+        'shipping[street]': $box.find('.edit-shipping-street').val(),
+        'shipping[city]': $box.find('.edit-shipping-city').val(),
+        'shipping[zip]': $box.find('.edit-shipping-zip').val(),
+        'shipping[country]': $box.find('.edit-shipping-country').val(),
+        'shipping[email]': $box.find('.edit-shipping-email').val(),
+        'shipping[phone]': $box.find('.edit-shipping-phone').val()
+      },
+      success: function (resp) {
+        if (!resp || !resp.ok) {
+          alert('Save error: ' + (resp && resp.error ? resp.error : 'unknown'));
+          $btn.prop('disabled', false).text('Save changes');
+          return;
+        }
+
+        const $wrap = $('#detail-' + orderId);
+        $wrap.removeData('loaded');
+        $wrap.html('');
+        $('.btn-toggle-detail[data-order-id="' + orderId + '"]').trigger('click');
+      },
+      error: function () {
+        alert('Save request failed');
+        $btn.prop('disabled', false).text('Save changes');
+      }
+    });
+  });
+
+  $(document).on('click', '.btn-add-tracking', function () {
+    const orderId = $(this).data('order-id');
+    const $box = $(this).closest('.form-row');
+
+    const trackingNumber = $box.find('.tracking-number').val().trim();
+    const carrier = $box.find('.tracking-carrier').val().trim();
+
+    $.post('scripts/orders/add_tracking.php', {
       order_id: orderId,
-      country: country
-    },
-    success: function(resp) {
-      if (!resp || !resp.ok) {
-        alert('Country update error: ' + (resp && resp.error ? resp.error : 'unknown'));
+      tracking_number: trackingNumber,
+      carrier: carrier
+    }, function (res) {
+      if (!res.ok) {
+        alert(res.error || 'Error');
         return;
       }
 
-      const finalCountry = resp.country || country;
+      $box.find('.tracking-number').val('');
+      $box.find('.tracking-carrier').val('');
 
-      $btn.attr('data-country', finalCountry);
-      $btn.closest('div').find('.order-country-display').text(finalCountry);
+      const $wrap = $('#detail-' + orderId);
+      $wrap.removeData('loaded').html('');
+      $('.btn-toggle-detail[data-order-id="' + orderId + '"]').click();
 
-      // grid country column sa najistejšie zosúladí refreshom
-      setTimeout(function() {
-        location.reload();
-      }, 300);
-    },
-    error: function() {
-      alert('Country update request failed');
+    }, 'json');
+  });
+
+  $(document).on('keypress', '.tracking-number', function (e) {
+    if (e.which === 13) {
+      $(this).closest('.form-row').find('.btn-add-tracking').click();
     }
   });
-});
-$(document).on('click', '.btn-edit-order-header', function(){
-  const $detail = $(this).closest('.detail-wrap');
-  $detail.find('.order-header-edit').slideDown(150);
-});
 
-$(document).on('click', '.btn-cancel-order-header', function(){
-  $(this).closest('.order-header-edit').slideUp(150);
-});
 
-$(document).on('click', '.btn-save-order-header', function(){
-  const $box = $(this).closest('.order-header-edit');
-  const orderId = $box.find('.edit-order-id').val();
-  const $btn = $(this);
+  $(document).on('click', '.btn-add-invoice', function () {
+    const orderId = $(this).data('order-id');
+    const $box = $(this).closest('.form-row');
 
-  $btn.prop('disabled', true).text('Saving...');
-
-  $.ajax({
-    url: 'scripts/orders/update_order_header.php',
-    method: 'POST',
-    dataType: 'json',
-    data: {
+    $.post('scripts/orders/add_invoice.php', {
       order_id: orderId,
-      delivery: $box.find('.edit-delivery').val(),
-      payment: $box.find('.edit-payment').val(),
+      invoice_number: $box.find('.invoice-number').val()
+    }, function (res) {
+      if (!res.ok) {
+        alert(res.error || 'Error');
+        return;
+      }
 
-      'billing[name]': $box.find('.edit-billing-name').val(),
-      'billing[company]': $box.find('.edit-billing-company').val(),
-      'billing[street]': $box.find('.edit-billing-street').val(),
-      'billing[city]': $box.find('.edit-billing-city').val(),
-      'billing[zip]': $box.find('.edit-billing-zip').val(),
-      'billing[country]': $box.find('.edit-billing-country').val(),
-      'billing[email]': $box.find('.edit-billing-email').val(),
-      'billing[phone]': $box.find('.edit-billing-phone').val(),
+      // clear input
+      $box.find('.invoice-number').val('');
 
-      'shipping[name]': $box.find('.edit-shipping-name').val(),
-      'shipping[company]': $box.find('.edit-shipping-company').val(),
-      'shipping[street]': $box.find('.edit-shipping-street').val(),
-      'shipping[city]': $box.find('.edit-shipping-city').val(),
-      'shipping[zip]': $box.find('.edit-shipping-zip').val(),
-      'shipping[country]': $box.find('.edit-shipping-country').val(),
-      'shipping[email]': $box.find('.edit-shipping-email').val(),
-      'shipping[phone]': $box.find('.edit-shipping-phone').val()
-    },
-    success: function(resp){
-      if (!resp || !resp.ok) {
-        alert('Save error: ' + (resp && resp.error ? resp.error : 'unknown'));
-        $btn.prop('disabled', false).text('Save changes');
+      // reload detail
+      const $wrap = $('#detail-' + orderId);
+      $wrap.removeData('loaded').html('');
+      $('.btn-toggle-detail[data-order-id="' + orderId + '"]').click();
+
+    }, 'json');
+  });
+  function reloadOrderDetail(orderId) {
+    const $wrap = $('#detail-' + orderId);
+    $wrap.removeData('loaded').html('');
+    $('.btn-toggle-detail[data-order-id="' + orderId + '"]').click();
+  }
+  $(document).on('click', '.btn-delete-tracking', function () {
+    const id = $(this).data('id');
+    const orderId = $(this).data('order-id');
+
+    if (!confirm('Delete tracking?')) return;
+
+    $.post('scripts/orders/delete_tracking.php', { id: id }, function (res) {
+      if (!res || !res.ok) {
+        alert(res && res.error ? res.error : 'Delete failed');
+        return;
+      }
+
+      reloadOrderDetail(orderId);
+    }, 'json');
+  });
+
+  $(document).on('click', '.btn-delete-invoice', function () {
+    const id = $(this).data('id');
+    const orderId = $(this).data('order-id');
+
+    if (!confirm('Delete invoice?')) return;
+
+    $.post('scripts/orders/delete_invoice.php', { id: id }, function (res) {
+      if (!res || !res.ok) {
+        alert(res && res.error ? res.error : 'Delete failed');
+        return;
+      }
+
+      reloadOrderDetail(orderId);
+    }, 'json');
+  });
+
+  $(document).on('click', '.btn-save-production-note', function () {
+    const orderId = $(this).data('order-id');
+    const $box = $(this).closest('.production-note-box');
+    const note = $box.find('.production-note-input').val();
+    const $btn = $(this);
+
+    $btn.prop('disabled', true).text('Saving...');
+
+    $.post('scripts/orders/update_production_note.php', {
+      order_id: orderId,
+      production_note: note
+    }, function (res) {
+      if (!res || !res.ok) {
+        alert(res && res.error ? res.error : 'Save failed');
+        $btn.prop('disabled', false).text('Save note');
         return;
       }
 
       const $wrap = $('#detail-' + orderId);
-      $wrap.removeData('loaded');
-      $wrap.html('');
-      $('.btn-toggle-detail[data-order-id="' + orderId + '"]').trigger('click');
-    },
-    error: function(){
-      alert('Save request failed');
-      $btn.prop('disabled', false).text('Save changes');
-    }
+      $wrap.removeData('loaded').html('');
+      $('.btn-toggle-detail[data-order-id="' + orderId + '"]').click();
+
+    }, 'json');
   });
-});
 
-$(document).on('click', '.btn-add-tracking', function(){
-  const orderId = $(this).data('order-id');
-  const $box = $(this).closest('.form-row');
+  $(document).on('click', '.btn-toggle-activity', function () {
+    $(this).closest('.card-body').find('.activity-log-panel').slideToggle(150);
+  });
 
-  const trackingNumber = $box.find('.tracking-number').val().trim();
-  const carrier = $box.find('.tracking-carrier').val().trim();
+  $(document).on('click', '.btn-load-older-activity', function () {
+    const $btn = $(this);
+    const orderId = $btn.data('order-id');
+    const offset = parseInt($btn.data('offset') || 0, 10);
+    const $panel = $btn.closest('.activity-log-panel');
+    const $list = $panel.find('.activity-log-list');
 
-  $.post('scripts/orders/add_tracking.php', {
-    order_id: orderId,
-    tracking_number: trackingNumber,
-    carrier: carrier
-  }, function(res){
-    if (!res.ok) {
-      alert(res.error || 'Error');
-      return;
-    }
+    $btn.prop('disabled', true).text('Loading...');
 
-    $box.find('.tracking-number').val('');
-    $box.find('.tracking-carrier').val('');
+    $.post('scripts/orders/load_activity_log.php', {
+      order_id: orderId,
+      offset: offset
+    }, function (res) {
+      if (!res || !res.ok) {
+        alert(res && res.error ? res.error : 'Load failed');
+        $btn.prop('disabled', false).text('Load older');
+        return;
+      }
 
-    const $wrap = $('#detail-' + orderId);
-    $wrap.removeData('loaded').html('');
-    $('.btn-toggle-detail[data-order-id="'+orderId+'"]').click();
+      if (res.html) {
+        $list.append(res.html);
+        $btn.data('offset', offset + 30);
+        $btn.prop('disabled', false).text('Load older');
+      } else {
+        $btn.text('No older records').prop('disabled', true);
+      }
+    }, 'json');
+  });
+  $(document).on('change', '.order-status-select', function () {
+    const $select = $(this);
+    const orderId = $select.data('order-id');
+    const status = $select.val();
 
-  }, 'json');
-});
+    $select.prop('disabled', true);
 
-$(document).on('keypress', '.tracking-number', function(e){
-  if (e.which === 13) {
-    $(this).closest('.form-row').find('.btn-add-tracking').click();
-  }
-});
+    $.post('scripts/orders/update_order_status.php', {
+      order_id: orderId,
+      status: status
+    }, function (res) {
+      if (!res || !res.ok) {
+        alert(res && res.error ? res.error : 'Status update failed');
+        $select.prop('disabled', false);
+        return;
+      }
 
+      location.reload();
 
-$(document).on('click', '.btn-add-invoice', function(){
-  const orderId = $(this).data('order-id');
-  const $box = $(this).closest('.form-row');
-
-  $.post('scripts/orders/add_invoice.php', {
-    order_id: orderId,
-    invoice_number: $box.find('.invoice-number').val()
-  }, function(res){
-    if (!res.ok) {
-      alert(res.error || 'Error');
-      return;
-    }
-
-    // clear input
-    $box.find('.invoice-number').val('');
-
-    // reload detail
-    const $wrap = $('#detail-' + orderId);
-    $wrap.removeData('loaded').html('');
-    $('.btn-toggle-detail[data-order-id="'+orderId+'"]').click();
-
-  }, 'json');
-});
-function reloadOrderDetail(orderId) {
-  const $wrap = $('#detail-' + orderId);
-  $wrap.removeData('loaded').html('');
-  $('.btn-toggle-detail[data-order-id="' + orderId + '"]').click();
-}
-$(document).on('click', '.btn-delete-tracking', function(){
-  const id = $(this).data('id');
-  const orderId = $(this).data('order-id');
-
-  if (!confirm('Delete tracking?')) return;
-
-  $.post('scripts/orders/delete_tracking.php', { id: id }, function(res){
-    if (!res || !res.ok) {
-      alert(res && res.error ? res.error : 'Delete failed');
-      return;
-    }
-
-    reloadOrderDetail(orderId);
-  }, 'json');
-});
-
-$(document).on('click', '.btn-delete-invoice', function(){
-  const id = $(this).data('id');
-  const orderId = $(this).data('order-id');
-
-  if (!confirm('Delete invoice?')) return;
-
-  $.post('scripts/orders/delete_invoice.php', { id: id }, function(res){
-    if (!res || !res.ok) {
-      alert(res && res.error ? res.error : 'Delete failed');
-      return;
-    }
-
-    reloadOrderDetail(orderId);
-  }, 'json');
-});
-
-$(document).on('click', '.btn-save-production-note', function(){
-  const orderId = $(this).data('order-id');
-  const $box = $(this).closest('.production-note-box');
-  const note = $box.find('.production-note-input').val();
-  const $btn = $(this);
-
-  $btn.prop('disabled', true).text('Saving...');
-
-  $.post('scripts/orders/update_production_note.php', {
-    order_id: orderId,
-    production_note: note
-  }, function(res){
-    if (!res || !res.ok) {
-      alert(res && res.error ? res.error : 'Save failed');
-      $btn.prop('disabled', false).text('Save note');
-      return;
-    }
-
-    const $wrap = $('#detail-' + orderId);
-    $wrap.removeData('loaded').html('');
-    $('.btn-toggle-detail[data-order-id="' + orderId + '"]').click();
-
-  }, 'json');
-});
-
-$(document).on('click', '.btn-toggle-activity', function(){
-  $(this).closest('.card-body').find('.activity-log-panel').slideToggle(150);
-});
-
-$(document).on('click', '.btn-load-older-activity', function(){
-  const $btn = $(this);
-  const orderId = $btn.data('order-id');
-  const offset = parseInt($btn.data('offset') || 0, 10);
-  const $panel = $btn.closest('.activity-log-panel');
-  const $list = $panel.find('.activity-log-list');
-
-  $btn.prop('disabled', true).text('Loading...');
-
-  $.post('scripts/orders/load_activity_log.php', {
-    order_id: orderId,
-    offset: offset
-  }, function(res){
-    if (!res || !res.ok) {
-      alert(res && res.error ? res.error : 'Load failed');
-      $btn.prop('disabled', false).text('Load older');
-      return;
-    }
-
-    if (res.html) {
-      $list.append(res.html);
-      $btn.data('offset', offset + 30);
-      $btn.prop('disabled', false).text('Load older');
-    } else {
-      $btn.text('No older records').prop('disabled', true);
-    }
-  }, 'json');
-});
-$(document).on('change', '.order-status-select', function(){
-  const $select = $(this);
-  const orderId = $select.data('order-id');
-  const status = $select.val();
-
-  $select.prop('disabled', true);
-
-  $.post('scripts/orders/update_order_status.php', {
-    order_id: orderId,
-    status: status
-  }, function(res){
-    if (!res || !res.ok) {
-      alert(res && res.error ? res.error : 'Status update failed');
+    }, 'json').fail(function () {
+      alert('Status update request failed');
       $select.prop('disabled', false);
-      return;
-    }
-
-    location.reload();
-
-  }, 'json').fail(function(){
-    alert('Status update request failed');
-    $select.prop('disabled', false);
+    });
   });
-});
-$(document).on('change', '.order-types-select', function(){
-  const $select = $(this);
-  const orderId = $select.data('order-id');
-  const types = $select.val();
+  $(document).on('change', '.order-types-select', function () {
+    const $select = $(this);
+    const orderId = $select.data('order-id');
+    const types = $select.val();
 
-  $select.prop('disabled', true);
+    $select.prop('disabled', true);
 
-  $.post('scripts/orders/update_order_types.php', {
-    order_id: orderId,
-    types: types
-  }, function(res){
-    if (!res || !res.ok) {
-      alert(res && res.error ? res.error : 'Types update failed');
+    $.post('scripts/orders/update_order_types.php', {
+      order_id: orderId,
+      types: types
+    }, function (res) {
+      if (!res || !res.ok) {
+        alert(res && res.error ? res.error : 'Types update failed');
+        $select.prop('disabled', false);
+        return;
+      }
+
+      location.reload();
+    }, 'json').fail(function () {
+      alert('Types update request failed');
       $select.prop('disabled', false);
-      return;
-    }
-
-    location.reload();
-  }, 'json').fail(function(){
-    alert('Types update request failed');
-    $select.prop('disabled', false);
+    });
   });
-});
-$(document).on('click', '.btn-add-manual-item', function(){
-  const $box = $(this).closest('.manual-item-box');
-  const orderId = $(this).data('order-id');
-  const $btn = $(this);
+  $(document).on('click', '.btn-add-manual-item', function () {
+    const $box = $(this).closest('.manual-item-box');
+    const orderId = $(this).data('order-id');
+    const $btn = $(this);
 
-  const title = $box.find('.manual-item-title').val().trim();
-  const type = $box.find('.manual-item-type').val();
-      if (!type) {
+    const title = $box.find('.manual-item-title').val().trim();
+    const type = $box.find('.manual-item-type').val();
+    if (!type) {
       alert('Please select item type');
       return;
     }
-      if (!title) {
-    alert('Item title is required');
-    return;
-  }
-  const qty = $box.find('.manual-item-qty').val();
-  const sku = $box.find('.manual-item-sku').val().trim();
-  const reason = $box.find('.manual-item-reason').val().trim();
+    if (!title) {
+      alert('Item title is required');
+      return;
+    }
+    const qty = $box.find('.manual-item-qty').val();
+    const sku = $box.find('.manual-item-sku').val().trim();
+    const reason = $box.find('.manual-item-reason').val().trim();
 
-  $btn.prop('disabled', true).text('Adding...');
+    $btn.prop('disabled', true).text('Adding...');
 
-  $.post('scripts/orders/add_order_item.php', {
-    order_id: orderId,
-    title: title,
-    item_type_code: type,
-    qty: qty,
-    sku: sku,
-    reason: reason
-  }, function(res){
-    if (!res || !res.ok) {
-      alert(res && res.error ? res.error : 'Add item failed');
+    $.post('scripts/orders/add_order_item.php', {
+      order_id: orderId,
+      title: title,
+      item_type_code: type,
+      qty: qty,
+      sku: sku,
+      reason: reason
+    }, function (res) {
+      if (!res || !res.ok) {
+        alert(res && res.error ? res.error : 'Add item failed');
+        $btn.prop('disabled', false).text('Add item');
+        return;
+      }
+
+      const $wrap = $('#detail-' + orderId);
+      $wrap.removeData('loaded').html('');
+      $('.btn-toggle-detail[data-order-id="' + orderId + '"]').click();
+
+    }, 'json').fail(function () {
+      alert('Add item request failed');
       $btn.prop('disabled', false).text('Add item');
-      return;
-    }
-
-    const $wrap = $('#detail-' + orderId);
-    $wrap.removeData('loaded').html('');
-    $('.btn-toggle-detail[data-order-id="' + orderId + '"]').click();
-
-  }, 'json').fail(function(){
-    alert('Add item request failed');
-    $btn.prop('disabled', false).text('Add item');
+    });
   });
-});
-$(document).on('click', '.btn-delete-order-item', function(){
-  const itemId = $(this).data('item-id');
-  const orderId = $(this).data('order-id');
+  $(document).on('click', '.btn-delete-order-item', function () {
+    const itemId = $(this).data('item-id');
+    const orderId = $(this).data('order-id');
 
-  if (!confirm('Delete this item?')) return;
+    if (!confirm('Delete this item?')) return;
 
-  $.post('scripts/orders/delete_order_item.php', {
-    item_id: itemId
-  }, function(res){
-    if (!res || !res.ok) {
-      alert(res && res.error ? res.error : 'Delete item failed');
-      return;
-    }
+    $.post('scripts/orders/delete_order_item.php', {
+      item_id: itemId
+    }, function (res) {
+      if (!res || !res.ok) {
+        alert(res && res.error ? res.error : 'Delete item failed');
+        return;
+      }
 
-    const $wrap = $('#detail-' + orderId);
-    $wrap.removeData('loaded').html('');
-    $('.btn-toggle-detail[data-order-id="' + orderId + '"]').click();
+      const $wrap = $('#detail-' + orderId);
+      $wrap.removeData('loaded').html('');
+      $('.btn-toggle-detail[data-order-id="' + orderId + '"]').click();
 
-  }, 'json').fail(function(){
-    alert('Delete item request failed');
+    }, 'json').fail(function () {
+      alert('Delete item request failed');
+    });
+  }); $(document).on('click', '.btn-save-item', function () {
+    const $tr = $(this).closest('tr');
+
+    const itemId = $(this).data('id');
+    const orderId = $(this).data('order-id');
+
+    const title = $tr.find('.item-title').val();
+    const type = $tr.find('.item-type').val();
+    const qty = $tr.find('.item-qty').val();
+    const sku = $tr.find('.item-sku').val();
+    const label = $tr.find('.item-label').val();
+
+    $.post('scripts/orders/update_order_item.php', {
+      item_id: itemId,
+      title: title,
+      type: type,
+      qty: qty,
+      sku: sku,
+      custom_label: label
+    }, function (res) {
+      if (!res.ok) {
+        alert(res.error || 'Update failed');
+        return;
+      }
+
+      const $wrap = $('#detail-' + orderId);
+      $wrap.removeData('loaded').html('');
+      $('.btn-toggle-detail[data-order-id="' + orderId + '"]').click();
+
+    }, 'json').fail(() => {
+      alert('Update request failed');
+    });
   });
-});$(document).on('click','.btn-save-item',function(){
-  const $tr = $(this).closest('tr');
-
-  const itemId = $(this).data('id');
-  const orderId = $(this).data('order-id');
-
-  const title = $tr.find('.item-title').val();
-  const type  = $tr.find('.item-type').val();
-  const qty   = $tr.find('.item-qty').val();
-  const sku   = $tr.find('.item-sku').val();
-  const label = $tr.find('.item-label').val();
-
-  $.post('scripts/orders/update_order_item.php',{
-  item_id: itemId,
-  title: title,
-  type: type,
-  qty: qty,
-  sku: sku,
-  custom_label: label
-}, function(res){
-    if(!res.ok){
-      alert(res.error || 'Update failed');
-      return;
-    }
-
-    const $wrap = $('#detail-'+orderId);
-    $wrap.removeData('loaded').html('');
-    $('.btn-toggle-detail[data-order-id="'+orderId+'"]').click();
-
-  },'json').fail(()=>{
-    alert('Update request failed');
-  });
-});
-$(document).on('change', '.item-status-select', function () {
+  $(document).on('change', '.item-status-select', function () {
     const itemId = $(this).data('item-id');
     const status = $(this).val();
 
@@ -1823,57 +1810,57 @@ $(document).on('change', '.item-status-select', function () {
     const expectedDate = $('.item-expected-date[data-item-id="' + itemId + '"]').val() || '';
 
     $.ajax({
-        url: 'scripts/orders/update_item_status.php',
-        method: 'POST',
-        dataType: 'json',
-        data: {
-            item_id: itemId,
-            status: status,
-            note: note,
-            expected_date: expectedDate
-        },
-        success: function (resp) {
-            if (!resp || !resp.success) {
-                alert(resp && resp.message ? resp.message : 'Status update failed');
-                return;
-            }
-
-            location.reload();
-        },
-        error: function (xhr) {
-            console.log(xhr.responseText);
-            alert('Status update request failed');
+      url: 'scripts/orders/update_item_status.php',
+      method: 'POST',
+      dataType: 'json',
+      data: {
+        item_id: itemId,
+        status: status,
+        note: note,
+        expected_date: expectedDate
+      },
+      success: function (resp) {
+        if (!resp || !resp.success) {
+          alert(resp && resp.message ? resp.message : 'Status update failed');
+          return;
         }
-    });
-});
-$(document).on('click', '.btn-set-product-url', function () {
-  const itemId = $(this).data('item-id');
-  const url = prompt('Paste product URL');
 
-  if (url === null) return;
-
-  $.ajax({
-    url: 'scripts/orders/update_item_product_url.php',
-    method: 'POST',
-    dataType: 'json',
-    data: {
-      item_id: itemId,
-      product_url: url
-    },
-    success: function (resp) {
-      if (!resp || !resp.ok) {
-        alert(resp && resp.error ? resp.error : 'Product URL save failed');
-        return;
+        location.reload();
+      },
+      error: function (xhr) {
+        console.log(xhr.responseText);
+        alert('Status update request failed');
       }
-
-      location.reload();
-    },
-    error: function (xhr) {
-      console.log(xhr.responseText);
-      alert('Product URL request failed');
-    }
+    });
   });
-});
+  $(document).on('click', '.btn-set-product-url', function () {
+    const itemId = $(this).data('item-id');
+    const url = prompt('Paste product URL');
+
+    if (url === null) return;
+
+    $.ajax({
+      url: 'scripts/orders/update_item_product_url.php',
+      method: 'POST',
+      dataType: 'json',
+      data: {
+        item_id: itemId,
+        product_url: url
+      },
+      success: function (resp) {
+        if (!resp || !resp.ok) {
+          alert(resp && resp.error ? resp.error : 'Product URL save failed');
+          return;
+        }
+
+        location.reload();
+      },
+      error: function (xhr) {
+        console.log(xhr.responseText);
+        alert('Product URL request failed');
+      }
+    });
+  });
 </script>
 <div class="modal fade" id="optionsModal" tabindex="-1" role="dialog" aria-hidden="true">
   <div class="modal-dialog modal-lg" role="document">
