@@ -12,9 +12,8 @@ function isMenuOpen($pages = []) {
 ?>
 <aside class="main-sidebar sidebar-dark-primary elevation-4">
     <!-- Brand Logo -->
-    <a href="<?echo basename($_SERVER['PHP_SELF']);?>" class="brand-link">
-      <img src="dist/img/ScrubLogo.png" alt="Scrub Logo" class="brand-image img-circle elevation-3" style="opacity: .8">
-      <span class="brand-text font-weight-light">SCRUB prod</span>
+    <a href="<?echo basename($_SERVER['PHP_SELF']);?>?page=orders_dashboard" class="brand-link">
+      <img src="dist/img/ScrubLogo.png" alt="Scrub Logo" class="brand-image img-circle elevation-3" style="opacity: .8">      
     </a>
 
     <!-- Sidebar -->
@@ -159,10 +158,6 @@ function isMenuOpen($pages = []) {
       <ul class="nav nav-treeview">
               <li class="nav-item"><a href="index.php?page=orders_dashboard" class="nav-link <?= ($_GET['page'] ?? '') === 'orders_dashboard' ? 'active' : '' ?>"><i class="nav-icon fas fa-chart-line"></i>DASHBOARD</a></li>
               <li class="nav-item"><? if($path == 'tab'){echo '<a href=pages/orders.php" class="nav-link">';}else{echo '<a href="'.$path.'?page=orders" class="nav-link '. isActive('orders') .'">';}?><i class="far fa fa-caret-right nav-icon"></i><p>Open Orders</p></a></li>
-              <li class="nav-item"><?if($path == 'tab'){echo '<a href=pages/orders_g.php" class="nav-link">';}else{echo '<a href="'.$path.'?page=orders&type=g" class="nav-link '. isActive('orders') .'">';}?><i class="far fa fa-caret-right nav-icon"></i><p>Graphics</p></a></li>
-              <li class="nav-item"><? if($path == 'tab'){echo '<a href=pages/orders_p.php" class="nav-link">';}else{echo '<a href="'.$path.'?page=orders&type=p" class="nav-link '. isActive('orders') .'">';}?><i class="far fa fa-caret-right nav-icon"></i><p>Plastics</p></a></li>
-              <li class="nav-item"><?if($path == 'tab'){echo '<a href=pages/orders_s.php" class="nav-link">';}else{echo '<a href="'.$path.'?page=orders&type=s" class="nav-link '. isActive('orders') .'">';}?><i class="far fa fa-caret-right nav-icon"></i><p>Seat Covers</p></a></li>
-              <li class="nav-item"><?if($path == 'tab'){echo '<a href=pages/orders_f.php" class="nav-link">';}else{echo '<a href="'.$path.'?page=orders&type=f" class="nav-link '. isActive('orders') .'">';}?><i class="far fa fa-caret-right nav-icon"></i><p>Fitting</p></a></li>
       
 <li class="nav-item"><a href="#" class="nav-link"style="background-color:#2a3036;"><i class="nav-icon fas fa-globe-africa" style="color:#28a745;"></i><p>Finished Orders<i class="right fas fa-angle-left"></i></p></a>
        <ul class="nav nav-treeview">
