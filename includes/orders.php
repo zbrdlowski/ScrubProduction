@@ -8,9 +8,11 @@ if (!isset($conn) || !$conn instanceof mysqli) {
   return;
 }
 
-function countryFlag($code) {
+function countryFlag($code)
+{
   $code = strtoupper($code);
-  if (strlen($code) !== 2) return '🏳️';
+  if (strlen($code) !== 2)
+    return '🏳️';
 
   return mb_convert_encoding(
     '&#' . (127397 + ord($code[0])) . ';&#' . (127397 + ord($code[1])) . ';',
@@ -18,7 +20,8 @@ function countryFlag($code) {
     'HTML-ENTITIES'
   );
 }
-function normalizeTypesOrder(string $types): string {
+function normalizeTypesOrder(string $types): string
+{
   $weights = [
     'G' => 1,
     'F' => 2,
@@ -28,7 +31,7 @@ function normalizeTypesOrder(string $types): string {
 
   $typesArr = str_split(strtoupper($types));
 
-  usort($typesArr, function($a, $b) use ($weights) {
+  usort($typesArr, function ($a, $b) use ($weights) {
     $wa = $weights[$a] ?? 99;
     $wb = $weights[$b] ?? 99;
     return $wa <=> $wb;
@@ -36,21 +39,23 @@ function normalizeTypesOrder(string $types): string {
 
   return implode('', $typesArr);
 }
-$dpt = (int)($_SESSION['dpt'] ?? 0);
-$allAccess = in_array($dpt, [1,3,4,5,7], true);
+$dpt = (int) ($_SESSION['dpt'] ?? 0);
+$allAccess = in_array($dpt, [1, 3, 4, 5, 7], true);
 
 // --- Filters (GET) ---
 $page = 'orders';
-$fDept = isset($_GET['dept']) ? (int)$_GET['dept'] : 0;
-$fCat  = isset($_GET['cat']) ? trim((string)$_GET['cat']) : '';
-$fType = isset($_GET['type']) ? trim((string)$_GET['type']) : '';
-$fQ    = isset($_GET['q']) ? trim((string)$_GET['q']) : '';
+$fDept = isset($_GET['dept']) ? (int) $_GET['dept'] : 0;
+$fCat = isset($_GET['cat']) ? trim((string) $_GET['cat']) : '';
+$fType = isset($_GET['type']) ? trim((string) $_GET['type']) : '';
+$fQ = isset($_GET['q']) ? trim((string) $_GET['q']) : '';
 
-$allowedCats = ['GRAPHICS','PLASTICS','SEATCOVER','FITTING'];
-if ($fCat !== '' && !in_array($fCat, $allowedCats, true)) $fCat = '';
+$allowedCats = ['GRAPHICS', 'PLASTICS', 'SEATCOVER', 'FITTING'];
+if ($fCat !== '' && !in_array($fCat, $allowedCats, true))
+  $fCat = '';
 
-$allowedTypes = ['G','T','M','P','S','F','(NULL)'];
-if ($fType !== '' && !in_array($fType, $allowedTypes, true)) $fType = '';
+$allowedTypes = ['G', 'T', 'M', 'P', 'S', 'F', '(NULL)'];
+if ($fType !== '' && !in_array($fType, $allowedTypes, true))
+  $fType = '';
 
 $deptFilter = [
   2 => ['GRAPHICS'],
@@ -63,7 +68,7 @@ $deptTypeFilter = [
 ];
 
 $effectiveDept = $dpt;
-$deptCodeMap = [ 2=>'GRAPHICS', 6=>'PLASTICS', 8=>'SEATCOVER', 9=>'FITTING' ];
+$deptCodeMap = [2 => 'GRAPHICS', 6 => 'PLASTICS', 8 => 'SEATCOVER', 9 => 'FITTING'];
 
 if ($allAccess && $fDept > 0) {
   $effectiveDept = $fDept;
@@ -73,8 +78,8 @@ $uiDept = $effectiveDept;
 $uiDeptCode = $deptCodeMap[$uiDept] ?? null;
 $rolePrimaryUI = $uiDeptCode ? ('PRIMARY_' . $uiDeptCode) : null;
 
-$meUserId = (int)($_SESSION['user_id'] ?? 0);
-$perm = (int)($_SESSION['permission'] ?? 0);
+$meUserId = (int) ($_SESSION['user_id'] ?? 0);
+$perm = (int) ($_SESSION['permission'] ?? 0);
 
 $aclCats = [];
 $aclTypes = [];
@@ -119,7 +124,8 @@ if (!empty($aclCats)) {
     WHERE ocx.order_id = o.id AND cx.code IN ($ph)
   )";
   $types .= str_repeat('s', count($aclCats));
-  foreach ($aclCats as $c) $params[] = $c;
+  foreach ($aclCats as $c)
+    $params[] = $c;
 }
 
 if (!empty($aclTypes)) {
@@ -129,9 +135,9 @@ if (!empty($aclTypes)) {
 }
 
 if ($fCat !== '') {
-if ($fCat === 'FITTING') {
-  $where[] = $fitWhere;
-} else {
+  if ($fCat === 'FITTING') {
+    $where[] = $fitWhere;
+  } else {
     $where[] = "EXISTS (
       SELECT 1
       FROM order_categories ocf
@@ -152,19 +158,19 @@ if ($fType !== '') {
         AND (oit.item_type_code IS NULL OR TRIM(oit.item_type_code) = '')
     )";
   } else {
-  if (strtoupper($fType) === 'F') {
-    $where[] = $fitWhere;
-  } else {
-    $where[] = "EXISTS (
+    if (strtoupper($fType) === 'F') {
+      $where[] = $fitWhere;
+    } else {
+      $where[] = "EXISTS (
       SELECT 1
       FROM order_items oit
       WHERE oit.order_id = o.id
         AND UPPER(TRIM(COALESCE(oit.item_type_code, ''))) = ?
     )";
-    $types .= 's';
-    $params[] = strtoupper($fType);
+      $types .= 's';
+      $params[] = strtoupper($fType);
+    }
   }
-}
 }
 
 if ($fQ !== '') {
@@ -315,139 +321,167 @@ $deptOptions = [
 ];
 ?>
 <style>
-table td,
-table th {
-  vertical-align: middle;
-}
-.tm-highlight { background: rgba(255,193,7,0.12) !important; }
-.badge-type { font-size: 0.85rem; padding: .35em .55em; }
-.order-detail-row td { padding: 0 !important; border-top: none !important; }
-.detail-wrap { display:none; }
-/* Detail table - force "air" */
-.detail-wrap table.table-detail > thead > tr > th,
-.detail-wrap table.table-detail > tbody > tr > td{
-  padding: .75rem 1rem !important;
-  line-height: 1.35 !important;
-  vertical-align: middle !important;
-}
+  table td,
+  table th {
+    vertical-align: middle;
+  }
 
-/* trochu väčšie riadky aj vizuálne */
-.detail-wrap table.table-detail > tbody > tr{
-  height: 44px;
-}
+  .tm-highlight {
+    background: rgba(255, 193, 7, 0.12) !important;
+  }
 
-/* dark mode borders + head bg */
-.dark-mode .detail-wrap table.table-detail{
-  color: #e9ecef;
-}
+  .badge-type {
+    font-size: 0.85rem;
+    padding: .35em .55em;
+  }
 
-.dark-mode .detail-wrap table.table-detail th,
-.dark-mode .detail-wrap table.table-detail td{
-  border-color: rgba(255,255,255,.12) !important;
-}
+  .order-detail-row td {
+    padding: 0 !important;
+    border-top: none !important;
+  }
 
-.dark-mode .detail-wrap table.table-detail thead th{
-  background: rgba(255,255,255,.06) !important;
-}
-/* Väčšie badge iba v order detail */
-.detail-wrap .badge{
-  font-size: 1rem !important;      /* väčší text */
-  padding: .55em .9em !important;  /* viac priestoru */
-  border-radius: 10px;
-  font-weight: 600;
-}
-.btn-order-action {
-  min-width: 72px;
-}
-.order-row {
-  cursor: pointer;
-}
-.btn-copy-inline {
-  background: transparent;
-  border: none;
-  color: #adb5bd;
-  cursor: pointer;
-  padding: 0 4px;
-}
+  .detail-wrap {
+    display: none;
+  }
 
-.btn-copy-inline:hover {
-  color: #17a2b8;
-}
-.order-row-open {
-  background: rgba(23, 162, 184, 0.18) !important;
-  box-shadow: inset 4px 0 0 #17a2b8;
-}
-.btn-delete-tracking:hover {
-  background: #dc3545;
-  color: white;
-}
-.production-note-textarea {
-  background: rgba(255,255,255,0.06) !important;
-  border: 1px solid rgba(255,255,255,0.2) !important;
-  color: #fff !important;
-}
+  /* Detail table - force "air" */
+  .detail-wrap table.table-detail>thead>tr>th,
+  .detail-wrap table.table-detail>tbody>tr>td {
+    padding: .75rem 1rem !important;
+    line-height: 1.35 !important;
+    vertical-align: middle !important;
+  }
 
-.production-note-textarea:focus {
-  background: rgba(255,255,255,0.10) !important;
-  border-color: #17a2b8 !important;
-  box-shadow: 0 0 0 0.1rem rgba(23,162,184,.25);
-}
-.assigned-users {
-  display: flex;
-  align-items: center;
-  justify-content: center; /* 👈 toto pridaj */
-  gap: 4px;
-  white-space: nowrap;
-  width: 100%;
-}
+  /* trochu väčšie riadky aj vizuálne */
+  .detail-wrap table.table-detail>tbody>tr {
+    height: 44px;
+  }
 
-.assigned-avatar,
-.assigned-more {
-  width: 26px;
-  height: 26px;
-  border-radius: 50%;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 0.72rem;
-  font-weight: 700;
-  cursor: default;
-  border: 1px solid rgba(255,255,255,.22);
-}
+  /* dark mode borders + head bg */
+  .dark-mode .detail-wrap table.table-detail {
+    color: #e9ecef;
+  }
 
-.assigned-primary {
-  background: rgba(23,162,184,.35);
-  color: #fff;
-}
+  .dark-mode .detail-wrap table.table-detail th,
+  .dark-mode .detail-wrap table.table-detail td {
+    border-color: rgba(255, 255, 255, .12) !important;
+  }
 
-.assigned-collab {
-  background: rgba(108,117,125,.45);
-  color: #fff;
-}
+  .dark-mode .detail-wrap table.table-detail thead th {
+    background: rgba(255, 255, 255, .06) !important;
+  }
 
-.assigned-more {
-  background: rgba(255,255,255,.12);
-  color: #ddd;
-}
-.assigned-photo {
-  width: 26px;
-  height: 26px;
-  border-radius: 50%;
-  object-fit: cover;
-  border: 1px solid rgba(255,255,255,.22);
-}
+  /* Väčšie badge iba v order detail */
+  .detail-wrap .badge {
+    font-size: 1rem !important;
+    /* väčší text */
+    padding: .55em .9em !important;
+    /* viac priestoru */
+    border-radius: 10px;
+    font-weight: 600;
+  }
 
-.assigned-photo.assigned-primary {
-  border-color: #17a2b8;
-}
+  .btn-order-action {
+    min-width: 72px;
+  }
 
-.assigned-photo.assigned-collab {
-  border-color: rgba(255,255,255,.35);
-}
-.order-in-progress {
-  background: rgba(23,162,184,0.12) !important;
-  box-shadow: inset 4px 0 0 #17a2b8;
-}
+  .order-row {
+    cursor: pointer;
+  }
+
+  .btn-copy-inline {
+    background: transparent;
+    border: none;
+    color: #adb5bd;
+    cursor: pointer;
+    padding: 0 4px;
+  }
+
+  .btn-copy-inline:hover {
+    color: #17a2b8;
+  }
+
+  .order-row-open {
+    background: rgba(23, 162, 184, 0.18) !important;
+    box-shadow: inset 4px 0 0 #17a2b8;
+  }
+
+  .btn-delete-tracking:hover {
+    background: #dc3545;
+    color: white;
+  }
+
+  .production-note-textarea {
+    background: rgba(255, 255, 255, 0.06) !important;
+    border: 1px solid rgba(255, 255, 255, 0.2) !important;
+    color: #fff !important;
+  }
+
+  .production-note-textarea:focus {
+    background: rgba(255, 255, 255, 0.10) !important;
+    border-color: #17a2b8 !important;
+    box-shadow: 0 0 0 0.1rem rgba(23, 162, 184, .25);
+  }
+
+  .assigned-users {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    /* 👈 toto pridaj */
+    gap: 4px;
+    white-space: nowrap;
+    width: 100%;
+  }
+
+  .assigned-avatar,
+  .assigned-more {
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.72rem;
+    font-weight: 700;
+    cursor: default;
+    border: 1px solid rgba(255, 255, 255, .22);
+  }
+
+  .assigned-primary {
+    background: rgba(23, 162, 184, .35);
+    color: #fff;
+  }
+
+  .assigned-collab {
+    background: rgba(108, 117, 125, .45);
+    color: #fff;
+  }
+
+  .assigned-more {
+    background: rgba(255, 255, 255, .12);
+    color: #ddd;
+  }
+
+  .assigned-photo {
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    object-fit: cover;
+    border: 1px solid rgba(255, 255, 255, .22);
+  }
+
+  .assigned-photo.assigned-primary {
+    border-color: #17a2b8;
+  }
+
+  .assigned-photo.assigned-collab {
+    border-color: rgba(255, 255, 255, .35);
+  }
+
+  .order-in-progress {
+    background: rgba(23, 162, 184, 0.12) !important;
+    box-shadow: inset 4px 0 0 #17a2b8;
+  }
 </style>
 
 <div class="card card-dark">
@@ -461,7 +495,7 @@ table th {
   <div class="card-body">
 
     <form method="get" class="mb-3">
-      <input type="hidden" name="page" value="<?= htmlspecialchars($page) ?>"/>
+      <input type="hidden" name="page" value="<?= htmlspecialchars($page) ?>" />
 
       <div class="form-row">
         <div class="form-group col-md-3">
@@ -469,22 +503,24 @@ table th {
           <?php if ($allAccess): ?>
             <select class="form-control" name="dept">
               <?php foreach ($deptOptions as $k => $label): ?>
-                <option value="<?= (int)$k ?>" <?= ($fDept === (int)$k ? 'selected' : '') ?>>
+                <option value="<?= (int) $k ?>" <?= ($fDept === (int) $k ? 'selected' : '') ?>>
                   <?= htmlspecialchars($label) ?>
                 </option>
               <?php endforeach; ?>
             </select>
           <?php else: ?>
-            <input class="form-control" value="<?= htmlspecialchars((string)($_SESSION['dpt_name'] ?? ('dpt '.$dpt))) ?>" disabled />
+            <input class="form-control" value="<?= htmlspecialchars((string) ($_SESSION['dpt_name'] ?? ('dpt ' . $dpt))) ?>"
+              disabled />
           <?php endif; ?>
         </div>
 
         <div class="form-group col-md-3">
           <label>Category</label>
           <select class="form-control" name="cat">
-            <option value="" <?= ($fCat===''?'selected':'') ?>>All</option>
-            <?php foreach (['GRAPHICS','PLASTICS','SEATCOVER','FITTING'] as $c): ?>
-              <option value="<?= htmlspecialchars($c) ?>" <?= ($fCat===$c?'selected':'') ?>><?= htmlspecialchars($c) ?></option>
+            <option value="" <?= ($fCat === '' ? 'selected' : '') ?>>All</option>
+            <?php foreach (['GRAPHICS', 'PLASTICS', 'SEATCOVER', 'FITTING'] as $c): ?>
+              <option value="<?= htmlspecialchars($c) ?>" <?= ($fCat === $c ? 'selected' : '') ?>><?= htmlspecialchars($c) ?>
+              </option>
             <?php endforeach; ?>
           </select>
         </div>
@@ -492,16 +528,18 @@ table th {
         <div class="form-group col-md-3">
           <label>Item Type</label>
           <select class="form-control" name="type">
-            <option value="" <?= ($fType===''?'selected':'') ?>>All</option>
-            <?php foreach (['G','T','M','P','S','F','(NULL)'] as $t): ?>
-              <option value="<?= htmlspecialchars($t) ?>" <?= ($fType===$t?'selected':'') ?>><?= htmlspecialchars($t) ?></option>
+            <option value="" <?= ($fType === '' ? 'selected' : '') ?>>All</option>
+            <?php foreach (['G', 'T', 'M', 'P', 'S', 'F', '(NULL)'] as $t): ?>
+              <option value="<?= htmlspecialchars($t) ?>" <?= ($fType === $t ? 'selected' : '') ?>><?= htmlspecialchars($t) ?>
+              </option>
             <?php endforeach; ?>
           </select>
         </div>
 
         <div class="form-group col-md-3">
           <label>Search</label>
-          <input class="form-control" name="q" value="<?= htmlspecialchars($fQ) ?>" placeholder="Order #, customer, email..." />
+          <input class="form-control" name="q" value="<?= htmlspecialchars($fQ) ?>"
+            placeholder="Order #, customer, email..." />
         </div>
       </div>
 
@@ -528,252 +566,268 @@ table th {
           </tr>
         </thead>
         <tbody>
-        <?php while ($row = $res->fetch_assoc()): ?>
-          <?php
-            $orderId = (int)$row['id'];
-            $hasTM = (int)($row['has_tm'] ?? 0) === 1;
+          <?php while ($row = $res->fetch_assoc()): ?>
+            <?php
+            $orderId = (int) $row['id'];
+            $hasTM = (int) ($row['has_tm'] ?? 0) === 1;
             $rowClass = '';
 
-              $statusUpper = strtoupper((string)($row['status'] ?? ''));
+            $statusUpper = strtoupper((string) ($row['status'] ?? ''));
 
-              if ($statusUpper === 'IN_PROGRESS') {
-                $rowClass = 'order-in-progress';
-              } elseif ($dpt === 6 && $hasTM) {
-                $rowClass = 'tm-highlight';
-              }
-
-            $typesStr = normalizeTypesOrder((string)($row['manual_types_override'] ?: ($row['item_types'] ?? '')));
-            $hasManualTypes = trim((string)($row['manual_types_override'] ?? '')) !== '';
-            $customer = trim((string)($row['customer_name'] ?? ''));
-            if ($customer === '') $customer = (string)($row['customer_email'] ?? '-');
-          ?>
-          <tr class="<?= $rowClass ?> order-row" data-order-id="<?= $orderId ?>">
-          <td>
-            <?php
-            $dateRaw = $row['order_date'] ?? null;
-            if (!empty($dateRaw)) {
-                $dt = new DateTime($dateRaw);
-                echo $dt->format('d.m.Y');
-            } else {
-                echo '—';
+            if ($statusUpper === 'IN_PROGRESS') {
+              $rowClass = 'order-in-progress';
+            } elseif ($dpt === 6 && $hasTM) {
+              $rowClass = 'tm-highlight';
             }
+
+            $typesStr = normalizeTypesOrder((string) ($row['manual_types_override'] ?: ($row['item_types'] ?? '')));
+            $hasManualTypes = trim((string) ($row['manual_types_override'] ?? '')) !== '';
+            $customer = trim((string) ($row['customer_name'] ?? ''));
+            if ($customer === '')
+              $customer = (string) ($row['customer_email'] ?? '-');
             ?>
-            </td>
-                      <td><?= htmlspecialchars((string)$row['source_code']) ?></td>
-                      <td>
-  <?php
-    $cc = strtoupper(trim((string)($row['country_code'] ?? '')));
+            <tr class="<?= $rowClass ?> order-row" data-order-id="<?= $orderId ?>">
+              <td>
+                <?php
+                $dateRaw = $row['order_date'] ?? null;
+                if (!empty($dateRaw)) {
+                  $dt = new DateTime($dateRaw);
+                  echo $dt->format('d.m.Y');
+                } else {
+                  echo '—';
+                }
+                ?>
+              </td>
+              <td><?= htmlspecialchars((string) $row['source_code']) ?></td>
+              <td>
+                <?php
+                $cc = strtoupper(trim((string) ($row['country_code'] ?? '')));
 
-    if ($cc === 'UM') $cc = 'US';
+                if ($cc === 'UM')
+                  $cc = 'US';
 
-    if ($cc !== '') {
-      $ccLower = strtolower($cc);
+                if ($cc !== '') {
+                  $ccLower = strtolower($cc);
 
-      echo '<span style="white-space:nowrap;">';
-      echo '<img src="https://flagcdn.com/16x12/' . htmlspecialchars($ccLower) . '.png" ';
-      echo 'alt="' . htmlspecialchars($cc) . '" ';
-      echo 'style="margin-right:5px; vertical-align:-1px;">';
-      echo htmlspecialchars($cc);
-      echo '</span>';
-    } else {
-      echo '-';
-    }
-  ?>
-</td>
+                  echo '<span style="white-space:nowrap;">';
+                  echo '<img src="https://flagcdn.com/16x12/' . htmlspecialchars($ccLower) . '.png" ';
+                  echo 'alt="' . htmlspecialchars($cc) . '" ';
+                  echo 'style="margin-right:5px; vertical-align:-1px;">';
+                  echo htmlspecialchars($cc);
+                  echo '</span>';
+                } else {
+                  echo '-';
+                }
+                ?>
+              </td>
 
-            <td>
-              <div><b><?= htmlspecialchars((string)($row['order_number'] ?? $row['external_order_id'] ?? '')) ?></b></div>
-            
-              <?php if (!empty($row['external_order_id']) && $row['external_order_id'] !== $row['order_number']): ?>
-                <small class="text-muted">Ext: <?= htmlspecialchars((string)$row['external_order_id']) ?></small>
+              <td>
+                <div><b><?= htmlspecialchars((string) ($row['order_number'] ?? $row['external_order_id'] ?? '')) ?></b>
+                </div>
 
-              <?php endif; ?>
-              
-            </td>
-             <td align="center">
-            <?php
-              if ($hasManualTypes) {
+                <?php if (!empty($row['external_order_id']) && $row['external_order_id'] !== $row['order_number']): ?>
+                  <small class="text-muted">Ext: <?= htmlspecialchars((string) $row['external_order_id']) ?></small>
+
+                <?php endif; ?>
+
+              </td>
+              <td align="center">
+                <?php
+                if ($hasManualTypes) {
                   // manual override – napr. GFPS
                   $types = [normalizeTypesOrder($typesStr)];
                 } else {
                   // AUTO režim
-                  if ((int)($row['has_gfp'] ?? 0) === 1) {
+                  if ((int) ($row['has_gfp'] ?? 0) === 1) {
                     $types = ['GFP'];
                   } else {
                     $types = array_filter(array_map('trim', explode(',', str_replace(' ', '', $typesStr))));
                   }
                 }
 
-                if (!$types) $types = ['NULL'];                 
-            ?>            
+                if (!$types)
+                  $types = ['NULL'];
+                ?>
 
-            <?php foreach ($types as $t): ?>
+                <?php foreach ($types as $t): ?>
 
-              <?php             
+                  <?php
 
-                $tClean = strtoupper(trim($t));
-                $badge = 'badge-secondary';
+                  $tClean = strtoupper(trim($t));
+                  $badge = 'badge-secondary';
 
-                if (in_array($tClean, ['T','M'], true)) $badge = 'badge-warning';
-                elseif ($tClean === 'G') $badge = 'badge-info';
-                elseif ($tClean === 'P') $badge = 'badge-primary';
-                elseif ($tClean === 'S') $badge = 'badge-success';
-                elseif ($tClean === 'F') $badge = 'badge-danger';
-                elseif (strpos($tClean, 'F') !== false) $badge = 'badge-danger';
-                elseif (strpos($tClean, 'S') !== false) $badge = 'badge-success';
-                elseif (strpos($tClean, 'P') !== false) $badge = 'badge-primary';
-                elseif (strpos($tClean, 'G') !== false) $badge = 'badge-info';
-              ?>
-              <span class="badge <?= $badge ?> badge-type mr-1"><?= htmlspecialchars($tClean) ?></span>
-            <?php endforeach; ?>
-          </td>
-            <td><?= htmlspecialchars($customer) ?></td>
+                  if (in_array($tClean, ['T', 'M'], true))
+                    $badge = 'badge-warning';
+                  elseif ($tClean === 'G')
+                    $badge = 'badge-info';
+                  elseif ($tClean === 'P')
+                    $badge = 'badge-primary';
+                  elseif ($tClean === 'S')
+                    $badge = 'badge-success';
+                  elseif ($tClean === 'F')
+                    $badge = 'badge-danger';
+                  elseif (strpos($tClean, 'F') !== false)
+                    $badge = 'badge-danger';
+                  elseif (strpos($tClean, 'S') !== false)
+                    $badge = 'badge-success';
+                  elseif (strpos($tClean, 'P') !== false)
+                    $badge = 'badge-primary';
+                  elseif (strpos($tClean, 'G') !== false)
+                    $badge = 'badge-info';
+                  ?>
+                  <span class="badge <?= $badge ?> badge-type mr-1"><?= htmlspecialchars($tClean) ?></span>
+                <?php endforeach; ?>
+              </td>
+              <td><?= htmlspecialchars($customer) ?></td>
 
-            <!-- semafor -->
-            
-          <td class="text-center">
-          <?php
-          $summaryRaw = (string)($row['traffic_summary_json'] ?? '');
-          $summary = json_decode($summaryRaw, true);
+              <!-- semafor -->
 
-          if (!is_array($summary) || !$summary) {
-              $typesFallback = strtoupper((string)($row['item_types'] ?? ''));
-              $typesFallback = str_replace([' ', ','], '', $typesFallback);
+              <td class="text-center">
+                <?php
+                $summaryRaw = (string) ($row['traffic_summary_json'] ?? '');
+                $summary = json_decode($summaryRaw, true);
 
-              $summary = [];
-              foreach (str_split($typesFallback) as $t) {
-                  if ($t !== '') {
-                      $summary[$t] = strtoupper((string)($row['traffic_light'] ?? 'RED'));
+                if (!is_array($summary) || !$summary) {
+                  $typesFallback = strtoupper((string) ($row['item_types'] ?? ''));
+                  $typesFallback = str_replace([' ', ','], '', $typesFallback);
+
+                  $summary = [];
+                  foreach (str_split($typesFallback) as $t) {
+                    if ($t !== '') {
+                      $summary[$t] = strtoupper((string) ($row['traffic_light'] ?? 'RED'));
+                    }
                   }
-              }
-          }
+                }
 
-          $order = ['G', 'F', 'P', 'S'];
+                $order = ['G', 'F', 'P', 'S'];
 
-          foreach ($order as $type):
-              if (!isset($summary[$type])) continue;
+                foreach ($order as $type):
+                  if (!isset($summary[$type]))
+                    continue;
 
-              $state = strtoupper((string)$summary[$type]);
+                  $state = strtoupper((string) $summary[$type]);
 
-              if ($state === 'GREEN') {
-                  $color = 'badge-success';
-              } elseif ($state === 'ORANGE') {
-                  $color = 'badge-warning';
-              } else {
-                  $color = 'badge-danger';
-              }
-          ?>
-              <span class="badge <?= $color ?> mr-1"
-                    style="font-size:1rem; padding:.5em .7em;"
+                  if ($state === 'GREEN') {
+                    $color = 'badge-success';
+                  } elseif ($state === 'ORANGE') {
+                    $color = 'badge-warning';
+                  } else {
+                    $color = 'badge-danger';
+                  }
+                  ?>
+                  <span class="badge <?= $color ?> mr-1" style="font-size:1rem; padding:.5em .7em;"
                     title="<?= htmlspecialchars($type . ' ' . $state) ?>">
-                  <?= htmlspecialchars($type) ?>
-              </span>
-          <?php endforeach; ?>
-          </td>
-            
-            <td class="text-center">
-            <?php
-              $status = strtoupper((string)($row['status'] ?? ''));
-              $statusBadge = 'badge-secondary';
-              // nastavenie farby badge podľa statusu
-              if ($status === 'NEW') $statusBadge = 'badge-danger';
-              elseif ($status === 'IN_PROGRESS') $statusBadge = 'badge-primary';
-              elseif ($status === 'HOLD') $statusBadge = 'badge-info';
-              elseif ($status === 'DONE' || $status === 'SHIPPED') $statusBadge = 'badge-success';
-            ?>
-            <?php
-              $status = strtoupper((string)($row['status'] ?? ''));
+                    <?= htmlspecialchars($type) ?>
+                  </span>
+                <?php endforeach; ?>
+              </td>
 
-              switch ($status) {
-                case 'NEW':
-                  $btnClass = 'btn-outline-danger';
-                  break;
-                case 'READY_TO_INVOICE':                
+              <td class="text-center">
+                <?php
+                $status = strtoupper((string) ($row['status'] ?? ''));
+                $statusBadge = 'badge-secondary';
+                // nastavenie farby badge podľa statusu
+                if ($status === 'NEW')
+                  $statusBadge = 'badge-danger';
+                elseif ($status === 'IN_PROGRESS')
+                  $statusBadge = 'badge-primary';
+                elseif ($status === 'HOLD')
+                  $statusBadge = 'badge-info';
+                elseif ($status === 'DONE' || $status === 'SHIPPED')
+                  $statusBadge = 'badge-success';
+                ?>
+                <?php
+                $status = strtoupper((string) ($row['status'] ?? ''));
+
+                switch ($status) {
+                  case 'NEW':
+                    $btnClass = 'btn-outline-danger';
+                    break;
+                  case 'READY_TO_INVOICE':
                     $btnClass = 'btn-outline-warning';
                     break;
 
-                case 'IN_PROGRESS':                
-                  $btnClass = 'btn-outline-warning';
-                  break;
-                
-                case 'WAITING_PARTS':
-                  $btnClass = 'btn-outline-warning';
-                  break;
+                  case 'IN_PROGRESS':
+                    $btnClass = 'btn-outline-warning';
+                    break;
 
-                case 'HOLD':
-                case 'CANCELLED':
-                  $btnClass = 'btn-outline-secondary';
-                  break;
+                  case 'WAITING_PARTS':
+                    $btnClass = 'btn-outline-warning';
+                    break;
 
-                case 'DONE':
-                case 'COMPLETED':
-                case 'SHIPPED':
-                case 'READY':
-                case 'READY_TO_SHIP':
-                  $btnClass = 'btn-outline-success';
-                  break;
+                  case 'HOLD':
+                  case 'CANCELLED':
+                    $btnClass = 'btn-outline-secondary';
+                    break;
 
-                case 'NEED_INFO':
-                  $btnClass = 'btn-outline-danger';
-                  break;
+                  case 'DONE':
+                  case 'COMPLETED':
+                  case 'SHIPPED':
+                  case 'READY':
+                  case 'READY_TO_SHIP':
+                    $btnClass = 'btn-outline-success';
+                    break;
 
-                default:
-                  $btnClass = 'btn-outline-secondary';
-                  break;
-              }
-            ?>
-          <button class="btn btn-xs <?= $btnClass ?>" style="pointer-events:none;">
-            <?= htmlspecialchars(str_replace('_', ' ', $status) ?: '-') ?>
-          </button>
-          </td>
-            <td>
-             
-  <?php
-    $assignedRaw = (string)($row['assigned_users'] ?? '');
-    $assigned = [];
+                  case 'NEED_INFO':
+                    $btnClass = 'btn-outline-danger';
+                    break;
 
-    if ($assignedRaw !== '') {
-      foreach (explode(';;', $assignedRaw) as $part) {
-        $bits = explode('|', $part);
-        if (count($bits) >= 5) {
-          $assigned[] = [
-            'id' => (int)$bits[0],
-            'name' => $bits[1],
-            'role' => $bits[2],
-            'state' => $bits[3],
-            'photo' => $bits[4],
-          ];
-        }
-      }
-    }
+                  default:
+                    $btnClass = 'btn-outline-secondary';
+                    break;
+                }
+                ?>
+                <button class="btn btn-xs <?= $btnClass ?>" style="pointer-events:none;">
+                  <?= htmlspecialchars(str_replace('_', ' ', $status) ?: '-') ?>
+                </button>
+              </td>
+              <td>
 
-    $maxVisible = 4;
-    $visible = array_slice($assigned, 0, $maxVisible);
-    $hiddenCount = max(0, count($assigned) - $maxVisible);
-  ?>
+                <?php
+                $assignedRaw = (string) ($row['assigned_users'] ?? '');
+                $assigned = [];
 
-  <?php if (!$assigned): ?>
-    <span class="text-muted">—</span>
-  <?php else: ?>
-    <div class="assigned-users">
-      <?php foreach ($visible as $a): ?>
-        <?php
-          $name = trim($a['name']);
-          $initials = '';
-          foreach (preg_split('/\s+/', $name) as $p) {
-            if ($p !== '') $initials .= mb_strtoupper(mb_substr($p, 0, 1));
-          }
-          $initials = mb_substr($initials, 0, 2);
+                if ($assignedRaw !== '') {
+                  foreach (explode(';;', $assignedRaw) as $part) {
+                    $bits = explode('|', $part);
+                    if (count($bits) >= 5) {
+                      $assigned[] = [
+                        'id' => (int) $bits[0],
+                        'name' => $bits[1],
+                        'role' => $bits[2],
+                        'state' => $bits[3],
+                        'photo' => $bits[4],
+                      ];
+                    }
+                  }
+                }
 
-          $roleClass = (strpos($a['role'], 'PRIMARY_') === 0) ? 'assigned-primary' : 'assigned-collab';
-        ?>
-        <?php if (!empty($a['photo'])): ?>
-          <img src="images/<?= htmlspecialchars($a['photo']) ?>"
-              class="assigned-photo <?= $roleClass ?>"
-              title="<?= htmlspecialchars($name . ' — ' . $a['role']) ?>">
-        <?php else: ?>
+                $maxVisible = 4;
+                $visible = array_slice($assigned, 0, $maxVisible);
+                $hiddenCount = max(0, count($assigned) - $maxVisible);
+                ?>
+
+                <?php if (!$assigned): ?>
+                  <span class="text-muted">—</span>
+                <?php else: ?>
+                  <div class="assigned-users">
+                    <?php foreach ($visible as $a): ?>
+                      <?php
+                      $name = trim($a['name']);
+                      $initials = '';
+                      foreach (preg_split('/\s+/', $name) as $p) {
+                        if ($p !== '')
+                          $initials .= mb_strtoupper(mb_substr($p, 0, 1));
+                      }
+                      $initials = mb_substr($initials, 0, 2);
+
+                      $roleClass = (strpos($a['role'], 'PRIMARY_') === 0) ? 'assigned-primary' : 'assigned-collab';
+                      ?>
+                      <?php if (!empty($a['photo'])): ?>
+                        <img src="images/<?= htmlspecialchars($a['photo']) ?>" class="assigned-photo <?= $roleClass ?>"
+                          title="<?= htmlspecialchars($name . ' — ' . str_replace('PRIMARY_', '', $a['role'])) ?>" <?php else: ?>
           <span class="assigned-avatar <?= $roleClass ?>"
-                title="<?= htmlspecialchars($name . ' — ' . $a['role']) ?>">
+                title="<?= htmlspecialchars($name . ' — ' . str_replace('PRIMARY_', '', $a['role'])) ?>">
             <?= htmlspecialchars($initials ?: '?') ?>
           </span>
   <?php endif; ?>
@@ -781,7 +835,7 @@ table th {
 
       <?php if ($hiddenCount > 0): ?>
         <span class="assigned-more" title="<?= htmlspecialchars($assignedRaw) ?>">
-          +<?= (int)$hiddenCount ?>
+          +<?= (int) $hiddenCount ?>
         </span>
       <?php endif; ?>
     </div>
@@ -802,34 +856,36 @@ table th {
     </span>
   <?php endif; ?>
   <?php
-    $primaryId = isset($row['primary_emp_id']) ? (int)$row['primary_emp_id'] : 0;
-    $primaryName = (string)($row['primary_emp_name'] ?? '');
-    $canUseDeptButtons = !empty($uiDeptCode);
-    if ($perm >= 400 && empty($uiDeptCode)) {
-      $canUseDeptButtons = false;
-    }
-    $isTakenAny = false;
-    $takenByMe = false;
-    $takenNameAny = '';
+  $primaryId = isset($row['primary_emp_id']) ? (int) $row['primary_emp_id'] : 0;
+  $primaryName = (string) ($row['primary_emp_name'] ?? '');
+  $canUseDeptButtons = !empty($uiDeptCode);
+  if ($perm >= 400 && empty($uiDeptCode)) {
+    $canUseDeptButtons = false;
+  }
+  $currentPrimaryRole = $uiDeptCode ? ('PRIMARY_' . $uiDeptCode) : '';
 
-    foreach ($assigned as $a) {
-      if (strpos($a['role'], 'PRIMARY_') === 0) {
-        $isTakenAny = true;
+  $isTakenForDept = false;
+  $takenByMeForDept = false;
+  $takenNameForDept = '';
 
-        if ((int)$a['id'] === $meUserId) {
-          $takenByMe = true;
-        }
+  foreach ($assigned as $a) {
+    if ($currentPrimaryRole !== '' && $a['role'] === $currentPrimaryRole) {
+      $isTakenForDept = true;
 
-        if ($takenNameAny === '') {
-          $takenNameAny = $a['name'];
-        }
+      if ((int) $a['id'] === $meUserId) {
+        $takenByMeForDept = true;
+      }
+
+      if ($takenNameForDept === '') {
+        $takenNameForDept = $a['name'];
       }
     }
+  }
   ?>
 
   <?php if ($canUseDeptButtons): ?>
 
-  <?php if (!$isTakenAny): ?>
+  <?php if (!$isTakenForDept): ?>
 
   <button type="button"
           class="btn btn-sm btn-success btn-take-order mr-1"
@@ -842,7 +898,7 @@ table th {
     <button type="button"
             class="btn btn-sm btn-info btn-invite-collab"
             data-order-id="<?= $orderId ?>"
-            data-dept-code="<?= htmlspecialchars((string)$uiDeptCode) ?>"
+            data-dept-code="<?= htmlspecialchars((string) $uiDeptCode) ?>"
             data-mode="assign">
       Assign To
     </button>
@@ -858,23 +914,23 @@ table th {
         TAKE
       </button>
 
-     <?php if ($takenByMe): ?>
+     <?php if ($takenByMeForDept): ?>
         <span class="badge badge-warning mr-1 px-3 py-2" style="font-size:0.85rem;">
   MINE
     </span>
       <?php else: ?>
         <span class="badge badge-warning mr-1">
-          Taken<?= $takenNameAny ? ': '.htmlspecialchars($takenNameAny) : '' ?>
+          Taken<?= $takenNameForDept ? ': ' . htmlspecialchars($takenNameForDept) : '' ?>
         </span>
       <?php endif; ?>
 
       <?php
-        $canInvite = ($perm >= 400) || ($primaryId === $meUserId);
+      $canInvite = ($perm >= 400) || ($primaryId === $meUserId);
       ?>
       <button type="button"
         class="btn btn-sm btn-info btn-invite-collab"
         data-order-id="<?= $orderId ?>"
-        data-dept-code="<?= htmlspecialchars((string)$uiDeptCode) ?>"
+        data-dept-code="<?= htmlspecialchars((string) $uiDeptCode) ?>"
         data-mode="<?= ($perm >= 400 ? 'assign' : 'invite') ?>"
         <?= $canInvite ? '' : 'disabled' ?>>
         <?= ($perm >= 400 ? 'Assign To' : 'INVITE') ?>
