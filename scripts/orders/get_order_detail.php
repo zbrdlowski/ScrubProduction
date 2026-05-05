@@ -301,8 +301,8 @@ $stmt = $conn->prepare("SELECT
     item_type_code,
     qty,
     options_json,
-    product_url
-    status,
+    product_url,
+   status AS item_status,
     waiting_note,
     expected_date,
     completed_by,
@@ -509,7 +509,10 @@ ob_start();
             'CANCELLED'
           ];
 
-          $currentStatus = strtoupper((string) ($order['status'] ?? 'NEW'));
+          $currentStatus = strtoupper(trim((string)($it['item_status'] ?? 'NEW')));
+if ($currentStatus === '') {
+    $currentStatus = 'NEW';
+}
           ?>
 
           <select class="form-control form-control-sm order-status-select" data-order-id="<?php echo (int) $orderId; ?>"
@@ -1107,9 +1110,9 @@ ob_start();
                 </td>
 
                 <td>
-                  <span class="badge badge-secondary">
-                    <?= h($it['status'] ?? 'NEW') ?>
-                  </span>
+                  <span class="badge badge-info">
+    <?= h($it['item_status'] ?? 'NEW') ?>
+</span>
                 </td>
 
                 <td style="min-width:220px;">
@@ -1122,17 +1125,35 @@ ob_start();
                 </td>
 
                 <td>
-                  <select class="form-control form-control-sm item-status-select" data-item-id="<?= (int) $it['id'] ?>">
-                    <?php
-                    $currentStatus = strtoupper((string) ($it['status'] ?? 'NEW'));
-                    $statuses = ['NEW', 'RTP', 'PRINT_QUEUE', 'PRINTED', 'CUT', 'READY', 'PROCESSING', 'WAITING'];
-                    foreach ($statuses as $s):
-                      ?>
-                      <option value="<?= h($s) ?>" <?= $currentStatus === $s ? 'selected' : '' ?>>
-                        <?= h($s) ?>
-                      </option>
-                    <?php endforeach; ?>
-                  </select>
+                  <?php
+$type = strtoupper((string)($it['item_type_code'] ?? ''));
+
+if ($type === 'G') {
+    $statuses = ['NEW', 'RTP', 'PRINT_QUEUE', 'PRINTED', 'CUT', 'READY', 'WAITING'];
+} elseif ($type === 'F') {
+    $statuses = ['NEW', 'PROCESSING', 'DONE', 'READY', 'WAITING'];
+} else {
+    $statuses = ['NEW', 'PROCESSING', 'READY', 'WAITING'];
+}
+
+$currentStatus = strtoupper(trim((string)($it['item_status'] ?? 'NEW')));
+if ($currentStatus === '') {
+    $currentStatus = 'NEW';
+}
+
+if (!in_array($currentStatus, $statuses, true)) {
+    $statuses[] = $currentStatus;
+}
+?>
+
+<select class="form-control form-control-sm item-status-select"
+        data-item-id="<?= (int)$it['id'] ?>">
+    <?php foreach ($statuses as $s): ?>
+        <option value="<?= h($s) ?>" <?= ($currentStatus === $s ? 'selected' : '') ?>>
+            <?= h(str_replace('_', ' ', $s)) ?>
+        </option>
+    <?php endforeach; ?>
+</select>
                 </td>
                 <?php
                 $productUrl = itemProductUrl($order, $it);
