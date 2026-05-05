@@ -489,7 +489,7 @@ ob_start();
             <span class="ml-2 text-dark badge badge-dark"><?php echo h(implode(' · ', $cats)); ?></span>
           <?php endif; ?>
         </div>
-        <?php if ((int) ($_SESSION['permission'] ?? 0) >= 400): ?>
+        <?php if ((int) ($_SESSION['permission'] ?? 0) >= 300): ?>
           <button type="button" class="btn btn-sm btn-light ml-2 btn-edit-order-header"
             data-order-id="<?php echo (int) $orderId; ?>">
             Edit header
@@ -592,7 +592,7 @@ ob_start();
             <b>Country:</b>
             <span class="order-country-display"><?php echo h($orderCountry ?: '-'); ?></span>
 
-            <?php if ((int) ($_SESSION['permission'] ?? 0) >= 400): ?>
+            <?php if ((int) ($_SESSION['permission'] ?? 0) >= 300): ?>
               <button type="button" class="btn btn-xs btn-outline-warning btn-edit-country ml-2"
                 data-order-id="<?php echo (int) $orderId; ?>" data-country="<?php echo h($orderCountry); ?>">
                 Edit
@@ -607,7 +607,7 @@ ob_start();
         </div>
       </div>
 
-      <?php if ((int) ($_SESSION['permission'] ?? 0) >= 400): ?>
+      <?php if ((int) ($_SESSION['permission'] ?? 0) >= 300): ?>
         <div class="order-header-edit mt-3" style="display:none;">
           <div class="card bg-dark border-warning">
             <div class="card-header">
@@ -765,7 +765,7 @@ ob_start();
                       <b><?php echo h($inv['invoice_number']); ?></b>
                     </div>
 
-                    <?php if ((int) ($_SESSION['permission'] ?? 0) >= 400): ?>
+                    <?php if ((int) ($_SESSION['permission'] ?? 0) >= 300): ?>
                       <button class="btn btn-xs btn-outline-danger ml-2 py-0 px-2 btn-delete-invoice"
                         data-id="<?php echo (int) $inv['id']; ?>" data-order-id="<?php echo (int) $orderId; ?>"> × </button>
                     <?php endif; ?>
@@ -775,7 +775,7 @@ ob_start();
                 <?php endwhile; ?>
                 <?php $invStmt->close(); ?>
 
-                <?php if ((int) ($_SESSION['permission'] ?? 0) >= 400): ?>
+                <?php if ((int) ($_SESSION['permission'] ?? 0) >= 300): ?>
                   <div class="form-row mt-2">
                     <div class="col-md-8">
                       <input class="form-control form-control-sm invoice-number" placeholder="Invoice number">
@@ -875,7 +875,7 @@ ob_start();
                 <?php endif; ?>
               </div>
 
-              <?php if ((int) ($_SESSION['permission'] ?? 0) >= 400): ?>
+              <?php if ((int) ($_SESSION['permission'] ?? 0) >= 300): ?>
                 <button class="btn btn-xs btn-outline-danger ml-2 py-0 px-2 btn-delete-tracking"
                   data-id="<?php echo (int) $t['id']; ?>" data-order-id="<?php echo (int) $orderId; ?>">
                   ×
@@ -886,7 +886,7 @@ ob_start();
           <?php endwhile; ?>
           <?php $trackingStmt->close(); ?>
 
-          <?php if ((int) ($_SESSION['permission'] ?? 0) >= 400): ?>
+          <?php if ((int) ($_SESSION['permission'] ?? 0) >= 300): ?>
             <div class="form-row mt-2">
               <div class="col-md-7">
                 <input class="form-control form-control-sm tracking-number" placeholder="Tracking number">
@@ -908,27 +908,44 @@ ob_start();
 
       <hr />
 
-      <h6 class="text-muted mb-2">Production note</h6>
+        <h6 class="text-muted mb-2">Production note</h6>
 
-      <div class="card bg-dark border-info p-2 production-note-box">
-        <div class="production-note-display text-light">
-          <?php echo nl2br(h($order['production_note'] ?? '')); ?>
-          <?php if (trim((string) ($order['production_note'] ?? '')) === ''): ?>
-            <span class="text-muted">No production note.</span>
+        <div class="card bg-dark border-info p-2 production-note-box">
+          <div class="d-flex justify-content-between align-items-start">
+            <div class="production-note-display text-light" style="white-space:pre-wrap; flex:1;">
+              <?php if (trim((string)($order['production_note'] ?? '')) !== ''): ?>
+                <?php echo h($order['production_note'] ?? ''); ?>
+              <?php else: ?>
+                <span class="text-muted">No production note.</span>
+              <?php endif; ?>
+            </div>
+
+            <?php if ((int)($_SESSION['permission'] ?? 0) >= 300): ?>
+              <button type="button" class="btn btn-xs btn-outline-info ml-2 btn-edit-production-note">
+                Edit
+              </button>
+            <?php endif; ?>
+          </div>
+
+          <?php if ((int)($_SESSION['permission'] ?? 0) >= 300): ?>
+            <div class="production-note-editor mt-2" style="display:none;">
+              <textarea class="form-control form-control-sm production-note-input production-note-textarea"
+                        rows="2"
+                        placeholder="Customer changes / production instructions..."><?php echo h($order['production_note'] ?? ''); ?></textarea>
+
+              <div class="mt-2">
+                <button class="btn btn-sm btn-info btn-save-production-note"
+                        data-order-id="<?php echo (int)$orderId; ?>">
+                  Save
+                </button>
+
+                <button type="button" class="btn btn-sm btn-secondary btn-cancel-production-note">
+                  Cancel
+                </button>
+              </div>
+            </div>
           <?php endif; ?>
         </div>
-
-        <?php if ((int) ($_SESSION['permission'] ?? 0) >= 400): ?>
-          <textarea class="form-control form-control-sm mt-2 production-note-input production-note-textarea" rows="3"
-            placeholder="Customer changes / production instructions..."><?php echo h($order['production_note'] ?? ''); ?></textarea>
-          <div class="mt-2">
-            <button class="btn btn-sm btn-info mt-2 btn-save-production-note" style="width:auto; display:inline-block;"
-              data-order-id="<?php echo (int) $orderId; ?>">
-              Save note
-            </button>
-          </div>
-        <?php endif; ?>
-      </div>
       <h6 class="text-muted mb-2">Položky</h6>
       <?php if ((int) ($_SESSION['permission'] ?? 0) >= 300): ?>
         <div class="card bg-dark border-info p-2 mb-3 manual-item-box">
@@ -1171,7 +1188,7 @@ ob_start();
             <?php endforeach; ?>
           </tbody>
         </table>
-        <?php if ((int) ($_SESSION['permission'] ?? 0) >= 400): ?>
+        <?php if ((int) ($_SESSION['permission'] ?? 0) >= 300): ?>
           <hr />
 
           <button type="button" class="btn btn-sm btn-outline-info btn-toggle-activity"

@@ -821,7 +821,7 @@ $deptOptions = [
                 ?>
 
                 <?php if (!$assigned): ?>
-                  <span class="text-muted">—</span>
+                  <span class="text-muted"></span>
                 <?php else: ?>
                   <div class="assigned-users">
                     <?php foreach ($visible as $a): ?>
@@ -1861,6 +1861,22 @@ $deptOptions = [
       }
     });
   });
+  $(document).on('click', '.btn-edit-production-note', function () {
+  const $box = $(this).closest('.production-note-box');
+
+  $box.find('.production-note-display').hide();
+  $box.find('.btn-edit-production-note').hide();
+  $box.find('.production-note-editor').show();
+  $box.find('.production-note-input').focus();
+});
+
+$(document).on('click', '.btn-cancel-production-note', function () {
+  const $box = $(this).closest('.production-note-box');
+
+  $box.find('.production-note-editor').hide();
+  $box.find('.production-note-display').show();
+  $box.find('.btn-edit-production-note').show();
+});
 </script>
 <div class="modal fade" id="optionsModal" tabindex="-1" role="dialog" aria-hidden="true">
   <div class="modal-dialog modal-lg" role="document">

@@ -26,86 +26,79 @@ function dash_rows(mysqli $conn, string $sql): array
   return $rows;
 }
 
-$todayOrders = dash_scalar($conn, "
-  SELECT COUNT(*) FROM orders
+$todayOrders = dash_scalar($conn, "SELECT COUNT(*) FROM orders
   WHERE DATE(order_date) = CURDATE()
 ");
 
-$inProgress = dash_scalar($conn, "
-  SELECT COUNT(*) FROM orders
+$inProgress = dash_scalar($conn, "SELECT COUNT(*) FROM orders
   WHERE status = 'IN_PROGRESS'
 ");
 
-$readyToInvoice = dash_scalar($conn, "
-  SELECT COUNT(*) FROM orders
+$readyToInvoice = dash_scalar($conn, "SELECT COUNT(*) FROM orders
   WHERE status = 'READY_TO_INVOICE'
 ");
 
-$readyToShip = dash_scalar($conn, "
-  SELECT COUNT(*) FROM orders
+$readyToShip = dash_scalar($conn, "SELECT COUNT(*) FROM orders
   WHERE status = 'READY_TO_SHIP'
 ");
 
-$waitingBlocked = dash_scalar($conn, "
-  SELECT COUNT(*) FROM orders
+$waitingBlocked = dash_scalar($conn, "SELECT COUNT(*) FROM orders
   WHERE traffic_light IN ('ORANGE','RED')
     AND status NOT IN ('SHIPPED','CANCELLED')
 ");
 
-$shippedToday = dash_scalar($conn, "
-  SELECT COUNT(*) FROM orders
-  WHERE status = 'SHIPPED'
-    AND DATE(imported_at) = CURDATE()
+$shippedToday = dash_scalar($conn, "SELECT COUNT(DISTINCT order_id)
+  FROM order_activity
+  WHERE DATE(created_at) = CURDATE()
+    AND (
+      action = 'order_status_changed'
+      OR action = 'status_changed'
+    )
+    AND (
+      note LIKE '%SHIPPED%'
+      OR payload LIKE '%SHIPPED%'
+    )
 ");
 
 $deptBlocked = [
-  'G' => dash_scalar($conn, "
-    SELECT COUNT(*) FROM orders
+  'G' => dash_scalar($conn, "SELECT COUNT(*) FROM orders
     WHERE status NOT IN ('SHIPPED','CANCELLED')
       AND (traffic_summary_json LIKE '%\"G\":\"ORANGE\"%' OR traffic_summary_json LIKE '%\"G\":\"RED\"%')
   "),
-  'P' => dash_scalar($conn, "
-    SELECT COUNT(*) FROM orders
+  'P' => dash_scalar($conn, "SELECT COUNT(*) FROM orders
     WHERE status NOT IN ('SHIPPED','CANCELLED')
       AND (traffic_summary_json LIKE '%\"P\":\"ORANGE\"%' OR traffic_summary_json LIKE '%\"P\":\"RED\"%')
   "),
-  'F' => dash_scalar($conn, "
-    SELECT COUNT(*) FROM orders
+  'F' => dash_scalar($conn, "SELECT COUNT(*) FROM orders
     WHERE status NOT IN ('SHIPPED','CANCELLED')
       AND (traffic_summary_json LIKE '%\"F\":\"ORANGE\"%' OR traffic_summary_json LIKE '%\"F\":\"RED\"%')
   "),
-  'S' => dash_scalar($conn, "
-    SELECT COUNT(*) FROM orders
+  'S' => dash_scalar($conn, "SELECT COUNT(*) FROM orders
     WHERE status NOT IN ('SHIPPED','CANCELLED')
       AND (traffic_summary_json LIKE '%\"S\":\"ORANGE\"%' OR traffic_summary_json LIKE '%\"S\":\"RED\"%')
   "),
 ];
 
 $deptActive = [
-  'G' => dash_scalar($conn, "
-    SELECT COUNT(*) FROM orders
+  'G' => dash_scalar($conn, "SELECT COUNT(*) FROM orders
     WHERE status NOT IN ('SHIPPED','CANCELLED')
       AND traffic_summary_json LIKE '%\"G\":%'
   "),
-  'P' => dash_scalar($conn, "
-    SELECT COUNT(*) FROM orders
+  'P' => dash_scalar($conn, "SELECT COUNT(*) FROM orders
     WHERE status NOT IN ('SHIPPED','CANCELLED')
       AND traffic_summary_json LIKE '%\"P\":%'
   "),
-  'F' => dash_scalar($conn, "
-    SELECT COUNT(*) FROM orders
+  'F' => dash_scalar($conn, "SELECT COUNT(*) FROM orders
     WHERE status NOT IN ('SHIPPED','CANCELLED')
       AND traffic_summary_json LIKE '%\"F\":%'
   "),
-  'S' => dash_scalar($conn, "
-    SELECT COUNT(*) FROM orders
+  'S' => dash_scalar($conn, "SELECT COUNT(*) FROM orders
     WHERE status NOT IN ('SHIPPED','CANCELLED')
       AND traffic_summary_json LIKE '%\"S\":%'
   "),
 ];
 
-$workload = dash_rows($conn, "
-  SELECT 
+$workload = dash_rows($conn, "SELECT 
     oi.item_type_code AS type,
     COUNT(*) AS cnt
   FROM order_items oi
@@ -118,24 +111,21 @@ $workload = dash_rows($conn, "
   ORDER BY cnt DESC
 ");
 
-$readyInvoiceRows = dash_rows($conn, "
-  SELECT id, order_number, status, order_date
+$readyInvoiceRows = dash_rows($conn, "SELECT id, order_number, status, order_date
   FROM orders
   WHERE status = 'READY_TO_INVOICE'
   ORDER BY order_date ASC
   LIMIT 10
 ");
 
-$readyShipRows = dash_rows($conn, "
-  SELECT id, order_number, status, order_date, shipping_method
+$readyShipRows = dash_rows($conn, "SELECT id, order_number, status, order_date, shipping_method
   FROM orders
   WHERE status = 'READY_TO_SHIP'
   ORDER BY order_date ASC
   LIMIT 10
 ");
 
-$blockedRows = dash_rows($conn, "
-  SELECT 
+$blockedRows = dash_rows($conn, "SELECT 
     o.id,
     o.order_number,
     o.external_order_id,
@@ -169,8 +159,7 @@ $blockedRows = dash_rows($conn, "
   LIMIT 10
 ");
 
-$countryRows = dash_rows($conn, "
-  SELECT 
+$countryRows = dash_rows($conn, "SELECT 
     COALESCE(oa_ship.country, oa_bill.country, '??') AS country,
     COUNT(*) AS cnt
   FROM orders o
@@ -184,8 +173,7 @@ $countryRows = dash_rows($conn, "
   LIMIT 10
 ");
 
-$dailyRows = dash_rows($conn, "
-  SELECT DATE(order_date) AS d, COUNT(*) AS cnt
+$dailyRows = dash_rows($conn, "SELECT DATE(order_date) AS d, COUNT(*) AS cnt
   FROM orders
   WHERE order_date >= DATE_SUB(CURDATE(), INTERVAL 14 DAY)
   GROUP BY DATE(order_date)
@@ -313,8 +301,10 @@ function dashboardFlag(string $code): string
 
   <div class="row">
 
-    <div class="col-md-4">
-      <div class="card card-info">
+    <!-- LEFT COLUMN -->
+    <div class="col-md-4 d-flex flex-column" style="gap:10px;">
+
+      <div class="card card-info flex-fill">
         <div class="card-header">
           <h3 class="card-title">Active Work by Department</h3>
         </div>
@@ -334,7 +324,7 @@ function dashboardFlag(string $code): string
         </div>
       </div>
 
-      <div class="card card-warning">
+      <div class="card card-warning flex-fill">
         <div class="card-header">
           <h3 class="card-title">Waiting / Blocked by Department</h3>
         </div>
@@ -353,19 +343,23 @@ function dashboardFlag(string $code): string
           </a>
         </div>
       </div>
+
     </div>
 
-    <div class="col-md-8">
-      <div class="card card-info">
+    <!-- RIGHT COLUMN -->
+    <div class="col-md-8 d-flex">
+
+      <div class="card card-info flex-fill">
         <div class="card-header">
           <h3 class="card-title">Orders Last 14 Days</h3>
         </div>
-        <div class="card-body">
-          <div class="chart" style="height:260px; position:relative;">
+        <div class="card-body d-flex">
+          <div style="flex:1; position:relative;">
             <canvas id="orders14Chart"></canvas>
           </div>
         </div>
       </div>
+
     </div>
 
   </div>
@@ -434,16 +428,16 @@ function dashboardFlag(string $code): string
 
   </div>
 
-  <div class="row">
+  <div class="row align-items-stretch">
 
-    <div class="col-md-6">
-      <div class="card card-danger">
+    <div class="col-md-6 d-flex">
+      <div class="card card-danger flex-fill">
         <div class="card-header">
           <h3 class="card-title">Oldest Waiting / Blocked</h3>
         </div>
-        <div class="card-body table-responsive p-0">
 
-          <table class="table table-sm table-hover">
+        <div class="card-body table-responsive p-0">
+          <table class="table table-sm table-hover mb-0">
             <thead>
               <tr>
                 <th>Order</th>
@@ -483,13 +477,9 @@ function dashboardFlag(string $code): string
 
                   <td><?= htmlspecialchars($customer) ?></td>
 
-                  <td>
-                    <?= dashboardFlag((string) ($r['country_code'] ?? '')) ?>
-                  </td>
+                  <td><?= dashboardFlag((string) ($r['country_code'] ?? '')) ?></td>
 
-                  <td>
-                    <?= trafficBadgesFromJson($r['traffic_summary_json'] ?? '') ?>
-                  </td>
+                  <td><?= trafficBadgesFromJson($r['traffic_summary_json'] ?? '') ?></td>
 
                   <td>
                     <span class="badge badge-warning">
@@ -502,54 +492,80 @@ function dashboardFlag(string $code): string
               <?php endforeach; ?>
             </tbody>
           </table>
-
-          </tbody>
-          </table>
         </div>
       </div>
     </div>
 
-    <div class="col-md-3">
-      <div class="card card-secondary">
+    <div class="col-md-3 d-flex">
+      <div class="card card-secondary flex-fill">
         <div class="card-header">
           <h3 class="card-title">Department Workload</h3>
         </div>
-        <div class="card-body">
+
+        <div class="card-body d-flex flex-column justify-content-around">
+          <?php
+          $workloadMax = 0;
+          foreach ($workload as $r) {
+            $workloadMax = max($workloadMax, (int) $r['cnt']);
+          }
+
+          $typeLabels = [
+            'G' => ['Graphics', 'badge-info'],
+            'P' => ['Plastics', 'badge-primary'],
+            'F' => ['Fitting', 'badge-danger'],
+            'S' => ['Seat Cover', 'badge-success'],
+            'T' => ['Trim Kit', 'badge-warning'],
+            'M' => ['Bike Mats', 'badge-warning'],
+          ];
+          ?>
+
           <?php foreach ($workload as $r): ?>
-            <div class="d-flex justify-content-between border-bottom py-1">
-              <span><?= htmlspecialchars((string) $r['type']) ?></span>
-              <b><?= (int) $r['cnt'] ?></b>
+            <?php
+            $type = strtoupper((string) $r['type']);
+            $cnt = (int) $r['cnt'];
+            $percent = $workloadMax > 0 ? max(8, round(($cnt / $workloadMax) * 100)) : 0;
+
+            $label = $typeLabels[$type][0] ?? $type;
+            $badge = $typeLabels[$type][1] ?? 'badge-secondary';
+            ?>
+
+            <div class="mb-3">
+              <div class="d-flex justify-content-between align-items-center mb-1">
+                <div>
+                  <span class="badge <?= $badge ?> mr-1"><?= htmlspecialchars($type) ?></span>
+                  <strong><?= htmlspecialchars($label) ?></strong>
+                </div>
+                <span class="badge badge-light"><?= $cnt ?></span>
+              </div>
+
+              <div class="progress progress-sm">
+                <div class="progress-bar" role="progressbar" style="width: <?= (int) $percent ?>%"
+                  aria-valuenow="<?= (int) $percent ?>" aria-valuemin="0" aria-valuemax="100"></div>
+              </div>
             </div>
           <?php endforeach; ?>
         </div>
       </div>
     </div>
 
-    <div class="col-md-3">
-      <div class="card card-info">
+    <div class="col-md-3 d-flex">
+      <div class="card card-info flex-fill">
         <div class="card-header">
           <h3 class="card-title">Top Countries 30d</h3>
         </div>
+
         <div class="card-body">
-          <?php $i = 0;
-          foreach ($countryRows as $r):
-            $i++; ?>
-            <div
-              class="d-flex justify-content-between border-bottom py-1 <?= $i === 1 ? 'font-weight-bold text-warning' : '' ?>">
-              <span>
-                <?= dashboardFlag((string) $r['country']) ?>
-              </span>
+          <?php foreach ($countryRows as $r): ?>
+            <div class="d-flex justify-content-between align-items-center border-bottom py-1">
+              <span><?= dashboardFlag((string) $r['country']) ?></span>
               <b><?= (int) $r['cnt'] ?></b>
             </div>
           <?php endforeach; ?>
         </div>
       </div>
     </div>
-
   </div>
-
 </div>
-
 <script>
   $(function () {
     const canvas = document.getElementById('orders14Chart');
