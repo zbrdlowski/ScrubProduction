@@ -709,9 +709,9 @@ ob_start();
         </div>
       <?php endif; ?>
       <hr />
-
+ <?php if ((int) ($_SESSION['permission'] ?? 0) >= 300): ?>
       <div class="row">
-        <div class="col-md-6">
+        <div class="col-md-6">          
           <h6 class="text-muted"><span class="badge badge-secondary">Billing</span></h6>
           <?php $b = $addr['BILLING']; ?>
           <?php if ($b): ?>
@@ -922,11 +922,12 @@ ob_start();
               </div>
             </div>
           <?php endif; ?>
+          <?php endif; ?>
         </div>
       </div>
 
       <hr />
-
+ 
       <h6 class="text-muted mb-2">Production note</h6>
 
       <div class="card bg-dark border-info p-2 production-note-box">
@@ -961,15 +962,17 @@ ob_start();
               </button>
             </div>
           </div>
-        <?php endif; ?>
+       
       </div>
+
+
       <h6 class="text-muted mb-2">Položky </h6>
       <?php if ((int) ($_SESSION['permission'] ?? 0) >= 300): ?>
         <div class="card bg-dark border-info p-2 mb-3 manual-item-box">
           <div class="d-flex justify-content-between align-items-center">
             <b class="text-info">Add manual item</b>
           </div>
-
+<?php endif; ?>
           <div class="form-row mt-2">
             <div class="col-md-2">
               <select class="form-control form-control-sm manual-item-type">
