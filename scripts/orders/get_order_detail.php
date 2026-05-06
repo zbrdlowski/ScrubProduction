@@ -1181,18 +1181,7 @@ ob_start();
                     <?php endif; ?>
                   </div>
                 </td>
-                <?php if ((int) ($_SESSION['permission'] ?? 0) >= 300): ?>
-                  <select class="form-control form-control-sm item-type">
-                    <?php foreach (['G', 'P', 'S', 'F', 'T', 'M'] as $t): ?>
-                      <option value="<?php echo h($t); ?>" <?php echo (strtoupper((string) $it['item_type_code']) === $t ? 'selected' : ''); ?>>
-                        <?php echo h($t); ?>
-                      </option>
-                    <?php endforeach; ?>
-                  </select>
-                <?php else: ?>
-                  <?php echo h($it['item_type_code']); ?>
-                <?php endif; ?>
-                </td>
+
 
                 <td>
                   <?php if ((int) ($_SESSION['permission'] ?? 0) >= 300): ?>

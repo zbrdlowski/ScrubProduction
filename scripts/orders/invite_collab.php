@@ -130,6 +130,60 @@ $st->bind_param(
 
   $assignmentId = (int)$conn->insert_id;
 
+  if ($isAdminAssign) {
+  $itemTypeMap = [
+    'GRAPHICS' => 'G',
+    'PLASTICS' => 'P',
+    'SEATCOVER' => 'S',
+    'FITTING' => 'F',
+  ];
+
+  $itemType = $itemTypeMap[$deptCode] ?? '';
+
+  if ($itemType !== '') {
+    $stmtItems = $conn->prepare("
+      SELECT id
+      FROM order_items
+      WHERE order_id = ?
+        AND deleted_at IS NULL
+        AND item_type_code = ?
+    ");
+    $stmtItems->bind_param('is', $orderId, $itemType);
+    $stmtItems->execute();
+    $itemsRes = $stmtItems->get_result();
+
+    $itemIds = [];
+    while ($itemRow = $itemsRes->fetch_assoc()) {
+      $itemIds[] = (int)$itemRow['id'];
+    }
+    $stmtItems->close();
+
+    if (count($itemIds) === 1) {
+      $orderItemId = $itemIds[0];
+
+      $stmtAssignItem = $conn->prepare("
+        INSERT INTO order_item_assignments
+          (order_id, item_id, employee_id, assigned_by)
+        VALUES
+          (?, ?, ?, ?)
+        ON DUPLICATE KEY UPDATE
+          removed_at = NULL,
+          assigned_by = VALUES(assigned_by),
+          assigned_at = NOW()
+      ");
+      $stmtAssignItem->bind_param(
+        'iiii',
+        $orderId,
+        $orderItemId,
+        $employeeIdToInvite,
+        $userId
+      );
+      $stmtAssignItem->execute();
+      $stmtAssignItem->close();
+    }
+  }
+}
+
 if ($isAdminAssign) {
   $upd = $conn->prepare("
     UPDATE orders
