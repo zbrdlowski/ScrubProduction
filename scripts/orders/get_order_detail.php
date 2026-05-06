@@ -306,7 +306,22 @@ $stmt = $conn->prepare("SELECT
     waiting_note,
     expected_date,
     completed_by,
-    completed_at
+    completed_at,
+    (
+  SELECT GROUP_CONCAT(
+    CONCAT(
+      e.id, '|',
+      e.firstname, ' ', e.lastname, '|',
+      COALESCE(e.photo, '')
+    )
+    ORDER BY e.firstname, e.lastname
+    SEPARATOR ';;'
+  )
+  FROM order_item_assignments oia
+  JOIN employees e ON e.id = oia.employee_id
+  WHERE oia.item_id = order_items.id
+    AND oia.removed_at IS NULL
+) AS item_assigned_users
 FROM order_items
 WHERE order_id=?
   AND deleted_at IS NULL
@@ -509,10 +524,10 @@ ob_start();
             'CANCELLED'
           ];
 
-          $currentStatus = strtoupper(trim((string)($it['item_status'] ?? 'NEW')));
-if ($currentStatus === '') {
-    $currentStatus = 'NEW';
-}
+          $currentStatus = strtoupper(trim((string) ($it['item_status'] ?? 'NEW')));
+          if ($currentStatus === '') {
+            $currentStatus = 'NEW';
+          }
           ?>
 
           <select class="form-control form-control-sm order-status-select" data-order-id="<?php echo (int) $orderId; ?>"
@@ -719,7 +734,8 @@ if ($currentStatus === '') {
               📋 Copy address
             </button>
             <div>
-              <?php echo h($b['name'] ?? '-'); ?>  <?php echo !empty($b['company']) ? ' (' . h($b['company']) . ')' : ''; ?>
+              <?php echo h($b['name'] ?? '-'); ?>
+              <?php echo !empty($b['company']) ? ' (' . h($b['company']) . ')' : ''; ?>
             </div>
             <div class="text-muted">
               <?php echo h(trim(($b['street'] ?? '') . ', ' . ($b['city'] ?? '') . ' ' . ($b['zip'] ?? ''))); ?>
@@ -911,44 +927,42 @@ if ($currentStatus === '') {
 
       <hr />
 
-        <h6 class="text-muted mb-2">Production note</h6>
+      <h6 class="text-muted mb-2">Production note</h6>
 
-        <div class="card bg-dark border-info p-2 production-note-box">
-          <div class="d-flex justify-content-between align-items-start">
-            <div class="production-note-display text-light" style="white-space:pre-wrap; flex:1;">
-              <?php if (trim((string)($order['production_note'] ?? '')) !== ''): ?>
-                <?php echo h($order['production_note'] ?? ''); ?>
-              <?php else: ?>
-                <span class="text-muted">No production note.</span>
-              <?php endif; ?>
-            </div>
-
-            <?php if ((int)($_SESSION['permission'] ?? 0) >= 300): ?>
-              <button type="button" class="btn btn-xs btn-outline-info ml-2 btn-edit-production-note">
-                Edit
-              </button>
+      <div class="card bg-dark border-info p-2 production-note-box">
+        <div class="d-flex justify-content-between align-items-start">
+          <div class="production-note-display text-light" style="white-space:pre-wrap; flex:1;">
+            <?php if (trim((string) ($order['production_note'] ?? '')) !== ''): ?>
+              <?php echo h($order['production_note'] ?? ''); ?>
+            <?php else: ?>
+              <span class="text-muted">No production note.</span>
             <?php endif; ?>
           </div>
 
-          <?php if ((int)($_SESSION['permission'] ?? 0) >= 300): ?>
-            <div class="production-note-editor mt-2" style="display:none;">
-              <textarea class="form-control form-control-sm production-note-input production-note-textarea"
-                        rows="2"
-                        placeholder="Customer changes / production instructions..."><?php echo h($order['production_note'] ?? ''); ?></textarea>
-
-              <div class="mt-2">
-                <button class="btn btn-sm btn-info btn-save-production-note"
-                        data-order-id="<?php echo (int)$orderId; ?>">
-                  Save
-                </button>
-
-                <button type="button" class="btn btn-sm btn-secondary btn-cancel-production-note">
-                  Cancel
-                </button>
-              </div>
-            </div>
+          <?php if ((int) ($_SESSION['permission'] ?? 0) >= 300): ?>
+            <button type="button" class="btn btn-xs btn-outline-info ml-2 btn-edit-production-note">
+              Edit
+            </button>
           <?php endif; ?>
         </div>
+
+        <?php if ((int) ($_SESSION['permission'] ?? 0) >= 300): ?>
+          <div class="production-note-editor mt-2" style="display:none;">
+            <textarea class="form-control form-control-sm production-note-input production-note-textarea" rows="2"
+              placeholder="Customer changes / production instructions..."><?php echo h($order['production_note'] ?? ''); ?></textarea>
+
+            <div class="mt-2">
+              <button class="btn btn-sm btn-info btn-save-production-note" data-order-id="<?php echo (int) $orderId; ?>">
+                Save
+              </button>
+
+              <button type="button" class="btn btn-sm btn-secondary btn-cancel-production-note">
+                Cancel
+              </button>
+            </div>
+          </div>
+        <?php endif; ?>
+      </div>
       <h6 class="text-muted mb-2">Položky</h6>
       <?php if ((int) ($_SESSION['permission'] ?? 0) >= 300): ?>
         <div class="card bg-dark border-info p-2 mb-3 manual-item-box">
@@ -999,7 +1013,7 @@ if ($currentStatus === '') {
         <table class="table table-sm table-bordered mb-0 order-detail-table">
           <thead>
             <tr>
-              <th>#</th>
+              <th class="text-center">Assigned</th>
               <th>Typ</th>
               <th>Názov</th>
               <th>SKU</th>
@@ -1059,20 +1073,92 @@ if ($currentStatus === '') {
               }
               ?>
               <tr class="<?php echo ((int) $it['qty'] > 1 ? 'qty-warning-row' : ''); ?>">
-                <td><?php echo h($it['line_no'] ?? ''); ?></td>
+                <td class="text-center" style="min-width:80px;">
+                  <?php
+                  $assignedRaw = trim((string) ($it['item_assigned_users'] ?? ''));
+                  $itemAssigned = [];
 
-                <td>
-                  <?php if ((int) ($_SESSION['permission'] ?? 0) >= 300): ?>
-                    <select class="form-control form-control-sm item-type">
-                      <?php foreach (['G', 'P', 'S', 'F', 'T', 'M'] as $t): ?>
-                        <option value="<?php echo h($t); ?>" <?php echo (strtoupper((string) $it['item_type_code']) === $t ? 'selected' : ''); ?>>
-                          <?php echo h($t); ?>
-                        </option>
-                      <?php endforeach; ?>
-                    </select>
-                  <?php else: ?>
-                    <?php echo h($it['item_type_code']); ?>
-                  <?php endif; ?>
+                  if ($assignedRaw !== '') {
+                    foreach (explode(';;', $assignedRaw) as $part) {
+                      $bits = explode('|', $part);
+                      if (count($bits) >= 3) {
+                        $itemAssigned[] = [
+                          'id' => (int) $bits[0],
+                          'name' => $bits[1],
+                          'photo' => $bits[2],
+                        ];
+                      }
+                    }
+                  }
+
+                  $currentUserId = (int) ($_SESSION['user_id'] ?? 0);
+                  $currentUserAssignedToItem = false;
+
+                  foreach ($itemAssigned as $a) {
+                    if ((int) $a['id'] === $currentUserId) {
+                      $currentUserAssignedToItem = true;
+                      break;
+                    }
+                  }
+
+                  $itemType = strtoupper((string) ($it['item_type_code'] ?? ''));
+                  $userDpt = (int) ($_SESSION['dpt'] ?? 0);
+
+                  $dptItemMap = [
+                    2 => 'G',
+                    6 => 'P',
+                    8 => 'S',
+                    9 => 'F',
+                  ];
+
+                  $canAssignThisItem = isset($dptItemMap[$userDpt]) && $dptItemMap[$userDpt] === $itemType;
+                  ?>
+
+                  <div class="d-flex justify-content-center align-items-center flex-wrap" style="gap:4px;">
+                    <?php foreach ($itemAssigned as $a): ?>
+                      <?php
+                      $name = trim((string) $a['name']);
+                      $photo = trim((string) $a['photo']);
+
+                      $initials = '';
+                      foreach (preg_split('/\s+/', $name) as $p) {
+                        if ($p !== '') {
+                          $initials .= mb_strtoupper(mb_substr($p, 0, 1));
+                        }
+                      }
+                      $initials = mb_substr($initials, 0, 2);
+                      ?>
+
+                      <?php if ($photo !== ''): ?>
+                        <img src="images/<?= h($photo) ?>" class="img-circle elevation-2"
+                          style="width:28px; height:28px; object-fit:cover;" title="<?= h($name) ?>">
+                      <?php else: ?>
+                        <span class="badge badge-secondary"
+                          style="width:28px; height:28px; line-height:28px; border-radius:50%;" title="<?= h($name) ?>">
+                          <?= h($initials ?: '?') ?>
+                        </span>
+                      <?php endif; ?>
+                    <?php endforeach; ?>
+
+                    <?php if ($canAssignThisItem && !$currentUserAssignedToItem): ?>
+                      <button type="button" class="btn btn-xs btn-outline-secondary btn-assign-item"
+                        data-item-id="<?= (int) $it['id'] ?>" title="Assign me to this item">
+                        +
+                      </button>
+                    <?php endif; ?>
+                  </div>
+                </td>
+                <?php if ((int) ($_SESSION['permission'] ?? 0) >= 300): ?>
+                  <select class="form-control form-control-sm item-type">
+                    <?php foreach (['G', 'P', 'S', 'F', 'T', 'M'] as $t): ?>
+                      <option value="<?php echo h($t); ?>" <?php echo (strtoupper((string) $it['item_type_code']) === $t ? 'selected' : ''); ?>>
+                        <?php echo h($t); ?>
+                      </option>
+                    <?php endforeach; ?>
+                  </select>
+                <?php else: ?>
+                  <?php echo h($it['item_type_code']); ?>
+                <?php endif; ?>
                 </td>
 
                 <td>
@@ -1111,8 +1197,8 @@ if ($currentStatus === '') {
 
                 <td>
                   <span class="badge badge-info">
-    <?= h($it['item_status'] ?? 'NEW') ?>
-</span>
+                    <?= h($it['item_status'] ?? 'NEW') ?>
+                  </span>
                 </td>
 
                 <td style="min-width:220px;">
@@ -1126,34 +1212,33 @@ if ($currentStatus === '') {
 
                 <td>
                   <?php
-$type = strtoupper((string)($it['item_type_code'] ?? ''));
+                  $type = strtoupper((string) ($it['item_type_code'] ?? ''));
 
-if ($type === 'G') {
-    $statuses = ['NEW', 'RTP', 'PRINT_QUEUE', 'PRINTED', 'CUT', 'READY', 'WAITING'];
-} elseif ($type === 'F') {
-    $statuses = ['NEW', 'PROCESSING', 'DONE', 'READY', 'WAITING'];
-} else {
-    $statuses = ['NEW', 'PROCESSING', 'READY', 'WAITING'];
-}
+                  if ($type === 'G') {
+                    $statuses = ['NEW', 'RTP', 'PRINT_QUEUE', 'PRINTED', 'CUT', 'READY', 'WAITING'];
+                  } elseif ($type === 'F') {
+                    $statuses = ['NEW', 'PROCESSING', 'DONE', 'READY', 'WAITING'];
+                  } else {
+                    $statuses = ['NEW', 'PROCESSING', 'READY', 'WAITING'];
+                  }
 
-$currentStatus = strtoupper(trim((string)($it['item_status'] ?? 'NEW')));
-if ($currentStatus === '') {
-    $currentStatus = 'NEW';
-}
+                  $currentStatus = strtoupper(trim((string) ($it['item_status'] ?? 'NEW')));
+                  if ($currentStatus === '') {
+                    $currentStatus = 'NEW';
+                  }
 
-if (!in_array($currentStatus, $statuses, true)) {
-    $statuses[] = $currentStatus;
-}
-?>
+                  if (!in_array($currentStatus, $statuses, true)) {
+                    $statuses[] = $currentStatus;
+                  }
+                  ?>
 
-<select class="form-control form-control-sm item-status-select"
-        data-item-id="<?= (int)$it['id'] ?>">
-    <?php foreach ($statuses as $s): ?>
-        <option value="<?= h($s) ?>" <?= ($currentStatus === $s ? 'selected' : '') ?>>
-            <?= h(str_replace('_', ' ', $s)) ?>
-        </option>
-    <?php endforeach; ?>
-</select>
+                  <select class="form-control form-control-sm item-status-select" data-item-id="<?= (int) $it['id'] ?>">
+                    <?php foreach ($statuses as $s): ?>
+                      <option value="<?= h($s) ?>" <?= ($currentStatus === $s ? 'selected' : '') ?>>
+                        <?= h(str_replace('_', ' ', $s)) ?>
+                      </option>
+                    <?php endforeach; ?>
+                  </select>
                 </td>
                 <?php
                 $productUrl = itemProductUrl($order, $it);
@@ -1161,10 +1246,7 @@ if (!in_array($currentStatus, $statuses, true)) {
 
                 <td class="text-center">
                   <?php if ($productUrl !== ''): ?>
-                    <a href="<?= h($productUrl) ?>"
-                      target="_blank"
-                      rel="noopener"
-                      class="btn btn-sm btn-outline-info"
+                    <a href="<?= h($productUrl) ?>" target="_blank" rel="noopener" class="btn btn-sm btn-outline-info"
                       title="<?= h($productUrl) ?>">
                       <i class="fas fa-external-link-alt mr-1"></i> Product
                     </a>

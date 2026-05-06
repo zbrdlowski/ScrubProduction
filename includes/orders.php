@@ -1381,24 +1381,41 @@ $deptOptions = [
   });
 
   // fallback pre zatváranie modalu
-  $(document).on('click', '[data-dismiss="modal"], [data-bs-dismiss="modal"]', function (e) {
-    e.preventDefault();
-    $(this).closest('.modal').modal('hide');
-  });
-  $(document).on('click', '.btn-copy-inline', function (e) {
-    e.stopPropagation();
+$(document).on('click', '.btn-copy-inline', async function (e) {
+  e.preventDefault();
+  e.stopPropagation();
 
-    const text = $(this).attr('data-copy') || '';
+  const $btn = $(this);
+  const text = $btn.attr('data-copy') || '';
 
-    navigator.clipboard.writeText(text);
+  let copied = false;
 
-    const $btn = $(this);
+  try {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(text);
+      copied = true;
+    } else {
+      copied = copyTextFallback(text);
+    }
+  } catch (err) {
+    copied = copyTextFallback(text);
+  }
+
+  if (copied) {
     $btn.text('✔');
 
     setTimeout(() => {
       $btn.text('📋');
     }, 800);
-  });
+  } else {
+    $btn.text('!');
+    console.error('Copy failed:', text);
+
+    setTimeout(() => {
+      $btn.text('📋');
+    }, 800);
+  }
+});
   $(document).on('click', '.btn-edit-country', function (e) {
     e.stopPropagation();
 
@@ -1862,21 +1879,48 @@ $deptOptions = [
     });
   });
   $(document).on('click', '.btn-edit-production-note', function () {
-  const $box = $(this).closest('.production-note-box');
+    const $box = $(this).closest('.production-note-box');
 
-  $box.find('.production-note-display').hide();
-  $box.find('.btn-edit-production-note').hide();
-  $box.find('.production-note-editor').show();
-  $box.find('.production-note-input').focus();
-});
+    $box.find('.production-note-display').hide();
+    $box.find('.btn-edit-production-note').hide();
+    $box.find('.production-note-editor').show();
+    $box.find('.production-note-input').focus();
+  });
 
-$(document).on('click', '.btn-cancel-production-note', function () {
-  const $box = $(this).closest('.production-note-box');
+  $(document).on('click', '.btn-cancel-production-note', function () {
+    const $box = $(this).closest('.production-note-box');
 
-  $box.find('.production-note-editor').hide();
-  $box.find('.production-note-display').show();
-  $box.find('.btn-edit-production-note').show();
-});
+    $box.find('.production-note-editor').hide();
+    $box.find('.production-note-display').show();
+    $box.find('.btn-edit-production-note').show();
+  });
+  $(document).on('click', '.btn-assign-item', function (e) {
+    e.preventDefault();
+    e.stopPropagation();
+
+    const itemId = $(this).data('item-id');
+
+    $.ajax({
+      url: 'scripts/orders/assign_order_item.php',
+      method: 'POST',
+      dataType: 'json',
+      data: {
+        item_id: itemId
+      },
+      success: function (resp) {
+        if (!resp || !resp.ok) {
+          alert(resp && resp.error ? resp.error : 'Assign item failed');
+          return;
+        }
+
+        location.reload();
+      },
+      error: function (xhr) {
+        console.log(xhr.responseText);
+        alert('Assign item request failed');
+      }
+    });
+  });
 </script>
 <div class="modal fade" id="optionsModal" tabindex="-1" role="dialog" aria-hidden="true">
   <div class="modal-dialog modal-lg" role="document">
