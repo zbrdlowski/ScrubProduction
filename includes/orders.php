@@ -1381,41 +1381,41 @@ $deptOptions = [
   });
 
   // fallback pre zatváranie modalu
-$(document).on('click', '.btn-copy-inline', async function (e) {
-  e.preventDefault();
-  e.stopPropagation();
+  $(document).on('click', '.btn-copy-inline', async function (e) {
+    e.preventDefault();
+    e.stopPropagation();
 
-  const $btn = $(this);
-  const text = $btn.attr('data-copy') || '';
+    const $btn = $(this);
+    const text = $btn.attr('data-copy') || '';
 
-  let copied = false;
+    let copied = false;
 
-  try {
-    if (navigator.clipboard && window.isSecureContext) {
-      await navigator.clipboard.writeText(text);
-      copied = true;
-    } else {
+    try {
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(text);
+        copied = true;
+      } else {
+        copied = copyTextFallback(text);
+      }
+    } catch (err) {
       copied = copyTextFallback(text);
     }
-  } catch (err) {
-    copied = copyTextFallback(text);
-  }
 
-  if (copied) {
-    $btn.text('✔');
+    if (copied) {
+      $btn.text('✔');
 
-    setTimeout(() => {
-      $btn.text('📋');
-    }, 800);
-  } else {
-    $btn.text('!');
-    console.error('Copy failed:', text);
+      setTimeout(() => {
+        $btn.text('📋');
+      }, 800);
+    } else {
+      $btn.text('!');
+      console.error('Copy failed:', text);
 
-    setTimeout(() => {
-      $btn.text('📋');
-    }, 800);
-  }
-});
+      setTimeout(() => {
+        $btn.text('📋');
+      }, 800);
+    }
+  });
   $(document).on('click', '.btn-edit-country', function (e) {
     e.stopPropagation();
 
@@ -1913,7 +1913,18 @@ $(document).on('click', '.btn-copy-inline', async function (e) {
           return;
         }
 
-        location.reload();
+        const detailWrap = $('.detail-wrap:visible').first();
+        const orderId = detailWrap.closest('tr').prev('.order-row').data('order-id');
+
+        if (orderId) {
+          $.post('scripts/orders/get_order_detail.php', {
+            order_id: orderId
+          }, function (res) {
+            if (res && res.ok) {
+              $('#detail-' + orderId).html(res.html).show();
+            }
+          }, 'json');
+        }
       },
       error: function (xhr) {
         console.log(xhr.responseText);

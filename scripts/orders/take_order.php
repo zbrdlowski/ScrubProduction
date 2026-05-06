@@ -144,8 +144,6 @@ if (count($itemIds) === 1) {
   $stmtAssignItem->execute();
   $stmtAssignItem->close();
 }
-
-  $stmtItems->close();
 }
 
   // optional activity log 

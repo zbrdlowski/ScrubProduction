@@ -963,7 +963,7 @@ ob_start();
           </div>
         <?php endif; ?>
       </div>
-      <h6 class="text-muted mb-2">Položky</h6>
+      <h6 class="text-muted mb-2">Položky </h6>
       <?php if ((int) ($_SESSION['permission'] ?? 0) >= 300): ?>
         <div class="card bg-dark border-info p-2 mb-3 manual-item-box">
           <div class="d-flex justify-content-between align-items-center">
@@ -1014,7 +1014,6 @@ ob_start();
           <thead>
             <tr>
               <th class="text-center">Assigned</th>
-              <th>Typ</th>
               <th>Názov</th>
               <th>SKU</th>
               <th>Label</th>
@@ -1111,7 +1110,39 @@ ob_start();
                     9 => 'F',
                   ];
 
-                  $canAssignThisItem = isset($dptItemMap[$userDpt]) && $dptItemMap[$userDpt] === $itemType;
+                  $canAssignThisItem = false;
+                  $perm = (int) ($_SESSION['permission'] ?? 0);
+
+                  if (isset($dptItemMap[$userDpt]) && $dptItemMap[$userDpt] === $itemType) {
+                    if ($perm >= 400) {
+                      $canAssignThisItem = true;
+                    } else {
+                      $deptRoleMap = [
+                        2 => ['PRIMARY_GRAPHICS', 'COLLAB_GRAPHICS'],
+                        6 => ['PRIMARY_PLASTICS', 'COLLAB_PLASTICS'],
+                        8 => ['PRIMARY_SEATCOVER', 'COLLAB_SEATCOVER'],
+                        9 => ['PRIMARY_FITTING', 'COLLAB_FITTING'],
+                      ];
+
+                      $allowedRoles = $deptRoleMap[$userDpt] ?? [];
+
+                      if ($allowedRoles) {
+                        $stmtPerm = $conn->prepare("
+                        SELECT 1
+                        FROM order_assignments
+                        WHERE order_id = ?
+                          AND employee_id = ?
+                          AND role IN ('" . implode("','", array_map([$conn, 'real_escape_string'], $allowedRoles)) . "')
+                          AND removed_at IS NULL
+                        LIMIT 1
+                      ");
+                        $stmtPerm->bind_param('ii', $orderId, $currentUserId);
+                        $stmtPerm->execute();
+                        $canAssignThisItem = (bool) $stmtPerm->get_result()->fetch_row();
+                        $stmtPerm->close();
+                      }
+                    }
+                  }
                   ?>
 
                   <div class="d-flex justify-content-center align-items-center flex-wrap" style="gap:4px;">
@@ -1140,10 +1171,12 @@ ob_start();
                       <?php endif; ?>
                     <?php endforeach; ?>
 
-                    <?php if ($canAssignThisItem && !$currentUserAssignedToItem): ?>
-                      <button type="button" class="btn btn-xs btn-outline-secondary btn-assign-item"
-                        data-item-id="<?= (int) $it['id'] ?>" title="Assign me to this item">
-                        +
+                    <?php if ($canAssignThisItem && empty($itemAssigned)): ?>
+                      <button type="button"
+                        class="btn btn-outline-warning btn-assign-item d-flex align-items-center justify-content-center"
+                        data-item-id="<?= (int) $it['id'] ?>" title="Assign me to this item"
+                        style="width:28px; height:28px; padding:0; border-radius:6px;">
+                        <i class="fas fa-plus"></i>
                       </button>
                     <?php endif; ?>
                   </div>

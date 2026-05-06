@@ -59,6 +59,46 @@ if ($itemType !== $expectedType) {
   echo json_encode(['ok' => false, 'error' => 'This item belongs to another department']);
   exit;
 }
+$perm = (int)($_SESSION['permission'] ?? 0);
+
+if ($perm < 400) {
+  $deptRoleMap = [
+    2 => ['PRIMARY_GRAPHICS', 'COLLAB_GRAPHICS'],
+    6 => ['PRIMARY_PLASTICS', 'COLLAB_PLASTICS'],
+    8 => ['PRIMARY_SEATCOVER', 'COLLAB_SEATCOVER'],
+    9 => ['PRIMARY_FITTING', 'COLLAB_FITTING'],
+  ];
+
+  $allowedRoles = $deptRoleMap[$dpt] ?? [];
+
+  if (!$allowedRoles) {
+    echo json_encode(['ok' => false, 'error' => 'No assignment permission']);
+    exit;
+  }
+
+  $placeholders = implode(',', array_fill(0, count($allowedRoles), '?'));
+  $types = 'ii' . str_repeat('s', count($allowedRoles));
+  $params = array_merge([$orderId, $userId], $allowedRoles);
+
+  $stmt = $conn->prepare("
+    SELECT 1
+    FROM order_assignments
+    WHERE order_id = ?
+      AND employee_id = ?
+      AND role IN ($placeholders)
+      AND removed_at IS NULL
+    LIMIT 1
+  ");
+  $stmt->bind_param($types, ...$params);
+  $stmt->execute();
+  $hasOrderAssignment = (bool)$stmt->get_result()->fetch_row();
+  $stmt->close();
+
+  if (!$hasOrderAssignment) {
+    echo json_encode(['ok' => false, 'error' => 'You must be assigned or invited to this order first']);
+    exit;
+  }
+}
 
 $stmt = $conn->prepare("
   INSERT INTO order_item_assignments
