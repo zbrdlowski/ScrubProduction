@@ -2129,6 +2129,9 @@ $deptOptions = [
       }
     });
   });
+  $(document).on('change', 'select[name="dept"], select[name="cat"], select[name="type"]', function () {
+  $(this).closest('form').submit();
+});
 </script>
 <div class="modal fade" id="optionsModal" tabindex="-1" role="dialog" aria-hidden="true">
   <div class="modal-dialog modal-lg" role="document">
