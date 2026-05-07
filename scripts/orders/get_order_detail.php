@@ -1074,7 +1074,8 @@ ob_start();
                 }
               }
               ?>
-              <tr class="<?php echo ((int) $it['qty'] > 1 ? 'qty-warning-row' : ''); ?>">
+              <tr class="<?php echo ((int) $it['qty'] > 1 ? 'qty-warning-row' : ''); ?>"
+                data-item-type="<?php echo h($it['item_type_code'] ?? ''); ?>">
                 <td class="text-center" style="min-width:80px;">
                   <?php
                   $assignedRaw = trim((string) ($it['item_assigned_users'] ?? ''));
@@ -1312,8 +1313,8 @@ ob_start();
                     </button>
                   </td>
                 <?php endif; ?>
-              </tr>
-            <?php endforeach; ?>
+                </tr>
+              <?php endforeach; ?>
           </tbody>
         </table>
         <?php if ((int) ($_SESSION['permission'] ?? 0) >= 300): ?>

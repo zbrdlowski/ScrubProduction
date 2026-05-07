@@ -521,6 +521,11 @@ $deptOptions = [
   .assigned-avatar-wrap:hover .btn-remove-assignment {
     display: block;
   }
+
+  .table td,
+  .table th {
+    vertical-align: middle !important;
+  }
 </style>
 
 <div class="card card-dark">
@@ -1838,14 +1843,15 @@ $deptOptions = [
     }, 'json').fail(function () {
       alert('Delete item request failed');
     });
-  }); $(document).on('click', '.btn-save-item', function () {
+  });
+  $(document).on('click', '.btn-save-item', function () {
     const $tr = $(this).closest('tr');
 
     const itemId = $(this).data('id');
     const orderId = $(this).data('order-id');
 
     const title = $tr.find('.item-title').val();
-    const type = $tr.find('.item-type').val();
+    const type = $tr.find('.item-type').val() || $tr.data('item-type') || '';
     const qty = $tr.find('.item-qty').val();
     const sku = $tr.find('.item-sku').val();
     const label = $tr.find('.item-label').val();
