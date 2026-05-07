@@ -970,13 +970,12 @@ $deptOptions = [
 
   </div>
 </div>
-<div class="modal fade" id="inviteModal" tabindex="-1" role="dialog" aria-labelledby="inviteModalLabel"
-  aria-hidden="true">
+<div class="modal fade" id="inviteModal" tabindex="-1" role="dialog" aria-labelledby="inviteModalLabel" aria-hidden="true">
   <div class="modal-dialog modal-md" role="document">
     <div class="modal-content bg-dark text-light">
 
       <div class="modal-header">
-        <h5 class="modal-title" id="inviteModalLabel">Invite collaborator</h5>
+        <h5 class="modal-title" id="inviteModalLabel">Assign / Invite</h5>
         <button type="button" class="close text-light" data-dismiss="modal" aria-label="Close">
           <span aria-hidden="true">&times;</span>
         </button>
@@ -984,15 +983,17 @@ $deptOptions = [
 
       <div class="modal-body">
         <input type="hidden" id="inviteOrderId" value="">
+        <input type="hidden" id="inviteMode" value="">
+        <input type="hidden" id="inviteDeptCode" value="">
 
-        <label class="text-muted">Search employee</label>
+        <label class="text-muted">Search active employee</label>
         <input type="text" id="empSearch" class="form-control form-control-sm bg-dark text-light"
-          placeholder="Type name, e.g. Andrej">
+               placeholder="Type name, e.g. Andrej">
 
         <div id="empResults" class="list-group mt-2"></div>
 
         <small class="text-muted d-block mt-2">
-          Vyber zamestnanca a klikni Invite.
+          Search is filtered by selected department.
         </small>
       </div>
 
@@ -1932,6 +1933,114 @@ $deptOptions = [
       }
     });
   });
+  $(document).on('click', '.btn-open-invite-modal', function (e) {
+  e.preventDefault();
+  e.stopPropagation();
+
+  const orderId = $(this).data('order-id');
+  const mode = $(this).data('mode');
+  const deptCode = $(this).data('dept-code') || '';
+
+  $('#inviteOrderId').val(orderId);
+  $('#inviteMode').val(mode);
+  $('#inviteDeptCode').val(deptCode);
+  $('#inviteEmployeeSearch').val('');
+  $('#inviteEmployeeResults').html('');
+
+  $('#inviteModalTitle').text(
+    (mode === 'assign' ? 'Assign To' : 'Invite') + (deptCode ? ' - ' + deptCode : '')
+  );
+
+  $('#inviteModal').modal('show');
+});
+
+let inviteSearchTimer = null;
+
+$(document).on('input', '#inviteEmployeeSearch', function () {
+  const q = $(this).val().trim();
+  const deptCode = $('#inviteDeptCode').val();
+
+  clearTimeout(inviteSearchTimer);
+
+  if (q.length < 2) {
+    $('#inviteEmployeeResults').html('');
+    return;
+  }
+
+  inviteSearchTimer = setTimeout(function () {
+    $.ajax({
+      url: 'scripts/employees/employees_search.php',
+      method: 'GET',
+      dataType: 'json',
+      data: {
+        q: q,
+        dept_code: deptCode
+      },
+      success: function (resp) {
+        if (!resp || !resp.ok) {
+          $('#inviteEmployeeResults').html(
+            '<div class="text-danger">' + (resp && resp.error ? resp.error : 'Search failed') + '</div>'
+          );
+          return;
+        }
+
+        let html = '';
+
+        if (!resp.items || resp.items.length === 0) {
+          html = '<div class="text-muted">No active employee found.</div>';
+        } else {
+          resp.items.forEach(function (emp) {
+            html += `
+              <button type="button"
+                      class="btn btn-sm btn-outline-light btn-block text-left btn-select-invite-employee"
+                      data-employee-id="${emp.id}">
+                ${emp.name}
+              </button>
+            `;
+          });
+        }
+
+        $('#inviteEmployeeResults').html(html);
+      },
+      error: function (xhr) {
+        console.log(xhr.responseText);
+        $('#inviteEmployeeResults').html('<div class="text-danger">Search request failed</div>');
+      }
+    });
+  }, 250);
+});
+
+$(document).on('click', '.btn-select-invite-employee', function (e) {
+  e.preventDefault();
+  e.stopPropagation();
+
+  const employeeId = $(this).data('employee-id');
+
+  $.ajax({
+    url: 'scripts/orders/invite_collab.php',
+    method: 'POST',
+    dataType: 'json',
+    data: {
+      order_id: $('#inviteOrderId').val(),
+      employee_id: employeeId,
+      mode: $('#inviteMode').val(),
+      dept_code: $('#inviteDeptCode').val()
+    },
+    success: function (resp) {
+      if (!resp || !resp.ok) {
+        alert(resp && resp.error ? resp.error : 'Assign / Invite failed');
+        return;
+      }
+
+      $('#inviteModal').modal('hide');
+      location.reload();
+    },
+    error: function (xhr) {
+      console.log(xhr.responseText);
+      alert('Assign / Invite request failed');
+    }
+  });
+});
 </script>
 <div class="modal fade" id="optionsModal" tabindex="-1" role="dialog" aria-hidden="true">
   <div class="modal-dialog modal-lg" role="document">
