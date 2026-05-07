@@ -266,12 +266,13 @@ EXISTS (
 (
   SELECT GROUP_CONCAT(
         CONCAT(
-          e.id, '|',
-          e.firstname, ' ', e.lastname, '|',
-          oa.role, '|',
-          oa.state, '|',
-          COALESCE(e.photo, '')
-        )
+        oa.id, '|',
+        e.id, '|',
+        e.firstname, ' ', e.lastname, '|',
+        oa.role, '|',
+        oa.state, '|',
+        COALESCE(e.photo, '')
+      )
     ORDER BY
     CASE oa.role
     WHEN 'PRIMARY_GRAPHICS' THEN 10
@@ -491,6 +492,34 @@ $deptOptions = [
   .order-in-progress {
     background: rgba(23, 162, 184, 0.12) !important;
     box-shadow: inset 4px 0 0 #17a2b8;
+  }
+
+  .assigned-avatar-wrap {
+    position: relative;
+    display: inline-flex;
+    width: 28px;
+    height: 28px;
+  }
+
+  .btn-remove-assignment {
+    position: absolute;
+    top: -6px;
+    right: -6px;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    border: 1px solid rgba(255, 255, 255, .45);
+    background: #dc3545;
+    color: #fff;
+    font-size: 11px;
+    line-height: 13px;
+    padding: 0;
+    display: none;
+    cursor: pointer;
+  }
+
+  .assigned-avatar-wrap:hover .btn-remove-assignment {
+    display: block;
   }
 </style>
 
@@ -803,13 +832,14 @@ $deptOptions = [
                 if ($assignedRaw !== '') {
                   foreach (explode(';;', $assignedRaw) as $part) {
                     $bits = explode('|', $part);
-                    if (count($bits) >= 5) {
+                    if (count($bits) >= 6) {
                       $assigned[] = [
-                        'id' => (int) $bits[0],
-                        'name' => $bits[1],
-                        'role' => $bits[2],
-                        'state' => $bits[3],
-                        'photo' => $bits[4],
+                        'assignment_id' => (int) $bits[0],
+                        'id' => (int) $bits[1],
+                        'name' => $bits[2],
+                        'role' => $bits[3],
+                        'state' => $bits[4],
+                        'photo' => $bits[5],
                       ];
                     }
                   }
@@ -848,10 +878,27 @@ $deptOptions = [
                       ?>
 
                       <?php if ($photo !== ''): ?>
-                        <img src="images/<?= htmlspecialchars($photo) ?>"
-                          class="assigned-photo <?= htmlspecialchars($roleClass) ?>"
-                          title="<?= htmlspecialchars($name . ' — ' . $roleLabel) ?>"
-                          alt="<?= htmlspecialchars($initials ?: $name) ?>">
+                        <span class="assigned-avatar-wrap">
+
+                          <?php if ($photo !== ''): ?>
+                            <img src="images/<?= htmlspecialchars($photo) ?>"
+                              class="assigned-photo <?= htmlspecialchars($roleClass) ?>"
+                              title="<?= htmlspecialchars($name . ' — ' . $roleLabel) ?>">
+                          <?php else: ?>
+                            <span class="assigned-avatar <?= htmlspecialchars($roleClass) ?>"
+                              title="<?= htmlspecialchars($name . ' — ' . $roleLabel) ?>">
+                              <?= htmlspecialchars($initials ?: '?') ?>
+                            </span>
+                          <?php endif; ?>
+
+                          <?php if ($perm >= 300 && !empty($a['assignment_id'])): ?>
+                            <button type="button" class="btn-remove-assignment"
+                              data-assignment-id="<?= (int) $a['assignment_id'] ?>" title="Remove assignment">
+                              ×
+                            </button>
+                          <?php endif; ?>
+
+                        </span>
                       <?php else: ?>
                         <span class="assigned-avatar <?= htmlspecialchars($roleClass) ?>"
                           title="<?= htmlspecialchars($name . ' — ' . $roleLabel) ?>">
@@ -970,13 +1017,14 @@ $deptOptions = [
 
   </div>
 </div>
-<div class="modal fade" id="inviteModal" tabindex="-1" role="dialog" aria-labelledby="inviteModalLabel" aria-hidden="true">
+<div class="modal fade" id="inviteModal" tabindex="-1" role="dialog" aria-labelledby="inviteModalLabel"
+  aria-hidden="true">
   <div class="modal-dialog modal-md" role="document">
     <div class="modal-content bg-dark text-light">
 
       <div class="modal-header">
         <h5 class="modal-title" id="inviteModalLabel">Assign / Invite</h5>
-        <button type="button" class="close text-light" data-dismiss="modal" aria-label="Close">
+        <button type="button" class="btn btn-secondary btn-sm" data-dismiss="modal" data-bs-dismiss="modal">
           <span aria-hidden="true">&times;</span>
         </button>
       </div>
@@ -988,7 +1036,7 @@ $deptOptions = [
 
         <label class="text-muted">Search active employee</label>
         <input type="text" id="empSearch" class="form-control form-control-sm bg-dark text-light"
-               placeholder="Type name, e.g. Andrej">
+          placeholder="Type name, e.g. Andrej">
 
         <div id="empResults" class="list-group mt-2"></div>
 
@@ -998,7 +1046,7 @@ $deptOptions = [
       </div>
 
       <div class="modal-footer">
-        <button type="button" class="btn btn-secondary btn-sm" data-dismiss="modal">
+        <button type="button" class="btn btn-secondary btn-sm" data-dismiss="modal" data-bs-dismiss="modal">
           Close
         </button>
       </div>
@@ -1102,7 +1150,10 @@ $deptOptions = [
         url: 'scripts/employees/employees_search.php',
         method: 'GET',
         dataType: 'json',
-        data: { q: q },
+        data: {
+          q: q,
+          dept_code: $('#inviteDeptCode').val()
+        },
         success: function (resp) {
           if (!resp || !resp.ok) {
             $('#empResults').html('<div class="text-danger p-2">Search error</div>');
@@ -1934,113 +1985,144 @@ $deptOptions = [
     });
   });
   $(document).on('click', '.btn-open-invite-modal', function (e) {
-  e.preventDefault();
-  e.stopPropagation();
+    e.preventDefault();
+    e.stopPropagation();
 
-  const orderId = $(this).data('order-id');
-  const mode = $(this).data('mode');
-  const deptCode = $(this).data('dept-code') || '';
+    const orderId = $(this).data('order-id');
+    const mode = $(this).data('mode');
+    const deptCode = $(this).data('dept-code') || '';
 
-  $('#inviteOrderId').val(orderId);
-  $('#inviteMode').val(mode);
-  $('#inviteDeptCode').val(deptCode);
-  $('#inviteEmployeeSearch').val('');
-  $('#inviteEmployeeResults').html('');
-
-  $('#inviteModalTitle').text(
-    (mode === 'assign' ? 'Assign To' : 'Invite') + (deptCode ? ' - ' + deptCode : '')
-  );
-
-  $('#inviteModal').modal('show');
-});
-
-let inviteSearchTimer = null;
-
-$(document).on('input', '#inviteEmployeeSearch', function () {
-  const q = $(this).val().trim();
-  const deptCode = $('#inviteDeptCode').val();
-
-  clearTimeout(inviteSearchTimer);
-
-  if (q.length < 2) {
+    $('#inviteOrderId').val(orderId);
+    $('#inviteMode').val(mode);
+    $('#inviteDeptCode').val(deptCode);
+    $('#inviteEmployeeSearch').val('');
     $('#inviteEmployeeResults').html('');
-    return;
-  }
 
-  inviteSearchTimer = setTimeout(function () {
-    $.ajax({
-      url: 'scripts/employees/employees_search.php',
-      method: 'GET',
-      dataType: 'json',
-      data: {
-        q: q,
-        dept_code: deptCode
-      },
-      success: function (resp) {
-        if (!resp || !resp.ok) {
-          $('#inviteEmployeeResults').html(
-            '<div class="text-danger">' + (resp && resp.error ? resp.error : 'Search failed') + '</div>'
-          );
-          return;
-        }
+    $('#inviteModalTitle').text(
+      (mode === 'assign' ? 'Assign To' : 'Invite') + (deptCode ? ' - ' + deptCode : '')
+    );
 
-        let html = '';
+    $('#inviteModal').modal('show');
+  });
 
-        if (!resp.items || resp.items.length === 0) {
-          html = '<div class="text-muted">No active employee found.</div>';
-        } else {
-          resp.items.forEach(function (emp) {
-            html += `
+  let inviteSearchTimer = null;
+
+  $(document).on('input', '#inviteEmployeeSearch', function () {
+    const q = $(this).val().trim();
+    const deptCode = $('#inviteDeptCode').val();
+
+    clearTimeout(inviteSearchTimer);
+
+    if (q.length < 2) {
+      $('#inviteEmployeeResults').html('');
+      return;
+    }
+
+    inviteSearchTimer = setTimeout(function () {
+      $.ajax({
+        url: 'scripts/employees/employees_search.php',
+        method: 'GET',
+        dataType: 'json',
+        data: {
+          q: q,
+          dept_code: deptCode
+        },
+        success: function (resp) {
+          if (!resp || !resp.ok) {
+            $('#inviteEmployeeResults').html(
+              '<div class="text-danger">' + (resp && resp.error ? resp.error : 'Search failed') + '</div>'
+            );
+            return;
+          }
+
+          let html = '';
+
+          if (!resp.items || resp.items.length === 0) {
+            html = '<div class="text-muted">No active employee found.</div>';
+          } else {
+            resp.items.forEach(function (emp) {
+              html += `
               <button type="button"
                       class="btn btn-sm btn-outline-light btn-block text-left btn-select-invite-employee"
                       data-employee-id="${emp.id}">
                 ${emp.name}
               </button>
             `;
-          });
+            });
+          }
+
+          $('#inviteEmployeeResults').html(html);
+        },
+        error: function (xhr) {
+          console.log(xhr.responseText);
+          $('#inviteEmployeeResults').html('<div class="text-danger">Search request failed</div>');
+        }
+      });
+    }, 250);
+  });
+
+  $(document).on('click', '.btn-select-invite-employee', function (e) {
+    e.preventDefault();
+    e.stopPropagation();
+
+    const employeeId = $(this).data('employee-id');
+
+    $.ajax({
+      url: 'scripts/orders/invite_collab.php',
+      method: 'POST',
+      dataType: 'json',
+      data: {
+        order_id: $('#inviteOrderId').val(),
+        employee_id: employeeId,
+        mode: $('#inviteMode').val(),
+        dept_code: $('#inviteDeptCode').val()
+      },
+      success: function (resp) {
+        if (!resp || !resp.ok) {
+          alert(resp && resp.error ? resp.error : 'Assign / Invite failed');
+          return;
         }
 
-        $('#inviteEmployeeResults').html(html);
+        $('#inviteModal').modal('hide');
+        location.reload();
       },
       error: function (xhr) {
         console.log(xhr.responseText);
-        $('#inviteEmployeeResults').html('<div class="text-danger">Search request failed</div>');
+        alert('Assign / Invite request failed');
       }
     });
-  }, 250);
-});
-
-$(document).on('click', '.btn-select-invite-employee', function (e) {
-  e.preventDefault();
-  e.stopPropagation();
-
-  const employeeId = $(this).data('employee-id');
-
-  $.ajax({
-    url: 'scripts/orders/invite_collab.php',
-    method: 'POST',
-    dataType: 'json',
-    data: {
-      order_id: $('#inviteOrderId').val(),
-      employee_id: employeeId,
-      mode: $('#inviteMode').val(),
-      dept_code: $('#inviteDeptCode').val()
-    },
-    success: function (resp) {
-      if (!resp || !resp.ok) {
-        alert(resp && resp.error ? resp.error : 'Assign / Invite failed');
-        return;
-      }
-
-      $('#inviteModal').modal('hide');
-      location.reload();
-    },
-    error: function (xhr) {
-      console.log(xhr.responseText);
-      alert('Assign / Invite request failed');
-    }
   });
-});
+  $(document).on('click', '.btn-remove-assignment', function (e) {
+    e.preventDefault();
+    e.stopPropagation();
+
+    const assignmentId = $(this).data('assignment-id');
+
+    if (!confirm('Remove this assignment?')) {
+      return;
+    }
+
+    $.ajax({
+      url: 'scripts/orders/remove_order_assignment.php',
+      method: 'POST',
+      dataType: 'json',
+      data: {
+        assignment_id: assignmentId
+      },
+      success: function (resp) {
+        if (!resp || !resp.ok) {
+          alert(resp && resp.error ? resp.error : 'Remove assignment failed');
+          return;
+        }
+
+        location.reload();
+      },
+      error: function (xhr) {
+        console.log(xhr.responseText);
+        alert('Remove assignment request failed');
+      }
+    });
+  });
 </script>
 <div class="modal fade" id="optionsModal" tabindex="-1" role="dialog" aria-hidden="true">
   <div class="modal-dialog modal-lg" role="document">
