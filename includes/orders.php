@@ -1946,32 +1946,3 @@ $deptOptions = [
     </div>
   </div>
 </div>
-<div class="modal fade" id="inviteModal" tabindex="-1" role="dialog" aria-hidden="true">
-  <div class="modal-dialog modal-lg" role="document">
-    <div class="modal-content bg-dark">
-      <div class="modal-header">
-        <h5 class="modal-title">Invite collaborator</h5>
-        <button type="button" class="close text-light" data-bs-dismiss="modal" aria-label="Close">
-          <span aria-hidden="true">&times;</span>
-        </button>
-      </div>
-
-      <div class="modal-body">
-        <input type="hidden" id="inviteOrderId" value="">
-        <input type="hidden" id="inviteDeptCode" value="">
-        <input type="hidden" id="inviteMode" value="invite">
-        <div class="form-group">
-          <label>Search employee</label>
-          <input type="text" class="form-control" id="empSearch" placeholder="Meno / priezvisko / username...">
-          <small class="text-muted">Vyber zamestnanca a klikni Invite.</small>
-        </div>
-
-        <div id="empResults" class="list-group"></div>
-      </div>
-
-      <div class="modal-footer">
-        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
-      </div>
-    </div>
-  </div>
-</div>

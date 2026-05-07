@@ -22,6 +22,17 @@ if (mb_strlen($q) < 2) {
 
 $like = '%' . $q . '%';
 
+$deptCode = strtoupper(trim((string)($_GET['dept_code'] ?? '')));
+
+$deptPositionMap = [
+  'GRAPHICS' => 2,
+  'PLASTICS' => 6,
+  'SEATCOVER' => 8,
+  'FITTING' => 9,
+];
+
+$positionId = $deptPositionMap[$deptCode] ?? 0;
+
 $stmt = $conn->prepare("SELECT id, firstname, lastname
   FROM employees
   WHERE firstname LIKE ?
@@ -31,11 +42,37 @@ $stmt = $conn->prepare("SELECT id, firstname, lastname
   LIMIT 20
 ");
 
+$sql = "
+  SELECT id, firstname, lastname
+  FROM employees
+  WHERE active = 'Active'
+    AND (
+      firstname LIKE ?
+      OR lastname LIKE ?
+      OR CONCAT(firstname, ' ', lastname) LIKE ?
+    )
+";
+
+$params = [$like, $like, $like];
+$types = 'sss';
+
+if ($positionId > 0) {
+  $sql .= " AND position_id = ? ";
+  $params[] = $positionId;
+  $types .= 'i';
+}
+
+$sql .= "
+  ORDER BY firstname, lastname
+  LIMIT 20
+";
+
+$stmt = $conn->prepare($sql);
 if (!$stmt) {
   out(['ok' => false, 'error' => $conn->error]);
 }
 
-$stmt->bind_param('sss', $like, $like, $like);
+$stmt->bind_param($types, ...$params);
 $stmt->execute();
 $res = $stmt->get_result();
 

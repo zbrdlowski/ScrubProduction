@@ -44,6 +44,50 @@ if (!$deptCode) {
   exit;
 }
 
+$deptPositionMap = [
+  'GRAPHICS' => 2,
+  'PLASTICS' => 6,
+  'SEATCOVER' => 8,
+  'FITTING' => 9,
+];
+
+$requiredPositionId = $deptPositionMap[$deptCode] ?? 0;
+
+if ($requiredPositionId <= 0) {
+  http_response_code(400);
+  echo json_encode(['ok'=>false,'error'=>'Invalid department']);
+  exit;
+}
+
+$empCheck = $conn->prepare("
+  SELECT id, active, position_id
+  FROM employees
+  WHERE id = ?
+  LIMIT 1
+");
+$empCheck->bind_param('i', $employeeIdToInvite);
+$empCheck->execute();
+$emp = $empCheck->get_result()->fetch_assoc();
+$empCheck->close();
+
+if (!$emp) {
+  http_response_code(404);
+  echo json_encode(['ok'=>false,'error'=>'Employee not found']);
+  exit;
+}
+
+if ((string)$emp['active'] !== 'Active') {
+  http_response_code(400);
+  echo json_encode(['ok'=>false,'error'=>'Employee is not active']);
+  exit;
+}
+
+if ((int)$emp['position_id'] !== $requiredPositionId) {
+  http_response_code(400);
+  echo json_encode(['ok'=>false,'error'=>'Employee does not belong to selected department']);
+  exit;
+}
+
 $rolePrimary = 'PRIMARY_' . $deptCode;
 $roleCollab  = 'COLLAB_'  . $deptCode;
 
