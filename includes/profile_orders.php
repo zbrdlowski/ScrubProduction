@@ -82,7 +82,7 @@ $res = $stmt->get_result();
 
     </tbody>
 </table>
-
+<script src="scripts/orders/order_detail_actions.js"></script>
 <script>
     $(document).on('click', '.btn-detail', function () {
         let id = $(this).data('id');
@@ -141,7 +141,7 @@ $res = $stmt->get_result();
         $cell.html('<div class="p-3 text-muted"><i class="fas fa-spinner fa-spin"></i> Loading...</div>');
 
         $.ajax({
-            url: 'scripts/profile_orders/get_order_detail.php',
+            url: 'scripts/orders/get_order_detail.php',
             method: 'POST',
             dataType: 'json',
             data: { order_id: orderId },
