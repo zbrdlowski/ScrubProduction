@@ -1415,43 +1415,141 @@ $deptOptions = [
 
     $('#optionsModalBody').html(renderOptionsPretty(data));
     $('#optionsModal').modal('show');
-  });
 
-  // COPY
-$(document).on('click', '.btn-copy-options', async function (e) {
-  e.preventDefault();
-  e.stopPropagation();
+    currentOptionsItemId = $(this).data('item-id') || 0;
 
-  const data = getOptionsData($(this));
-  let text = '';
-
-  for (let k in data) {
-    if (k.startsWith('_')) continue;
-    if (typeof data[k] === 'object') continue;
-    text += `${k}: ${data[k]}\n`;
-  }
-
-  if (!text.trim()) {
-    alert('Nothing to copy');
-    return;
-  }
-
-  try {
-    if (navigator.clipboard && window.isSecureContext) {
-      await navigator.clipboard.writeText(text);
-    } else {
-      copyTextFallback(text);
+    try {
+      currentInternalOptions = JSON.parse($(this).attr('data-internal-options') || '{}');
+    } catch (e) {
+      currentInternalOptions = {};
     }
 
-    const $btn = $(this);
-    const oldText = $btn.text();
-    $btn.text('COPIED');
-    setTimeout(() => $btn.text(oldText), 1000);
-  } catch (err) {
-    console.error(err);
-    alert('Copy failed');
+    $('#internalOptionsView').html(renderInternalOptions(currentInternalOptions));
+    $('#internalOptionsJson').val(JSON.stringify(currentInternalOptions, null, 2));
+    $('#internalOptionsEditBox').hide();
+    $('#btnEditInternalOptions').show();
+  });
+$(document).on('click', '#btnEditInternalOptions', function () {
+  renderInternalEditor(currentInternalOptions);
+
+  $('#internalOptionsEditBox').show();
+  $('#btnEditInternalOptions').hide();
+});
+$(document).on('click', '#btnAddInternalBlock', function () {
+  $('#internalBlocksEditor').append(`
+    <div class="card bg-secondary mb-2 internal-block">
+      <div class="card-header py-2 d-flex justify-content-between align-items-center">
+        <input type="text"
+               class="form-control form-control-sm internal-block-name"
+               value=""
+               placeholder="Block name"
+               style="max-width:320px;">
+
+        <div>
+          <button type="button" class="btn btn-xs btn-outline-light btn-add-internal-field">
+            <i class="fas fa-plus"></i> Field
+          </button>
+          <button type="button" class="btn btn-xs btn-outline-danger btn-remove-internal-block">
+            <i class="fas fa-trash"></i>
+          </button>
+        </div>
+      </div>
+
+      <div class="card-body py-2 internal-fields">
+        <div class="form-row align-items-center mb-2 internal-field">
+          <div class="col-md-4">
+            <input type="text" class="form-control form-control-sm internal-field-key" placeholder="Field name">
+          </div>
+          <div class="col-md-7">
+            <input type="text" class="form-control form-control-sm internal-field-value" placeholder="Value">
+          </div>
+          <div class="col-md-1 text-right">
+            <button type="button" class="btn btn-xs btn-outline-danger btn-remove-internal-field">×</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  `);
+});
+
+$(document).on('click', '.btn-add-internal-field', function () {
+  $(this).closest('.internal-block').find('.internal-fields').append(`
+    <div class="form-row align-items-center mb-2 internal-field">
+      <div class="col-md-4">
+        <input type="text" class="form-control form-control-sm internal-field-key" placeholder="Field name">
+      </div>
+      <div class="col-md-7">
+        <input type="text" class="form-control form-control-sm internal-field-value" placeholder="Value">
+      </div>
+      <div class="col-md-1 text-right">
+        <button type="button" class="btn btn-xs btn-outline-danger btn-remove-internal-field">×</button>
+      </div>
+    </div>
+  `);
+});
+
+$(document).on('click', '.btn-remove-internal-field', function () {
+  $(this).closest('.internal-field').remove();
+});
+
+$(document).on('click', '.btn-remove-internal-block', function () {
+  if (confirm('Remove this block?')) {
+    $(this).closest('.internal-block').remove();
   }
 });
+
+$(document).on('click', '#btnSaveInternalOptions', function () {
+  const data = collectInternalEditorData();
+  const raw = JSON.stringify(data);
+
+  $.post('scripts/orders/update_item_internal_options.php', {
+    item_id: currentOptionsItemId,
+    internal_options_json: raw
+  }, function (res) {
+    if (!res || !res.ok) {
+      alert(res && res.error ? res.error : 'Save failed');
+      return;
+    }
+
+    $('#optionsModal').modal('hide');
+    location.reload();
+  }, 'json');
+});
+  // COPY
+  $(document).on('click', '.btn-copy-options', async function (e) {
+    e.preventDefault();
+    e.stopPropagation();
+
+    const data = getOptionsData($(this));
+    let text = '';
+
+    for (let k in data) {
+      if (k.startsWith('_')) continue;
+      if (typeof data[k] === 'object') continue;
+      text += `${k}: ${data[k]}\n`;
+    }
+
+    if (!text.trim()) {
+      alert('Nothing to copy');
+      return;
+    }
+
+    try {
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(text);
+      } else {
+        copyTextFallback(text);
+      }
+
+      const $btn = $(this);
+      const oldText = $btn.text();
+      $btn.text('COPIED');
+      setTimeout(() => $btn.text(oldText), 1000);
+    } catch (err) {
+      console.error(err);
+      alert('Copy failed');
+    }
+  });
 
   // fallback pre zatváranie modalu
   $(document).on('click', '.btn-copy-inline', async function (e) {
@@ -1830,7 +1928,7 @@ $(document).on('click', '.btn-copy-options', async function (e) {
       }
 
       window.location.hash = 'order-' + orderId;
-location.reload();
+      location.reload();
 
     }, 'json').fail(function () {
       alert('Add item request failed');
@@ -2145,28 +2243,238 @@ location.reload();
     });
   });
   $(document).on('change', 'select[name="dept"], select[name="cat"], select[name="type"]', function () {
-  $(this).closest('form').submit();
-});
-$(document).ready(function () {
-  if (window.location.hash && window.location.hash.indexOf('#order-') === 0) {
-    const orderId = window.location.hash.replace('#order-', '');
+    $(this).closest('form').submit();
+  });
+  $(document).ready(function () {
+    if (window.location.hash && window.location.hash.indexOf('#order-') === 0) {
+      const orderId = window.location.hash.replace('#order-', '');
 
-    setTimeout(function () {
-      $('.btn-toggle-detail[data-order-id="' + orderId + '"]').click();
-    }, 300);
+      setTimeout(function () {
+        $('.btn-toggle-detail[data-order-id="' + orderId + '"]').click();
+      }, 300);
+    }
+  });
+  let currentOptionsItemId = 0;
+  let currentInternalOptions = {};
+
+  function renderInternalOptions(data) {
+    if (!data || Object.keys(data).length === 0) {
+      return '<div class="text-muted">No internal production blocks yet.</div>';
+    }
+
+    let html = '';
+
+    Object.keys(data).forEach(function (blockName) {
+      html += `
+      <div class="card bg-secondary mb-2">
+        <div class="card-header py-2">
+          <b>${blockName}</b>
+        </div>
+        <div class="card-body py-2">
+    `;
+
+      const fields = data[blockName] || {};
+
+      Object.keys(fields).forEach(function (key) {
+        html += `
+        <div class="mb-1">
+          <span class="text-muted">${key}:</span>
+          <b>${fields[key]}</b>
+        </div>
+      `;
+      });
+
+      html += `
+        </div>
+      </div>
+    `;
+    });
+
+    return html;
   }
-});
+  function escapeHtml(str) {
+  return String(str ?? '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#039;');
+}
+
+function renderInternalEditor(data) {
+  let html = '';
+
+  if (!data || Object.keys(data).length === 0) {
+    data = {
+      'Production Info': {
+        'Note': ''
+      }
+    };
+  }
+
+  Object.keys(data).forEach(function (blockName) {
+    const fields = data[blockName] || {};
+
+    html += `
+      <div class="card bg-secondary mb-2 internal-block">
+        <div class="card-header py-2 d-flex justify-content-between align-items-center">
+          <input type="text"
+                 class="form-control form-control-sm internal-block-name"
+                 value="${escapeHtml(blockName)}"
+                 placeholder="Block name"
+                 style="max-width:320px;">
+
+          <div class="d-flex flex-column align-items-end" style="gap:4px; min-width:70px;">
+            <button type="button" class="btn btn-xs btn-outline-light btn-add-internal-field" style="width:70px;">
+              <i class="fas fa-plus"></i> Field
+                </button>
+
+                <button type="button" class="btn btn-xs btn-outline-danger btn-remove-internal-block" style="width:70px;">
+                  <i class="fas fa-trash"></i>
+                </button>
+            </div>
+        </div>
+        <div class="card-body py-2 internal-fields">
+    `;
+
+    Object.keys(fields).forEach(function (key) {
+      html += `
+        <div class="form-row align-items-center mb-2 internal-field">
+          <div class="col-md-4">
+            <input type="text"
+                   class="form-control form-control-sm internal-field-key"
+                   value="${escapeHtml(key)}"
+                   placeholder="Field name">
+          </div>
+
+          <div class="col-md-7">
+            <input type="text"
+                   class="form-control form-control-sm internal-field-value"
+                   value="${escapeHtml(fields[key])}"
+                   placeholder="Value">
+          </div>
+
+          <div class="col-md-1 text-right">
+            <button type="button" class="btn btn-xs btn-outline-danger btn-remove-internal-field">
+              ×
+            </button>
+          </div>
+        </div>
+      `;
+    });
+
+    html += `
+        </div>
+      </div>
+    `;
+  });
+
+  $('#internalBlocksEditor').html(html);
+}
+
+function collectInternalEditorData() {
+  const data = {};
+
+  $('#internalBlocksEditor .internal-block').each(function () {
+    const blockName = $(this).find('.internal-block-name').val().trim();
+
+    if (!blockName) return;
+
+    data[blockName] = {};
+
+    $(this).find('.internal-field').each(function () {
+      const key = $(this).find('.internal-field-key').val().trim();
+      const value = $(this).find('.internal-field-value').val().trim();
+
+      if (key) {
+        data[blockName][key] = value;
+      }
+    });
+
+    if (Object.keys(data[blockName]).length === 0) {
+      delete data[blockName];
+    }
+  });
+
+  return data;
+}
 </script>
 <div class="modal fade" id="optionsModal" tabindex="-1" role="dialog" aria-hidden="true">
   <div class="modal-dialog modal-lg" role="document">
     <div class="modal-content bg-dark text-light">
-      <div class="modal-header">
-        <h5 class="modal-title">Product Options</h5>
-        <button type="button" class="btn btn-secondary btn-sm" data-dismiss="modal" data-bs-dismiss="modal">
+
+      <div class="modal-header border-secondary">
+        <h5 class="modal-title">
+          <i class="fas fa-list-alt mr-1"></i> Product Options
+        </h5>
+
+        <button type="button" class="close text-light" data-dismiss="modal" data-bs-dismiss="modal" aria-label="Close">
           <span aria-hidden="true">&times;</span>
         </button>
       </div>
-      <div class="modal-body" id="optionsModalBody"></div>
+
+      <div class="modal-body">
+
+        <div class="mb-3">
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <h6 class="text-muted mb-0">
+              <i class="fas fa-download mr-1"></i> Imported Product Options
+            </h6>
+          </div>
+
+          <div id="optionsModalBody"></div>
+        </div>
+
+        <hr class="border-secondary my-3">
+
+        <div class="mb-2">
+          <div class="d-flex justify-content-between align-items-center mb-2">
+
+            <h6 class="text-muted mb-0">
+              <i class="fas fa-tools mr-1"></i> Internal Production Blocks
+            </h6>
+            <?php if ((int) ($_SESSION['permission'] ?? 0) >= 300): ?>
+              <button type="button" class="btn btn-sm btn-outline-warning" id="btnEditInternalOptions">
+                <i class="fas fa-edit mr-1"></i> Edit internal
+              </button>
+            <?php endif; ?>
+          </div>
+
+          <div id="internalOptionsView" class="mb-2"></div>
+
+          <div id="internalOptionsEditBox" style="display:none;">
+
+            <div class="d-flex justify-content-between align-items-center mb-2">
+              <small class="text-muted">Add production information as blocks and fields.</small>
+
+              <button type="button" class="btn btn-sm btn-outline-info" id="btnAddInternalBlock">
+                <i class="fas fa-plus mr-1"></i> Add block
+              </button>
+            </div>
+
+            <div id="internalBlocksEditor"></div>
+
+            <textarea id="internalOptionsJson"
+              class="form-control form-control-sm bg-dark text-light border-warning mt-2" rows="6" spellcheck="false"
+              style="display:none;"></textarea>
+
+            <div class="d-flex justify-content-end mt-2">
+              <button type="button" class="btn btn-sm btn-success" id="btnSaveInternalOptions">
+                <i class="fas fa-save mr-1"></i> Save internal blocks
+              </button>
+            </div>
+
+          </div>
+        </div>
+
+      </div>
+
+      <div class="modal-footer border-secondary">
+        <button type="button" class="btn btn-secondary btn-sm" data-dismiss="modal" data-bs-dismiss="modal">
+          Close
+        </button>
+      </div>
+
     </div>
   </div>
 </div>

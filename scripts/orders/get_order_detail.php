@@ -198,10 +198,14 @@ $stmt = $conn->prepare(" SELECT
     os.code AS source_code,
     cu.name AS customer_name,
     cu.email AS customer_email,
-    cu.phone AS customer_phone
+    cu.phone AS customer_phone,
+    pn.firstname AS production_note_firstname,
+    pn.lastname AS production_note_lastname,
+    pn.photo AS production_note_photo
   FROM orders o
   JOIN order_sources os ON os.id = o.source_id
   LEFT JOIN customers cu ON cu.id = o.customer_id
+  LEFT JOIN employees pn ON pn.id = o.production_note_updated_by
   WHERE o.id = ?
   LIMIT 1
 ");
@@ -301,6 +305,7 @@ $stmt = $conn->prepare("SELECT
     item_type_code,
     qty,
     options_json,
+    internal_options_json,
     product_url,
    status AS item_status,
     waiting_note,
@@ -524,7 +529,7 @@ ob_start();
             'CANCELLED'
           ];
 
-          $currentStatus = strtoupper(trim((string) ($it['item_status'] ?? 'NEW')));
+          $currentStatus = strtoupper(trim((string) ($order['status'] ?? 'NEW')));
           if ($currentStatus === '') {
             $currentStatus = 'NEW';
           }
@@ -532,11 +537,13 @@ ob_start();
 
           <select class="form-control form-control-sm order-status-select" data-order-id="<?php echo (int) $orderId; ?>"
             style="min-width:180px;">
+
             <?php foreach ($statusOptions as $st): ?>
               <option value="<?php echo h($st); ?>" <?php echo ($currentStatus === $st ? 'selected' : ''); ?>>
                 <?php echo h(str_replace('_', ' ', $st)); ?>
               </option>
             <?php endforeach; ?>
+
           </select>
           <?php
           $manualTypes = strtoupper((string) ($order['manual_types_override'] ?? ''));
@@ -927,10 +934,36 @@ ob_start();
       </div>
 
       <hr />
+      <?php
+      $noteAuthor = trim((string) ($order['production_note_firstname'] ?? '') . ' ' . (string) ($order['production_note_lastname'] ?? ''));
+      $notePhoto = trim((string) ($order['production_note_photo'] ?? ''));
+      $noteAt = trim((string) ($order['production_note_updated_at'] ?? ''));
+      ?>
 
       <h6 class="text-muted mb-2">Production note</h6>
 
       <div class="card bg-dark border-info p-2 production-note-box">
+        <?php if ($noteAuthor !== ''): ?>
+          <div class="d-flex align-items-center mb-2 text-muted">
+            <?php if ($notePhoto !== ''): ?>
+              <img src="images/<?= h($notePhoto) ?>" class="img-circle mr-2"
+                style="width:24px; height:24px; object-fit:cover;" alt="<?= h($noteAuthor) ?>">
+            <?php else: ?>
+              <i class="fas fa-user-circle mr-2"></i>
+            <?php endif; ?>
+
+            <small>
+              Note by <b>
+                <?= h($noteAuthor) ?>
+              </b>
+              <?php if ($noteAt !== ''): ?>
+                ·
+                <?= h($noteAt) ?>
+              <?php endif; ?>
+            </small>
+          </div>
+        <?php endif; ?>
+
         <div class="d-flex justify-content-between align-items-start">
           <div class="production-note-display text-light" style="white-space:pre-wrap; flex:1;">
             <?php if (trim((string) ($order['production_note'] ?? '')) !== ''): ?>
@@ -940,29 +973,29 @@ ob_start();
             <?php endif; ?>
           </div>
 
-          <?php if ((int) ($_SESSION['permission'] ?? 0) >= 300): ?>
-            <button type="button" class="btn btn-xs btn-outline-info ml-2 btn-edit-production-note">
-              Edit
-            </button>
-          <?php endif; ?>
+
+          <button type="button" class="btn btn-xs btn-outline-info ml-2 btn-edit-production-note">
+            Edit
+          </button>
+
         </div>
 
-        <?php if ((int) ($_SESSION['permission'] ?? 0) >= 300): ?>
-          <div class="production-note-editor mt-2" style="display:none;">
-            <textarea class="form-control form-control-sm production-note-input production-note-textarea" rows="2"
-              placeholder="Customer changes / production instructions..."><?php echo h($order['production_note'] ?? ''); ?></textarea>
 
-            <div class="mt-2">
-              <button class="btn btn-sm btn-info btn-save-production-note" data-order-id="<?php echo (int) $orderId; ?>">
-                Save
-              </button>
+        <div class="production-note-editor mt-2" style="display:none;">
+          <textarea class="form-control form-control-sm production-note-input production-note-textarea" rows="2"
+            placeholder="Customer changes / production instructions..."><?php echo h($order['production_note'] ?? ''); ?></textarea>
 
-              <button type="button" class="btn btn-sm btn-secondary btn-cancel-production-note">
-                Cancel
-              </button>
-            </div>
+          <div class="mt-2">
+            <button class="btn btn-sm btn-info btn-save-production-note" data-order-id="<?php echo (int) $orderId; ?>">
+              Save
+            </button>
+
+            <button type="button" class="btn btn-sm btn-secondary btn-cancel-production-note">
+              Cancel
+            </button>
           </div>
-        <?php endif; ?>
+        </div>
+
       </div>
       <?php if ((int) ($_SESSION['permission'] ?? 0) >= 300): ?>
 
@@ -1285,24 +1318,27 @@ ob_start();
                 </td>
 
                 <?php
-$formattedOptions = prepareOptionsJsonForModal($conn, (string)($it['options_json'] ?? '{}'));
-?>
+                $formattedOptions = prepareOptionsJsonForModal($conn, (string) ($it['options_json'] ?? '{}'));
+                $internalOptions = (string) ($it['internal_options_json'] ?? '{}');
+                if (trim($internalOptions) === '') {
+                  $internalOptions = '{}';
+                }
+                ?>
 
-<td class="text-center">
-  <button type="button"
-          class="btn btn-xs btn-outline-info btn-view-options"
-          data-options="<?php echo h($formattedOptions); ?>">
-    View
-  </button>
-</td>
+                <td class="text-center">
+                  <button type="button" class="btn btn-xs btn-outline-info btn-view-options"
+                    data-item-id="<?= (int) $it['id'] ?>" data-options="<?= h($formattedOptions) ?>"
+                    data-internal-options="<?= h($internalOptions) ?>">
+                    View
+                  </button>
+                </td>
 
-<td class="text-center">
-  <button type="button"
-          class="btn btn-xs btn-outline-warning btn-copy-options"
-          data-options="<?php echo h($formattedOptions); ?>">
-    Copy
-  </button>
-</td>
+                <td class="text-center">
+                  <button type="button" class="btn btn-xs btn-outline-warning btn-copy-options"
+                    data-options="<?php echo h($formattedOptions); ?>">
+                    Copy
+                  </button>
+                </td>
 
                 <?php if ((int) ($_SESSION['permission'] ?? 0) >= 300): ?>
                   <td class="text-center">

@@ -11,7 +11,7 @@ function out(array $payload): void {
 }
 
 $perm = (int)($_SESSION['permission'] ?? 0);
-if ($perm < 400) {
+if ($perm < 0) {
   out(['ok' => false, 'error' => 'No permission']);
 }
 
