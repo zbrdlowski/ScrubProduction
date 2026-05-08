@@ -374,114 +374,13 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == '1') {
               include 'includes/personal_attendance.php';
               ?>
 
-           <?php elseif ($activeTab === 'orders'): ?>
+            <?php elseif ($activeTab === 'orders'): ?>
 
-              <!-- TABUĽKA OBJEDNÁVOK -->
-              <?php
-              $selectedOrder = $_GET['order_nr'] ?? '';
+                <div id="profileOrdersContainer">
+                  <?php include 'includes/profile_orders.php'; ?>
+                </div>
 
-              switch ($_SESSION['dpt']) {
-                case '2':
-                  $column = 'assign_g';
-                  break;
-                case '6':
-                  $column = 'assign_p';
-                  break;
-                case '8':
-                  $column = 'assign_s';
-                  break;
-                default:
-                  $column = 'assign_g';
-                  break;
-              }
-
-              $ordersql = "SELECT * FROM orders_$append
-              WHERE " . $column . " = '" . $_SESSION['user_id'] . "'
-              ORDER BY orders_$append.date ASC";
-
-              $orderquery = $conn->query($ordersql);
-
-              print '<table id="example3" class="table table-striped table-valign-middle">';
-              print '<thead><tr>
-          <th>Date</th>
-          <th>Order No.</th>
-          <th>Status</th>
-          <th>Customer</th>
-          <th>Country</th>
-          <th>Order Type</th>
-          <th>Description</th>
-        </tr></thead><tbody>';
-
-              while ($orderrow = $orderquery->fetch_array()) {
-
-                $isSelected = ((string) $orderrow['order_nr'] === (string) $selectedOrder);
-                $rowStyle = $isSelected ? ' style="background: rgba(90,90,90,0.25);"' : '';
-
-                print '<tr' . $rowStyle . '>';
-                print '<td>' . htmlspecialchars($orderrow['date']) . '</td>';
-
-                print '<td>
-            <a href="?page=profile&order_nr=' . urlencode($orderrow['order_nr']) . '&tab=orders">
-              <button type="button" class="btn btn-block bg-gradient-info btn-sm">' . htmlspecialchars($orderrow['order_nr']) . '</button>
-            </a>
-          </td>';
-
-                print '<td>' . htmlspecialchars($orderrow['status']) . '</td>';
-                print '<td>' . htmlspecialchars($orderrow['customer']) . '</td>';
-                print '<td>' . htmlspecialchars($orderrow['country']) . '</td>';
-                print '<td>' . htmlspecialchars($orderrow['gfp']) . '</td>';
-                print '<td>' . htmlspecialchars($orderrow['product_name']) . '</td>';
-                print '</tr>';
-
-                // ---- ROZBALENÝ DETAILNÝ RIADOK ----
-                if ($isSelected) {
-
-                  // Príklad: zobraziť viac polí z rovnakého riadku
-                  // Pridať/odstrániť polia podľa stĺpcov v tabuľke objednávok
-                  $fields = [
-                    'Order No.' => $orderrow['order_nr'] ?? '',
-                    'Date' => $orderrow['date'] ?? '',
-                    'Status' => $orderrow['status'] ?? '',
-                    'Customer' => $orderrow['customer'] ?? '',
-                    'Country' => $orderrow['country'] ?? '',
-                    'Order Type' => $orderrow['gfp'] ?? '',
-                    'Description' => $orderrow['product_name'] ?? '',
-                    // Pridať viac, ak existujú v tabuľke:
-                    'Email' => $orderrow['email'] ?? '',
-                    'Phone' => $orderrow['phone'] ?? '',
-                    'Address' => $orderrow['address'] ?? '',
-                    'Notes' => $orderrow['notes'] ?? '',
-                  ];
-
-                  print '<tr>';
-                  print '<td colspan="7" class="order-details-cell">';
-                  print '  <div class="order-details-panel">';
-                  print '    <div class="order-ribbon">' . htmlspecialchars($orderrow['status']) . '</div>';
-                  print '    <div style="font-size:14px; font-weight:700;">
-                  <i class="fa fa-info-circle"></i> Order details
-                </div>';
-
-                  print '    <div class="order-details-grid">';
-                  foreach ($fields as $label => $value) {
-                    if ($value === '' || $value === null)
-                      continue;
-                    print '      <div class="order-details-item">';
-                    print '        <div class="order-details-label">' . htmlspecialchars($label) . '</div>';
-                    print '        <div class="order-details-value">' . htmlspecialchars((string) $value) . '</div>';
-                    print '      </div>';
-                  }
-                  print '    </div>';
-
-                  print '  </div>';
-                  print '</td>';
-                  print '</tr>';
-                }
-              }
-
-              print '</tbody></table>';
-              ?>
-
-            <?php else: ?>
+              <?php else: ?>
 
               <!-- ONLINE STAV (mriežka) -->
               <div id="onlineGridContainer">

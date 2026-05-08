@@ -1,190 +1,161 @@
-<section class="content">
-      <div class="container-fluid">
-        <div class="row">
-          <div class="col-12">
-            <div class="card">
-              <div class="card-header">
-            <?
+<?php
+declare(strict_types=1);
 
-            $napis = 'Ordes'; 
-                if(isset($_SESSION['dpt'])){
-                    switch ($_SESSION['dpt']) {
-                        case  '2': // 2 -> Grafika
-                            $sql = "SELECT *, DATE_FORMAT(date,'%d.%m.%Y') AS niceDate FROM orders_".$append." WHERE gfp LIKE '%G%' AND NOT status = 'Delivered' AND NOT status = 'Shipped' OR gfp LIKE '%T%' AND NOT status = 'Delivered' AND NOT status = 'Shipped' ORDER BY orders_".$append.".date DESC";
-                            $napis = 'Open Graphics Ordes';
+require_once __DIR__ . '/conn.php';
 
-                            break;
-                            case '6': // 6-> Plasty
-                                $sql = "SELECT *, DATE_FORMAT(date,'%d.%m.%Y') AS niceDate FROM orders_".$append." WHERE gfp LIKE '%P%' AND NOT status = 'Delivered' AND NOT status = 'Shipped' ORDER BY orders_".$append.".date DESC";
-                                $napis = 'Open Plastics Ordes';
+$dpt = (int) ($_SESSION['dpt'] ?? 0);
+$userId = (int) ($_SESSION['user_id'] ?? 0);
 
-                                break;
-                                case  '8': // 8 -> Seat Covers
-                                    $sql = "SELECT *, DATE_FORMAT(date,'%d.%m.%Y') AS niceDate FROM orders_".$append." WHERE gfp LIKE '%S%' AND NOT status = 'Delivered' AND NOT status = 'Shipped' ORDER BY orders_".$append.".date DESC";
-                                    $napis = 'Open Seat Covers Ordes';
-                                    break;
-                                    case  '4': // treba urobiť sekciu pre fitting, 4 je Production
-                                        $sql = "SELECT *, DATE_FORMAT(date,'%d.%m.%Y') AS niceDate FROM orders_".$append." WHERE gfp LIKE '%F%' AND NOT status = 'Delivered' AND NOT status = 'Shipped' ORDER BY orders_".$append.".date DESC";
-                                        $napis = 'Open Fittings';
-                                        break;
-                        default:
-                        $sql = "SELECT *, DATE_FORMAT(date,'%d.%m.%Y') AS niceDate FROM orders_".$append." WHERE NOT status = 'Delivered' AND NOT status = 'Shipped' ORDER BY orders_".$append.".date DESC";
-                        $napis = 'Ordes'; 
-                            break;
-                    }
-                }else{
-                    $sql = "SELECT *, DATE_FORMAT(date,'%d.%m.%Y') AS niceDate FROM orders_".$append." WHERE NOT status = 'Delivered' AND NOT status = 'Shipped' ORDER BY orders_".$append.".date DESC";
-                }
-                ?>
-                <h1><? echo $napis; ?></h1>
-              </div>
-              <!-- /.card-header -->
-              <div class="card-body">
-             
-            <?
-           print '<style>';
-           print '#GFP { Background-color:#a1cbf0 color:black;}';
-           print '#P { Background-color:SILVER; color:black;}';
-           print '#G { Background-color:#deb887; color:black;}';
-           print '#S { Background-color:grey; color:white; }';
-           print '#TFP { Background-color:#0fc7ae; color:white; }';
-            print '</style>';
-            //$sql = "SELECT *, DATE_FORMAT(date,'%d.%m.%Y') AS niceDate FROM orders ORDER BY status DESC"; 
-            //$rows = $conn->query("SELECT *, DATE_FORMAT(date,'%d.%m.%y') AS niceDate FROM orders ORDER BY status DESC");
-            //<td id="'.$row["gfp"].'">            
-            
-            $query = $conn->query($sql);            
-            print '<table id="example2" class="table table-bordered table-striped">';
-            print '<thead>';
-                print'<tr>';
-                print'<th width="3%" style="background-color:#444242; color:white; text-align: center;">DATE</th>';    
-                print'<th width="3%" style="background-color:#444242; color:white; text-align: center;">ASSIGN</th>';
-                print'<th width="8%" style="background-color:#444242; color:white; text-align: center;">SCRUB</th>';
-                print'<th width="1%" style="background-color:#444242; color:white; text-align: center;">COUNTRY</th>';            
-                print'<th width="3%" style="background-color:#444242; color:white; text-align: center;">SOURCE</th>';
-                print'<th width="10%" style="background-color:#444242; color:white; text-align: center;">ORDER Nr.</th>';
-                print'<th width="3%" style="background-color:#444242; color:white; text-align: center;">TYPE</th>';                
-                print'<th style="background-color:#444242; color:white; text-align: center;">PRODUCT</th>'; 
-                print'<th width="5%" style="background-color:#444242; color:white; text-align: center;">COURIER</th>';
-                print'<th width="8%" style="background-color:#444242; color:white; text-align: center;">STATUS</th>';
-            
-            print '</tr>';
-                print '</thead>';
-                print '<tbody>';
-            while($row = $query->fetch_array()){
-                
-            print '<tr>'; 
-            print '<td  width="5%" align="center">'. $row['niceDate'] .' </td>';
-            print '<td width="5%" align="center">';
-             switch ($_SESSION['dpt']) {
-                case '2':
-                    if($row['assign_g'] == '0'){
-                        if($row["status"] == 'Priority'){
-                            print '<a href="assign.php?orderno='.$row["order_nr"].'"><button type="button" class="btn btn-block bg-gradient-danger btn-sm"> Assign </button></a>';
-                            }else{
-                              print '<a href="assign.php?orderno='.$row["order_nr"].'"><button type="button" class="btn btn-block bg-gradient-primary btn-sm"> Assign </button></a>';  
-                            }
-                    }else{
-                        print '<button type="button" class="btn btn-block bg-gradient-secondary btn-sm disabled"> Assign </button>';
-                    }
-                    break;
-                        case '6':
-                            if($row['assign_p'] == '0'){
-                                if($row["status"] == 'Priority'){
-                                    print '<a href="assign.php?orderno='.$row["order_nr"].'"><button type="button" class="btn btn-block bg-gradient-danger btn-sm"> Assign </button></a>';
-                                    }else{
-                                      print '<a href="assign.php?orderno='.$row["order_nr"].'"><button type="button" class="btn btn-block bg-gradient-primary btn-sm"> Assign </button></a>';  
-                                    }
-                            }else{
-                                print '<button type="button" class="btn btn-block bg-gradient-secondary btn-sm disabled"> Assign </button>';
-                            }
-                        break;
-                            case '8':
-                                if($row['assign_s'] == '0'){
-                                    if($row["status"] == 'Priority'){
-                                        print '<a href="assign.php?orderno='.$row["order_nr"].'"><button type="button" class="btn btn-block bg-gradient-danger btn-sm"> Assign </button></a>';
-                                        }else{
-                                          print '<a href="assign.php?orderno='.$row["order_nr"].'"><button type="button" class="btn btn-block bg-gradient-primary btn-sm"> Assign </button></a>';  
-                                        }
-                                }else{
-                                    print '<button type="button" class="btn btn-block bg-gradient-secondary btn-sm disabled"> Assign </button>';
-                                }
-                                break;
-                
-                default:
-                    print ' ';
-                    break;
-             }
-            print'</td>';
-            print '<td align="center" width="8%">';
-                
-                    $photoSQL = "SELECT *, assign_g AS grafik FROM `orders_".$append."`LEFT JOIN employees ON employees.id=orders_".$append.".assign_g WHERE orders_".$append.".order_nr = '" .$row['order_nr'] ."'";
-                    $photoquery = $conn->query($photoSQL); 
-                    
-                    while($photorow = $photoquery->fetch_array()){
-                            if($photorow['grafik'] != '0'){
-                                print '<img src="images/'.$photorow['photo'].'" alt="makač 1 " class="img-circle img-size-32 mr-2" title="'.$photorow['firstname'].' '.$photorow['lastname'].'">';
-                            }
-                            
-                    } 
-                    $photoSQL = "SELECT *, assign_p AS plastik FROM `orders_".$append."`LEFT JOIN employees ON employees.id=orders_".$append.".assign_p WHERE orders_".$append.".order_nr = '" .$row['order_nr'] ."'";
-                    $photoquery = $conn->query($photoSQL); 
-                   
-                    while($photorow = $photoquery->fetch_array()){
-                            if($photorow['plastik'] != '0'){
-                                print '<img src="images/'.$photorow['photo'].'" alt="makač 1 " class="img-circle img-size-32 mr-2" title="'.$photorow['firstname'].' '.$photorow['lastname'].'">';
-                            }
-                            
-                    }
-                    $photoSQL = "SELECT *, assign_s AS sedlak FROM `orders_".$append."`LEFT JOIN employees ON employees.id=orders_".$append.".assign_s WHERE orders_".$append.".order_nr = '" .$row['order_nr'] ."'";
-                    $photoquery = $conn->query($photoSQL); 
-                    
-                    while($photorow = $photoquery->fetch_array()){
-                            if($photorow['sedlak'] != '0'){
-                                print '<img src="images/'.$photorow['photo'].'" alt="makač 1 " class="img-circle img-size-32 mr-2" title="'.$photorow['firstname'].' '.$photorow['lastname'].'">';
-                            }
-                            
-                    }
-                                                                 
-                   
-                    print '</td>'; 
+if ($dpt !== 2) {
+    echo '<div class="alert alert-warning">Only Graphics department allowed.</div>';
+    return;
+}
 
-            //print '<td align="center"> '.$scrubuser.' </td>';
+$sql = "
+SELECT 
+    o.id,
+    o.order_number,
+    o.status,
+    o.order_date,
+    cu.name AS customer_name,
+    os.code AS source_code,
+    oa.role
+FROM orders o
+JOIN order_assignments oa ON oa.order_id = o.id
+JOIN order_sources os ON os.id = o.source_id
+LEFT JOIN customers cu ON cu.id = o.customer_id
 
-                print '<td align="center"> '. $row['country'].' </td>';
-                print'<td align="center"> '. $row['order_type'] .' </td>';  
-                print '<td align="center"> '. $row['order_nr'].' </td>';
-                print '<td align="center"> '. $row['gfp'].' </td>';
-                print '<td align="left"> '. $row['product_name'].' </td>';  
-                print '<td align="center"> '. $row['courier'].' </td>';
-                print '<td align="center"> '. $row['status'].'</td>';                
-                print '</td></tr>';
+WHERE 
+    oa.employee_id = ?
+    AND oa.removed_at IS NULL
+    AND oa.role IN ('PRIMARY_GRAPHICS','COLLAB_GRAPHICS')
+    AND UPPER(o.status) != 'SHIPPED'
+
+ORDER BY o.order_date ASC
+";
+
+$stmt = $conn->prepare($sql);
+$stmt->bind_param("i", $userId);
+$stmt->execute();
+$res = $stmt->get_result();
+?>
+
+<table class="table table-sm table-hover">
+    <thead>
+        <tr>
+            <th>Date</th>
+            <th>Order</th>
+            <th>Status</th>
+            <th>Customer</th>
+            <th>Role</th>
+            <th></th>
+        </tr>
+    </thead>
+
+    <tbody>
+
+        <?php while ($row = $res->fetch_assoc()): ?>
+
+            <tr class="profile-order-row order-row" data-order-id="<?= $row['id'] ?>">
+                <td><?= date('d.m.Y', strtotime($row['order_date'])) ?></td>
+                <td><b><?= htmlspecialchars($row['order_number']) ?></b></td>
+                <td><?= htmlspecialchars($row['status']) ?></td>
+                <td><?= htmlspecialchars($row['customer_name'] ?? '-') ?></td>
+                <td>
+                    <?= $row['role'] === 'PRIMARY_GRAPHICS'
+                        ? '<span class="badge badge-info">Mine</span>'
+                        : '<span class="badge badge-secondary">Collab</span>' ?>
+                </td>
+                <td>
+                    <button type="button" class="btn btn-info btn-xs btn-profile-order-detail"
+                        data-order-id="<?= $row['id'] ?>">
+                        Open
+                    </button>
+                </td>
+            </tr>
+
+            <tr class="profile-order-detail-row order-detail-row" data-detail-for="<?= $row['id'] ?>" style="display:none;">
+                <td colspan="6"></td>
+            </tr>
+
+        <?php endwhile; ?>
+
+    </tbody>
+</table>
+
+<script>
+    $(document).on('click', '.btn-detail', function () {
+        let id = $(this).data('id');
+        let row = $('.profile-order-detail-row[data-detail-for="' + id + '"]');
+
+        if (row.is(':visible')) {
+            row.hide();
+            return;
+        }
+
+        $('.profile-order-detail-row').hide();
+
+        row.show().find('td').html('Loading...');
+
+        $.post('scripts/profile_orders/get_order_detail.php', { order_id: id }, function (resp) {
+            if (resp.ok) {
+                row.find('td').html(resp.html);
+            } else {
+                row.find('td').html('<div class="alert alert-danger">' + resp.error + '</div>');
             }
-            
-                print '<tfoot>';
-                print '<tr>';
-                print'<th width="3%" style="background-color:#444242; color:white; text-align: center;">DATE</th>';    
-                print'<th width="3%" style="background-color:#444242; color:white; text-align: center;">ASSIGN</th>';
-                print'<th width="8%" style="background-color:#444242; color:white; text-align: center;">SCRUB</th>';
-                print'<th width="1%" style="background-color:#444242; color:white; text-align: center;">COUNTRY</th>';            
-                print'<th width="3%" style="background-color:#444242; color:white; text-align: center;">SOURCE</th>';
-                print'<th width="10%" style="background-color:#444242; color:white; text-align: center;">ORDER Nr.</th>';
-                print'<th width="3%" style="background-color:#444242; color:white; text-align: center;">TYPE</th>';                
-                print'<th style="background-color:#444242; color:white; text-align: center;">PRODUCT</th>'; 
-                print'<th width="5%" style="background-color:#444242; color:white; text-align: center;">COURIER</th>';
-                print'<th width="8%" style="background-color:#444242; color:white; text-align: center;">STATUS</th>';
-                
-                print '</tr>';
-                print '</tfoot>';
-                print '</table>';
-                print '</tbody>';
-              ?>
-             </div>
-<!-- /.box-body -->
-            </div>
-        </div>
-<!-- /.card-body -->
-        </div>
-    </div>
-</section>
+        }, 'json');
+    });
+    $(document).off('click.profileOrders');
 
+    $(document).on('click.profileOrders', '.profile-order-row', function (e) {
+        if ($(e.target).closest('button, a, input, select, textarea').length) {
+            return;
+        }
+
+        openProfileOrderDetail($(this).data('order-id'));
+    });
+
+    $(document).on('click.profileOrders', '.btn-profile-order-detail', function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+
+        openProfileOrderDetail($(this).data('order-id'));
+    });
+
+    function openProfileOrderDetail(orderId) {
+        const $row = $('.profile-order-row[data-order-id="' + orderId + '"]');
+        const $detailRow = $('.profile-order-detail-row[data-detail-for="' + orderId + '"]');
+        const $cell = $detailRow.find('td');
+
+        if ($detailRow.is(':visible')) {
+            $detailRow.hide();
+            $row.removeClass('order-row-open');
+            return;
+        }
+
+        $('.profile-order-detail-row').hide();
+        $('.profile-order-row').removeClass('order-row-open');
+
+        $row.addClass('order-row-open');
+        $detailRow.show();
+        $cell.html('<div class="p-3 text-muted"><i class="fas fa-spinner fa-spin"></i> Loading...</div>');
+
+        $.ajax({
+            url: 'scripts/profile_orders/get_order_detail.php',
+            method: 'POST',
+            dataType: 'json',
+            data: { order_id: orderId },
+            success: function (resp) {
+                if (!resp || !resp.ok) {
+                    $cell.html('<div class="alert alert-danger m-3">' + (resp.error || 'Detail load failed') + '</div>');
+                    return;
+                }
+
+                $cell.html(resp.html);
+            },
+            error: function () {
+                $cell.html('<div class="alert alert-danger m-3">Detail load failed.</div>');
+            }
+        });
+    }
+</script>
