@@ -374,7 +374,7 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == '1') {
               include 'includes/personal_attendance.php';
               ?>
 
-            <?php elseif ($activeTab === 'orders'): ?>
+           <?php elseif ($activeTab === 'orders'): ?>
 
               <!-- TABUĽKA OBJEDNÁVOK -->
               <?php
