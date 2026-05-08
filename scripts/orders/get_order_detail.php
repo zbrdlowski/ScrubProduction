@@ -1284,19 +1284,25 @@ ob_start();
                   <?php endif; ?>
                 </td>
 
-                <td class="text-center">
-                  <button type="button" class="btn btn-xs btn-outline-info btn-view-options"
-                    data-options="<?php echo h(prepareOptionsJsonForModal($conn, (string) ($it['options_json'] ?? '{}'))); ?>">
-                    View
-                  </button>
-                </td>
+                <?php
+$formattedOptions = prepareOptionsJsonForModal($conn, (string)($it['options_json'] ?? '{}'));
+?>
 
-                <td class="text-center">
-                  <button type="button" class="btn btn-xs btn-outline-warning"
-                    data-copy="<?php echo h($it['options_json'] ?? ''); ?>">
-                    Copy
-                  </button>
-                </td>
+<td class="text-center">
+  <button type="button"
+          class="btn btn-xs btn-outline-info btn-view-options"
+          data-options="<?php echo h($formattedOptions); ?>">
+    View
+  </button>
+</td>
+
+<td class="text-center">
+  <button type="button"
+          class="btn btn-xs btn-outline-warning btn-copy-options"
+          data-options="<?php echo h($formattedOptions); ?>">
+    Copy
+  </button>
+</td>
 
                 <?php if ((int) ($_SESSION['permission'] ?? 0) >= 300): ?>
                   <td class="text-center">
@@ -1313,8 +1319,8 @@ ob_start();
                     </button>
                   </td>
                 <?php endif; ?>
-                </tr>
-              <?php endforeach; ?>
+              </tr>
+            <?php endforeach; ?>
           </tbody>
         </table>
         <?php if ((int) ($_SESSION['permission'] ?? 0) >= 300): ?>

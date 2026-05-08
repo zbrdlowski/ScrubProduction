@@ -1418,24 +1418,40 @@ $deptOptions = [
   });
 
   // COPY
-  $(document).on('click', '.btn-copy-options', function (e) {
-    e.stopPropagation();
+$(document).on('click', '.btn-copy-options', async function (e) {
+  e.preventDefault();
+  e.stopPropagation();
 
-    const data = getOptionsData($(this));
-    let text = '';
+  const data = getOptionsData($(this));
+  let text = '';
 
-    for (let k in data) {
-      if (k.startsWith('_')) continue;
-      if (typeof data[k] === 'object') continue;
-      text += `${k}: ${data[k]}\n`;
+  for (let k in data) {
+    if (k.startsWith('_')) continue;
+    if (typeof data[k] === 'object') continue;
+    text += `${k}: ${data[k]}\n`;
+  }
+
+  if (!text.trim()) {
+    alert('Nothing to copy');
+    return;
+  }
+
+  try {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(text);
+    } else {
+      copyTextFallback(text);
     }
 
-    navigator.clipboard.writeText(text);
-
     const $btn = $(this);
+    const oldText = $btn.text();
     $btn.text('COPIED');
-    setTimeout(() => $btn.text('COPY'), 1000);
-  });
+    setTimeout(() => $btn.text(oldText), 1000);
+  } catch (err) {
+    console.error(err);
+    alert('Copy failed');
+  }
+});
 
   // fallback pre zatváranie modalu
   $(document).on('click', '.btn-copy-inline', async function (e) {
@@ -1813,9 +1829,8 @@ $deptOptions = [
         return;
       }
 
-      const $wrap = $('#detail-' + orderId);
-      $wrap.removeData('loaded').html('');
-      $('.btn-toggle-detail[data-order-id="' + orderId + '"]').click();
+      window.location.hash = 'order-' + orderId;
+location.reload();
 
     }, 'json').fail(function () {
       alert('Add item request failed');
@@ -2132,13 +2147,22 @@ $deptOptions = [
   $(document).on('change', 'select[name="dept"], select[name="cat"], select[name="type"]', function () {
   $(this).closest('form').submit();
 });
+$(document).ready(function () {
+  if (window.location.hash && window.location.hash.indexOf('#order-') === 0) {
+    const orderId = window.location.hash.replace('#order-', '');
+
+    setTimeout(function () {
+      $('.btn-toggle-detail[data-order-id="' + orderId + '"]').click();
+    }, 300);
+  }
+});
 </script>
 <div class="modal fade" id="optionsModal" tabindex="-1" role="dialog" aria-hidden="true">
   <div class="modal-dialog modal-lg" role="document">
     <div class="modal-content bg-dark text-light">
       <div class="modal-header">
         <h5 class="modal-title">Product Options</h5>
-        <button type="button" class="close text-light" data-dismiss="modal" aria-label="Close">
+        <button type="button" class="btn btn-secondary btn-sm" data-dismiss="modal" data-bs-dismiss="modal">
           <span aria-hidden="true">&times;</span>
         </button>
       </div>
