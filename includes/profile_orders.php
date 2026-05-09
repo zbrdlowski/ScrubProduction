@@ -6,6 +6,7 @@ require_once __DIR__ . '/conn.php';
 $dpt = (int) ($_SESSION['dpt'] ?? 0);
 $userId = (int) ($_SESSION['user_id'] ?? 0);
 
+// zobrazenie orders ztial len pre grafikov. Neskor mozno pridat aj pre dalsie oddelenia, ale treba to spravit tak, aby sa tam nezobrazovali objednavky, ktore nepatria danym oddeleniam.
 if ($dpt !== 2) {
     echo '<div class="alert alert-warning">Only Graphics department allowed.</div>';
     return;
