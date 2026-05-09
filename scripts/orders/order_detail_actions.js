@@ -1,5 +1,43 @@
 console.log('ORDER DETAIL ACTIONS LOADED v-profile-1');
+$(document)
+  .off('click.takeOrder', '.btn-take-order')
+  .on('click.takeOrder', '.btn-take-order', function (e) {
+    e.preventDefault();
+    e.stopPropagation();
 
+    const $btn = $(this);
+    const orderId = $btn.data('order-id');
+
+    if (!orderId) {
+      alert('Missing order ID');
+      return;
+    }
+
+    $btn.prop('disabled', true).text('...');
+
+    $.ajax({
+      url: 'scripts/orders/take_order.php',
+      method: 'POST',
+      dataType: 'json',
+      data: {
+        order_id: orderId
+      },
+      success: function (resp) {
+        if (!resp || !resp.ok) {
+          alert('TAKE error: ' + (resp && resp.error ? resp.error : 'unknown'));
+          $btn.prop('disabled', false).text('TAKE');
+          return;
+        }
+
+        location.reload();
+      },
+      error: function (xhr) {
+        console.log(xhr.responseText);
+        alert('TAKE error request failed');
+        $btn.prop('disabled', false).text('TAKE');
+      }
+    });
+  });
 (function () {
   let currentOptionsItemId = 0;
   let currentInternalOptions = {};

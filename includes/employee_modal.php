@@ -1,347 +1,310 @@
 <!-- Add -->
-<div class="modal fade" id="addnew">
-    <div class="modal-dialog">
-        <div class="modal-content">
-          	<div class="modal-header">
-            	             		
-            	<h4 class="modal-title"><b>Pridať Zamestnanca</b></h4>
-          	</div>
-          	<div class="modal-body">
-            	<form class="form-horizontal" method="POST" action="scripts/employee_add.php" enctype="multipart/form-data">
-          		  <div class="form-group">
-                  	<label for="firstname" class="col-sm-3 control-label">Meno</label>
+<style>
+  .employee-add-modal .modal-content {
+    border-radius: 16px;
+    overflow: hidden;
+    border: 1px solid rgba(255, 255, 255, .12);
+  }
 
-                  	<div class="col-sm-9">
-                    	<input type="text" class="form-control" id="firstname" name="firstname" required>
-                  	</div>
-                </div>
+  .employee-add-modal .modal-header {
+    background: linear-gradient(135deg, #17a2b8, #6610f2);
+    color: #fff;
+    border-bottom: 0;
+  }
 
-                    <script>
-                    // Initialize Tempusdominus datepickers for this modal
-                    $(function(){
-                      if (typeof $.fn.datetimepicker !== 'undefined') {
-                        $('#addnew').on('shown.bs.modal', function() {
-                          $('#datepicker_add').datetimepicker({ format: 'YYYY-MM-DD' });
-                        });
-                        $('#edit').on('shown.bs.modal', function() {
-                          $('#datepicker_edit').datetimepicker({ format: 'YYYY-MM-DD' });
-                        });
-                      }
-                    });
-                    </script>
-                <div class="form-group">
-                  	<label for="lastname" class="col-sm-3 control-label">Priezvisko</label>
+  .employee-add-modal .modal-body {
+    background: #2f343a;
+    color: #e9ecef;
+  }
 
-                  	<div class="col-sm-9">
-                    	<input type="text" class="form-control" id="lastname" name="lastname" required>
-                  	</div>
-                </div>
-                <div class="form-group">
-                  	<label for="address" class="col-sm-3 control-label">Adresa</label>
+  .employee-add-modal .section-card {
+    background: rgba(255, 255, 255, .06);
+    border: 1px solid rgba(255, 255, 255, .10);
+    border-radius: 14px;
+    padding: 14px;
+    margin-bottom: 14px;
+  }
 
-                  	<div class="col-sm-9">
-                      <textarea class="form-control" name="address" id="address"></textarea>
-                  	</div>
-                </div>
-                <div class="form-group">
-                  	<label for="datepicker_add" class="col-sm-3 control-label">Dátum nar.</label>
+  .employee-add-modal .section-title {
+    font-size: 13px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .4px;
+    margin-bottom: 12px;
+  }
 
-                  	<div class="col-sm-9"> 
-                        <div class="input-group date" id="datepicker_add" data-target-input="nearest">
-                          <input type="text" class="form-control datetimepicker-input" data-target="#datepicker_add" id="datepicker_add_input" name="birthdate">
-                          <div class="input-group-append" data-target="#datepicker_add" data-toggle="datetimepicker">
-                            <div class="input-group-text"><i class="far fa-calendar-alt"></i></div>
-                          </div>
-                        </div>
-                  	</div>
-                </div>
-                <div class="form-group">
-                    <label for="contact" class="col-sm-3 control-label">Telefón</label>
+  .employee-add-modal label {
+    font-size: 12px;
+    color: #adb5bd;
+    margin-bottom: 4px;
+  }
 
-                    <div class="col-sm-9">
-                      <input type="text" class="form-control" id="contact" name="contact">
-                    </div>
-                </div>
-                <div class="form-group">
-                    <label for="gender" class="col-sm-3 control-label">Pohlavie</label>
+  .employee-add-modal .form-control,
+  .employee-add-modal .custom-file-label {
+    background: rgba(0, 0, 0, .20);
+    border-color: rgba(255, 255, 255, .18);
+    color: #fff;
+  }
 
-                    <div class="col-sm-9"> 
-                      <select class="form-control" name="gender" id="gender" required>
-                        <option value="" selected>- Select -</option>
-                        <option value="Male">Male</option>
-                        <option value="Female">Female</option>
-                      </select>
-                    </div>
-                </div>
-                <div class="form-group">
-                    <label for="position" class="col-sm-3 control-label">Prac. pozícia</label>
+  .employee-add-modal .form-control:focus {
+    background: rgba(0, 0, 0, .30);
+    color: #fff;
+    border-color: #17a2b8;
+    box-shadow: 0 0 0 .1rem rgba(23, 162, 184, .25);
+  }
 
-                    <div class="col-sm-9">
-                      <select class="form-control" name="position" id="position" required>
-                        <option value="" selected>- Select -</option>
-                        <?php
-                          $sql = "SELECT * FROM position";
-                          $query = $conn->query($sql);
-                          while($prow = $query->fetch_assoc()){
-                            echo "
-                              <option value='".$prow['id']."'>".$prow['description']."</option>
-                            ";
-                          }
-                        ?>
-                      </select>
-                    </div>
-                </div>
-                <div class="form-group">
-                    <label for="schedule" class="col-sm-3 control-label">Prac. Doba</label>
+  .employee-add-modal .modal-footer {
+    background: #252a30;
+    border-top: 1px solid rgba(255, 255, 255, .10);
+  }
 
-                    <div class="col-sm-9">
-                      <select class="form-control" id="schedule" name="schedule" required>
-                        <option value="" selected>- Select -</option>
-                        <?php
-                          $sql = "SELECT * FROM schedules";
-                          $query = $conn->query($sql);
-                          while($srow = $query->fetch_assoc()){
-                            echo "
-                              <option value='".$srow['id']."'>".$srow['time_in'].' - '.$srow['time_out']."</option>
-                            ";
-                          }
-                        ?>
-                      </select>
-                    </div>
-                </div>
-                <div class="form-group">
-                    <label for="active" class="col-sm-3 control-label">Aktívny</label>
+  .employee-switch-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+    gap: 10px;
+  }
 
-                    <div class="col-sm-9">
-                      <select class="form-control" id="active" name="active" required>
-                        <option value="Active" selected>- Active -</option>
-                        <option value="Inactive">- Inactive -</option>
-                       
-                      </select>
-                    </div>
-                </div>
+  .employee-switch-card {
+    background: rgba(0, 0, 0, .18);
+    border: 1px solid rgba(255, 255, 255, .10);
+    border-radius: 12px;
+    padding: 10px 12px;
+  }
 
-                <div class="form-group">
-                    <label for="pesonal" class="col-sm-3 control-label">Osobný prehľad</label>
+  .employee-switch-card small {
+    display: block;
+    color: #adb5bd;
+    line-height: 1.2;
+    margin-top: 3px;
+  }
+  .btn-outline-pink {
+  color: #ff7eb6;
+  border-color: #ff7eb6;
+}
 
-                    <div class="col-sm-9">
-                      <select class="form-control" id="personal" name="personal" required>
-                        <option value="X" selected>- Nezobraziť nič -</option>
-                        <option value="A">- Zobraziť iba denný prehľad -</option>
-                        <option value="B">- Zobraziť iba mesačný prehľad -</option>
-                        <option value="C">- Zobraziť oba prehľady -</option>
-                       
-                      </select>
-                    </div>
-                </div>
+.btn-outline-pink:hover,
+.btn-outline-pink.active {
+  background: #ff7eb6;
+  color: #fff;
+  border-color: #ff7eb6;
+}
+</style>
 
-                <div class="form-group">
-                    <label for="photo" class="col-sm-3 control-label">Foto</label>
+<div class="modal fade employee-add-modal" id="addnew">
+  <div class="modal-dialog modal-xl modal-dialog-scrollable">
+    <div class="modal-content">
 
-                    <div class="col-sm-9">
-                      <input type="file" name="photo" id="photo">
-                    </div>
-                </div>
-          	</div>
-          	<div class="modal-footer">
-            	<button type="button" class="btn btn-default btn-flat pull-left" data-dismiss="modal"><i class="fa fa-close"></i> Zavrieť</button>
-            	<button type="submit" class="btn btn-primary btn-flat" name="add"><i class="fa fa-save"></i> Uložiť</button>
-            	</form>
-          	</div>
+      <form method="POST" action="scripts/employee_add.php" enctype="multipart/form-data">
+
+        <div class="modal-header">
+          <div>
+            <h4 class="modal-title mb-0">
+              <i class="fas fa-user-plus mr-2"></i><b>Pridať zamestnanca</b>
+            </h4>
+            <small>Nový používateľ, dochádzka, grid a profile orders nastavenia</small>
+          </div>
+
+          <button type="button" class="close text-light" data-dismiss="modal" aria-label="Close">
+            <span aria-hidden="true">&times;</span>
+          </button>
         </div>
-    </div>
-</div>
 
-<!-- Edit -->
-<div class="modal fade" id="edit">
-    <div class="modal-dialog">
-        <div class="modal-content">
-          	<div class="modal-header d-flex justify-content-between align-items-center">
-  <h4 class="modal-title mb-0"><b><span class="del_employee_name"></span></b></h4>
-  <button type="button" class="close" data-dismiss="modal" aria-label="Close">
-    <span aria-hidden="true">&times;</span>
-  </button>
-</div>
-          	<div class="modal-body">
-            	<form class="form-horizontal" method="POST" action="employee_edit.php">
-            		<input type="hidden" class="empid" name="id">
-                <div class="form-group">
-                    <label for="edit_firstname" class="col-sm-3 control-label">Meno</label>
+        <div class="modal-body">
 
-                    <div class="col-sm-9">
-                      <input type="text" class="form-control" id="edit_firstname" name="firstname">
-                    </div>
+          <div class="row">
+
+            <div class="col-lg-6">
+              <div class="section-card">
+                <div class="section-title text-info">
+                  <i class="fas fa-id-card mr-1"></i> Základné údaje
                 </div>
-                <div class="form-group">
-                    <label for="edit_lastname" class="col-sm-3 control-label">Priezvisko</label>
 
-                    <div class="col-sm-9">
-                      <input type="text" class="form-control" id="edit_lastname" name="lastname">
-                    </div>
+                <div class="form-row">
+                  <div class="form-group col-md-6">
+                    <label>Meno</label>
+                    <input type="text" class="form-control" name="firstname" required>
+                  </div>
+
+                  <div class="form-group col-md-6">
+                    <label>Priezvisko</label>
+                    <input type="text" class="form-control" name="lastname" required>
+                  </div>
                 </div>
-                <div class="form-group">
-                    <label for="edit_address" class="col-sm-3 control-label">Adresa</label>
 
-                    <div class="col-sm-9">
-                      <textarea class="form-control" name="address" id="edit_address"></textarea>
-                    </div>
+                <div class="form-group">
+                  <label>Adresa</label>
+                  <textarea class="form-control" name="address" rows="3"></textarea>
                 </div>
-                <div class="form-group">
-                    <label for="datepicker_edit" class="col-sm-3 control-label">Dátum nar.</label>
 
-                    <div class="col-sm-9"> 
-                        <div class="input-group date" id="datepicker_edit" data-target-input="nearest">
-                          <input type="text" class="form-control datetimepicker-input" data-target="#datepicker_edit" id="datepicker_edit_input" name="birthdate">
-                          <div class="input-group-append" data-target="#datepicker_edit" data-toggle="datetimepicker">
-                            <div class="input-group-text"><i class="far fa-calendar-alt"></i></div>
-                          </div>
-                        </div>
-                    </div>
-                </div>
-                <div class="form-group">
-                    <label for="edit_contact" class="col-sm-3 control-label">Telefón</label>
-
-                    <div class="col-sm-9">
-                      <input type="text" class="form-control" id="edit_contact" name="contact">
-                    </div>
-                </div>
-                <div class="form-group">
-                    <label for="edit_gender" class="col-sm-3 control-label">Pohlavie</label>
-
-                    <div class="col-sm-9"> 
-                      <select class="form-control" name="gender" id="edit_gender">
-                        <option selected id="gender_val"></option>
-                        <option value="Male">Male</option>
-                        <option value="Female">Female</option>
-                      </select>
-                    </div>
-                </div>
-                <div class="form-group">
-                    <label for="edit_position" class="col-sm-3 control-label">Prac. pozícia</label>
-
-                    <div class="col-sm-9">
-                      <select class="form-control" name="position" id="edit_position">
-                        <option selected id="position_val"></option>
-                        <?php
-                          $sql = "SELECT * FROM position";
-                          $query = $conn->query($sql);
-                          while($prow = $query->fetch_assoc()){
-                            echo "
-                              <option value='".$prow['id']."'>".$prow['description']."</option>
-                            ";
-                          }
-                        ?>
-                      </select>
-                    </div>
-                </div>
-                <div class="form-group">
-                    <label for="active" class="col-sm-3 control-label">Aktívny</label>
-
-                    <div class="col-sm-9">
-                    <select class="form-control" name="active" id="edit_active">
-                        <option selected id="active_val"></option>
-                        <option value="Active">Active</option>
-                        <option value="Inactive">Inactive</option>
-                      </select>
-                    </div>
-                </div>
-                <div class="form-group">
-                    <label for="edit_schedule" class="col-sm-3 control-label">Prac. doba</label>
-
-                    <div class="col-sm-9">
-                      <select class="form-control" id="edit_schedule" name="schedule">
-                        <option selected id="schedule_val"></option>
-                        <?php
-                          $sql = "SELECT * FROM schedules";
-                          $query = $conn->query($sql);
-                          while($srow = $query->fetch_assoc()){
-                            echo "
-                              <option value='".$srow['id']."'>".$srow['time_in'].' - '.$srow['time_out']."</option>
-                            ";
-                          }
-                        ?>
-                      </select>
+                <div class="form-row">
+                  <div class="form-group col-md-6">
+                    <label>Dátum narodenia</label>
+                    <div class="input-group date" id="datepicker_add" data-target-input="nearest">
+                      <input type="text" class="form-control datetimepicker-input" data-target="#datepicker_add"
+                        id="datepicker_add_input" name="birthdate">
+                      <div class="input-group-append" data-target="#datepicker_add" data-toggle="datetimepicker">
+                        <div class="input-group-text"><i class="far fa-calendar-alt"></i></div>
+                      </div>
                     </div>
                   </div>
 
-                  <div class="form-group">
-                    <label for="pesonal" class="col-sm-3 control-label">Osobný prehľad</label>
-
-                    <div class="col-sm-9">
-                      <select class="form-control"  name="personal" id="edit_personal" required>                        
-                        <option selected id="personal_val"></option>                   
-                        <option value="X">X - Nezobraziť nič -</option>
-                        <option value="A">A - Zobraziť iba denný prehľad -</option>
-                        <option value="B">B - Zobraziť iba mesačný prehľad -</option>
-                        <option value="C">C - Zobraziť oba prehľady -</option>
-                       
-                      </select>
-                    </div>
+                  <div class="form-group col-md-6">
+                    <label>Telefón / Kontakt</label>
+                    <input type="text" class="form-control" name="contact">
+                  </div>
                 </div>
 
+                <div class="form-group mb-0">
+                  <label class="d-block">Pohlavie</label>
 
-          	</div>
-          	<div class="modal-footer">
-            	<button type="button" class="btn btn-default btn-flat pull-left" data-dismiss="modal"><i class="fa fa-close"></i> Zavrieť</button>
-            	<button type="submit" class="btn btn-success btn-flat" name="edit"><i class="fa fa-check-square-o"></i> Upraviť</button>
-            	</form>
-          	</div>
-        </div>
-    </div>
-</div>
+                  <div class="btn-group btn-group-toggle d-flex" data-toggle="buttons">
 
-<!-- Delete -->
-<div class="modal fade" id="delete">
-    <div class="modal-dialog">
-        <div class="modal-content">
-          	<div class="modal-header">
-            	<button type="button" class="close" data-dismiss="modal" aria-label="Close">
-              		<span aria-hidden="true">&times;</span></button>            	
-          	</div>
-          	<div class="modal-body">
-            	<form class="form-horizontal" method="POST" action="employee_delete.php">
-            		<input type="hidden" class="empid" name="id">
-            		<div class="text-center">
-	                	<p>DELETE EMPLOYEE</p>
-	                	<h2 class="bold del_employee_name"></h2>
-	            	</div>
-          	</div>
-          	<div class="modal-footer">
-            	<button type="button" class="btn btn-default btn-flat pull-left" data-dismiss="modal"><i class="fa fa-close"></i> Zavrieť</button>
-            	<button type="submit" class="btn btn-danger btn-flat" name="delete"><i class="fa fa-trash"></i> Odstrániť</button>
-            	</form>
-          	</div>
-        </div>
-    </div>
-</div>
+                    <label class="btn btn-outline-info active w-50">
+                      <input type="radio" name="gender" value="Male" autocomplete="off" checked>
+                      <i class="fas fa-mars mr-1"></i> Male
+                    </label>
 
-<!-- Update Photo -->
+                    <label class="btn btn-outline-pink w-50">
+                      <input type="radio" name="gender" value="Female" autocomplete="off">
+                      <i class="fas fa-venus mr-1"></i> Female
+                    </label>
 
-<div class="modal fade" id="edit_photo">
-    <div class="modal-dialog">
-        <div class="modal-content">
-            <div class="modal-header d-flex justify-content-between align-items-center">
-              <h4 class="modal-title mb-0"><b><span class="del_employee_name"></span></b></h4>
-                <button type="button" class="close" data-dismiss="modal" aria-label="Close">
-                  <span aria-hidden="true">&times;</span>
-                </button>
+                  </div>
+                </div>
+              </div>
             </div>
-            <div class="modal-body">
-              <form class="form-horizontal" method="POST" action="includes/employee_edit_photo.php" enctype="multipart/form-data">
-                <input type="hidden" class="empid" name="id">
+
+            <div class="col-lg-6">
+              <div class="section-card">
+                <div class="section-title text-warning">
+                  <i class="fas fa-briefcase mr-1"></i> Práca a dochádzka
+                </div>
+
+                <div class="form-row">
+                  <div class="form-group col-md-6">
+                    <label>Pracovná pozícia</label>
+                    <select class="form-control" name="position" required>
+                      <option value="">- Select -</option>
+                      <?php
+                      $sql = "SELECT * FROM position";
+                      $query = $conn->query($sql);
+                      while ($prow = $query->fetch_assoc()) {
+                        echo "<option value='" . $prow['id'] . "'>" . $prow['description'] . "</option>";
+                      }
+                      ?>
+                    </select>
+                  </div>
+
+                  <div class="form-group col-md-6">
+                    <label>Pracovná doba</label>
+                    <select class="form-control" name="schedule" required>
+                      <option value="">- Select -</option>
+                      <?php
+                      $sql = "SELECT * FROM schedules";
+                      $query = $conn->query($sql);
+                      while ($srow = $query->fetch_assoc()) {
+                        echo "<option value='" . $srow['id'] . "'>" . $srow['time_in'] . " - " . $srow['time_out'] . "</option>";
+                      }
+                      ?>
+                    </select>
+                  </div>
+                </div>
+
                 <div class="form-group">
-                    <label for="photo" class="col-sm-3 control-label">Photo</label>
-
-                    <div class="col-sm-9">
-                      <input type="file" id="photo" name="photo" required>
-                    </div>
+                  <label>Osobný prehľad</label>
+                  <select class="form-control" name="personal" required>
+                    <option value="X" selected>Nezobraziť nič</option>
+                    <option value="A">Zobraziť iba denný prehľad</option>
+                    <option value="B">Zobraziť iba mesačný prehľad</option>
+                    <option value="C">Zobraziť oba prehľady</option>
+                  </select>
                 </div>
+
+                <div class="form-group mb-0">
+                  <label>Foto</label>
+                  <div class="custom-file">
+                    <input type="file" class="custom-file-input" name="photo" id="employee_add_photo">
+                    <label class="custom-file-label" for="employee_add_photo">Vybrať súbor...</label>
+                  </div>
+                </div>
+              </div>
+
+              <div class="section-card">
+                <div class="section-title text-success">
+                  <i class="fas fa-toggle-on mr-1"></i> Prepínače
+                </div>
+
+                <div class="employee-switch-grid">
+
+                  <div class="employee-switch-card">
+                    <div class="custom-control custom-switch">
+                      <input type="checkbox" class="custom-control-input" id="add_active" name="active" value="Active"
+                        checked>
+                      <label class="custom-control-label" for="add_active">Aktívny</label>
+                    </div>
+                    <small>Zamestnanec je aktívny v systéme.</small>
+                  </div>
+
+                  <div class="employee-switch-card">
+                    <div class="custom-control custom-switch">
+                      <input type="checkbox" class="custom-control-input" id="add_grid" name="grid" value="1" checked>
+                      <label class="custom-control-label" for="add_grid">Zobraziť v gride</label>
+                    </div>
+                    <small>Dochádzka, online status, obed, prestávky.</small>
+                  </div>
+
+                  <div class="employee-switch-card">
+                    <div class="custom-control custom-switch">
+                      <input type="checkbox" class="custom-control-input" id="add_personal_orders"
+                        name="personal_orders" value="1">
+                      <label class="custom-control-label" for="add_personal_orders">Profile Orders</label>
+                    </div>
+                    <small>Zobrazí tab Orders v profile zamestnanca.</small>
+                  </div>
+
+                  <div class="employee-switch-card">
+                    <div class="custom-control custom-switch">
+                      <input type="checkbox" class="custom-control-input" id="add_chat" name="chat" value="yes">
+                      <label class="custom-control-label" for="add_chat">Chat</label>
+                    </div>
+                    <small>Zamestnanec sa môže zobrazovať v chate.</small>
+                  </div>
+
+                </div>
+              </div>
             </div>
-            <div class="modal-footer">
-              <button type="button" class="btn btn-default btn-flat pull-left" data-dismiss="modal"><i class="fa fa-close"></i> Zavrieť</button>
-              <button type="submit" class="btn btn-success btn-flat" name="upload"><i class="fa fa-check-square-o"></i> Upraviť</button>
-              </form>
-            </div>
+
+          </div>
+
         </div>
+
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary btn-flat" data-dismiss="modal">
+            <i class="fa fa-close"></i> Zavrieť
+          </button>
+
+          <button type="submit" class="btn btn-info btn-flat" name="add">
+            <i class="fa fa-save"></i> Uložiť zamestnanca
+          </button>
+        </div>
+
+      </form>
+
     </div>
-</div>    
+  </div>
+</div>
+
+<script>
+  $(function () {
+    if (typeof $.fn.datetimepicker !== 'undefined') {
+      $('#addnew').on('shown.bs.modal', function () {
+        $('#datepicker_add').datetimepicker({ format: 'YYYY-MM-DD' });
+      });
+    }
+
+    $(document).on('change', '#employee_add_photo', function () {
+      var fileName = $(this).val().split('\\').pop();
+      $(this).next('.custom-file-label').html(fileName || 'Vybrať súbor...');
+    });
+  });
+</script>

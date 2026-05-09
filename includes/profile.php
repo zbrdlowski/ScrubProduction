@@ -187,6 +187,7 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == '1') {
     <?php
     // ktorý panel je predvolene aktívny
     $activeTab = ($_GET['tab'] ?? 'attendance'); // možné hodnoty: attendance | orders | online
+    $showPersonalOrders = !empty($_SESSION['personal_orders']);
     ?>
 
     <!-- ZÁLOŽKY + OBSAH (celá šírka pod bannerom) -->
@@ -202,12 +203,14 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == '1') {
                   Dochádzka
                 </a>
               </li>
-              <li class="nav-item">
-                <a class="nav-link <?php echo ($activeTab === 'orders') ? 'active' : ''; ?>"
-                  href="?page=profile&tab=orders">
-                  Orders
-                </a>
-              </li>
+              <?php if ($showPersonalOrders): ?>
+                <li class="nav-item">
+                  <a class="nav-link <?php echo ($activeTab === 'orders') ? 'active' : ''; ?>"
+                    href="?page=profile&tab=orders">
+                    Orders
+                  </a>
+                </li>
+              <?php endif; ?>
               <li class="nav-item">
                 <a class="nav-link <?php echo ($activeTab === 'online') ? 'active' : ''; ?>"
                   href="?page=profile&tab=online">
@@ -376,11 +379,11 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == '1') {
 
             <?php elseif ($activeTab === 'orders'): ?>
 
-                <div id="profileOrdersContainer">
-                  <?php include 'includes/profile_orders.php'; ?>
-                </div>
+              <div id="profileOrdersContainer">
+                <?php include 'includes/profile_orders.php'; ?>
+              </div>
 
-              <?php else: ?>
+            <?php else: ?>
 
               <!-- ONLINE STAV (mriežka) -->
               <div id="onlineGridContainer">

@@ -45,6 +45,8 @@
 				$_SESSION['user_photo'] = $row['photo'];
 				$_SESSION['name'] = $row['firstname'].' '.$row['lastname'];
 				$_SESSION['username'] = $username;
+				$_SESSION['personal_orders'] = (int)($row['personal_orders'] ?? 0);
+				$_SESSION['grid'] = (int)($row['grid'] ?? 0);
 
 				$sql_dpt = "SELECT description FROM position WHERE id = '".$_SESSION['dpt']."'";
 				$query_dpt = $conn->query($sql_dpt);

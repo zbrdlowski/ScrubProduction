@@ -7,8 +7,22 @@ $dpt = (int) ($_SESSION['dpt'] ?? 0);
 $userId = (int) ($_SESSION['user_id'] ?? 0);
 
 // zobrazenie orders ztial len pre grafikov. Neskor mozno pridat aj pre dalsie oddelenia, ale treba to spravit tak, aby sa tam nezobrazovali objednavky, ktore nepatria danym oddeleniam.
-if ($dpt !== 2) {
-    echo '<div class="alert alert-warning">Only Graphics department allowed.</div>';
+$personalOrdersEnabled = (int)($_SESSION['personal_orders'] ?? 0);
+
+if ($personalOrdersEnabled !== 1) {
+    $uid = (int)($_SESSION['user_id'] ?? 0);
+
+    $stmt = $conn->prepare("SELECT personal_orders FROM employees WHERE id = ? LIMIT 1");
+    $stmt->bind_param("i", $uid);
+    $stmt->execute();
+    $row = $stmt->get_result()->fetch_assoc();
+
+    $personalOrdersEnabled = (int)($row['personal_orders'] ?? 0);
+    $_SESSION['personal_orders'] = $personalOrdersEnabled;
+}
+
+if ($personalOrdersEnabled !== 1) {
+    echo '<div class="alert alert-warning">Profile Orders are not enabled for this user.</div>';
     return;
 }
 
