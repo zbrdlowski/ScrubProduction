@@ -645,26 +645,27 @@ $deptOptions = [
               </td>
               <td><?= htmlspecialchars((string) $row['source_code']) ?></td>
               <td>
-                <?php
-                $cc = strtoupper(trim((string) ($row['country_code'] ?? '')));
+  <?php
+  $cc = strtoupper(trim((string) ($row['country_code'] ?? '')));
 
-                if ($cc === 'UM')
-                  $cc = 'US';
+  if ($cc === 'UM') {
+    $cc = 'US';
+  }
 
-                if ($cc !== '') {
-                  $ccLower = strtolower($cc);
+  if ($cc !== '') {
+    $ccLower = strtolower($cc);
 
-                  echo '<span style="white-space:nowrap;">';
-                  echo '<img src="https://flagcdn.com/16x12/' . htmlspecialchars($ccLower) . '.png" ';
-                  echo 'alt="' . htmlspecialchars($cc) . '" ';
-                  echo 'style="margin-right:5px; vertical-align:-1px;">';
-                  echo htmlspecialchars($cc);
-                  echo '</span>';
-                } else {
-                  echo '-';
-                }
-                ?>
-              </td>
+    echo '<span style="white-space:nowrap;">';
+    echo '<img src="https://flagcdn.com/16x12/' . htmlspecialchars($ccLower) . '.png" ';
+    echo 'alt="' . htmlspecialchars($cc) . '" ';
+    echo 'style="margin-right:5px; vertical-align:-1px;">';
+    echo htmlspecialchars($cc);
+    echo '</span>';
+  } else {
+    echo '-';
+  }
+  ?>
+</td>
 
               <td>
                 <div><b><?= htmlspecialchars((string) ($row['order_number'] ?? $row['external_order_id'] ?? '')) ?></b>
@@ -1382,36 +1383,14 @@ $deptOptions = [
     }
   }
 
-  // VIEW
-  $(document).on('click', '.btn-view-options', function (e) {
-    e.stopPropagation(); // aby neklikol row
+  $(document).on('click', '#btnEditInternalOptions', function () {
+    renderInternalEditor(currentInternalOptions);
 
-    const data = getOptionsData($(this));
-
-    $('#optionsModalBody').html(renderOptionsPretty(data));
-    $('#optionsModal').modal('show');
-
-    currentOptionsItemId = $(this).data('item-id') || 0;
-
-    try {
-      currentInternalOptions = JSON.parse($(this).attr('data-internal-options') || '{}');
-    } catch (e) {
-      currentInternalOptions = {};
-    }
-
-    $('#internalOptionsView').html(renderInternalOptions(currentInternalOptions));
-    $('#internalOptionsJson').val(JSON.stringify(currentInternalOptions, null, 2));
-    $('#internalOptionsEditBox').hide();
-    $('#btnEditInternalOptions').show();
+    $('#internalOptionsEditBox').show();
+    $('#btnEditInternalOptions').hide();
   });
-$(document).on('click', '#btnEditInternalOptions', function () {
-  renderInternalEditor(currentInternalOptions);
-
-  $('#internalOptionsEditBox').show();
-  $('#btnEditInternalOptions').hide();
-});
-$(document).on('click', '#btnAddInternalBlock', function () {
-  $('#internalBlocksEditor').append(`
+  $(document).on('click', '#btnAddInternalBlock', function () {
+    $('#internalBlocksEditor').append(`
     <div class="card bg-secondary mb-2 internal-block">
       <div class="card-header py-2 d-flex justify-content-between align-items-center">
         <input type="text"
@@ -1445,10 +1424,10 @@ $(document).on('click', '#btnAddInternalBlock', function () {
       </div>
     </div>
   `);
-});
+  });
 
-$(document).on('click', '.btn-add-internal-field', function () {
-  $(this).closest('.internal-block').find('.internal-fields').append(`
+  $(document).on('click', '.btn-add-internal-field', function () {
+    $(this).closest('.internal-block').find('.internal-fields').append(`
     <div class="form-row align-items-center mb-2 internal-field">
       <div class="col-md-4">
         <input type="text" class="form-control form-control-sm internal-field-key" placeholder="Field name">
@@ -1461,71 +1440,35 @@ $(document).on('click', '.btn-add-internal-field', function () {
       </div>
     </div>
   `);
-});
+  });
 
-$(document).on('click', '.btn-remove-internal-field', function () {
-  $(this).closest('.internal-field').remove();
-});
+  $(document).on('click', '.btn-remove-internal-field', function () {
+    $(this).closest('.internal-field').remove();
+  });
 
-$(document).on('click', '.btn-remove-internal-block', function () {
-  if (confirm('Remove this block?')) {
-    $(this).closest('.internal-block').remove();
-  }
-});
-
-$(document).on('click', '#btnSaveInternalOptions', function () {
-  const data = collectInternalEditorData();
-  const raw = JSON.stringify(data);
-
-  $.post('scripts/orders/update_item_internal_options.php', {
-    item_id: currentOptionsItemId,
-    internal_options_json: raw
-  }, function (res) {
-    if (!res || !res.ok) {
-      alert(res && res.error ? res.error : 'Save failed');
-      return;
-    }
-
-    $('#optionsModal').modal('hide');
-    location.reload();
-  }, 'json');
-});
-  // COPY
-  $(document).on('click', '.btn-copy-options', async function (e) {
-    e.preventDefault();
-    e.stopPropagation();
-
-    const data = getOptionsData($(this));
-    let text = '';
-
-    for (let k in data) {
-      if (k.startsWith('_')) continue;
-      if (typeof data[k] === 'object') continue;
-      text += `${k}: ${data[k]}\n`;
-    }
-
-    if (!text.trim()) {
-      alert('Nothing to copy');
-      return;
-    }
-
-    try {
-      if (navigator.clipboard && window.isSecureContext) {
-        await navigator.clipboard.writeText(text);
-      } else {
-        copyTextFallback(text);
-      }
-
-      const $btn = $(this);
-      const oldText = $btn.text();
-      $btn.text('COPIED');
-      setTimeout(() => $btn.text(oldText), 1000);
-    } catch (err) {
-      console.error(err);
-      alert('Copy failed');
+  $(document).on('click', '.btn-remove-internal-block', function () {
+    if (confirm('Remove this block?')) {
+      $(this).closest('.internal-block').remove();
     }
   });
 
+  $(document).on('click', '#btnSaveInternalOptions', function () {
+    const data = collectInternalEditorData();
+    const raw = JSON.stringify(data);
+
+    $.post('scripts/orders/update_item_internal_options.php', {
+      item_id: currentOptionsItemId,
+      internal_options_json: raw
+    }, function (res) {
+      if (!res || !res.ok) {
+        alert(res && res.error ? res.error : 'Save failed');
+        return;
+      }
+
+      $('#optionsModal').modal('hide');
+      location.reload();
+    }, 'json');
+  });
 
   $(document).on('click', '.btn-edit-country', function (e) {
     e.stopPropagation();
@@ -1725,31 +1668,6 @@ $(document).on('click', '#btnSaveInternalOptions', function () {
       }
 
       reloadOrderDetail(orderId);
-    }, 'json');
-  });
-
-  $(document).on('click', '.btn-save-production-note', function () {
-    const orderId = $(this).data('order-id');
-    const $box = $(this).closest('.production-note-box');
-    const note = $box.find('.production-note-input').val();
-    const $btn = $(this);
-
-    $btn.prop('disabled', true).text('Saving...');
-
-    $.post('scripts/orders/update_production_note.php', {
-      order_id: orderId,
-      production_note: note
-    }, function (res) {
-      if (!res || !res.ok) {
-        alert(res && res.error ? res.error : 'Save failed');
-        $btn.prop('disabled', false).text('Save note');
-        return;
-      }
-
-      const $wrap = $('#detail-' + orderId);
-      $wrap.removeData('loaded').html('');
-      $('.btn-toggle-detail[data-order-id="' + orderId + '"]').click();
-
     }, 'json');
   });
 
@@ -1982,44 +1900,7 @@ $(document).on('click', '#btnSaveInternalOptions', function () {
     $box.find('.production-note-display').show();
     $box.find('.btn-edit-production-note').show();
   });
-  $(document).on('click', '.btn-assign-item', function (e) {
-    e.preventDefault();
-    e.stopPropagation();
 
-    const itemId = $(this).data('item-id');
-
-    $.ajax({
-      url: 'scripts/orders/assign_order_item.php',
-      method: 'POST',
-      dataType: 'json',
-      data: {
-        item_id: itemId
-      },
-      success: function (resp) {
-        if (!resp || !resp.ok) {
-          alert(resp && resp.error ? resp.error : 'Assign item failed');
-          return;
-        }
-
-        const detailWrap = $('.detail-wrap:visible').first();
-        const orderId = detailWrap.closest('tr').prev('.order-row').data('order-id');
-
-        if (orderId) {
-          $.post('scripts/orders/get_order_detail.php', {
-            order_id: orderId
-          }, function (res) {
-            if (res && res.ok) {
-              $('#detail-' + orderId).html(res.html).show();
-            }
-          }, 'json');
-        }
-      },
-      error: function (xhr) {
-        console.log(xhr.responseText);
-        alert('Assign item request failed');
-      }
-    });
-  });
   $(document).on('click', '.btn-open-invite-modal', function (e) {
     e.preventDefault();
     e.stopPropagation();
@@ -2180,29 +2061,29 @@ $(document).on('click', '#btnSaveInternalOptions', function () {
     return html;
   }
   function escapeHtml(str) {
-  return String(str ?? '')
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;')
-    .replaceAll("'", '&#039;');
-}
-
-function renderInternalEditor(data) {
-  let html = '';
-
-  if (!data || Object.keys(data).length === 0) {
-    data = {
-      'Production Info': {
-        'Note': ''
-      }
-    };
+    return String(str ?? '')
+      .replaceAll('&', '&amp;')
+      .replaceAll('<', '&lt;')
+      .replaceAll('>', '&gt;')
+      .replaceAll('"', '&quot;')
+      .replaceAll("'", '&#039;');
   }
 
-  Object.keys(data).forEach(function (blockName) {
-    const fields = data[blockName] || {};
+  function renderInternalEditor(data) {
+    let html = '';
 
-    html += `
+    if (!data || Object.keys(data).length === 0) {
+      data = {
+        'Production Info': {
+          'Note': ''
+        }
+      };
+    }
+
+    Object.keys(data).forEach(function (blockName) {
+      const fields = data[blockName] || {};
+
+      html += `
       <div class="card bg-secondary mb-2 internal-block">
         <div class="card-header py-2 d-flex justify-content-between align-items-center">
           <input type="text"
@@ -2224,8 +2105,8 @@ function renderInternalEditor(data) {
         <div class="card-body py-2 internal-fields">
     `;
 
-    Object.keys(fields).forEach(function (key) {
-      html += `
+      Object.keys(fields).forEach(function (key) {
+        html += `
         <div class="form-row align-items-center mb-2 internal-field">
           <div class="col-md-4">
             <input type="text"
@@ -2248,43 +2129,43 @@ function renderInternalEditor(data) {
           </div>
         </div>
       `;
-    });
+      });
 
-    html += `
+      html += `
         </div>
       </div>
     `;
-  });
+    });
 
-  $('#internalBlocksEditor').html(html);
-}
+    $('#internalBlocksEditor').html(html);
+  }
 
-function collectInternalEditorData() {
-  const data = {};
+  function collectInternalEditorData() {
+    const data = {};
 
-  $('#internalBlocksEditor .internal-block').each(function () {
-    const blockName = $(this).find('.internal-block-name').val().trim();
+    $('#internalBlocksEditor .internal-block').each(function () {
+      const blockName = $(this).find('.internal-block-name').val().trim();
 
-    if (!blockName) return;
+      if (!blockName) return;
 
-    data[blockName] = {};
+      data[blockName] = {};
 
-    $(this).find('.internal-field').each(function () {
-      const key = $(this).find('.internal-field-key').val().trim();
-      const value = $(this).find('.internal-field-value').val().trim();
+      $(this).find('.internal-field').each(function () {
+        const key = $(this).find('.internal-field-key').val().trim();
+        const value = $(this).find('.internal-field-value').val().trim();
 
-      if (key) {
-        data[blockName][key] = value;
+        if (key) {
+          data[blockName][key] = value;
+        }
+      });
+
+      if (Object.keys(data[blockName]).length === 0) {
+        delete data[blockName];
       }
     });
 
-    if (Object.keys(data[blockName]).length === 0) {
-      delete data[blockName];
-    }
-  });
-
-  return data;
-}
+    return data;
+  }
 </script>
 <script src="scripts/orders/order_detail_actions.js"></script>
 <div class="modal fade" id="optionsModal" tabindex="-1" role="dialog" aria-hidden="true">
