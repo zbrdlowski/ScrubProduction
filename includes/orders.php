@@ -645,27 +645,27 @@ $deptOptions = [
               </td>
               <td><?= htmlspecialchars((string) $row['source_code']) ?></td>
               <td>
-  <?php
-  $cc = strtoupper(trim((string) ($row['country_code'] ?? '')));
+                <?php
+                $cc = strtoupper(trim((string) ($row['country_code'] ?? '')));
 
-  if ($cc === 'UM') {
-    $cc = 'US';
-  }
+                if ($cc === 'UM') {
+                  $cc = 'US';
+                }
 
-  if ($cc !== '') {
-    $ccLower = strtolower($cc);
+                if ($cc !== '') {
+                  $ccLower = strtolower($cc);
 
-    echo '<span style="white-space:nowrap;">';
-    echo '<img src="https://flagcdn.com/16x12/' . htmlspecialchars($ccLower) . '.png" ';
-    echo 'alt="' . htmlspecialchars($cc) . '" ';
-    echo 'style="margin-right:5px; vertical-align:-1px;">';
-    echo htmlspecialchars($cc);
-    echo '</span>';
-  } else {
-    echo '-';
-  }
-  ?>
-</td>
+                  echo '<span style="white-space:nowrap;">';
+                  echo '<img src="https://flagcdn.com/16x12/' . htmlspecialchars($ccLower) . '.png" ';
+                  echo 'alt="' . htmlspecialchars($cc) . '" ';
+                  echo 'style="margin-right:5px; vertical-align:-1px;">';
+                  echo htmlspecialchars($cc);
+                  echo '</span>';
+                } else {
+                  echo '-';
+                }
+                ?>
+              </td>
 
               <td>
                 <div><b><?= htmlspecialchars((string) ($row['order_number'] ?? $row['external_order_id'] ?? '')) ?></b>
