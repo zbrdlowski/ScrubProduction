@@ -706,18 +706,23 @@ $(document)
 
       const data = collectInternalEditorData();
 
-      $.post('scripts/orders/update_item_internal_options.php', {
-        item_id: currentOptionsItemId,
-        internal_options_json: JSON.stringify(data)
-      }, function (res) {
-        if (!res || !res.ok) {
-          alert(res && res.error ? res.error : 'Save failed');
-          return;
-        }
+$.post('scripts/orders/update_item_internal_options.php', {
+  item_id: currentOptionsItemId,
+  internal_options_json: JSON.stringify(data)
+}, function (res) {
+  if (!res || (!res.ok && !res.success)) {
+    alert(res && (res.error || res.message) ? (res.error || res.message) : 'Save failed');
+    return;
+  }
 
-        $('#optionsModal').modal('hide');
-        refreshOrderDetail(findOpenOrderIdFromElement($('.btn-view-options[data-item-id="' + currentOptionsItemId + '"]')));
-      }, 'json');
+  $('#optionsModal').modal('hide');
+  refreshOrderDetail(
+    findOpenOrderIdFromElement($('.btn-view-options[data-item-id="' + currentOptionsItemId + '"]'))
+  );
+}, 'json').fail(function (xhr) {
+  console.log(xhr.responseText);
+  alert('Save internal options request failed');
+});
     });
 
 })();

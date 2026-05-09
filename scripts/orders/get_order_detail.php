@@ -30,16 +30,21 @@ if ($orderId <= 0)
 $dpt = (int) ($_SESSION['dpt'] ?? 0);
 $allAccess = in_array($dpt, [1, 3, 4, 5, 7], true);
 
+// Funkcia na bezpečnú konverziu textu do HTML (ochrana proti XSS útokám)
 function h($s): string
 {
   return htmlspecialchars((string) $s, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
 }
+
+// Generuje HTML obrázok s vlajkou krajiny podľa kódu
 function countryFlag($code): string
 {
+  // Normalizácia kódu krajiny na veľké písmená
   $code = strtoupper(trim((string) $code));
   if ($code === '')
     return '';
 
+  // Zmeny niektorých kódov na štandardizované ISO kódy
   if ($code === 'UK')
     $code = 'GB';
   if ($code === 'UM')
@@ -47,6 +52,7 @@ function countryFlag($code): string
   if ($code === 'KX')
     $code = 'XK';
 
+  // Konverzia na malé písmená pre URL
   $imgCode = strtolower($code);
 
   return '<img src="https://flagcdn.com/16x12/' . h($imgCode) . '.png" '
@@ -56,6 +62,7 @@ function countryFlag($code): string
 
 function normalizeUsZipFromAddress(array $a): string
 {
+  // Spojenie PSČ, ulice a mesta pre spracovanie
   $text = trim(
     ($a['zip'] ?? '') . ' ' .
     ($a['street'] ?? '') . ' ' .
@@ -65,17 +72,17 @@ function normalizeUsZipFromAddress(array $a): string
   if ($text === '')
     return '';
 
-  // ZIP+4: 11706-4815 => 11706
+  // Vzor ZIP+4: 11706-4815 => extrahni 11706
   if (preg_match('/\b(\d{5})-\d{4}\b/', $text, $m)) {
     return $m[1];
   }
 
-  // last standalone 5 digits
+  // Hľadaj posledný samostatný 5-miestny kód
   if (preg_match_all('/\b\d{5}\b/', $text, $m) && !empty($m[0])) {
     return end($m[0]);
   }
 
-  // MXLocker/Shoptet missing leading zero: 2703 => 02703
+  // MXLocker/Shoptet občas chýba vedúca nula: 2703 => 02703
   if (preg_match('/\b(\d{4})\b\s*$/', $text, $m)) {
     return '0' . $m[1];
   }
@@ -83,14 +90,18 @@ function normalizeUsZipFromAddress(array $a): string
   return '';
 }
 
+// Vracia kód amerického štátu na základe PSČ
 function usStateFromZip(string $zip): string
 {
+  // Odstráni všetky nečíselné znaky
   $zip = preg_replace('/\D+/', '', $zip);
   if (strlen($zip) < 5)
     return '';
 
+  // Extrahuje prvých 5 číslic PSČ
   $n = (int) substr($zip, 0, 5);
 
+  // Mapy ZIP codes pre jednotlivé štáty USA
   $ranges = [
     'AL' => [[35000, 36999]],
     'AK' => [[99500, 99999]],
@@ -145,6 +156,7 @@ function usStateFromZip(string $zip): string
     'WY' => [[82000, 83199]],
   ];
 
+  // Hľadá PSČ v rozsahoch konkrétneho štátu
   foreach ($ranges as $state => $rs) {
     foreach ($rs as $r) {
       if ($n >= $r[0] && $n <= $r[1])
@@ -155,8 +167,10 @@ function usStateFromZip(string $zip): string
   return '';
 }
 
+// Pripraví textovú verziu adresy na kopírovanie
 function addressCopyText(array $a, string $state = ''): string
 {
+  // Kombinuje adresné polia do formátu vhodného na kopírovanie
   return trim(
     ($a['name'] ?? '') . "\n" .
     ($a['company'] ?? '') . "\n" .
@@ -166,10 +180,13 @@ function addressCopyText(array $a, string $state = ''): string
   );
 }
 
-// tu upraviť farbu badge podľa statusu, používa sa v detailoch objednávky a v zozname objednávok
+// Vracia CSS triedu pre farebný badge statusu objednávky
+// Používa sa v detailoch objednávky aj v zozname objednávok
 function status_badge_class($status): string
 {
+  // Normalizácia statusu
   $s = strtoupper(trim((string) $status));
+  // Mapovanie statusov na CSS farby
   switch ($s) {
     case 'NEW':
       return 'bg-info';
@@ -344,25 +361,34 @@ $stmt->close();
 
 $status = (string) ($order['status'] ?? '');
 $badgeClass = status_badge_class($status);
+
+// Čistí text aktivity od technických informácií o ID tvorcov
 function formatActivityText(string $text): string
 {
+  // Odstráni hranaté zátvorky s created_by informáciami
   $text = preg_replace('/\[[^\]]*created_by\s*:\s*\d+[^\]]*\]/i', '', $text);
+  // Odstráni created_by bez zátvoriek
   $text = preg_replace('/created_by\s*:\s*\d+/i', '', $text);
   return trim($text);
 }
+
+// Vráti meno zamestnanca podľa ID s cachovaním výsledkov
 function employeeNameById(mysqli $conn, int $id): string
 {
+  // Statická cache na uchovávanie už načítaných mien
   static $cache = [];
 
+  // Validácia, že ID je kladné číslo
   if ($id <= 0)
     return '';
 
+  // Vráti meno z cache ak existuje
   if (isset($cache[$id])) {
     return $cache[$id];
   }
 
-  $stmt = $conn->prepare("
-    SELECT TRIM(CONCAT(firstname, ' ', lastname)) AS name
+  // Dotaz do databázy na meno zamestnanca
+  $stmt = $conn->prepare("SELECT TRIM(CONCAT(firstname, ' ', lastname)) AS name
     FROM employees
     WHERE id = ?
     LIMIT 1
@@ -372,19 +398,24 @@ function employeeNameById(mysqli $conn, int $id): string
   $row = $stmt->get_result()->fetch_assoc();
   $stmt->close();
 
+  // Uloženie mena do cache
   $cache[$id] = trim((string) ($row['name'] ?? ''));
 
   return $cache[$id];
 }
 
+// Pripraví JSON údaje o voľbách, nahradí ID tvorcov za ich mená
 function prepareOptionsJsonForModal(mysqli $conn, string $json): string
 {
+  // Dekódovanie JSON na asociatívne pole
   $data = json_decode($json ?: '{}', true);
 
+  // Ak nie je pole, vráti pôvodný JSON
   if (!is_array($data)) {
     return $json;
   }
 
+  // Nahradí ID tvorcov/aktualizátorov za ich mená
   foreach (['created_by', 'updated_by'] as $key) {
     if (isset($data[$key]) && is_numeric($data[$key])) {
       $name = employeeNameById($conn, (int) $data[$key]);
@@ -396,8 +427,11 @@ function prepareOptionsJsonForModal(mysqli $conn, string $json): string
 
   return json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 }
+
+// Hľadá prvú existujúcu a neprázdnu hodnotu z poľa kľúčov
 function optionValue(array $data, array $keys): string
 {
+  // Iteruje cez kľúče a vracia prvú nájdenú hodnotu
   foreach ($keys as $key) {
     if (isset($data[$key]) && trim((string) $data[$key]) !== '') {
       return trim((string) $data[$key]);
@@ -406,26 +440,33 @@ function optionValue(array $data, array $keys): string
   return '';
 }
 
+// Generuje URL produktu podľa zdroja objednávky (SHOPTET, EBAY, atď.)
 function itemProductUrl(array $order, array $item): string
 {
+  // Extrahuje zdroj, SKU a manuálnu URL z údajov
   $source = strtoupper((string) ($order['source_code'] ?? ''));
   $sku = trim((string) ($item['sku'] ?? ''));
   $manualUrl = trim((string) ($item['product_url'] ?? ''));
 
+  // Ak je zadaná manuálna URL, použije sa
   if ($manualUrl !== '') {
     return $manualUrl;
   }
 
+  // Pre SHOPTET objednávky vracia vyhľadávací link s SKU
   if (strpos($source, 'SHOPTET') !== false && $sku !== '') {
     return 'https://www.scrubdesignz.com/search/?string=' . rawurlencode($sku);
   }
 
+  // Pre EBAY objednávky vytvorí link na základe čísla položky
   if (strpos($source, 'EBAY') !== false) {
+    // Dekódovanie voliteľných parametrov z JSON
     $data = json_decode((string) ($item['options_json'] ?? ''), true);
     if (!is_array($data)) {
       $data = [];
     }
 
+    // Hľadá číslo položky v rôznych možných kľúčoch
     $itemNumber = optionValue($data, [
       'item_number',
       'Item number',
@@ -435,6 +476,7 @@ function itemProductUrl(array $order, array $item): string
       'legacy_item_id'
     ]);
 
+    // Ak sa nenašlo číslo, hľadaj ho v SKU, návestí alebo názve pomocou regex
     if ($itemNumber === '') {
       foreach (['sku', 'custom_label', 'title'] as $field) {
         if (preg_match('/\b([13][0-9]{8,15})\b/', (string) ($item[$field] ?? ''), $m)) {
@@ -444,11 +486,14 @@ function itemProductUrl(array $order, array $item): string
       }
     }
 
+    // Ak sa našlo číslo, vytvorí správny link podľa domény
     if ($itemNumber !== '') {
+      // Položky začínajúce 3 = eBay UK
       if (strpos($itemNumber, '3') === 0) {
         return 'https://www.ebay.co.uk/itm/' . rawurlencode($itemNumber);
       }
 
+      // Položky začínajúce 1 = eBay DE
       if (strpos($itemNumber, '1') === 0) {
         return 'https://www.ebay.de/itm/' . rawurlencode($itemNumber);
       }

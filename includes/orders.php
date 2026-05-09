@@ -632,7 +632,7 @@ $deptOptions = [
               $customer = (string) ($row['customer_email'] ?? '-');
             ?>
             <tr class="<?= $rowClass ?> order-row" data-order-id="<?= $orderId ?>">
-              <td>
+              <td class="text-center">
                 <?php
                 $dateRaw = $row['order_date'] ?? null;
                 if (!empty($dateRaw)) {
@@ -643,8 +643,8 @@ $deptOptions = [
                 }
                 ?>
               </td>
-              <td><?= htmlspecialchars((string) $row['source_code']) ?></td>
-              <td>
+              <td class="text-center"><?= htmlspecialchars((string) $row['source_code']) ?></td>
+              <td class="text-center">
                 <?php
                 $cc = strtoupper(trim((string) ($row['country_code'] ?? '')));
 
@@ -667,7 +667,7 @@ $deptOptions = [
                 ?>
               </td>
 
-              <td>
+              <td class="text-center">
                 <div><b><?= htmlspecialchars((string) ($row['order_number'] ?? $row['external_order_id'] ?? '')) ?></b>
                 </div>
 
@@ -677,7 +677,7 @@ $deptOptions = [
                 <?php endif; ?>
 
               </td>
-              <td align="center">
+              <td class="text-center">
                 <?php
                 if ($hasManualTypes) {
                   // manual override – napr. GFPS
@@ -1451,7 +1451,7 @@ $deptOptions = [
       $(this).closest('.internal-block').remove();
     }
   });
-
+/*
   $(document).on('click', '#btnSaveInternalOptions', function () {
     const data = collectInternalEditorData();
     const raw = JSON.stringify(data);
@@ -1469,7 +1469,7 @@ $deptOptions = [
       location.reload();
     }, 'json');
   });
-
+*/
   $(document).on('click', '.btn-edit-country', function (e) {
     e.stopPropagation();
 
