@@ -1112,9 +1112,7 @@ ob_start();
             </tr>
           </thead>
           <tbody>
-            <?php if ($hasManualTypes): ?>
-              <span class="badge badge-light mr-1" title="Manual types override">M</span>
-            <?php endif; ?>
+            
             <?php foreach ($items as $it): ?>
               <?php
               $t = strtoupper((string) ($it['item_type_code'] ?? 'NULL'));

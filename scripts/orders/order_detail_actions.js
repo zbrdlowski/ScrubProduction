@@ -763,4 +763,46 @@ $.post('scripts/orders/update_item_internal_options.php', {
 });
     });
 
+    $(document)
+  .off('change.orderStatus', '.order-status-select')
+  .on('change.orderStatus', '.order-status-select', function (e) {
+    e.preventDefault();
+    e.stopPropagation();
+
+    const $select = $(this);
+    const orderId = $select.data('order-id');
+    const status = $select.val();
+
+    if (!orderId || !status) {
+      alert('Missing order ID or status');
+      return;
+    }
+
+    $select.prop('disabled', true);
+
+    $.ajax({
+      url: 'scripts/orders/update_order_status.php',
+      method: 'POST',
+      dataType: 'json',
+      data: {
+        order_id: orderId,
+        status: status
+      },
+success: function (resp) {
+  if (!resp || !resp.ok) {
+    alert(resp && resp.error ? resp.error : 'Status update failed');
+    $select.prop('disabled', false);
+    return;
+  }
+
+  location.reload();
+},
+      error: function (xhr) {
+        console.log(xhr.responseText);
+        alert('Status update request failed');
+        $select.prop('disabled', false);
+      }
+    });
+  });
+
 })();
