@@ -549,6 +549,50 @@ if ($profileDetailRow.length) {
   });
 });
 
+  $(document)
+  .off('click.removeAssignment', '.btn-remove-assignment')
+  .on('click.removeAssignment', '.btn-remove-assignment', function (e) {
+    e.preventDefault();
+    e.stopPropagation();
+
+    const $btn = $(this);
+    const assignmentId = $btn.data('assignment-id');
+
+    if (!assignmentId) {
+      alert('Missing assignment ID');
+      return;
+    }
+
+    if (!confirm('Remove this assignment?')) {
+      return;
+    }
+
+    $btn.prop('disabled', true);
+
+    $.ajax({
+      url: 'scripts/orders/remove_order_assignment.php',
+      method: 'POST',
+      dataType: 'json',
+      data: {
+        assignment_id: assignmentId
+      },
+      success: function (resp) {
+        if (!resp || !resp.ok) {
+          alert(resp && resp.error ? resp.error : 'Remove assignment failed');
+          $btn.prop('disabled', false);
+          return;
+        }
+
+        location.reload();
+      },
+      error: function (xhr) {
+        console.log(xhr.responseText);
+        alert('Remove assignment request failed');
+        $btn.prop('disabled', false);
+      }
+    });
+  });
+
 $(document)
   .off('change.orderDetailActions', '.item-status-select')
   .on('change.orderDetailActions', '.item-status-select', function (e) {
@@ -605,50 +649,6 @@ $(document)
         console.log(xhr.responseText);
         alert('Status update request failed');
         $select.prop('disabled', false);
-      }
-    });
-  });
-
-  $(document)
-  .off('click.removeAssignment', '.btn-remove-assignment')
-  .on('click.removeAssignment', '.btn-remove-assignment', function (e) {
-    e.preventDefault();
-    e.stopPropagation();
-
-    const $btn = $(this);
-    const assignmentId = $btn.data('assignment-id');
-
-    if (!assignmentId) {
-      alert('Missing assignment ID');
-      return;
-    }
-
-    if (!confirm('Remove this assignment?')) {
-      return;
-    }
-
-    $btn.prop('disabled', true);
-
-    $.ajax({
-      url: 'scripts/orders/remove_order_assignment.php',
-      method: 'POST',
-      dataType: 'json',
-      data: {
-        assignment_id: assignmentId
-      },
-      success: function (resp) {
-        if (!resp || !resp.ok) {
-          alert(resp && resp.error ? resp.error : 'Remove assignment failed');
-          $btn.prop('disabled', false);
-          return;
-        }
-
-        location.reload();
-      },
-      error: function (xhr) {
-        console.log(xhr.responseText);
-        alert('Remove assignment request failed');
-        $btn.prop('disabled', false);
       }
     });
   });

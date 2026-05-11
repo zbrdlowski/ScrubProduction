@@ -37,6 +37,7 @@ if (!$a) {
 }
 
 $orderId = (int)$a['order_id'];
+$employeeId = (int)$a['employee_id'];
 
 $stmt = $conn->prepare("
   UPDATE order_assignments
@@ -44,6 +45,18 @@ $stmt = $conn->prepare("
   WHERE id = ?
 ");
 $stmt->bind_param('i', $assignmentId);
+$stmt->execute();
+$stmt->close();
+
+$stmt = $conn->prepare("
+  UPDATE order_item_assignments oia
+  JOIN order_items oi ON oi.id = oia.item_id
+  SET oia.removed_at = NOW()
+  WHERE oi.order_id = ?
+    AND oia.employee_id = ?
+    AND oia.removed_at IS NULL
+");
+$stmt->bind_param('ii', $orderId, $employeeId);
 $stmt->execute();
 $stmt->close();
 
