@@ -209,6 +209,23 @@ function status_badge_class($status): string
   }
 }
 
+function item_type_category_badge(array $item): string
+{
+  $map = [
+    'G' => ['Graphics', 'badge-info'],
+    'P' => ['Plastics', 'badge-primary'],
+    'S' => ['Seat Cover', 'badge-success'],
+    'F' => ['Fitting', 'badge-danger'],
+    'T' => ['Plastics', 'badge-primary'],
+    'M' => ['Plastics', 'badge-primary'],
+  ];
+
+  $type = strtoupper(trim((string) ($item['item_type_code'] ?? '')));
+  [$label, $class] = $map[$type] ?? ['Unknown', 'badge-secondary'];
+
+  return '<span class="badge ' . h($class) . '">' . h($label) . '</span>';
+}
+
 // --- order header ---
 $stmt = $conn->prepare(" SELECT 
     o.*,
@@ -1298,9 +1315,7 @@ ob_start();
                 </td>
 
                 <td>
-                  <span class="badge badge-info">
-                    <?= h($it['item_status'] ?? 'NEW') ?>
-                  </span>
+                  <?php echo item_type_category_badge($it); ?>
                 </td>
 
                 <td style="min-width:220px;">

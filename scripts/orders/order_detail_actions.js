@@ -582,22 +582,73 @@ $(document)
         expected_date: expectedDate
       },
       success: function (resp) {
-        if (!resp || (!resp.success && !resp.ok)) {
-          alert(resp && (resp.message || resp.error) ? (resp.message || resp.error) : 'Status update failed');
-          $select.prop('disabled', false);
-          return;
-        }
+  if (!resp || (!resp.success && !resp.ok)) {
+    alert(resp && (resp.message || resp.error) ? (resp.message || resp.error) : 'Status update failed');
+    $select.prop('disabled', false);
+    return;
+  }
 
-        if (orderId) {
-          refreshOrderDetail(orderId);
-        } else {
-          location.reload();
-        }
-      },
+  const isProfileOrders = $select.closest('.profile-order-detail-row').length > 0;
+
+  if (isProfileOrders) {
+    if (orderId) {
+      sessionStorage.setItem('profileOrdersReopenOrderId', orderId);
+    }
+
+    location.reload();
+    return;
+  }
+
+  refreshOrderDetail(findOpenOrderIdFromElement($select));
+},
       error: function (xhr) {
         console.log(xhr.responseText);
         alert('Status update request failed');
         $select.prop('disabled', false);
+      }
+    });
+  });
+
+  $(document)
+  .off('click.removeAssignment', '.btn-remove-assignment')
+  .on('click.removeAssignment', '.btn-remove-assignment', function (e) {
+    e.preventDefault();
+    e.stopPropagation();
+
+    const $btn = $(this);
+    const assignmentId = $btn.data('assignment-id');
+
+    if (!assignmentId) {
+      alert('Missing assignment ID');
+      return;
+    }
+
+    if (!confirm('Remove this assignment?')) {
+      return;
+    }
+
+    $btn.prop('disabled', true);
+
+    $.ajax({
+      url: 'scripts/orders/remove_order_assignment.php',
+      method: 'POST',
+      dataType: 'json',
+      data: {
+        assignment_id: assignmentId
+      },
+      success: function (resp) {
+        if (!resp || !resp.ok) {
+          alert(resp && resp.error ? resp.error : 'Remove assignment failed');
+          $btn.prop('disabled', false);
+          return;
+        }
+
+        location.reload();
+      },
+      error: function (xhr) {
+        console.log(xhr.responseText);
+        alert('Remove assignment request failed');
+        $btn.prop('disabled', false);
       }
     });
   });

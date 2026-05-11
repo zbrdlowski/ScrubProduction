@@ -6,7 +6,7 @@
 $employees_qry = $conn->query("SELECT e.id, e.firstname, e.lastname, e.online_status, e.photo, e.position_id, p.description
     FROM employees e
     JOIN position p ON p.id = e.position_id
-    WHERE e.active = 'active'
+    WHERE e.grid = 1
     ORDER BY e.lastname ASC
 ") or die(mysqli_error($conn));
 
