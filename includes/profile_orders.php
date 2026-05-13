@@ -26,6 +26,26 @@ if ($personalOrdersEnabled !== 1) {
     return;
 }
 
+/* SEM PRIDA%T MAPOVANIE ROLÍ */
+
+$roleMap = [
+    2 => ['PRIMARY_GRAPHICS', 'COLLAB_GRAPHICS'],
+    6 => ['PRIMARY_PLASTICS', 'COLLAB_PLASTICS'],
+    8 => ['PRIMARY_SEATCOVER', 'COLLAB_SEATCOVER'],
+    9 => ['PRIMARY_FITTING', 'COLLAB_FITTING'],
+];
+
+$profileRoles = $roleMap[$dpt] ?? [];
+
+if (empty($profileRoles)) {
+    echo '<div class="alert alert-warning">Profile Orders are not configured for your department.</div>';
+    return;
+}
+
+$rolePlaceholders = implode(',', array_fill(0, count($profileRoles), '?'));
+
+/* AŽ POTOM NASLEDUJE $sql = "SELECT ..." */
+
 $sql = "SELECT 
     o.id,
     o.order_number,
@@ -42,6 +62,15 @@ $sql = "SELECT
     oa.role,
 
     (
+      SELECT GROUP_CONCAT(DISTINCT oi.item_type_code ORDER BY oi.item_type_code SEPARATOR ',')
+      FROM order_items oi
+      WHERE oi.order_id = o.id
+        AND oi.deleted_at IS NULL
+        AND oi.item_type_code IS NOT NULL
+        AND oi.item_type_code <> ''
+    ) AS fallback_item_types,
+
+    (
       SELECT GROUP_CONCAT(
         CONCAT(
           oax.id, '|',
@@ -55,6 +84,12 @@ $sql = "SELECT
           CASE oax.role
             WHEN 'PRIMARY_GRAPHICS' THEN 10
             WHEN 'COLLAB_GRAPHICS' THEN 11
+            WHEN 'PRIMARY_PLASTICS' THEN 20
+            WHEN 'COLLAB_PLASTICS' THEN 21
+            WHEN 'PRIMARY_SEATCOVER' THEN 30
+            WHEN 'COLLAB_SEATCOVER' THEN 31
+            WHEN 'PRIMARY_FITTING' THEN 40
+            WHEN 'COLLAB_FITTING' THEN 41
             ELSE 99
           END,
           e.firstname,
@@ -65,7 +100,7 @@ $sql = "SELECT
       JOIN employees e ON e.id = oax.employee_id
       WHERE oax.order_id = o.id
         AND oax.removed_at IS NULL
-        AND oax.role IN ('PRIMARY_GRAPHICS','COLLAB_GRAPHICS')
+        AND oax.role IN ($rolePlaceholders)
     ) AS assigned_users
 
 FROM orders o
@@ -78,14 +113,17 @@ LEFT JOIN order_addresses oa_bill ON oa_bill.order_id = o.id AND UPPER(oa_bill.t
 WHERE 
     oa.employee_id = ?
     AND oa.removed_at IS NULL
-    AND oa.role IN ('PRIMARY_GRAPHICS','COLLAB_GRAPHICS')
+    AND oa.role IN ($rolePlaceholders)
     AND UPPER(o.status) != 'SHIPPED'
 
 ORDER BY o.order_date ASC
 ";
 
 $stmt = $conn->prepare($sql);
-$stmt->bind_param("i", $userId);
+$types = str_repeat('s', count($profileRoles)) . 'i' . str_repeat('s', count($profileRoles));
+$params = array_merge($profileRoles, [$userId], $profileRoles);
+
+$stmt->bind_param($types, ...$params);
 $stmt->execute();
 $res = $stmt->get_result();
 ?>
@@ -122,7 +160,9 @@ function profileStatusButtonClass(string $status): string
 
 function profileRoleBadge(string $role): string
 {
-    return strtoupper($role) === 'PRIMARY_GRAPHICS'
+    $role = strtoupper($role);
+
+    return strpos($role, 'PRIMARY_') === 0
         ? '<span class="badge badge-info">Mine</span>'
         : '<span class="badge badge-secondary">Collab</span>';
 }
@@ -249,7 +289,24 @@ function profileRoleBadge(string $role): string
             $summary = json_decode($summaryRaw, true);
             if (!is_array($summary)) {
                 $summary = [];
+                    }
+                    if (empty($summary)) {
+            $fallbackTypes = array_filter(array_map('trim', explode(',', (string)($row['fallback_item_types'] ?? ''))));
+
+            foreach ($fallbackTypes as $type) {
+                $type = strtoupper($type);
+
+                if ($type === 'T' || $type === 'M') {
+                    $summary['G'] = 'ORANGE';
+                    $summary['P'] = 'ORANGE';
+                    continue;
+                }
+
+                if (in_array($type, ['G', 'F', 'P', 'S'], true)) {
+                    $summary[$type] = 'ORANGE';
+                }
             }
+        }
             ?>
 
             <tr class="profile-order-row order-row <?= $rowClass ?>" data-order-id="<?= $orderId ?>">
