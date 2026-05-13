@@ -38,6 +38,7 @@ $roleMap = [
 $profileRoles = $roleMap[$dpt] ?? [];
 
 if (empty($profileRoles)) {
+    echo '<div class="alert alert-info">DEBUG dpt=' . htmlspecialchars((string)$dpt) . '</div>';
     echo '<div class="alert alert-warning">Profile Orders are not configured for your department.</div>';
     return;
 }

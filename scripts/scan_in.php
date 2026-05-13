@@ -1,10 +1,11 @@
 <?php
 session_start();
+header('Content-Type: application/json; charset=utf-8');
 
-if (empty($_SESSION['name'])) {
+if (empty($_SESSION['user_id']) || empty($_SESSION['name'])) {
     http_response_code(401);
     echo json_encode([
-        'status' => 'error',
+        'status' => 'session_expired',
         'message' => 'Session expired. Please log in again.'
     ]);
     exit;
@@ -13,25 +14,33 @@ if (empty($_SESSION['name'])) {
 require_once('../includes/conn.php');
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-    header("Location: ../index.php?page=scan_form");
+    http_response_code(405);
+    echo json_encode([
+        'status' => 'error',
+        'message' => 'Invalid request method.'
+    ]);
     exit;
 }
 
-$barcode         = trim($_POST['barcode'] ?? '');
-$order_id        = trim($_POST['order_id'] ?? '');
-$shelf_location  = trim($_POST['shelf_location'] ?? '');
-$quantity        = max(1, intval($_POST['quantity'] ?? 1));
-$scan_type       = $_POST['scan_type'] ?? 'standard';
 
-$timestamp       = date('Y-m-d H:i:s');
-$operator        = $_SESSION['name'];
-$receivingShelf  = 'A010';
+$barcode = trim($_POST['barcode'] ?? '');
+$order_id = trim($_POST['order_id'] ?? '');
+$shelf_location = trim($_POST['shelf_location'] ?? '');
+$quantity = max(1, intval($_POST['quantity'] ?? 1));
+$scan_type = $_POST['scan_type'] ?? 'standard';
+
+$timestamp = date('Y-m-d H:i:s');
+$operator = $_SESSION['name'];
+$receivingShelf = 'A010';
 
 /* ---------------- VALIDACIA ---------------- */
 
 if (!$barcode || !$order_id || !$shelf_location) {
-    $_SESSION['error'] = "Missing required fields.";
-    header("Location: ../index.php?page=scan_form");
+    http_response_code(400);
+    echo json_encode([
+        'status' => 'error',
+        'message' => 'Missing required fields.'
+    ]);
     exit;
 }
 
@@ -87,10 +96,10 @@ try {
         ");
         $stmt->execute([
             'item_id' => $item['id'],
-            'shelf'   => $receivingShelf
+            'shelf' => $receivingShelf
         ]);
 
-        $availableQty = (int)$stmt->fetchColumn();
+        $availableQty = (int) $stmt->fetchColumn();
 
         if ($availableQty < $quantity) {
             throw new Exception(
@@ -105,9 +114,9 @@ try {
               AND shelf_name = :shelf
         ");
         $stmt->execute([
-            'qty'      => $quantity,
-            'item_id'  => $item['id'],
-            'shelf'    => $receivingShelf
+            'qty' => $quantity,
+            'item_id' => $item['id'],
+            'shelf' => $receivingShelf
         ]);
     }
 
@@ -118,11 +127,11 @@ try {
         ON DUPLICATE KEY UPDATE quantity = quantity + VALUES(quantity)
     ");
     $stmt->execute([
-        'item_id'    => $item['id'],
-        'code'       => $barcode,
-        'shelf_id'   => $shelf['id'],
+        'item_id' => $item['id'],
+        'code' => $barcode,
+        'shelf_id' => $shelf['id'],
         'shelf_name' => $shelf_location,
-        'qty'        => $quantity
+        'qty' => $quantity
     ]);
 
     /* ---------------- Zápis pohybu ---------------- */
@@ -133,14 +142,14 @@ try {
         (:order_id, :item_id, :item_name, :shelf_id, :shelf_name, 'IN', :qty, :operator, :ts)
     ");
     $stmt->execute([
-        'order_id'   => $order_id,
-        'item_id'    => $item['id'],
-        'item_name'  => $barcode,
-        'shelf_id'   => $shelf['id'],
+        'order_id' => $order_id,
+        'item_id' => $item['id'],
+        'item_name' => $barcode,
+        'shelf_id' => $shelf['id'],
         'shelf_name' => $shelf_location,
-        'qty'        => $quantity,
-        'operator'   => $operator,
-        'ts'         => $timestamp
+        'qty' => $quantity,
+        'operator' => $operator,
+        'ts' => $timestamp
     ]);
 
     /* ---------------- Updatnutie celkovej kvantity v KP_GEN ---------------- */
@@ -159,16 +168,23 @@ try {
 
     $pdo->commit();
 
-    $_SESSION['success'] =
-        "Item {$barcode} successfully moved to {$shelf_location}.";
-    $_SESSION['saved_order'] = $order_id;
+    echo json_encode([
+        'status' => 'ok',
+        'message' => "Item {$barcode} successfully moved to {$shelf_location}."
+    ]);
+    exit;
 
 } catch (Exception $e) {
+    if ($pdo->inTransaction()) {
+        $pdo->rollBack();
+    }
 
-    $pdo->rollBack();
-    $_SESSION['error'] = $e->getMessage();
+    http_response_code(400);
+    echo json_encode([
+        'status' => 'error',
+        'message' => $e->getMessage()
+    ]);
+    exit;
 }
 
-header("Location: ../index.php?page=scan_form");
-exit;
 ?>
