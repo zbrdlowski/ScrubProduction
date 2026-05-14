@@ -313,17 +313,27 @@
     //shelfInput.on('input', function(){ saveState(); });
 
     // When scanning in the scanInput, add on Enter (or when scanner sends newline)
+    function commitScanInput() {
+      const code = scanInput.val().trim();
+      if (!code) return false;
+
+      addScanned(code);
+      scanInput.val('');
+      scanInput.focus();
+
+      if (navigator.vibrate) navigator.vibrate(50);
+      return true;
+    }
+
     scanInput.on('keydown', function (e) {
-      if (e.key === 'Enter') {
+      if (e.key === 'Enter' || e.key === 'Tab') {
         e.preventDefault();
-        const code = $(this).val().trim();
-        if (code) {
-          addScanned(code);
-          $(this).val('');
-          // optional: vibrate mobile
-          if (navigator.vibrate) navigator.vibrate(50);
-        }
+        commitScanInput();
       }
+    });
+
+    scanInput.on('change blur', function () {
+      commitScanInput();
     });
 
     // Also allow user to paste multiple lines — split by newlines
@@ -382,6 +392,8 @@
     sendBtn.on('click', function (e) {
       e.preventDefault();
       status.empty();
+      commitScanInput();
+
       const order_id = orderInput.val().trim();
       const shelf = shelfInput.val().trim();
       const scan_type = $('#scanType').val();
@@ -499,27 +511,27 @@
   }).trigger('change');
   function checkSession() {
     $.ajax({
-        url: 'scripts/session_check.php',
-        method: 'GET',
-        dataType: 'json',
-        cache: false
-    }).done(function(resp) {
-        if (!resp || resp.status !== 'ok') {
-            $('#btnSend').prop('disabled', true);
-            $('#scanInput').prop('disabled', true);
-            alert('Session expired. Please log in again.');
-            window.top.location.href = 'login.php';
-        }
-    }).fail(function(xhr) {
+      url: 'scripts/session_check.php',
+      method: 'GET',
+      dataType: 'json',
+      cache: false
+    }).done(function (resp) {
+      if (!resp || resp.status !== 'ok') {
         $('#btnSend').prop('disabled', true);
         $('#scanInput').prop('disabled', true);
         alert('Session expired. Please log in again.');
         window.top.location.href = 'login.php';
+      }
+    }).fail(function (xhr) {
+      $('#btnSend').prop('disabled', true);
+      $('#scanInput').prop('disabled', true);
+      alert('Session expired. Please log in again.');
+      window.top.location.href = 'login.php';
     });
-}
+  }
 
-checkSession();
-setInterval(checkSession, 30000); // check session every 30 seconds
+  checkSession();
+  setInterval(checkSession, 30000); // check session every 30 seconds
 </script>
 <?php
 // LAST 10 INVENTORY MOVEMENTS
