@@ -768,10 +768,7 @@ $deptOptions = [
                 <?php endforeach; ?>
               </td>
 
-              <td class="text-center">
-                <?php
-                $status = strtoupper((string) ($row['status'] ?? ''));
-                $statusBadge = 'badge-secondary';
+              <td class="text-center" data-status-cell="<?= $orderId ?>">
                 // nastavenie farby badge podľa statusu
                 if ($status === 'NEW')
                   $statusBadge = 'badge-danger';
@@ -1855,7 +1852,7 @@ $deptOptions = [
 
         // Aplikujeme semafor priamo z odpovede — bez reloadu
         if (resp.traffic_summary && resp.order_id) {
-          applyTrafficSummaryToRow(resp.order_id, resp.traffic_summary);
+          applyTrafficSummaryToRow(resp.order_id, resp.traffic_summary, resp.order_status);
         }
 
         // Refreshneme len otvorený detail panel

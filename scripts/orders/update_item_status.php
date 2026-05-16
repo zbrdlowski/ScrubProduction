@@ -104,7 +104,7 @@ recalculateOrderWorkflow($conn, $orderId);
 
 // Po prepočte načítame aktuálny traffic_summary_json a vrátime ho v odpovedi
 // — JS ho priamo aplikuje na badge v riadku tabuľky bez extra requestu
-$trafficStmt = $conn->prepare("SELECT traffic_summary_json FROM orders WHERE id = ? LIMIT 1");
+$trafficStmt = $conn->prepare("SELECT traffic_summary_json, status FROM orders WHERE id = ? LIMIT 1");
 $trafficStmt->bind_param('i', $orderId);
 $trafficStmt->execute();
 $trafficRow = $trafficStmt->get_result()->fetch_assoc();
@@ -118,4 +118,11 @@ if (!empty($trafficRow['traffic_summary_json'])) {
     }
 }
 
-echo json_encode(['success' => true, 'order_id' => $orderId, 'traffic_summary' => $trafficSummary]);
+$orderStatus = strtoupper((string)($trafficRow['status'] ?? ''));
+
+echo json_encode([
+    'success'         => true,
+    'order_id'        => $orderId,
+    'traffic_summary' => $trafficSummary,
+    'order_status'    => $orderStatus,
+]);

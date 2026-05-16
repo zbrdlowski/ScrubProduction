@@ -374,12 +374,12 @@ function refreshOrderDetail(orderId) {
 }
 
 /**
- * Aplikuje traffic summary priamo na badge v riadku tabuľky — čisté DOM, žiadny AJAX.
+ * Aplikuje traffic summary + order status button priamo na riadok tabuľky — čisté DOM, žiadny AJAX.
  * Volaná s dátami ktoré už prišli v odpovedi update_item_status.php.
  */
-function applyTrafficSummaryToRow(orderId, summary) {
+function applyTrafficSummaryToRow(orderId, summary, orderStatus) {
   orderId = parseInt(orderId, 10) || 0;
-  if (!orderId || !summary) return;
+  if (!orderId) return;
 
   const $row = $(
     '.profile-order-row[data-order-id="' + orderId + '"], ' +
@@ -387,35 +387,60 @@ function applyTrafficSummaryToRow(orderId, summary) {
   );
   if (!$row.length) return;
 
-  // orders.php má .traffic-cell triedu — priamy selector
-  let $trafficCell = $row.find('td.traffic-cell').first();
+  // ── 1. SEMAFOR ──────────────────────────────────────────────────
+  if (summary) {
+    let $trafficCell = $row.find('td.traffic-cell').first();
 
-  // profile_orders.php fallback — td ktorá obsahuje badge G/P/S/F
-  if (!$trafficCell.length) {
-    $trafficCell = $row.find('td').filter(function () {
-      return $(this).find('.badge').filter(function () {
-        return /^[GPSF]$/.test($(this).text().trim());
-      }).length > 0;
-    }).first();
+    if (!$trafficCell.length) {
+      $trafficCell = $row.find('td').filter(function () {
+        return $(this).find('.badge').filter(function () {
+          return /^[GPSF]$/.test($(this).text().trim());
+        }).length > 0;
+      }).first();
+    }
+
+    if ($trafficCell.length) {
+      const colorMap = { 'GREEN': 'badge-success', 'ORANGE': 'badge-warning', 'RED': 'badge-danger' };
+      let html = '';
+      ['G', 'F', 'P', 'S'].forEach(function (type) {
+        if (!summary[type]) return;
+        const state = String(summary[type]).toUpperCase();
+        const cls = colorMap[state] || 'badge-secondary';
+        html += '<span class="badge ' + cls + ' mr-1" style="font-size:1rem;padding:.5em .7em;" title="' + type + ' ' + state + '">' + type + '</span>';
+      });
+      $trafficCell.html(html);
+    }
   }
 
-  if (!$trafficCell.length) return;
+  // ── 2. STATUS BUTTON ─────────────────────────────────────────────
+  if (orderStatus) {
+    const $statusCell = $row.find('td[data-status-cell]').first();
+    if ($statusCell.length) {
+      const s = String(orderStatus).toUpperCase();
 
-  const colorMap = {
-    'GREEN':  'badge-success',
-    'ORANGE': 'badge-warning',
-    'RED':    'badge-danger'
-  };
+      const btnClassMap = {
+        'NEW':              'btn-outline-danger',
+        'NEED_INFO':        'btn-outline-danger',
+        'IN_PROGRESS':      'btn-outline-warning',
+        'READY_TO_INVOICE': 'btn-outline-warning',
+        'WAITING_PARTS':    'btn-outline-warning',
+        'HOLD':             'btn-outline-secondary',
+        'CANCELLED':        'btn-outline-secondary',
+        'DONE':             'btn-outline-success',
+        'COMPLETED':        'btn-outline-success',
+        'SHIPPED':          'btn-outline-success',
+        'READY':            'btn-outline-success',
+        'READY_TO_SHIP':    'btn-outline-success',
+      };
 
-  let html = '';
-  ['G', 'F', 'P', 'S'].forEach(function (type) {
-    if (!summary[type]) return;
-    const state = String(summary[type]).toUpperCase();
-    const cls = colorMap[state] || 'badge-secondary';
-    html += '<span class="badge ' + cls + ' mr-1" style="font-size:1rem;padding:.5em .7em;" title="' + type + ' ' + state + '">' + type + '</span>';
-  });
+      const btnClass = btnClassMap[s] || 'btn-outline-secondary';
+      const label = s.replace(/_/g, ' ') || '-';
 
-  $trafficCell.html(html);
+      $statusCell.html(
+        '<button class="btn btn-xs ' + btnClass + '" style="pointer-events:none;">' + label + '</button>'
+      );
+    }
+  }
 }
 
   function ensureOptionsModal() {
@@ -684,7 +709,7 @@ $(document)
 
   // Ak odpoveď obsahuje traffic_summary, aplikujeme ho priamo — bez extra requestu
   if (resp.traffic_summary && resp.order_id) {
-    applyTrafficSummaryToRow(resp.order_id, resp.traffic_summary);
+    applyTrafficSummaryToRow(resp.order_id, resp.traffic_summary, resp.order_status);
   }
 
   refreshOrderDetail(resolvedOrderId);

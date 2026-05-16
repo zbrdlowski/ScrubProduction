@@ -365,7 +365,7 @@ function profileRoleBadge(string $role): string
                     <?php endforeach; ?>
                 </td>
 
-                <td class="text-center">
+                <td class="text-center" data-status-cell="<?= $orderId ?>">
                     <button class="btn btn-xs <?= profileStatusButtonClass($statusUpper) ?>" style="pointer-events:none;">
                         <?= htmlspecialchars(str_replace('_', ' ', $statusUpper) ?: '-') ?>
                     </button>
