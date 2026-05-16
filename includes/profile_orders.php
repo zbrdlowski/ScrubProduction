@@ -546,7 +546,6 @@ $(document)
 function openProfileOrderDetail(orderId) {
   const $row = $('.profile-order-row[data-order-id="' + orderId + '"]');
   const $detailRow = $('.profile-order-detail-row[data-detail-for="' + orderId + '"]');
-  const $cell = $detailRow.find('td');
 
   if ($detailRow.is(':visible')) {
     $detailRow.hide();
@@ -559,7 +558,8 @@ function openProfileOrderDetail(orderId) {
 
   $row.addClass('order-row-open');
   $detailRow.show();
-  $cell.html('<div class="p-3 text-muted"><i class="fas fa-spinner fa-spin"></i> Loading...</div>');
+  // Nastavíme spinner — ale $cell budeme hľadať znova v callbacku (nie cez closure)
+  $detailRow.find('td').first().html('<div class="p-3 text-muted"><i class="fas fa-spinner fa-spin"></i> Loading...</div>');
 
   $.ajax({
     url: 'scripts/orders/get_order_detail.php',
@@ -567,15 +567,19 @@ function openProfileOrderDetail(orderId) {
     dataType: 'json',
     data: { order_id: orderId },
     success: function (resp) {
+      // Vždy znova nájdeme bunku v aktuálnom DOM — nie zo starej premennej z closure
+      const $freshDetailRow = $('.profile-order-detail-row[data-detail-for="' + orderId + '"]');
+
       if (!resp || !resp.ok) {
-        $cell.html('<div class="alert alert-danger m-3">' + (resp.error || 'Detail load failed') + '</div>');
+        $freshDetailRow.find('td').first().html('<div class="alert alert-danger m-3">' + ((resp && resp.error) ? resp.error : 'Detail load failed') + '</div>');
         return;
       }
 
-      $cell.html(resp.html);
+      $freshDetailRow.find('td').first().html(resp.html);
     },
     error: function () {
-      $cell.html('<div class="alert alert-danger m-3">Detail load failed.</div>');
+      const $freshDetailRow = $('.profile-order-detail-row[data-detail-for="' + orderId + '"]');
+      $freshDetailRow.find('td').first().html('<div class="alert alert-danger m-3">Detail load failed.</div>');
     }
   });
 }

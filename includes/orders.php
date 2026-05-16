@@ -728,7 +728,7 @@ $deptOptions = [
 
               <!-- semafor -->
 
-              <td class="text-center">
+              <td class="text-center traffic-cell">
                 <?php
                 $summaryRaw = (string) ($row['traffic_summary_json'] ?? '');
                 $summary = json_decode($summaryRaw, true);
@@ -1826,11 +1826,14 @@ $deptOptions = [
     });
   });
   $(document).on('change', '.item-status-select', function () {
-    const itemId = $(this).data('item-id');
-    const status = $(this).val();
+    const $select = $(this);
+    const itemId = $select.data('item-id');
+    const status = $select.val();
 
     const note = $('.item-waiting-note[data-item-id="' + itemId + '"]').val() || '';
     const expectedDate = $('.item-expected-date[data-item-id="' + itemId + '"]').val() || '';
+
+    $select.prop('disabled', true);
 
     $.ajax({
       url: 'scripts/orders/update_item_status.php',
@@ -1843,14 +1846,33 @@ $deptOptions = [
         expected_date: expectedDate
       },
       success: function (resp) {
+        $select.prop('disabled', false);
+
         if (!resp || !resp.success) {
           alert(resp && resp.message ? resp.message : 'Status update failed');
           return;
         }
 
+        // Aplikujeme semafor priamo z odpovede — bez reloadu
+        if (resp.traffic_summary && resp.order_id) {
+          applyTrafficSummaryToRow(resp.order_id, resp.traffic_summary);
+        }
+
+        // Refreshneme len otvorený detail panel
+        const orderId = resp.order_id || 0;
+        if (orderId) {
+          const $wrap = $('#detail-' + orderId);
+          if ($wrap.length) {
+            $wrap.removeData('loaded').html('');
+            $('.btn-toggle-detail[data-order-id="' + orderId + '"]').click();
+            return;
+          }
+        }
+
         location.reload();
       },
       error: function (xhr) {
+        $select.prop('disabled', false);
         console.log(xhr.responseText);
         alert('Status update request failed');
       }

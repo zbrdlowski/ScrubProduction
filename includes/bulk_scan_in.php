@@ -463,7 +463,8 @@
         }).fail(function (xhr) {
           if (xhr.status === 401) {
             alert('Session expired. Please log in again.');
-            window.top.location.href = 'login.php';
+            const returnUrl = window.top.location.pathname + window.top.location.search;
+            window.top.location.href = 'login.php?return=' + encodeURIComponent(returnUrl);
             return;
           }
 
@@ -477,7 +478,6 @@
         });
       })(0);
     });
-
 
     // convenience: tap list item to copy barcode back to scanInput for correction
     listDiv.on('click', '.list-item', function () {
@@ -510,13 +510,15 @@
         $('#btnSend').prop('disabled', true);
         $('#scanInput').prop('disabled', true);
         alert('Session expired. Please log in again.');
-        window.top.location.href = 'login.php';
+        const returnUrl = window.top.location.pathname + window.top.location.search;
+      window.top.location.href = 'login.php?return=' + encodeURIComponent(returnUrl);
       }
     }).fail(function (xhr) {
       $('#btnSend').prop('disabled', true);
       $('#scanInput').prop('disabled', true);
       alert('Session expired. Please log in again.');
-      window.top.location.href = 'login.php';
+      const returnUrl = window.top.location.pathname + window.top.location.search;
+    window.top.location.href = 'login.php?return=' + encodeURIComponent(returnUrl);
     });
   }
 

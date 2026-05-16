@@ -1,13 +1,49 @@
 <?php
+ob_start();
 session_start();
+
+ini_set('display_errors', '0');
+error_reporting(E_ALL);
+
 header('Content-Type: application/json; charset=utf-8');
+header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+
+function json_exit($payload, $code = 200) {
+    while (ob_get_level() > 0) {
+        ob_end_clean();
+    }
+
+    http_response_code($code);
+    header('Content-Type: application/json; charset=utf-8');
+    echo json_encode($payload);
+    exit;
+}
+
+register_shutdown_function(function () {
+    $error = error_get_last();
+
+    if ($error && in_array($error['type'], [E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR])) {
+        while (ob_get_level() > 0) {
+            ob_end_clean();
+        }
+
+        http_response_code(500);
+        header('Content-Type: application/json; charset=utf-8');
+
+        json_exit([
+            'status' => 'error',
+            'message' => 'PHP fatal error on server. Check Synology PHP error log.',
+            'detail' => $error['message']
+        ]);
+    }
+});
 
 if (empty($_SESSION['name'])) {
     http_response_code(401);
-    echo json_encode([
-        'status' => 'session_expired',
-        'message' => 'Session expired. Please log in again.'
-    ]);
+    json_exit([
+    'status' => 'session_expired',
+    'message' => 'Session expired. Please log in again.'
+], 401);
     exit;
 }
 
@@ -15,19 +51,19 @@ require_once('../includes/conn.php');
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     http_response_code(405);
-    echo json_encode([
+    json_exit([
         'status' => 'error',
         'message' => 'Invalid request method.'
-    ]);
+    ], 405);
     exit;
 }
 
 
-$barcode = trim($_POST['barcode'] ?? '');
-$order_id = trim($_POST['order_id'] ?? '');
-$shelf_location = trim($_POST['shelf_location'] ?? '');
-$quantity = max(1, intval($_POST['quantity'] ?? 1));
-$scan_type = $_POST['scan_type'] ?? 'standard';
+$barcode = isset($_POST['barcode']) ? trim($_POST['barcode']) : '';
+$order_id = isset($_POST['order_id']) ? trim($_POST['order_id']) : '';
+$shelf_location = isset($_POST['shelf_location']) ? trim($_POST['shelf_location']) : '';
+$quantity = isset($_POST['quantity']) ? max(1, intval($_POST['quantity'])) : 1;
+$scan_type = isset($_POST['scan_type']) ? $_POST['scan_type'] : 'standard';
 
 $timestamp = date('Y-m-d H:i:s');
 $operator = $_SESSION['name'];
@@ -37,10 +73,10 @@ $receivingShelf = 'A010';
 
 if (!$barcode || !$order_id || !$shelf_location) {
     http_response_code(400);
-    echo json_encode([
+    json_exit([
         'status' => 'error',
         'message' => 'Missing required fields.'
-    ]);
+    ], 400);
     exit;
 }
 
@@ -168,7 +204,7 @@ try {
 
     $pdo->commit();
 
-    echo json_encode([
+    json_exit([
         'status' => 'ok',
         'message' => "Item {$barcode} successfully moved to {$shelf_location}."
     ]);
@@ -180,10 +216,10 @@ try {
     }
 
     http_response_code(400);
-    echo json_encode([
+    json_exit([
         'status' => 'error',
         'message' => $e->getMessage()
-    ]);
+    ], 400);
     exit;
 }
 
