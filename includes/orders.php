@@ -44,20 +44,20 @@ $allAccess = in_array($dpt, [1, 3, 4, 5, 7], true);
 
 // --- Filters (GET) ---
 $page = 'orders';
-$fDept     = isset($_GET['dept'])     ? (int) $_GET['dept']              : 0;
-$fCat      = isset($_GET['cat'])      ? trim((string) $_GET['cat'])      : '';
-$fType     = isset($_GET['type'])     ? trim((string) $_GET['type'])     : '';
-$fQ        = isset($_GET['q'])        ? trim((string) $_GET['q'])        : '';
+$fDept = isset($_GET['dept']) ? (int) $_GET['dept'] : 0;
+$fCat = isset($_GET['cat']) ? trim((string) $_GET['cat']) : '';
+$fType = isset($_GET['type']) ? trim((string) $_GET['type']) : '';
+$fQ = isset($_GET['q']) ? trim((string) $_GET['q']) : '';
 
 // ── Nové filtre ──────────────────────────────────────────────────────────────
-$fStatus   = isset($_GET['status'])   ? trim((string) $_GET['status'])   : '';
-$fSource   = isset($_GET['source'])   ? trim((string) $_GET['source'])   : '';
-$fCountry  = isset($_GET['country'])  ? strtoupper(trim((string) $_GET['country'])) : '';
-$fPayment  = isset($_GET['payment'])  ? trim((string) $_GET['payment'])  : '';
+$fStatus = isset($_GET['status']) ? trim((string) $_GET['status']) : '';
+$fSource = isset($_GET['source']) ? trim((string) $_GET['source']) : '';
+$fCountry = isset($_GET['country']) ? strtoupper(trim((string) $_GET['country'])) : '';
+$fPayment = isset($_GET['payment']) ? trim((string) $_GET['payment']) : '';
 $fShipping = isset($_GET['shipping']) ? trim((string) $_GET['shipping']) : '';
 $fPriority = isset($_GET['priority']) ? trim((string) $_GET['priority']) : '';
 $fDateFrom = isset($_GET['date_from']) ? trim((string) $_GET['date_from']) : '';
-$fDateTo   = isset($_GET['date_to'])   ? trim((string) $_GET['date_to'])   : '';
+$fDateTo = isset($_GET['date_to']) ? trim((string) $_GET['date_to']) : '';
 // ── koniec nových filtrov ─────────────────────────────────────────────────
 
 $allowedStatuses = ['NEW', 'IN_PROGRESS', 'READY_TO_INVOICE', 'READY_TO_SHIP', 'SHIPPED', 'DONE', 'HOLD', 'CANCELLED'];
@@ -621,7 +621,8 @@ $deptOptions = [
 
     <?php
     // ── Pomocná funkcia pre <option> ─────────────────────────────────────────
-    function fOpt(string $val, string $label, string $current): string {
+    function fOpt(string $val, string $label, string $current): string
+    {
       $sel = ($current === $val) ? ' selected' : '';
       return '<option value="' . htmlspecialchars($val) . '"' . $sel . '>' . htmlspecialchars($label) . '</option>';
     }
@@ -630,25 +631,39 @@ $deptOptions = [
     // Každý záznam: [ 'label' => 'Status', 'value' => 'IN_PROGRESS', 'display' => 'In Progress' ]
     // Ak chceš pridať nový filter do badgu, pridaj sem ďalší riadok.
     $activeFilterBadges = [];
-    if ($fStatus   !== '') $activeFilterBadges[] = ['label' => 'Status',   'display' => str_replace('_', ' ', $fStatus)];
-    if ($fSource   !== '') $activeFilterBadges[] = ['label' => 'Source',   'display' => $fSource];
-    if ($fPriority !== '') $activeFilterBadges[] = ['label' => 'Priority', 'display' => str_replace('_', ' ', $fPriority)];
-    if ($fQ        !== '') $activeFilterBadges[] = ['label' => 'Search',   'display' => '"' . $fQ . '"'];
-    if ($fCat      !== '') $activeFilterBadges[] = ['label' => 'Category', 'display' => $fCat];
-    if ($fType     !== '') $activeFilterBadges[] = ['label' => 'Type',     'display' => $fType];
-    if ($fCountry  !== '') $activeFilterBadges[] = ['label' => 'Country',  'display' => $fCountry];
-    if ($fPayment  !== '') $activeFilterBadges[] = ['label' => 'Payment',  'display' => $fPayment];
-    if ($fShipping !== '') $activeFilterBadges[] = ['label' => 'Shipping', 'display' => $fShipping];
-    if ($fDateFrom !== '') $activeFilterBadges[] = ['label' => 'From',     'display' => $fDateFrom];
-    if ($fDateTo   !== '') $activeFilterBadges[] = ['label' => 'To',       'display' => $fDateTo];
-    if ($fDept > 0 && $allAccess) $activeFilterBadges[] = ['label' => 'Dept', 'display' => ($deptOptions[$fDept] ?? $fDept)];
+    if ($fStatus !== '')
+      $activeFilterBadges[] = ['label' => 'Status', 'display' => str_replace('_', ' ', $fStatus)];
+    if ($fSource !== '')
+      $activeFilterBadges[] = ['label' => 'Source', 'display' => $fSource];
+    if ($fPriority !== '')
+      $activeFilterBadges[] = ['label' => 'Priority', 'display' => str_replace('_', ' ', $fPriority)];
+    if ($fQ !== '')
+      $activeFilterBadges[] = ['label' => 'Search', 'display' => '"' . $fQ . '"'];
+    if ($fCat !== '')
+      $activeFilterBadges[] = ['label' => 'Category', 'display' => $fCat];
+    if ($fType !== '')
+      $activeFilterBadges[] = ['label' => 'Type', 'display' => $fType];
+    if ($fCountry !== '')
+      $activeFilterBadges[] = ['label' => 'Country', 'display' => $fCountry];
+    if ($fPayment !== '')
+      $activeFilterBadges[] = ['label' => 'Payment', 'display' => $fPayment];
+    if ($fShipping !== '')
+      $activeFilterBadges[] = ['label' => 'Shipping', 'display' => $fShipping];
+    if ($fDateFrom !== '')
+      $activeFilterBadges[] = ['label' => 'From', 'display' => $fDateFrom];
+    if ($fDateTo !== '')
+      $activeFilterBadges[] = ['label' => 'To', 'display' => $fDateTo];
+    if ($fDept > 0 && $allAccess)
+      $activeFilterBadges[] = ['label' => 'Dept', 'display' => ($deptOptions[$fDept] ?? $fDept)];
 
     // Pomocná funkcia — CSS trieda pre aktívne pole
     // Vracia 'filter-active' ak hodnota nie je prázdna, inak ''
-    function fActive(string $val): string {
+    function fActive(string $val): string
+    {
       return $val !== '' ? 'filter-active' : '';
     }
-    function fActiveDept(int $val): string {
+    function fActiveDept(int $val): string
+    {
       return $val > 0 ? 'filter-active' : '';
     }
     ?>
@@ -656,40 +671,50 @@ $deptOptions = [
     <style>
       /* Filter panel — AdminLTE dark mode */
       #ordersFilterForm .filter-panel {
-        background: rgba(255,255,255,.04);
-        border: 1px solid rgba(255,255,255,.09);
+        background: rgba(255, 255, 255, .04);
+        border: 1px solid rgba(255, 255, 255, .09);
         border-radius: 6px;
         padding: 14px 16px 4px 16px;
         margin-bottom: 10px;
       }
+
       /* Rovnomerná mriežka — 6 stĺpcov */
       #ordersFilterForm .filter-grid {
         display: grid;
         grid-template-columns: repeat(6, 1fr);
         gap: 0 12px;
       }
+
+      #ordersFilterForm .filter-grid-row2 {
+        grid-template-columns:
+          minmax(220px, 1.35fr) minmax(125px, .8fr) minmax(125px, .8fr) minmax(90px, .65fr) minmax(150px, 1fr) minmax(150px, 1fr);
+      }
+
       /* Aktívny filter — žltý lem + žltý label */
       #ordersFilterForm .filter-active .form-control,
       #ordersFilterForm .filter-active input.form-control {
         border-color: #ffc107 !important;
-        box-shadow: 0 0 0 1px rgba(255,193,7,.35) !important;
+        box-shadow: 0 0 0 1px rgba(255, 193, 7, .35) !important;
       }
+
       #ordersFilterForm .filter-active label {
         color: #ffc107 !important;
         font-weight: 600;
       }
+
       /* Oddeľovač riadkov */
       #ordersFilterForm .filter-row-divider {
         border: none;
-        border-top: 1px solid rgba(255,255,255,.07);
+        border-top: 1px solid rgba(255, 255, 255, .07);
         margin: 4px 0 10px 0;
       }
+
       /* Badge zoznam aktívnych filtrov */
       .active-filter-pill {
         display: inline-flex;
         align-items: center;
-        background: rgba(255,193,7,.15);
-        border: 1px solid rgba(255,193,7,.4);
+        background: rgba(255, 193, 7, .15);
+        border: 1px solid rgba(255, 193, 7, .4);
         border-radius: 20px;
         padding: 2px 10px 2px 8px;
         font-size: .76rem;
@@ -697,11 +722,13 @@ $deptOptions = [
         margin: 2px 4px 2px 0;
         white-space: nowrap;
       }
+
       .active-filter-pill .pill-label {
         opacity: .7;
         margin-right: 4px;
         font-weight: 400;
       }
+
       .active-filter-pill .pill-value {
         font-weight: 600;
       }
@@ -741,14 +768,14 @@ $deptOptions = [
             <select class="form-control form-control-sm" name="status">
               <option value="">— All —</option>
               <?php foreach ([
-                'NEW'              => 'New',
-                'IN_PROGRESS'      => 'In Progress',
+                'NEW' => 'New',
+                'IN_PROGRESS' => 'In Progress',
                 'READY_TO_INVOICE' => 'Ready to Invoice',
-                'READY_TO_SHIP'    => 'Ready to Ship',
-                'SHIPPED'          => 'Shipped',
-                'DONE'             => 'Done',
-                'HOLD'             => 'Hold',
-                'CANCELLED'        => 'Cancelled',
+                'READY_TO_SHIP' => 'Ready to Ship',
+                'SHIPPED' => 'Shipped',
+                'DONE' => 'Done',
+                'HOLD' => 'Hold',
+                'CANCELLED' => 'Cancelled',
                 // ── sem pridaj ──
               ] as $val => $lbl): ?>
                 <?= fOpt($val, $lbl, $fStatus) ?>
@@ -762,8 +789,8 @@ $deptOptions = [
             <select class="form-control form-control-sm" name="source">
               <option value="">— All —</option>
               <?php foreach ([
-                'EBAY'      => 'eBay',
-                'SHOPTET'   => 'Shoptet',
+                'EBAY' => 'eBay',
+                'SHOPTET' => 'Shoptet',
                 'MX_LOCKER' => 'MX Locker',
                 // ── sem pridaj ──
               ] as $val => $lbl): ?>
@@ -779,9 +806,9 @@ $deptOptions = [
               <option value="">— All —</option>
               <?php foreach ([
                 'URGENT' => '🔴 Urgent',
-                'HIGH'   => '🟠 High',
+                'HIGH' => '🟠 High',
                 'NORMAL' => '🟢 Normal',
-                'LOW'    => '⚪ Low',
+                'LOW' => '⚪ Low',
                 // ── sem pridaj ──
               ] as $val => $lbl): ?>
                 <?= fOpt($val, $lbl, $fPriority) ?>
@@ -795,10 +822,10 @@ $deptOptions = [
             <select class="form-control form-control-sm" name="cat">
               <option value="">— All —</option>
               <?php foreach ([
-                'GRAPHICS'  => 'Graphics',
-                'PLASTICS'  => 'Plastics',
+                'GRAPHICS' => 'Graphics',
+                'PLASTICS' => 'Plastics',
                 'SEATCOVER' => 'Seat Cover',
-                'FITTING'   => 'Fitting',
+                'FITTING' => 'Fitting',
                 // ── sem pridaj ──
               ] as $val => $lbl): ?>
                 <?= fOpt($val, $lbl, $fCat) ?>
@@ -822,36 +849,46 @@ $deptOptions = [
         <hr class="filter-row-divider">
 
         <!-- ── ROW 2: 6 polí ───────────────────────────────────────────────── -->
-        <div class="filter-grid">
+        <div class="filter-grid filter-grid-row2">
 
           <!-- 7. Search -->
-          <div class="form-group col-span-2 <?= fActive($fQ) ?>" style="grid-column: span 2;">
+          <div class="form-group col-span-2 <?= fActive($fQ) ?>">
             <label class="small mb-1">Search</label>
-            <input class="form-control form-control-sm" name="q"
-              value="<?= htmlspecialchars($fQ) ?>"
+            <input class="form-control form-control-sm" name="q" value="<?= htmlspecialchars($fQ) ?>"
               placeholder="Order #, ext. ID, customer, email…" />
           </div>
 
-          <!-- 8. Country -->
-          <div class="form-group <?= fActive($fCountry) ?>">
-            <label class="small mb-1">Country</label>
-            <input class="form-control form-control-sm" name="country"
-              value="<?= htmlspecialchars($fCountry) ?>"
-              placeholder="SK, US, DE…"
-              maxlength="3"
-              style="text-transform:uppercase;" />
+          <!-- 8. Date from -->
+          <div class="form-group <?= fActive($fDateFrom) ?>">
+            <label class="small mb-1">Date from</label>
+            <input type="date" class="form-control form-control-sm" name="date_from"
+              value="<?= htmlspecialchars($fDateFrom) ?>" />
           </div>
 
-          <!-- 9. Payment -->
+          <!-- 9. Date to — pridaj ďalší filter sem ako 7. stĺpec alebo rozšír span -->
+          <div class="form-group <?= fActive($fDateTo) ?>">
+            <label class="small mb-1">Date to</label>
+            <input type="date" class="form-control form-control-sm" name="date_to"
+              value="<?= htmlspecialchars($fDateTo) ?>" />
+          </div>
+
+          <!-- 10. Country -->
+          <div class="form-group <?= fActive($fCountry) ?>">
+            <label class="small mb-1">Country</label>
+            <input class="form-control form-control-sm" name="country" value="<?= htmlspecialchars($fCountry) ?>"
+              placeholder="SK, US, DE…" maxlength="3" style="text-transform:uppercase;" />
+          </div>
+
+          <!-- 11. Payment -->
           <div class="form-group <?= fActive($fPayment) ?>">
             <label class="small mb-1">Payment</label>
             <select class="form-control form-control-sm" name="payment">
               <option value="">— All —</option>
               <?php foreach ([
-                'PayPal'                         => 'PayPal',
-                'Bank transfer'                  => 'Bank Transfer',
-                'Google Pay'                     => 'Google Pay',
-                'Apple Pay'                      => 'Apple Pay',
+                'PayPal' => 'PayPal',
+                'Bank transfer' => 'Bank Transfer',
+                'Google Pay' => 'Google Pay',
+                'Apple Pay' => 'Apple Pay',
                 'Online payment via credit card' => 'Credit Card',
                 // ── sem pridaj ──
               ] as $val => $lbl): ?>
@@ -860,46 +897,31 @@ $deptOptions = [
             </select>
           </div>
 
-          <!-- 10. Shipping -->
+          <!-- 12. Shipping -->
           <div class="form-group <?= fActive($fShipping) ?>">
             <label class="small mb-1">Shipping</label>
             <select class="form-control form-control-sm" name="shipping">
               <option value="">— All —</option>
               <?php foreach ([
-                'FedEx Economy'               => 'FedEx Economy',
-                'FedEx Express'               => 'FedEx Express',
+                'FedEx Economy' => 'FedEx Economy',
+                'FedEx Express' => 'FedEx Express',
                 'FedEx International Economy' => 'FedEx Intl Economy',
-                'DHL Express Worldwide'       => 'DHL Express WW',
-                'DHL Paket International'     => 'DHL Paket Intl',
-                'GLS Paket'                   => 'GLS Paket',
+                'DHL Express Worldwide' => 'DHL Express WW',
+                'DHL Paket International' => 'DHL Paket Intl',
+                'GLS Paket' => 'GLS Paket',
                 // ── sem pridaj ──
               ] as $val => $lbl): ?>
                 <?= fOpt($val, $lbl, $fShipping) ?>
               <?php endforeach; ?>
             </select>
           </div>
-
-          <!-- 11. Date from -->
-          <div class="form-group <?= fActive($fDateFrom) ?>">
-            <label class="small mb-1">Date from</label>
-            <input type="date" class="form-control form-control-sm" name="date_from"
-              value="<?= htmlspecialchars($fDateFrom) ?>" />
-          </div>
-
-          <!-- 12. Date to — pridaj ďalší filter sem ako 7. stĺpec alebo rozšír span -->
-          <div class="form-group <?= fActive($fDateTo) ?>">
-            <label class="small mb-1">Date to</label>
-            <input type="date" class="form-control form-control-sm" name="date_to"
-              value="<?= htmlspecialchars($fDateTo) ?>" />
-          </div>
-
         </div><!-- /filter-grid row 2 -->
 
         <!-- ── Tlačidlá + active filter pills ─────────────────────────────── -->
         <div class="d-flex align-items-center flex-wrap mt-1" style="gap: 6px;">
 
           <button class="btn btn-primary btn-sm" type="submit">
-            <i class="fas fa-filter mr-1"></i>Filter
+            <i class="fas fa-search mr-1"></i>Search
           </button>
 
           <a class="btn btn-secondary btn-sm" href="index.php?page=orders">
@@ -911,7 +933,7 @@ $deptOptions = [
             <?php foreach ($activeFilterBadges as $af): ?>
               <span class="active-filter-pill">
                 <span class="pill-label"><?= htmlspecialchars($af['label']) ?>:</span>
-                <span class="pill-value"><?= htmlspecialchars((string)$af['display']) ?></span>
+                <span class="pill-value"><?= htmlspecialchars((string) $af['display']) ?></span>
               </span>
             <?php endforeach; ?>
           <?php endif; ?>
@@ -925,16 +947,16 @@ $deptOptions = [
     <div class="table-responsive">
       <table id="example1" class="table table-bordered table-hover table-sm">
         <thead>
-          <tr>
-            <th width="5%">Date</th>
-            <th width="5%">Source</th>
-            <th width="4%">Country</th>
-            <th width="8%">Order #</th>
-            <th>Types</th>
+          <tr style="background:#343a40;color:#fff;">
+            <th class="text-center" width="5%">Date</th>
+            <th class="text-center" width="5%">Source</th>
+            <th class="text-center" width="4%">Country</th>
+            <th class="text-center" width="8%">Order #</th>
+            <th class="text-center">Types</th>
             <th>Customer</th>
             <th class="text-center">Semafor</th>
             <th class="text-center">Status</th>
-            <th>Assigned</th>
+            <th class="text-center">Assigned</th>
             <th>Detail</th>
           </tr>
         </thead>
@@ -1096,7 +1118,7 @@ $deptOptions = [
                 <?php endforeach; ?>
               </td>
 
-              <td class="text-center" data-status-cell="<?= $orderId ?>"> 
+              <td class="text-center" data-status-cell="<?= $orderId ?>">
                 <?php
                 // nastavenie farby badge podľa statusu
                 if ($status === 'NEW')
@@ -1107,8 +1129,8 @@ $deptOptions = [
                   $statusBadge = 'badge-info';
                 elseif ($status === 'DONE' || $status === 'SHIPPED')
                   $statusBadge = 'badge-success';
-                
-               
+
+
                 $status = strtoupper((string) ($row['status'] ?? ''));
 
                 switch ($status) {
@@ -1777,25 +1799,25 @@ $deptOptions = [
       $(this).closest('.internal-block').remove();
     }
   });
-/*
-  $(document).on('click', '#btnSaveInternalOptions', function () {
-    const data = collectInternalEditorData();
-    const raw = JSON.stringify(data);
-
-    $.post('scripts/orders/update_item_internal_options.php', {
-      item_id: currentOptionsItemId,
-      internal_options_json: raw
-    }, function (res) {
-      if (!res || !res.ok) {
-        alert(res && res.error ? res.error : 'Save failed');
-        return;
-      }
-
-      $('#optionsModal').modal('hide');
-      location.reload();
-    }, 'json');
-  });
-*/
+  /*
+    $(document).on('click', '#btnSaveInternalOptions', function () {
+      const data = collectInternalEditorData();
+      const raw = JSON.stringify(data);
+  
+      $.post('scripts/orders/update_item_internal_options.php', {
+        item_id: currentOptionsItemId,
+        internal_options_json: raw
+      }, function (res) {
+        if (!res || !res.ok) {
+          alert(res && res.error ? res.error : 'Save failed');
+          return;
+        }
+  
+        $('#optionsModal').modal('hide');
+        location.reload();
+      }, 'json');
+    });
+  */
   $(document).on('click', '.btn-edit-country', function (e) {
     e.stopPropagation();
 
@@ -2514,6 +2536,9 @@ $deptOptions = [
 
     return data;
   }
+  $(document).on('change', '#ordersFilterForm select', function () {
+    $('#ordersFilterForm').trigger('submit');
+  });
 </script>
 <script src="scripts/orders/order_detail_actions.js"></script>
 <div class="modal fade" id="optionsModal" tabindex="-1" role="dialog" aria-hidden="true">
