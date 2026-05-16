@@ -851,6 +851,7 @@ $deptOptions = [
                 'PayPal'                         => 'PayPal',
                 'Bank transfer'                  => 'Bank Transfer',
                 'Google Pay'                     => 'Google Pay',
+                'Apple Pay'                      => 'Apple Pay',
                 'Online payment via credit card' => 'Credit Card',
                 // ── sem pridaj ──
               ] as $val => $lbl): ?>
