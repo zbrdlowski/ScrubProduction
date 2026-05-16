@@ -769,6 +769,7 @@ $deptOptions = [
               </td>
 
               <td class="text-center" data-status-cell="<?= $orderId ?>">
+                <?php
                 // nastavenie farby badge podľa statusu
                 if ($status === 'NEW')
                   $statusBadge = 'badge-danger';
@@ -778,8 +779,9 @@ $deptOptions = [
                   $statusBadge = 'badge-info';
                 elseif ($status === 'DONE' || $status === 'SHIPPED')
                   $statusBadge = 'badge-success';
-                ?>
-                <?php
+                elseif ($status === 'CANCELLED')
+                  $statusBadge = 'badge-secondary';
+                
                 $status = strtoupper((string) ($row['status'] ?? ''));
 
                 switch ($status) {
