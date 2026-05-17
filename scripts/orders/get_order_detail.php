@@ -573,12 +573,23 @@ ob_start();
         </div>
         <?php if ((int) ($_SESSION['permission'] ?? 0) >= 300): ?>
           <button type="button" class="btn btn-sm btn-light ml-2 btn-edit-order-header"
-            data-order-id="<?php echo (int) $orderId; ?>">
-            Edit header
+            data-order-id="<?php echo (int) $orderId; ?>"
+            data-mode="edit">
+            ✏️ Edit header
           </button>
         <?php endif; ?>
         <div class="d-flex justify-content-end align-items-center" style="gap:6px;">
           <?php
+          $priorityOptions = [
+            0 => 'Normal',
+            10 => 'High',
+            20 => 'Urgent',
+          ];
+          $currentPriority = (int) ($order['priority'] ?? 0);
+          if (!isset($priorityOptions[$currentPriority])) {
+            $currentPriority = 0;
+          }
+
           $statusOptions = [
             'NEW',
             'IN_PROGRESS',
@@ -596,6 +607,15 @@ ob_start();
             $currentStatus = 'NEW';
           }
           ?>
+
+          <select class="form-control form-control-sm order-priority-select"
+            data-order-id="<?php echo (int) $orderId; ?>" title="Priority" style="min-width:120px;">
+            <?php foreach ($priorityOptions as $priorityValue => $priorityLabel): ?>
+              <option value="<?php echo (int) $priorityValue; ?>" <?php echo ($currentPriority === (int) $priorityValue ? 'selected' : ''); ?>>
+                <?php echo h($priorityLabel); ?>
+              </option>
+            <?php endforeach; ?>
+          </select>
 
           <select class="form-control form-control-sm order-status-select" data-order-id="<?php echo (int) $orderId; ?>"
             style="min-width:180px;">
@@ -766,7 +786,7 @@ ob_start();
               </div>
 
 
-              <button type="button" class="btn btn-warning btn-sm mt-2 btn-save-order-header">
+              <button type="button" class="btn btn-warning btn-sm mt-2 btn-save-order-header" style="display:none;">
                 Save changes
               </button>
 

@@ -883,7 +883,49 @@ $.post('scripts/orders/update_item_internal_options.php', {
 });
     });
 
-    $(document)
+  $(document)
+    .off('change.orderPriority', '.order-priority-select')
+    .on('change.orderPriority', '.order-priority-select', function (e) {
+      e.preventDefault();
+      e.stopPropagation();
+
+      const $select = $(this);
+      const orderId = $select.data('order-id');
+      const priority = $select.val();
+
+      if (!orderId || priority === '') {
+        alert('Missing order ID or priority');
+        return;
+      }
+
+      $select.prop('disabled', true);
+
+      $.ajax({
+        url: 'scripts/orders/update_order_priority.php',
+        method: 'POST',
+        dataType: 'json',
+        data: {
+          order_id: orderId,
+          priority: priority
+        },
+        success: function (resp) {
+          if (!resp || !resp.ok) {
+            alert(resp && resp.error ? resp.error : 'Priority update failed');
+            $select.prop('disabled', false);
+            return;
+          }
+
+          location.reload();
+        },
+        error: function (xhr) {
+          console.log(xhr.responseText);
+          alert('Priority update request failed');
+          $select.prop('disabled', false);
+        }
+      });
+    });
+
+  $(document)
   .off('change.orderStatus', '.order-status-select')
   .on('change.orderStatus', '.order-status-select', function (e) {
     e.preventDefault();
@@ -933,3 +975,54 @@ success: function (resp) {
   });
 
 })();
+
+// -- Edit header button toggle --
+// DOM: btn a .order-header-edit su surodenci — treba ist cez spolocneho rodica
+
+function getHeaderPanel($btn) {
+  // btn je v div.d-flex, ktory je child toho isteho parenta ako .order-header-edit
+  return $btn.closest('div').parent().find('.order-header-edit').first();
+}
+
+function resetEditHeaderBtn($btn) {
+  $btn.data('mode', 'edit')
+      .removeClass('btn-warning').addClass('btn-light')
+      .html('✏️ Edit header');
+}
+
+$(document)
+  .off('click.editHeaderToggle', '.btn-edit-order-header')
+  .on('click.editHeaderToggle', '.btn-edit-order-header', function () {
+    var $btn   = $(this);
+    var mode   = $btn.data('mode') || 'edit';
+    var $panel = getHeaderPanel($btn);
+
+    if (!$panel.length) {
+      console.warn('[editHeader] .order-header-edit not found');
+      return;
+    }
+
+    if (mode === 'edit') {
+      $panel.slideDown(150);
+      $btn.data('mode', 'save')
+          .removeClass('btn-light').addClass('btn-warning')
+          .html('💾 Save changes');
+    } else {
+      $panel.find('.btn-save-order-header').trigger('click');
+    }
+  });
+
+$(document)
+  .off('click.editHeaderCancel', '.btn-cancel-order-header')
+  .on('click.editHeaderCancel', '.btn-cancel-order-header', function () {
+    var $panel = $(this).closest('.order-header-edit');
+    $panel.slideUp(150);
+    resetEditHeaderBtn($panel.parent().find('.btn-edit-order-header').first());
+  });
+
+$(document)
+  .off('click.editHeaderSave', '.btn-save-order-header')
+  .on('click.editHeaderSave', '.btn-save-order-header', function () {
+    var $panel = $(this).closest('.order-header-edit');
+    resetEditHeaderBtn($panel.parent().find('.btn-edit-order-header').first());
+  });

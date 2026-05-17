@@ -87,4 +87,27 @@ log_order_activity(
   'Status changed: ' . str_replace('_', ' ', $oldStatus) . ' → ' . str_replace('_', ' ', $newStatus)
 );
 
-out(['ok' => true]);
+// Button HTML pre JS in-place update status bunky v riadku tabuľky (bez reloadu)
+$btnClassMap = [
+  'NEW'              => 'btn-outline-danger',
+  'IN_PROGRESS'      => 'btn-outline-warning',
+  'NEED_INFO'        => 'btn-outline-danger',
+  'DRAFT_REQUESTED'  => 'btn-outline-info',
+  'DRAFT_READY'      => 'btn-outline-info',
+  'RIPPED'           => 'btn-outline-primary',
+  'PRINT_QUEUE'      => 'btn-outline-primary',
+  'PRODUCTION'       => 'btn-outline-warning',
+  'READY_TO_SHIP'    => 'btn-outline-success',
+  'SHIPPED'          => 'btn-outline-success',
+  'HOLD'             => 'btn-outline-secondary',
+  'CANCELLED'        => 'btn-outline-secondary',
+];
+$btnClass    = $btnClassMap[$newStatus] ?? 'btn-outline-secondary';
+$statusLabel = str_replace('_', ' ', $newStatus);
+
+out([
+  'ok'          => true,
+  'order_id'    => $orderId,
+  'order_status'=> $newStatus,
+  'status_html' => '<button class="btn btn-xs ' . $btnClass . '" style="pointer-events:none;">' . htmlspecialchars($statusLabel) . '</button>',
+]);

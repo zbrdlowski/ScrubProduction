@@ -58,9 +58,38 @@ $fShipping = isset($_GET['shipping']) ? trim((string) $_GET['shipping']) : '';
 $fPriority = isset($_GET['priority']) ? trim((string) $_GET['priority']) : '';
 $fDateFrom = isset($_GET['date_from']) ? trim((string) $_GET['date_from']) : '';
 $fDateTo = isset($_GET['date_to']) ? trim((string) $_GET['date_to']) : '';
+$fWorker = isset($_GET['worker']) ? (int) $_GET['worker'] : 0;
 // ── koniec nových filtrov ─────────────────────────────────────────────────
 
-$allowedStatuses = ['NEW', 'IN_PROGRESS', 'READY_TO_INVOICE', 'READY_TO_SHIP', 'SHIPPED', 'DONE', 'HOLD', 'CANCELLED'];
+$workerOptions = [];
+$workerRes = $conn->query("
+  SELECT
+    e.id,
+    TRIM(CONCAT(e.firstname, ' ', e.lastname)) AS emp_name
+  FROM employees e
+  WHERE EXISTS (
+    SELECT 1
+    FROM order_assignments oa
+    WHERE oa.employee_id = e.id
+      AND oa.removed_at IS NULL
+  )
+  ORDER BY e.firstname, e.lastname, e.id
+");
+if ($workerRes) {
+  while ($workerRow = $workerRes->fetch_assoc()) {
+    $workerId = (int) ($workerRow['id'] ?? 0);
+    $workerName = trim((string) ($workerRow['emp_name'] ?? ''));
+    if ($workerId > 0 && $workerName !== '') {
+      $workerOptions[$workerId] = $workerName;
+    }
+  }
+  $workerRes->free();
+}
+if ($fWorker <= 0 || !isset($workerOptions[$fWorker])) {
+  $fWorker = 0;
+}
+
+$allowedStatuses = ['NEW', 'IN_PROGRESS', 'DRAFT_READY', 'READY_TO_INVOICE', 'READY_TO_SHIP', 'SHIPPED', 'DONE', 'HOLD', 'CANCELLED'];
 if ($fStatus !== '' && !in_array($fStatus, $allowedStatuses, true))
   $fStatus = '';
 
@@ -68,7 +97,12 @@ $allowedSources = ['EBAY', 'SHOPTET', 'MX_LOCKER'];
 if ($fSource !== '' && !in_array($fSource, $allowedSources, true))
   $fSource = '';
 
-$allowedPriorities = ['LOW', 'NORMAL', 'HIGH', 'URGENT'];
+$priorityOptions = [
+  0 => 'Normal',
+  10 => 'High',
+  20 => 'Urgent',
+];
+$allowedPriorities = array_map('strval', array_keys($priorityOptions));
 if ($fPriority !== '' && !in_array($fPriority, $allowedPriorities, true))
   $fPriority = '';
 
@@ -205,6 +239,18 @@ if ($fQ !== '') {
   array_push($params, $fQ, $fQ, $fQ, $fQ);
 }
 
+if ($fWorker > 0) {
+  $where[] = "EXISTS (
+    SELECT 1
+    FROM order_assignments oaw
+    WHERE oaw.order_id = o.id
+      AND oaw.employee_id = ?
+      AND oaw.removed_at IS NULL
+  )";
+  $types .= 'i';
+  $params[] = $fWorker;
+}
+
 // ── Nové WHERE podmienky ─────────────────────────────────────────────────────
 // Pridaj ďalšie filtre sem podľa potreby — každý blok je samostatný a nezávislý
 
@@ -246,8 +292,8 @@ if ($fShipping !== '') {
 // Priority
 if ($fPriority !== '') {
   $where[] = 'o.priority = ?';
-  $types .= 's';
-  $params[] = $fPriority;
+  $types .= 'i';
+  $params[] = (int) $fPriority;
 }
 
 // Date range (order_date)
@@ -272,6 +318,7 @@ $sql = " SELECT
   o.order_date,
   o.imported_at,
   o.status,
+  o.priority,
   o.traffic_light,
   o.traffic_blocker,
   o.traffic_summary_json,
@@ -384,7 +431,9 @@ LEFT JOIN order_addresses oa_ship
 LEFT JOIN order_addresses oa_bill
   ON oa_bill.order_id = o.id AND UPPER(oa_bill.type) = 'BILLING'
 $whereSql
-ORDER BY o.id ASC
+ORDER BY
+  o.priority DESC,       -- Urgent (20) a High (10) navrchu, Normal (0) dole
+  o.order_date ASC       -- v rámci rovnakej priority od najstaršieho
 LIMIT 500
 ";
 
@@ -575,6 +624,16 @@ $deptOptions = [
     box-shadow: inset 4px 0 0 #17a2b8;
   }
 
+  .order-priority-high {
+    background: rgba(255, 193, 7, 0.10) !important;
+    box-shadow: inset 4px 0 0 rgba(255, 193, 7, 0.65);
+  }
+
+  .order-priority-urgent {
+    background: rgba(220, 53, 69, 0.12) !important;
+    box-shadow: inset 4px 0 0 rgba(220, 53, 69, 0.75);
+  }
+
   .assigned-avatar-wrap {
     position: relative;
     display: inline-flex;
@@ -636,13 +695,15 @@ $deptOptions = [
     if ($fSource !== '')
       $activeFilterBadges[] = ['label' => 'Source', 'display' => $fSource];
     if ($fPriority !== '')
-      $activeFilterBadges[] = ['label' => 'Priority', 'display' => str_replace('_', ' ', $fPriority)];
+      $activeFilterBadges[] = ['label' => 'Priority', 'display' => ($priorityOptions[(int) $fPriority] ?? $fPriority)];
     if ($fQ !== '')
       $activeFilterBadges[] = ['label' => 'Search', 'display' => '"' . $fQ . '"'];
     if ($fCat !== '')
       $activeFilterBadges[] = ['label' => 'Category', 'display' => $fCat];
     if ($fType !== '')
       $activeFilterBadges[] = ['label' => 'Type', 'display' => $fType];
+    if ($fWorker > 0)
+      $activeFilterBadges[] = ['label' => 'Worker', 'display' => ($workerOptions[$fWorker] ?? ('#' . $fWorker))];
     if ($fCountry !== '')
       $activeFilterBadges[] = ['label' => 'Country', 'display' => $fCountry];
     if ($fPayment !== '')
@@ -678,10 +739,10 @@ $deptOptions = [
         margin-bottom: 10px;
       }
 
-      /* Rovnomerná mriežka — 6 stĺpcov */
+      /* Rovnomerná mriežka — 7 stĺpcov */
       #ordersFilterForm .filter-grid {
         display: grid;
-        grid-template-columns: repeat(6, 1fr);
+        grid-template-columns: repeat(7, 1fr);
         gap: 0 12px;
       }
 
@@ -762,7 +823,20 @@ $deptOptions = [
             <?php endif; ?>
           </div>
 
-          <!-- 2. Order Status -->
+          <!-- 2. Worker -->
+          <div class="form-group <?= fActiveDept($fWorker) ?>">
+            <label class="small mb-1">Worker</label>
+            <select class="form-control form-control-sm" name="worker">
+              <option value="">&mdash; All &mdash;</option>
+              <?php foreach ($workerOptions as $workerId => $workerName): ?>
+                <option value="<?= (int) $workerId ?>" <?= ($fWorker === (int) $workerId ? 'selected' : '') ?>>
+                  <?= htmlspecialchars($workerName) ?>
+                </option>
+              <?php endforeach; ?>
+            </select>
+          </div>
+
+          <!-- 3. Order Status -->
           <div class="form-group <?= fActive($fStatus) ?>">
             <label class="small mb-1">Order Status</label>
             <select class="form-control form-control-sm" name="status">
@@ -770,6 +844,7 @@ $deptOptions = [
               <?php foreach ([
                 'NEW' => 'New',
                 'IN_PROGRESS' => 'In Progress',
+                'DRAFT_READY' => 'Draft Ready',
                 'READY_TO_INVOICE' => 'Ready to Invoice',
                 'READY_TO_SHIP' => 'Ready to Ship',
                 'SHIPPED' => 'Shipped',
@@ -783,7 +858,7 @@ $deptOptions = [
             </select>
           </div>
 
-          <!-- 3. Source -->
+          <!-- 4. Source -->
           <div class="form-group <?= fActive($fSource) ?>">
             <label class="small mb-1">Source</label>
             <select class="form-control form-control-sm" name="source">
@@ -799,24 +874,23 @@ $deptOptions = [
             </select>
           </div>
 
-          <!-- 4. Priority -->
+          <!-- 5. Priority -->
           <div class="form-group <?= fActive($fPriority) ?>">
             <label class="small mb-1">Priority</label>
             <select class="form-control form-control-sm" name="priority">
               <option value="">— All —</option>
               <?php foreach ([
-                'URGENT' => '🔴 Urgent',
-                'HIGH' => '🟠 High',
-                'NORMAL' => '🟢 Normal',
-                'LOW' => '⚪ Low',
+                '20' => '🔴 Urgent',
+                '10' => '🟠 High',
+                '0'  => '🟢 Normal',
                 // ── sem pridaj ──
               ] as $val => $lbl): ?>
-                <?= fOpt($val, $lbl, $fPriority) ?>
+                <?= fOpt((string) $val, $lbl, $fPriority) ?>
               <?php endforeach; ?>
             </select>
           </div>
 
-          <!-- 5. Category -->
+          <!-- 6. Category -->
           <div class="form-group <?= fActive($fCat) ?>">
             <label class="small mb-1">Category</label>
             <select class="form-control form-control-sm" name="cat">
@@ -833,7 +907,7 @@ $deptOptions = [
             </select>
           </div>
 
-          <!-- 6. Item Type -->
+          <!-- 8. Item Type -->
           <div class="form-group <?= fActive($fType) ?>">
             <label class="small mb-1">Item Type</label>
             <select class="form-control form-control-sm" name="type">
@@ -851,35 +925,35 @@ $deptOptions = [
         <!-- ── ROW 2: 6 polí ───────────────────────────────────────────────── -->
         <div class="filter-grid filter-grid-row2">
 
-          <!-- 7. Search -->
+          <!-- 9. Search -->
           <div class="form-group col-span-2 <?= fActive($fQ) ?>">
             <label class="small mb-1">Search</label>
             <input class="form-control form-control-sm" name="q" value="<?= htmlspecialchars($fQ) ?>"
               placeholder="Order #, ext. ID, customer, email…" />
           </div>
 
-          <!-- 8. Date from -->
+          <!-- 10. Date from -->
           <div class="form-group <?= fActive($fDateFrom) ?>">
             <label class="small mb-1">Date from</label>
             <input type="date" class="form-control form-control-sm" name="date_from"
               value="<?= htmlspecialchars($fDateFrom) ?>" />
           </div>
 
-          <!-- 9. Date to — pridaj ďalší filter sem ako 7. stĺpec alebo rozšír span -->
+          <!-- 11. Date to — pridaj ďalší filter sem ako 7. stĺpec alebo rozšír span -->
           <div class="form-group <?= fActive($fDateTo) ?>">
             <label class="small mb-1">Date to</label>
             <input type="date" class="form-control form-control-sm" name="date_to"
               value="<?= htmlspecialchars($fDateTo) ?>" />
           </div>
 
-          <!-- 10. Country -->
+          <!-- 12. Country -->
           <div class="form-group <?= fActive($fCountry) ?>">
             <label class="small mb-1">Country</label>
             <input class="form-control form-control-sm" name="country" value="<?= htmlspecialchars($fCountry) ?>"
               placeholder="SK, US, DE…" maxlength="3" style="text-transform:uppercase;" />
           </div>
 
-          <!-- 11. Payment -->
+          <!-- 13. Payment -->
           <div class="form-group <?= fActive($fPayment) ?>">
             <label class="small mb-1">Payment</label>
             <select class="form-control form-control-sm" name="payment">
@@ -897,7 +971,7 @@ $deptOptions = [
             </select>
           </div>
 
-          <!-- 12. Shipping -->
+          <!-- 14. Shipping -->
           <div class="form-group <?= fActive($fShipping) ?>">
             <label class="small mb-1">Shipping</label>
             <select class="form-control form-control-sm" name="shipping">
@@ -955,6 +1029,7 @@ $deptOptions = [
             <th class="text-center">Types</th>
             <th>Customer</th>
             <th class="text-center">Semafor</th>
+            <th class="text-center">Priority</th>
             <th class="text-center">Status</th>
             <th class="text-center">Assigned</th>
             <th>Detail</th>
@@ -965,15 +1040,24 @@ $deptOptions = [
             <?php
             $orderId = (int) $row['id'];
             $hasTM = (int) ($row['has_tm'] ?? 0) === 1;
-            $rowClass = '';
+            $rowClasses = [];
 
             $statusUpper = strtoupper((string) ($row['status'] ?? ''));
 
             if ($statusUpper === 'IN_PROGRESS') {
-              $rowClass = 'order-in-progress';
+              $rowClasses[] = 'order-in-progress';
             } elseif ($dpt === 6 && $hasTM) {
-              $rowClass = 'tm-highlight';
+              $rowClasses[] = 'tm-highlight';
             }
+
+            $priorityValue = (int) ($row['priority'] ?? 0);
+            if ($priorityValue >= 20) {
+              $rowClasses[] = 'order-priority-urgent';
+            } elseif ($priorityValue >= 10) {
+              $rowClasses[] = 'order-priority-high';
+            }
+
+            $rowClass = implode(' ', $rowClasses);
 
             $typesStr = normalizeTypesOrder((string) ($row['manual_types_override'] ?: ($row['item_types'] ?? '')));
             $hasManualTypes = trim((string) ($row['manual_types_override'] ?? '')) !== '';
@@ -1118,6 +1202,23 @@ $deptOptions = [
                 <?php endforeach; ?>
               </td>
 
+              <td class="text-center" data-priority-cell="<?= $orderId ?>">
+                <?php
+                $priorityLabel = $priorityOptions[$priorityValue] ?? ('Priority ' . $priorityValue);
+                if ($priorityValue >= 20) {
+                  $priorityBadge = 'badge-danger';
+                  $priorityEmoji = '🔴';
+                } elseif ($priorityValue >= 10) {
+                  $priorityBadge = 'badge-warning';
+                  $priorityEmoji = '🟠';
+                } else {
+                  $priorityBadge = 'badge-success';
+                  $priorityEmoji = '🟢';
+                }
+                ?>
+                <span class="badge <?= $priorityBadge ?>"><?= $priorityEmoji ?> <?= htmlspecialchars($priorityLabel) ?></span>
+              </td>
+
               <td class="text-center" data-status-cell="<?= $orderId ?>">
                 <?php
                 // nastavenie farby badge podľa statusu
@@ -1142,6 +1243,7 @@ $deptOptions = [
                     break;
 
                   case 'IN_PROGRESS':
+                  case 'DRAFT_READY':
                     $btnClass = 'btn-outline-warning';
                     break;
 
@@ -1359,7 +1461,7 @@ $deptOptions = [
 
             <!-- Detail row (hidden, will be filled via AJAX) -->
             <tr class="order-detail-row">
-              <td colspan="10">
+              <td colspan="11s">
                 <div id="detail-<?= $orderId ?>" class="detail-wrap"></div>
               </td>
             </tr>
@@ -1864,18 +1966,36 @@ $deptOptions = [
     });
   });
   $(document).on('click', '.btn-edit-order-header', function () {
-    const $detail = $(this).closest('.detail-wrap');
-    $detail.find('.order-header-edit').slideDown(150);
+    const $editBtn = $(this);
+    const mode     = $editBtn.data('mode') || 'edit';
+    const $detail  = $editBtn.closest('.detail-wrap');
+    const $panel   = $detail.find('.order-header-edit');
+
+    if (mode === 'edit') {
+      $panel.slideDown(150);
+      $editBtn.data('mode', 'save')
+              .removeClass('btn-light').addClass('btn-warning')
+              .html('💾 Save changes');
+    } else {
+      // Deleguj na skrytý save button
+      $panel.find('.btn-save-order-header').trigger('click');
+    }
   });
 
   $(document).on('click', '.btn-cancel-order-header', function () {
-    $(this).closest('.order-header-edit').slideUp(150);
+    const $panel   = $(this).closest('.order-header-edit');
+    const $editBtn = $panel.closest('.detail-wrap').find('.btn-edit-order-header');
+    $panel.slideUp(150);
+    $editBtn.data('mode', 'edit')
+            .removeClass('btn-warning').addClass('btn-light')
+            .html('✏️ Edit header');
   });
 
   $(document).on('click', '.btn-save-order-header', function () {
-    const $box = $(this).closest('.order-header-edit');
-    const orderId = $box.find('.edit-order-id').val();
-    const $btn = $(this);
+    const $box     = $(this).closest('.order-header-edit');
+    const orderId  = $box.find('.edit-order-id').val();
+    const $btn     = $(this);
+    const $editBtn = $box.closest('.detail-wrap').find('.btn-edit-order-header');
 
     $btn.prop('disabled', true).text('Saving...');
 
@@ -1912,6 +2032,11 @@ $deptOptions = [
           $btn.prop('disabled', false).text('Save changes');
           return;
         }
+
+        // Reset Edit header buttonu pred refreshom detailu
+        $editBtn.data('mode', 'edit')
+                .removeClass('btn-warning').addClass('btn-light')
+                .html('✏️ Edit header');
 
         const $wrap = $('#detail-' + orderId);
         $wrap.removeData('loaded');
@@ -2380,7 +2505,7 @@ $deptOptions = [
     });
   });
 
-  $(document).on('change', 'select[name="dept"], select[name="cat"], select[name="type"]', function () {
+  $(document).on('change', 'select[name="dept"], select[name="cat"], select[name="type"], select[name="worker"]', function () {
     $(this).closest('form').submit();
   });
   $(document).ready(function () {
