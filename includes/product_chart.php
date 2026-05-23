@@ -1,295 +1,442 @@
-<style>
-#example1 tbody tr:hover {
-
-    background-color: #3c759e !important;
-    transition: background-color 0.2s ease;
-    cursor: pointer;
-}
-</style>
-<?
+<?php
 $_SESSION['uri'] = $_SERVER['REQUEST_URI'];
-if(isset($_GET['scrubcocode'])){
-    $cocodsql = "SELECT DISTINCT *  FROM scrubdata WHERE modelcode = '". $_GET['scrubcocode'] ."'";
-    $cocodquery = $conn->query($cocodsql);
-    while($row = $cocodquery->fetch_array()){
+
+// ── Filtre z GET ───────────────────────────────────────────────────────────
+$scrubrand = isset($_GET['brand']) ? trim($_GET['brand']) : '';
+$scrubmodel = isset($_GET['model']) ? trim($_GET['model']) : '';
+$scrubrange = isset($_GET['range']) ? trim($_GET['range']) : '';
+$scrubcode = isset($_GET['scrubcocode']) ? trim($_GET['scrubcocode']) : '';
+
+// Ak príde priamy scrubcocode link, načítaj brand/model/range
+if ($scrubcode !== '') {
+    $stmt = $conn->prepare("SELECT DISTINCT brand, model, rangeyear FROM scrubdata WHERE modelcode = ? LIMIT 1");
+    $stmt->bind_param('s', $scrubcode);
+    $stmt->execute();
+    $row = $stmt->get_result()->fetch_assoc();
+    $stmt->close();
+    if ($row) {
         $scrubrand = $row['brand'];
         $scrubmodel = $row['model'];
-        $scrubcode = $_GET['scrubcocode'];        
         $scrubrange = $row['rangeyear'];
-        $graphics = $row['graphics'];
-        $plastics = $row['plastics'];
-        $seat_cover = $row['seat_cover'];	    
-        }
-}else{
-@$scrubrand = $_REQUEST['brand'];
-@$scrubmodel = $_REQUEST['model'];
-@$scrubcode = $_REQUEST['code'];
-@$scrubrange = $_REQUEST['range'];
-}
-@$scrubyear = $_REQUEST['year'];
-
-if (empty($scrubrand)){$nadpis = 'Select Brand';}else{
-   if (empty($scrubmodel)){$nadpis = 'Select Model';}else{
-     if (empty($scrubrange)){$nadpis = 'Select Production Years';}else{
-        $nadpis = 'Selected Result:';
-     }
-   } 
+    }
 }
 
+// ── Nadpis ────────────────────────────────────────────────────────────────
+if (empty($scrubrand))
+    $nadpis = 'Select Brand';
+elseif (empty($scrubmodel))
+    $nadpis = 'Select Model';
+elseif (empty($scrubrange))
+    $nadpis = 'Select Production Years';
+else
+    $nadpis = 'Selected Result';
+
+// ── SQL pre hlavnú tabuľku ────────────────────────────────────────────────
+$sql_parts = "SELECT DISTINCT sd.brand, sd.model, sd.rangeyear, sd.modelcode, sm.meta_json
+               FROM scrubdata sd
+               LEFT JOIN scrubdata_meta sm ON sm.modelcode = sd.modelcode";
+$sql_where = [];
+$sql_params = [];
+$sql_types = '';
+
+if ($scrubrand !== '') {
+    $sql_where[] = "sd.brand    = ?";
+    $sql_types .= 's';
+    $sql_params[] = $scrubrand;
+}
+if ($scrubmodel !== '') {
+    $sql_where[] = "sd.model    = ?";
+    $sql_types .= 's';
+    $sql_params[] = $scrubmodel;
+}
+if ($scrubrange !== '') {
+    $sql_where[] = "sd.rangeyear= ?";
+    $sql_types .= 's';
+    $sql_params[] = $scrubrange;
+}
+
+$sql2 = $sql_parts . (!empty($sql_where) ? ' WHERE ' . implode(' AND ', $sql_where) : '') . ' ORDER BY sd.brand, sd.rangeyear DESC';
+
+// ── Helper: prečíta yes/no hodnotu z meta_json bloku ──────────────────────
+function metaVal(array $meta, string $block, string $field): string
+{
+    return strtolower(trim($meta[$block][$field] ?? 'no'));
+}
+
+// ── Helper: YES/NO badge s voliteľným linkom a web-status bodkou ──────────
+function badge(string $avail, string $web, string $linkHref = '#'): string
+{
+    if ($avail !== 'yes') {
+        return '<span class="badge badge-danger">NO</span>';
+    }
+    $webDot = '<span class="status-dot ' . ($web === 'yes' ? 'yes' : 'no') . '" title="Web: ' . strtoupper($web) . '"></span>';
+    return '<a href="' . htmlspecialchars($linkHref) . '">'
+        . '<span class="badge badge-success">' . $webDot . 'YES</span>'
+        . '</a>';
+}
 ?>
-<script>
-    $(document).ready(function() {
-    // Setup - add a text input to each footer cell
-    $('#example tfoot th').each( function () {
-        var title = $('#example thead th').eq( $(this).index() ).text();
-        $(this).html( '<input type="text" placeholder="Search '+title+'" />' );
-    } );
- 
-    // DataTable
-    var table = $('#example').DataTable();
- 
-    // Apply the search
-    table.columns().every( function () {
-        var that = this;
- 
-        $( 'input', this.footer() ).on( 'keyup change', function () {
-            that
-                .search( this.value )
-                .draw();
-        } );
-    } );
-} );
-</script>
+
+<style>
+    #scrubTable tbody tr.model-row:hover {
+        background-color: #2c4a5e !important;
+        cursor: pointer;
+        transition: background-color 0.15s ease;
+    }
+
+    #scrubTable tbody tr.model-row.open {
+        background-color: #1e3448 !important;
+    }
+
+    .scrub-detail-row td {
+        padding: 0 !important;
+        border-top: none !important;
+    }
+
+    .scrub-detail-inner {
+        padding: 16px 20px;
+        background: #1a2a38;
+        border-bottom: 2px solid #3c759e;
+    }
+
+    .scrub-detail-inner .block-card {
+        background: #243447;
+        border: 1px solid #344f65;
+        border-radius: 6px;
+        margin-bottom: 0;
+    }
+
+    .scrub-detail-inner .block-card .card-header {
+        background: #2d4560;
+        border-radius: 6px 6px 0 0;
+        padding: 8px 14px;
+        font-weight: 600;
+        font-size: 0.85rem;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+    }
+
+    .scrub-detail-inner .block-card .card-body {
+        padding: 10px 14px;
+        font-size: 0.88rem;
+    }
+
+    .scrub-detail-inner .block-card .card-body .field-row {
+        display: flex;
+        justify-content: space-between;
+        padding: 3px 0;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    }
+
+    .scrub-detail-inner .block-card .card-body .field-row:last-child {
+        border-bottom: none;
+    }
+
+    .scrub-detail-inner .block-card .card-body .field-key {
+        color: #8eabc4;
+        margin-right: 10px;
+    }
+
+    .scrub-detail-inner .block-card .card-body .field-val {
+        font-weight: 600;
+        color: #e0eaf4;
+    }
+
+    .status-dot {
+        display: inline-block;
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        margin-right: 5px;
+        vertical-align: middle;
+    }
+
+    .status-dot.yes {
+        background: #28a745;
+    }
+
+    .status-dot.no {
+        background: #dc3545;
+    }
+
+    #scrubTable td .badge {
+        font-size: 0.95rem;
+        padding: 7px 14px;
+        display: inline-flex;
+        align-items: center;
+        min-width: 70px;
+        justify-content: center;
+    }
+</style>
+
 <section class="content">
 
-<!-- /.card -->
+    <!-- ── Filter karta ─────────────────────────────────────── -->
+    <div class="card">
+        <div class="card-header">
+            <h3 class="card-title"><?= htmlspecialchars($nadpis) ?></h3>
+        </div>
+        <div class="card-body">
+            <table width="100%" class="table table-bordered mb-0">
+                <tr>
+                    <!-- BRAND -->
+                    <td>
+                        <select class="form-control" onchange="if(this.value) window.location=this.value;">
+                            <option hidden>Pick Brand</option>
+                            <?php
+                            $res = $conn->query("SELECT DISTINCT brand FROM scrubdata ORDER BY brand ASC");
+                            while ($r = $res->fetch_assoc()):
+                                $url = 'index.php?page=product_chart&brand=' . urlencode($r['brand']);
+                                $sel = ($r['brand'] === $scrubrand) ? ' selected' : '';
+                                ?>
+                                <option value="<?= htmlspecialchars($url) ?>" <?= $sel ?>>
+                                    <?= htmlspecialchars($r['brand']) ?></option>
+                            <?php endwhile; ?>
+                        </select>
+                    </td>
 
- <div class="card">
-<div class="card-header">
-<h3 class="card-title"><? echo $nadpis; ?></h3>
-</div>
-<!-- /.card-header -->
-<div class="card-body">
+                    <!-- MODEL -->
+                    <td>
+                        <?php if ($scrubrand === ''): ?>
+                            <div class="text-muted pt-1">Model</div>
+                        <?php else: ?>
+                            <select class="form-control" onchange="if(this.value) window.location=this.value;">
+                                <option hidden>Pick Model</option>
+                                <?php
+                                $stmt = $conn->prepare("SELECT DISTINCT model FROM scrubdata WHERE brand=? ORDER BY model ASC");
+                                $stmt->bind_param('s', $scrubrand);
+                                $stmt->execute();
+                                $res = $stmt->get_result();
+                                while ($r = $res->fetch_assoc()):
+                                    $url = 'index.php?page=product_chart&brand=' . urlencode($scrubrand) . '&model=' . urlencode($r['model']);
+                                    $sel = ($r['model'] === $scrubmodel) ? ' selected' : '';
+                                    ?>
+                                    <option value="<?= htmlspecialchars($url) ?>" <?= $sel ?>>
+                                        <?= htmlspecialchars($r['model']) ?></option>
+                                <?php endwhile;
+                                $stmt->close(); ?>
+                            </select>
+                        <?php endif; ?>
+                    </td>
 
-<?
-print '<table width="100%" class="table table-bordered">';
-print'<th style="background-color:#444242; color:white;">BRAND</th>';
-print'<th style="background-color:#444242; color:white;">MODEL</th>';
-print'<th style="background-color:#444242; color:white;">RANGE</th>';
-//print'<th style="background-color:#444242; color:white;">YEAR</th>';
-print'<th style="background-color:#444242; color:white;">RESET</th>';
-print '<tr>';
-// select naznačku
-print '<td>';
+                    <!-- RANGE -->
+                    <td>
+                        <?php if ($scrubmodel === ''): ?>
+                            <div class="text-muted pt-1">Production Years</div>
+                        <?php else: ?>
+                            <select class="form-control" onchange="if(this.value) window.location=this.value;">
+                                <option hidden>Pick Year Range</option>
+                                <?php
+                                $stmt = $conn->prepare("SELECT DISTINCT rangeyear FROM scrubdata WHERE brand=? AND model=? ORDER BY rangeyear DESC");
+                                $stmt->bind_param('ss', $scrubrand, $scrubmodel);
+                                $stmt->execute();
+                                $res = $stmt->get_result();
+                                while ($r = $res->fetch_assoc()):
+                                    $url = 'index.php?page=product_chart&brand=' . urlencode($scrubrand) . '&model=' . urlencode($scrubmodel) . '&range=' . urlencode($r['rangeyear']);
+                                    $sel = ($r['rangeyear'] === $scrubrange) ? ' selected' : '';
+                                    ?>
+                                    <option value="<?= htmlspecialchars($url) ?>" <?= $sel ?>>
+                                        <?= htmlspecialchars($r['rangeyear']) ?></option>
+                                <?php endwhile;
+                                $stmt->close(); ?>
+                            </select>
+                        <?php endif; ?>
+                    </td>
 
-print '<select class="form-control" id="brand" name="brand" onchange="this.options[this.selectedIndex].value && (window.location = this.options[this.selectedIndex].value);">';
-$selectsql = "SELECT DISTINCT brand FROM scrubdata ORDER BY brand ASC";
-$sql2 = "SELECT DISTINCT brand, model, rangeyear, modelcode, graphics, plastics, seat_cover, web_g, web_p, web_s FROM scrubdata ORDER BY brand ASC"; 
-$selectquery = $conn->query($selectsql);
-while($row = $selectquery->fetch_array()){
-echo '<option hidden>Pick Brand</option>';
-echo '<option value="index.php?page=product_chart&brand='.$row['brand'].'" '; if($row['brand'] == $scrubrand){print ' selected';} print'>'.$row['brand'].'</option>';		    
-}
-print '</select>';
+                    <!-- RESET -->
+                    <td style="width:120px;">
+                        <?php if ($scrubrand !== ''): ?>
+                            <a href="?page=product_chart">
+                                <button type="button" class="btn btn-block bg-gradient-primary btn-sm">RESET</button>
+                            </a>
+                        <?php else: ?>
+                            <button type="button" class="btn btn-block bg-gradient-secondary btn-sm disabled">RESET</button>
+                        <?php endif; ?>
+                    </td>
+                </tr>
+            </table>
+        </div>
+    </div>
 
-print '</td>';
+    <!-- ── Výsledková karta ─────────────────────────────────── -->
+    <div class="card">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <h3 class="card-title mb-0">Scrub Database</h3>
+            <small class="text-muted">Click on row to see details</small>
+        </div>
+        <div class="card-body">
+            <table id="scrubTable" class="table table-bordered mb-0" style="font-size:1rem;">
+                <thead>
+                    <tr>
+                        <th style="background:#444242; color:#fff; width:30px;"></th>
+                        <th style="background:#444242; color:#fff;">BRAND</th>
+                        <th style="background:#444242; color:#fff;">MODEL</th>
+                        <th style="background:#444242; color:#fff;">RANGE</th>
+                        <th style="background:#444242; color:#fff;">CODE</th>
+                        <th style="background:#444242; color:#fff; text-align:center;">GRAPHICS</th>
+                        <th style="background:#444242; color:#fff; text-align:center;">PLASTICS</th>
+                        <th style="background:#444242; color:#fff; text-align:center;">SEAT COVER</th>
+                    </tr>
+                </thead>
+                <tbody id="scrubTableBody">
+                    <?php
+                    // ── Hlavná query ──────────────────────────────────
+                    if ($sql_types !== '') {
+                        $stmt = $conn->prepare($sql2);
+                        $stmt->bind_param($sql_types, ...$sql_params);
+                        $stmt->execute();
+                        $query = $stmt->get_result();
+                    } else {
+                        $query = $conn->query($sql2);
+                    }
 
-// model
-print '<td>';
-if(empty($scrubrand)){
-    print '<div class="box-body"> Model</div>';
-}else{
+                    while ($row = $query->fetch_assoc()):
+                        $code = $row['modelcode'];
+                        $meta = [];
+                        if (!empty($row['meta_json'])) {
+                            $decoded = json_decode($row['meta_json'], true);
+                            if (is_array($decoded))
+                                $meta = $decoded;
+                        }
 
-        print '<select class="form-control" id="brand" name="brand" onchange="this.options[this.selectedIndex].value && (window.location = this.options[this.selectedIndex].value);">';
-            $selectsql = "SELECT DISTINCT model FROM scrubdata WHERE brand = '".$scrubrand."'";
-            // query na hlavnu tabulku
-            $sql2 = "SELECT DISTINCT brand, model, rangeyear, modelcode, graphics, plastics, seat_cover, web_g, web_p, web_s FROM scrubdata WHERE brand = '".$scrubrand."' ORDER BY rangeyear DESC"; 
-            $selectquery = $conn->query($selectsql);
-            while($row = $selectquery->fetch_array()){
-            echo '<option hidden>Pick Model</option>';
-            echo '<option value="index.php?page=product_chart&brand='.$scrubrand.'&model='.$row['model'].'" '; if($row['model'] == $scrubmodel){print ' selected';} print'>'.$row['model'].'</option>';		    
-            }
-            print '</select>'; 
-}
-print '</td>';
+                        // Rýchle hodnoty pre badges v riadku
+                        $gfx_avail = metaVal($meta, 'Graphics', 'Available');
+                        $gfx_web = metaVal($meta, 'Graphics', 'Web');
+                        $pls_avail = metaVal($meta, 'Plastics', 'Available');
+                        $pls_web = metaVal($meta, 'Plastics', 'Web');
+                        $sct_avail = metaVal($meta, 'Seat Cover', 'Available');
+                        $sct_web = metaVal($meta, 'Seat Cover', 'Web');
 
-// rozsah rokov
-print '<td>';
+                        $plasticsLink = 'index.php?page=scrublistings&modelcode=' . urlencode($code);
+                        ?>
+                        <tr class="model-row" data-modelcode="<?= htmlspecialchars($code) ?>"
+                            data-meta="<?= htmlspecialchars(json_encode($meta, JSON_UNESCAPED_UNICODE)) ?>">
+                            <td class="text-center" style="vertical-align:middle;">
+                                <i class="fas fa-chevron-right toggle-icon" style="font-size:0.75rem; color:#8eabc4;"></i>
+                            </td>
+                            <td><?= htmlspecialchars($row['brand']) ?></td>
+                            <td><?= htmlspecialchars($row['model']) ?></td>
+                            <td><?= htmlspecialchars($row['rangeyear']) ?></td>
+                            <td class="text-center"><code><?= htmlspecialchars($code) ?></code></td>
 
-if(empty($scrubmodel)){
-    print '<div class="box-body"> Production Years</div>';
-}else{
+                            <td class="text-center"><?= badge($gfx_avail, $gfx_web, '#') ?></td>
+                            <td class="text-center"><?= badge($pls_avail, $pls_web, $plasticsLink) ?></td>
+                            <td class="text-center"><?= badge($sct_avail, $sct_web, '#') ?></td>
+                        </tr>
+                    <?php endwhile; ?>
+                    <?php if (isset($stmt))
+                        $stmt->close(); ?>
+                </tbody>
+                <tfoot>
+                    <tr>
+                        <th style="background:#444242; color:#fff;"></th>
+                        <th style="background:#444242; color:#fff;">BRAND</th>
+                        <th style="background:#444242; color:#fff;">MODEL</th>
+                        <th style="background:#444242; color:#fff;">RANGE</th>
+                        <th style="background:#444242; color:#fff;">CODE</th>
+                        <th style="background:#444242; color:#fff;">GRAPHICS</th>
+                        <th style="background:#444242; color:#fff;">PLASTICS</th>
+                        <th style="background:#444242; color:#fff;">SEAT COVER</th>
+                    </tr>
+                </tfoot>
+            </table>
+        </div><!-- /.card-body -->
+    </div><!-- /.card -->
 
-        print '<select class="form-control" id="brand" name="brand" onchange="this.options[this.selectedIndex].value && (window.location = this.options[this.selectedIndex].value);">';
-            $selectsql = "SELECT DISTINCT rangeyear FROM scrubdata WHERE brand = '".$scrubrand."' AND model = '".$scrubmodel."' ORDER BY rangeyear DESC";
-            // query na hlavnu tabulku
-            $sql2 = "SELECT DISTINCT brand, model, rangeyear, modelcode, graphics, plastics, seat_cover, web_g, web_p, web_s FROM scrubdata WHERE brand = '".$scrubrand."' AND model = '".$scrubmodel."' ORDER BY rangeyear DESC";
-            $selectquery = $conn->query($selectsql);
-            while($row = $selectquery->fetch_array()){
-            echo '<option hidden>Pick Prod Year Range</option>';
-            echo '<option value="index.php?page=product_chart&brand='.$scrubrand.'&model='.$scrubmodel.'&range='.$row['rangeyear'].'" '; if($row['rangeyear'] == $scrubrange){print ' selected';} print'>'.$row['rangeyear'].'</option>';		    
-            }
-            print '</select>'; 
-}
-
-print '</td>';
-
-// konkrétny rok
-
-
-
-if(!empty($scrubrange)){
- $sql2 = "SELECT DISTINCT brand, model, rangeyear, modelcode, graphics, plastics, seat_cover, web_g, web_p, web_s FROM scrubdata WHERE brand = '".$scrubrand."' AND model='".$scrubmodel."' AND rangeyear='".$scrubrange."' ORDER BY rangeyear DESC";
-   
-}
-
-
-if(empty($scrubrand)){
-    print '<td> <button type="button" class="btn btn-block bg-gradient-secondary btn-sm disabled"> RESET </button></td>';
-}else{
-    print '<td> <a href="?page=product_chart"><button type="button" class="btn btn-block bg-gradient-primary btn-sm"> RESET </button></a></td>';
-}
-print '</tr>';
-?>
-</table>
-</div>
-<!-- /.card-body -->
-</div>
-<!-- /.card -->
-
- <div class="card">
-<div class="card-header">
-<h3 class="card-title">Results from Scrub Database</h3>
-</div>
-<!-- /.card-header -->
-<div class="card-body">
-<?
-
-
-
-print '</table>';
- //$sql2 = "SELECT DISTINCT brand, model, rangeyear, modelcode, graphics, plastics, seat_cover FROM scrubdata"; 
-//$sql = "SELECT * FROM scrubdata LEFT JOIN scrubcompat ON scrubcompat.compatcode=scrubdata.modelcode WHERE scrubdata.modelcode = '".$scrubcode."'";
-$query = $conn->query($sql2);
-//print '<h3>Selected Model</h3>';
-print '<table id="example1" width="100%" class="table table-bordered">';
-print '<thead>';
-print '<tr>';
-print'<th style="background-color:#444242; color:white;">BRAND</th>';
-print'<th style="background-color:#444242; color:white;">MODEL</th>';
-print'<th style="background-color:#444242; color:white;">RANGE</th>';
-print'<th style="background-color:#444242; color:white;text-align:center;">CODE</th>';
-print'<th style="background-color:#444242; color:white;text-align:center;">GRAPHICS</th>';
-print'<th style="background-color:#444242; color:white;text-align:center;">WEB G</th>';
-print'<th style="background-color:#444242; color:white;text-align:center;">PLASTICS</th>';
-print'<th style="background-color:#444242; color:white;text-align:center;">WEB P</th>';
-print'<th style="background-color:#444242; color:white;text-align:center;">SEAT COVER</th>';
-print'<th style="background-color:#444242; color:white;text-align:center;">WEB S</th>';
-print'<th style="background-color:#444242; color:white;text-align:center;">EDIT</th>';
-print '</tr>';
-print '</thead>';
-
-while($row = $query->fetch_array()){
-    $scrubcode = $row['modelcode'];
-
-    $graphics_web = ($row['graphics'] == 'yes' && $row['web_g'] == 'yes')
-        ? '<i class="text-success fa-lg web-status-ok">✔</i>'
-        : '<i class="text-danger fa-lg web-status-no">✘</i>';
-
-    $plastics_web = ($row['plastics'] == 'yes' && $row['web_p'] == 'yes')
-        ? '<i class="text-success fa-lg web-status-ok">✔</i>'
-        : '<i class="text-danger fa-lg web-status-no">✘</i>';
-
-    $plastics_web = ($row['plastics'] == 'yes' && $row['web_p'] == 'yes')
-        ? '<i class="text-success fa-lg web-status-ok">✔</i>'
-        : '<i class="text-danger fa-lg web-status-no">✘</i>';
-
-    $seat_web = ($row['seat_cover'] == 'yes' && $row['web_s'] == 'yes')
-        ? '<i class="text-success fa-lg web-status-ok">✔</i>'
-        : '<i class="text-danger fa-lg web-status-no">✘</i>';
-
-    print '<tr>';
-
-    print '<td class="text-center">'. $row['brand'] .'</td>';
-    print '<td>'. $row['model'].'</td>';
-    print '<td>'. $row['rangeyear'].'</td>';
-    print '<td class="text-center">'. $row['modelcode'].'</td>';
-
-    # GRAPHICS
-    if($row['graphics'] == 'no'){
-        print '<td class="text-center">
-                <button type="button" class="btn btn-block bg-gradient-danger btn-sm disabled">NO</button>
-               </td>';
+    <!-- ── Detail panely — MIMO DataTables tabuľky ─────────────────────────── -->
+    <?php
+    if ($sql_types !== '') {
+        $stmt2 = $conn->prepare($sql2);
+        $stmt2->bind_param($sql_types, ...$sql_params);
+        $stmt2->execute();
+        $query2 = $stmt2->get_result();
     } else {
-        print '<td class="text-center">
-                <a href="#">
-                    <button type="button" class="btn btn-block bg-gradient-success btn-sm">YES</button>
-                </a>
-               </td>';
+        $query2 = $conn->query($sql2);
     }
-    print '<td class="text-center align-middle">'.$graphics_web.'</td>';
+    while ($row2 = $query2->fetch_assoc()):
+        $code2 = $row2['modelcode'];
+        $meta2 = [];
+        if (!empty($row2['meta_json'])) {
+            $d = json_decode($row2['meta_json'], true);
+            if (is_array($d))
+                $meta2 = $d;
+        }
+        ?>
+        <div class="scrub-detail-panel" id="detail-<?= htmlspecialchars($code2) ?>" style="display:none;">
+            <div class="scrub-detail-inner">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <span class="text-muted" style="font-size:0.85rem;">                        
+                        <?= htmlspecialchars($row2['brand']) ?>
+                        — <?= htmlspecialchars($row2['model']) ?>
+                        (<?= htmlspecialchars($row2['rangeyear']) ?>)
+                        <code><?= htmlspecialchars($code2) ?></code>
+                    </span>
+                    <button type="button" class="btn btn-sm btn-outline-warning btn-edit-model-meta"
+                        data-modelcode="<?= htmlspecialchars($code2) ?>">
+                        <i class="fas fa-edit mr-1"></i> Edit meta
+                    </button>
+                </div>
 
-    # PLASTICS
-    if($row['plastics'] == 'no'){
-        print '<td class="text-center">
-                <button type="button" class="btn btn-block bg-gradient-danger btn-sm disabled">NO</button>
-               </td>';
-    } else {
-        print '<td class="text-center">
-                <a href="index.php?page=scrublistings&modelcode='.$scrubcode.'">
-                    <button type="button" class="btn btn-block bg-gradient-success btn-sm">YES</button>
-                </a>
-               </td>';
-    }
-    print '<td class="text-center align-middle">'.$plastics_web.'</td>';
+                <div class="row meta-view-area" id="view-<?= htmlspecialchars($code2) ?>"></div>
 
-    # SEAT COVER
-    if($row['seat_cover'] == 'no'){
-        print '<td class="text-center">
-                <button type="button" class="btn btn-block bg-gradient-danger btn-sm disabled">NO</button>
-               </td>';
-    } else {
-        print '<td class="text-center">
-                <a href="#">
-                    <button type="button" class="btn btn-block bg-gradient-success btn-sm">YES</button>
-                </a>
-               </td>';
-    }
-    print '<td class="text-center align-middle">'.$seat_web.'</td>';
+                <div class="meta-edit-area" id="edit-<?= htmlspecialchars($code2) ?>" style="display:none;">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <small class="text-muted">Pridaj alebo uprav bloky a fieldy.</small>
+                        <button type="button" class="btn btn-sm btn-outline-info btn-add-meta-block"
+                            data-modelcode="<?= htmlspecialchars($code2) ?>">
+                            <i class="fas fa-plus mr-1"></i> Add block
+                        </button>
+                    </div>
+                    <div class="meta-blocks-editor" id="editor-<?= htmlspecialchars($code2) ?>"></div>
+                    <div class="d-flex justify-content-end mt-2" style="gap:8px;">
+                        <button type="button" class="btn btn-sm btn-secondary btn-cancel-meta-edit"
+                            data-modelcode="<?= htmlspecialchars($code2) ?>">Cancel</button>
+                        <button type="button" class="btn btn-sm btn-success btn-save-model-meta"
+                            data-modelcode="<?= htmlspecialchars($code2) ?>">
+                            <i class="fas fa-save mr-1"></i> Save
+                        </button>
+                    </div>
+                </div>
 
-    print '<td>
-            <a href="index.php?page=modeldata_edit&scrubcocode='.$row["modelcode"].'&model='.$row["model"].'">
-                <button type="button" class="btn btn-block bg-gradient-primary btn-sm">Edit</button>
-            </a>
-           </td>';
+            </div>
+        </div>
+    <?php endwhile; ?>
+    <?php if (isset($stmt2))
+        $stmt2->close(); ?>
 
-    print '</tr>';
-}
+    <!-- Skrytý sklad pre detail panely — JS ich odtiaľto presúva za riadok -->
+    <div id="scrubDetailStore" style="display:none;"></div>
 
-print '<thead>';
-print '<tr>';
-print'<th style="background-color:#444242; color:white;">BRAND</th>';
-print'<th style="background-color:#444242; color:white;">MODEL</th>';
-print'<th style="background-color:#444242; color:white;">RANGE</th>';
-print'<th style="background-color:#444242; color:white;">CODE</th>';
-print'<th style="background-color:#444242; color:white;">GRAPHICS</th>';
-print'<th style="background-color:#444242; color:white;">WEB G</th>';
-print'<th style="background-color:#444242; color:white;">PLASTICS</th>';
-print'<th style="background-color:#444242; color:white;">WEB P</th>';
-print'<th style="background-color:#444242; color:white;">SEAT COVER</th>';
-print'<th style="background-color:#444242; color:white;">WEB S</th>';
-print'<th style="background-color:#444242; color:white;">EDIT</th>';
-print '</tr>';
-print '</thead>';
-print '</table>';
-
-// detaily okolo zvoleného modelu
-
-// otický predel medzi blokmi
-?>
-</div>
-<!-- /.card-body -->
-</div>
-<!-- /.card-body -->
-</div>
 </section>
+
+<script src="scripts/product_chart_actions.js"></script>
+
+<script>
+    $(document).ready(function () {
+        // DataTable inicializácia
+        $('#scrubTable').DataTable({
+            pageLength: 50,
+            order: [[1, 'asc'], [2, 'asc']],
+            columnDefs: [
+                { orderable: false, targets: [0] }
+            ],
+            language: {
+                search: 'Search:',
+                lengthMenu: 'Show _MENU_ rows',
+                info: 'Rows _START_ – _END_ of _TOTAL_',
+                paginate: { previous: '‹', next: '›' }
+            }
+        });
+
+        // Presuň všetky detail panely do skrytého skladu
+        $('.scrub-detail-panel').each(function () {
+            $('#scrubDetailStore').append($(this));
+        });
+
+        // Render meta VIEW blokov
+        $('#scrubTable tbody tr.model-row').each(function () {
+            const code = $(this).data('modelcode');
+            const meta = $(this).data('meta') || {};
+            renderMetaView(code, meta);
+        });
+    });
+</script>
