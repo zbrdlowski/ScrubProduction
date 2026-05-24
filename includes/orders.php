@@ -89,7 +89,7 @@ if ($fWorker <= 0 || !isset($workerOptions[$fWorker])) {
   $fWorker = 0;
 }
 
-$allowedStatuses = ['NEW', 'IN_PROGRESS', 'DRAFT_READY', 'READY_TO_INVOICE', 'READY_TO_SHIP', 'SHIPPED', 'DONE', 'HOLD', 'CANCELLED'];
+$allowedStatuses = ['NEW', 'IN_PROGRESS', 'DRAFT_READY', 'READY_TO_INVOICE', 'READY_TO_SHIP', 'SHIPPED', 'DONE', 'HOLD', 'CANCELLED', 'PENDING'];
 if ($fStatus !== '' && !in_array($fStatus, $allowedStatuses, true))
   $fStatus = '';
 
@@ -634,6 +634,23 @@ $deptOptions = [
     box-shadow: inset 4px 0 0 rgba(220, 53, 69, 0.75);
   }
 
+  .order-pending {
+    background: rgba(111, 66, 193, 0.10) !important;
+    box-shadow: inset 4px 0 0 rgba(111, 66, 193, 0.70);
+    opacity: 0.82;
+  }
+
+  .btn-outline-pending {
+    color: #a78bfa;
+    border-color: #6f42c1;
+    background: transparent;
+  }
+  .btn-outline-pending:hover {
+    background: rgba(111, 66, 193, 0.20);
+    border-color: #a78bfa;
+    color: #c4b5fd;
+  }
+
   .assigned-avatar-wrap {
     position: relative;
     display: inline-flex;
@@ -843,6 +860,7 @@ $deptOptions = [
               <option value="">— All —</option>
               <?php foreach ([
                 'NEW' => 'New',
+                'PENDING' => '⏳ Pending payment',
                 'IN_PROGRESS' => 'In Progress',
                 'DRAFT_READY' => 'Draft Ready',
                 'READY_TO_INVOICE' => 'Ready to Invoice',
@@ -1044,7 +1062,9 @@ $deptOptions = [
 
             $statusUpper = strtoupper((string) ($row['status'] ?? ''));
 
-            if ($statusUpper === 'IN_PROGRESS') {
+            if ($statusUpper === 'PENDING') {
+              $rowClasses[] = 'order-pending';
+            } elseif ($statusUpper === 'IN_PROGRESS') {
               $rowClasses[] = 'order-in-progress';
             } elseif ($dpt === 6 && $hasTM) {
               $rowClasses[] = 'tm-highlight';
@@ -1237,6 +1257,9 @@ $deptOptions = [
                 switch ($status) {
                   case 'NEW':
                     $btnClass = 'btn-outline-danger';
+                    break;
+                  case 'PENDING':
+                    $btnClass = 'btn-outline-pending';
                     break;
                   case 'READY_TO_INVOICE':
                     $btnClass = 'btn-outline-warning';

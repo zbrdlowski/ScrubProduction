@@ -399,6 +399,7 @@ function oi_upsert_order_header_mysqli(mysqli $conn, int $sourceId, string $exte
   $note = oi_trim($data['note'] ?? null);
   $source_meta = $data['source_meta_json'] ?? null; // string|null
   $customer_id = $data['customer_id'] ?? null; // int|null
+  $initial_status = oi_trim($data['initial_status'] ?? null) ?? 'NEW';
 
   if ($row) {
     $id = (int)$row['id'];
@@ -428,9 +429,9 @@ function oi_upsert_order_header_mysqli(mysqli $conn, int $sourceId, string $exte
       (source_id, external_order_id, order_number, imported_at, order_date, status,
        currency, total, payment_method, shipping_method, note, source_meta, customer_id)
     VALUES
-      (?, ?, ?, ?, ?, 'NEW', ?, ?, ?, ?, ?, ?, ?)
+      (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   ");
-  $ins->bind_param('isssssdssssi', $sourceId, $externalOrderId, $order_number, $imported_at, $order_date, $currency, $total, $payment_method, $shipping_method, $note, $source_meta, $customer_id);
+  $ins->bind_param('issssssdssssi', $sourceId, $externalOrderId, $order_number, $imported_at, $order_date, $initial_status, $currency, $total, $payment_method, $shipping_method, $note, $source_meta, $customer_id);
 
   $ins->execute();
   $id = (int)$ins->insert_id;

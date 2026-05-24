@@ -190,6 +190,8 @@ function status_badge_class($status): string
   switch ($s) {
     case 'NEW':
       return 'bg-info';
+    case 'PENDING':
+      return 'bg-pending';
     case 'IN_PROGRESS':
       return 'bg-warning';
     case 'HOLD':
@@ -559,6 +561,22 @@ ob_start();
     border-bottom: 1px solid rgba(255, 255, 255, 0.08);
     padding: 6px 0;
   }
+
+  /* PENDING status — fialová hlavička karty */
+  .bg-pending {
+    background-color: #4a1d96 !important;
+    color: #e9d5ff !important;
+  }
+  .bg-pending .badge-light {
+    background-color: rgba(233, 213, 255, 0.18) !important;
+    color: #e9d5ff !important;
+  }
+  .bg-pending select,
+  .bg-pending .form-control {
+    background-color: rgba(74, 29, 150, 0.6) !important;
+    border-color: #7c3aed !important;
+    color: #e9d5ff !important;
+  }
 </style>
 <div class="p-3">
   <div class="card card-dark mb-0" style="border-radius:14px; overflow:hidden;">
@@ -591,6 +609,7 @@ ob_start();
           }
 
           $statusOptions = [
+            'PENDING',
             'NEW',
             'IN_PROGRESS',
             'NEED_INFO',
@@ -606,6 +625,23 @@ ob_start();
           if ($currentStatus === '') {
             $currentStatus = 'NEW';
           }
+          // Ak je objednávka v stave ktorý nie je v zozname, pridaj ho
+          if (!in_array($currentStatus, $statusOptions, true)) {
+            $statusOptions[] = $currentStatus;
+          }
+
+          $statusLabels = [
+            'PENDING'          => '⏳ Pending payment',
+            'NEW'              => 'New',
+            'IN_PROGRESS'      => 'In Progress',
+            'NEED_INFO'        => 'Need Info',
+            'DRAFT_READY'      => 'Draft Ready',
+            'READY_TO_INVOICE' => 'Ready to Invoice',
+            'READY_TO_SHIP'    => 'Ready to Ship',
+            'SHIPPED'          => 'Shipped',
+            'HOLD'             => 'Hold',
+            'CANCELLED'        => 'Cancelled',
+          ];
           ?>
 
           <select class="form-control form-control-sm order-priority-select"
@@ -622,7 +658,7 @@ ob_start();
 
             <?php foreach ($statusOptions as $st): ?>
               <option value="<?php echo h($st); ?>" <?php echo ($currentStatus === $st ? 'selected' : ''); ?>>
-                <?php echo h(str_replace('_', ' ', $st)); ?>
+                <?php echo h($statusLabels[$st] ?? str_replace('_', ' ', $st)); ?>
               </option>
             <?php endforeach; ?>
 

@@ -1,10 +1,12 @@
 <?php
 
 // pred session_start()
-ini_set('session.gc_maxlifetime', 60 * 60 * 24 * 7); // 7 dní
+ini_set('session.gc_maxlifetime', 60 * 60 * 24 * 7);
+
+//session_save_path('/volume1/homes/admin/sessions'); // ← pridaj toto
 
 session_set_cookie_params([
-  'lifetime' => 60 * 60 * 24 * 7, // 7 dní
+  'lifetime' => 60 * 60 * 24 * 7,
   'path' => '/',
   'httponly' => true,
   'samesite' => 'Lax',

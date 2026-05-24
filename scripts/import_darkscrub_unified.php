@@ -87,6 +87,21 @@ function import_darkscrub_unified_csv(mysqli $conn, string $csvPath): array {
     $shippingMethod = oi_extract_shipping_method_from_rows($itemRows);
     $paymentMethod = oi_extract_payment_method_from_rows($itemRows);
 
+    // Detect unpaid Shoptet orders: source_raw_json->paid is empty or "0"
+    $initialStatus = 'NEW';
+    if ($sourceCode === 'SHOPTET') {
+      $rawJson = oi_trim($first['source_raw_json'] ?? null);
+      if ($rawJson !== null) {
+        $rawDecoded = json_decode($rawJson, true);
+        if (is_array($rawDecoded)) {
+          $paidVal = trim((string)($rawDecoded['paid'] ?? ''));
+          if ($paidVal === '' || $paidVal === '0') {
+            $initialStatus = 'PENDING';
+          }
+        }
+      }
+    }
+
     $orderId = oi_upsert_order_header_mysqli($conn, $sourceId, $externalOrderId, [
       'order_number' => $externalOrderId,
       'order_date' => oi_parse_date_any($first['order_date'] ?? null),
@@ -97,6 +112,7 @@ function import_darkscrub_unified_csv(mysqli $conn, string $csvPath): array {
       'note' => oi_first_nonempty($first['customer_note'] ?? null, $first['internal_note'] ?? null),
       'source_meta_json' => oi_json_clean($sourceMeta),
       'customer_id' => $customerId,
+      'initial_status' => $initialStatus,
     ]);
 
     if ($beforeExists) $stats['updated']++; else $stats['created']++;
@@ -130,6 +146,7 @@ function import_darkscrub_unified_csv(mysqli $conn, string $csvPath): array {
     oi_delete_items_for_order($conn, $orderId);
 
     $seenShipping = false;
+    $autoLineNo = 1000; // synthetic line numbers for auto-generated items start here
     foreach ($itemRows as $r) {
       if (oi_is_shipping_or_payment_line($r)) {
         $stats['skipped_shipping_items']++;
@@ -154,12 +171,17 @@ function import_darkscrub_unified_csv(mysqli $conn, string $csvPath): array {
       if ($variant) $title = trim((string)$title . ' / ' . $variant);
 
       $itemType = oi_detect_item_type($sku, $customLabel, $title, $r['item_type_code'] ?? null);
-      if ($itemType === null) {
-        // Unknown product line. Keep it as an item without category; review later via source_meta/options_json.
-        $itemType = null;
-      }
 
       $optionsJson = oi_merge_options_json($r);
+
+      // --- GFP expansion ---
+      // If the SKU prefix is GFP, the item is imported as G (graphics) and we
+      // automatically generate a companion PLASTICS item and a FITTING item.
+      $isGfp = preg_match('/^GFP[_\-]/i', (string)$sku)
+             || preg_match('/^GFP[_\-]/i', (string)$customLabel);
+
+      // Force the primary item type to G when it is a GFP product.
+      if ($isGfp) $itemType = 'G';
 
       $itemId = oi_insert_item_unified(
         $conn,
@@ -180,6 +202,51 @@ function import_darkscrub_unified_csv(mysqli $conn, string $csvPath): array {
       }
       if ($categoryIds) oi_add_item_categories($conn, $itemId, array_values(array_unique($categoryIds)));
       $stats['items']++;
+
+      if ($isGfp) {
+        // Auto-create PLASTICS item
+        $plasticId = oi_insert_item_unified(
+          $conn, $orderId, $autoLineNo++,
+          $sku, $title, $customLabel,
+          'P', $qty,
+          oi_auto_item_options_json($optionsJson, 'GFP_AUTO_PLASTICS')
+        );
+        oi_add_item_categories($conn, $plasticId, [$catIds['PLASTICS']]);
+        $stats['items']++;
+
+        // Auto-create FITTING item
+        $fittingId = oi_insert_item_unified(
+          $conn, $orderId, $autoLineNo++,
+          $sku, $title, $customLabel,
+          'F', $qty,
+          oi_auto_item_options_json($optionsJson, 'GFP_AUTO_FITTING')
+        );
+        oi_add_item_categories($conn, $fittingId, [$catIds['FITTING']]);
+        $stats['items']++;
+      }
+
+      // --- Shoptet variant expansion (applyinggraphics / seat-cover / mid-forks / grip) ---
+      $extraItems = oi_extract_shoptet_variant_items($r, $qty, $autoLineNo);
+      foreach ($extraItems as $extra) {
+        $autoLineNo++;
+        $extraItemId = oi_insert_item_unified(
+          $conn, $orderId,
+          $extra['line_no'],
+          $sku,                           // same SKU as parent
+          $extra['title'],
+          $customLabel,
+          $extra['item_type'],
+          $extra['qty'],
+          oi_auto_item_options_json($optionsJson, $extra['auto_tag'])
+        );
+        $extraCatCode = oi_item_type_to_category_codes($extra['item_type']);
+        $extraCatIds = [];
+        foreach ($extraCatCode as $code) {
+          if (isset($catIds[$code])) $extraCatIds[] = $catIds[$code];
+        }
+        if ($extraCatIds) oi_add_item_categories($conn, $extraItemId, array_values(array_unique($extraCatIds)));
+        $stats['items']++;
+      }
     }
 
     oi_refresh_order_categories($conn, $orderId);
@@ -425,4 +492,115 @@ function oi_extract_payment_method_from_rows(array $rows): ?string {
     }
   }
   return oi_trim($rows[0]['payment_method'] ?? null);
+}
+
+/**
+ * Wraps existing options_json with an extra _auto_generated tag so the UI
+ * can visually distinguish auto-created items from the original CSV line.
+ */
+function oi_auto_item_options_json(?string $baseOptionsJson, string $autoTag): ?string {
+  $opts = [];
+  if ($baseOptionsJson !== null) {
+    $decoded = json_decode($baseOptionsJson, true);
+    if (is_array($decoded)) $opts = $decoded;
+  }
+  $opts['_auto_generated'] = $autoTag;
+  return json_encode($opts, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+}
+
+/**
+ * For Shoptet orders: inspects source_raw_json on a single item row and returns
+ * a list of extra department items that should be auto-created.
+ *
+ * Rules:
+ *   "applyinggraphics" has a non-empty, non-"No" value  → FITTING item
+ *   "seat-cover"       has a non-empty, non-"No" value  → SEATCOVER item
+ *   "mid-forks"        has a non-empty, non-"No" value  → GRAPHICS item  (title = value of the field)
+ *   "grip"             has a non-empty, non-"No" value  → GRAPHICS item  (title = value of the field)
+ *
+ * Returns array of items:
+ *   [
+ *     ['line_no' => int, 'title' => string, 'item_type' => string,
+ *      'qty' => int, 'auto_tag' => string],
+ *     ...
+ *   ]
+ *
+ * @param array $r         Single CSV row (assoc).
+ * @param int   $qty       Quantity to copy from the parent item.
+ * @param int   $startLineNo  Starting synthetic line number (will be incremented inside this function).
+ */
+function oi_extract_shoptet_variant_items(array $r, int $qty, int &$startLineNo): array {
+  $source = strtoupper((string)oi_trim($r['source'] ?? null));
+  if ($source !== 'SHOPTET') return [];
+
+  // Decode source_raw_json — that is where Shoptet puts all variant fields.
+  $rawJson = oi_trim($r['source_raw_json'] ?? null);
+  if ($rawJson === null) return [];
+
+  $raw = json_decode($rawJson, true);
+  if (!is_array($raw)) return [];
+
+  /**
+   * Values considered "not selected" / "no" across all 6 Shoptet language
+   * mutations (EN, SK, DE, FR, IT, ES) plus common boolean strings.
+   */
+  $negativeValues = ['no', 'nie', 'nein', 'non', 'no', 'no', 'false', '0', 'n/a', '-'];
+
+  $isPositive = function(?string $val) use ($negativeValues): bool {
+    $val = oi_trim($val);
+    if ($val === null) return false;
+    return !in_array(mb_strtolower($val), $negativeValues, true);
+  };
+
+  $items = [];
+
+  // --- applyinggraphics → FITTING ---
+  $applyVal = oi_trim($raw['applyinggraphics'] ?? null);
+  if ($isPositive($applyVal)) {
+    $items[] = [
+      'line_no'   => $startLineNo++,
+      'title'     => 'Fitting / Applying Graphics' . ($applyVal !== null && $applyVal !== '' ? ' - ' . $applyVal : ''),
+      'item_type' => 'F',
+      'qty'       => $qty,
+      'auto_tag'  => 'SHOPTET_AUTO_FITTING',
+    ];
+  }
+
+  // --- seat-cover → SEATCOVER ---
+  $seatVal = oi_trim($raw['seat-cover'] ?? null);
+  if ($isPositive($seatVal)) {
+    $items[] = [
+      'line_no'   => $startLineNo++,
+      'title'     => 'Seat Cover' . ($seatVal !== null && $seatVal !== '' ? ' - ' . $seatVal : ''),
+      'item_type' => 'S',
+      'qty'       => $qty,
+      'auto_tag'  => 'SHOPTET_AUTO_SEATCOVER',
+    ];
+  }
+
+  // --- mid-forks → GRAPHICS ---
+  $midForksVal = oi_trim($raw['mid-forks'] ?? null);
+  if ($isPositive($midForksVal)) {
+    $items[] = [
+      'line_no'   => $startLineNo++,
+      'title'     => 'Mid-Forks Stickers - ' . $midForksVal,
+      'item_type' => 'G',
+      'qty'       => $qty,
+      'auto_tag'  => 'SHOPTET_AUTO_MIDFORKS',
+    ];
+  }
+
+  // --- grip → GRAPHICS ---
+  $gripVal = oi_trim($raw['grip'] ?? null);
+  if ($isPositive($gripVal)) {
+    $items[] = [
+      'line_no'   => $startLineNo++,
+      'title'     => 'Grip Stickers - ' . $gripVal,
+      'item_type' => 'G',
+      'qty'       => $qty,
+      'auto_tag'  => 'SHOPTET_AUTO_GRIP',
+    ];
+  }
+
+  return $items;
 }
