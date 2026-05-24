@@ -22,6 +22,7 @@ $userId = (int)($_SESSION['user_id'] ?? 0);
 // toto treba upraviť ak budeme pridávať nové statusy, ale zatiaľ nechcem aby sa to dalo nastaviť na čokoľvek
 $allowed = [
   'NEW',
+  'PENDING',
   'IN_PROGRESS',
   'NEED_INFO',
   'DRAFT_REQUESTED',
@@ -90,6 +91,7 @@ log_order_activity(
 // Button HTML pre JS in-place update status bunky v riadku tabuľky (bez reloadu)
 $btnClassMap = [
   'NEW'              => 'btn-outline-danger',
+  'PENDING'          => 'btn-outline-pending',
   'IN_PROGRESS'      => 'btn-outline-warning',
   'NEED_INFO'        => 'btn-outline-danger',
   'DRAFT_REQUESTED'  => 'btn-outline-info',

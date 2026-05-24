@@ -934,10 +934,28 @@ $.post('scripts/orders/update_item_internal_options.php', {
     const $select = $(this);
     const orderId = $select.data('order-id');
     const status = $select.val();
+    const prevStatus = ($select.data('prev-status') || $select.find('option:selected').data('prev') || '').toUpperCase();
 
     if (!orderId || !status) {
       alert('Missing order ID or status');
       return;
+    }
+
+    // Ochrana: zmena Z stavu PENDING je nezvratná — vyžaduj potvrdenie
+    const wasPending = (prevStatus === 'PENDING') ||
+      ($select.find('option[value="PENDING"]').length &&
+       $select.data('original-status') === 'PENDING');
+
+    if (wasPending && status !== 'PENDING') {
+      const ok = confirm(
+        '⚠️ Táto objednávka je PENDING (nezaplatená).\n\n' +
+        'Zmenou statusu na "' + status.replace(/_/g, ' ') + '" potvrzuješ, že platba bola prijatá.\n\n' +
+        'Pokračovať?'
+      );
+      if (!ok) {
+        $select.val('PENDING');
+        return;
+      }
     }
 
     $select.prop('disabled', true);
@@ -950,22 +968,22 @@ $.post('scripts/orders/update_item_internal_options.php', {
         order_id: orderId,
         status: status
       },
-success: function (resp) {
-  if (!resp || !resp.ok) {
-    alert(resp && resp.error ? resp.error : 'Status update failed');
-    $select.prop('disabled', false);
-    return;
-  }
+      success: function (resp) {
+        if (!resp || !resp.ok) {
+          alert(resp && resp.error ? resp.error : 'Status update failed');
+          $select.prop('disabled', false);
+          return;
+        }
 
-  // V profile contexte refreshujeme zoznam (lebo sa mohol zmeniť status badge)
-  // + znova otvoríme detail — bez full reload
-  if (typeof window.refreshProfileOrdersList === 'function') {
-    window.refreshProfileOrdersList(orderId);
-    return;
-  }
+        // V profile contexte refreshujeme zoznam (lebo sa mohol zmeniť status badge)
+        // + znova otvoríme detail — bez full reload
+        if (typeof window.refreshProfileOrdersList === 'function') {
+          window.refreshProfileOrdersList(orderId);
+          return;
+        }
 
-  location.reload();
-},
+        location.reload();
+      },
       error: function (xhr) {
         console.log(xhr.responseText);
         alert('Status update request failed');

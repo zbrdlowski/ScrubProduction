@@ -653,7 +653,9 @@ ob_start();
             <?php endforeach; ?>
           </select>
 
-          <select class="form-control form-control-sm order-status-select" data-order-id="<?php echo (int) $orderId; ?>"
+          <select class="form-control form-control-sm order-status-select"
+            data-order-id="<?php echo (int) $orderId; ?>"
+            data-original-status="<?php echo h($currentStatus); ?>"
             style="min-width:180px;">
 
             <?php foreach ($statusOptions as $st): ?>
