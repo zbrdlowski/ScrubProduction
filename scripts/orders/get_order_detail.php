@@ -577,6 +577,13 @@ ob_start();
     border-color: #7c3aed !important;
     color: #e9d5ff !important;
   }
+  /* get_order_detail.php → <style> blok */
+.badge {
+    font-size: 1rem !important;
+    padding: .55em .9em !important;
+    border-radius: 10px;
+    font-weight: 600;
+}
 </style>
 <div class="p-3">
   <div class="card card-dark mb-0" style="border-radius:14px; overflow:hidden;">

@@ -379,7 +379,7 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == '1') {
 
             <?php elseif ($activeTab === 'orders'): ?>
 
-              <div id="profileOrdersContainer">
+              <div id="profileOrdersContainer"  class="detail-wrap">
                 <?php include 'includes/profile_orders.php'; ?>
               </div>
 
