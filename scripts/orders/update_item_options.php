@@ -31,8 +31,7 @@ if ($normalizedJson === false) {
   out(['ok' => false, 'error' => 'Could not encode JSON']);
 }
 
-$stmt = $conn->prepare("
-  SELECT order_id, options_json
+$stmt = $conn->prepare("SELECT order_id, options_json
   FROM order_items
   WHERE id = ?
     AND deleted_at IS NULL

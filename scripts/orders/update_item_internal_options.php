@@ -25,8 +25,7 @@ if ($itemId <= 0 || !is_array($data)) {
 
 $normalizedJson = json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 
-$stmt = $conn->prepare("
-  SELECT order_id, internal_options_json
+$stmt = $conn->prepare("SELECT order_id, internal_options_json
   FROM order_items
   WHERE id = ?
     AND deleted_at IS NULL
@@ -42,8 +41,7 @@ if (!$old) {
   exit;
 }
 
-$stmt = $conn->prepare("
-  UPDATE order_items
+$stmt = $conn->prepare("UPDATE order_items
   SET internal_options_json = ?,
       updated_by = ?,
       updated_at = NOW()
