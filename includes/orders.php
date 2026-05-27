@@ -760,6 +760,7 @@ $deptOptions = [
     padding: 8px 12px 0 12px;
     gap: 3px;
     border-bottom: 2px solid rgba(255, 255, 255, 0.12);
+    z-index: 900;
   }
 
   .orders-quicktabs .qtab {
@@ -827,6 +828,7 @@ $deptOptions = [
     min-height: 38px;
     flex-wrap: wrap;
     gap: 6px;
+    z-index: 898;
   }
 
   .orders-toolbar .active-pills {
@@ -842,20 +844,55 @@ $deptOptions = [
   }
 
   /* ── Sticky thead ───────────────────────────────────────────────────── */
-  #ordersTableWrap {
-    overflow-x: auto;
-    overflow-y: auto;
-    max-height: calc(100vh - 260px);
-  }
+:root {
+  --orders-sticky-top: 50px; /* AdminLTE top navbar height */
+  --orders-tabs-h: 42px;
+  --orders-toolbar-h: 38px;
+}
 
-  #ordersTableWrap thead th {
-    position: sticky;
-    top: 0;
-    z-index: 2;
-    background: #343a40;
-    color: #fff;
-    box-shadow: 0 1px 0 rgba(255,255,255,.12);
-  }
+/* Quick tabs sticky */
+.orders-quicktabs {
+  position: sticky;
+  top: var(--orders-sticky-top);
+  z-index: 1000;
+  background: #343a40;
+}
+
+/* Filter toolbar sticky pod tabs */
+.orders-toolbar {
+  position: sticky;
+  top: calc(var(--orders-sticky-top) + var(--orders-tabs-h));
+  z-index: 999;
+  background: #2f343a;
+}
+
+/* Rozbalený filter sticky pod toolbar */
+#ordersFilterCollapse {
+  position: sticky;
+  top: calc(var(--orders-sticky-top) + var(--orders-tabs-h) + var(--orders-toolbar-h));
+  z-index: 998;
+  background: #2f343a;
+}
+
+/* Table wrapper bez vnútorného scrollbaru */
+#ordersTableWrap {
+  overflow-x: visible;
+  overflow-y: visible;
+  max-height: none;
+  margin-top: -2px;
+}
+
+/* Table header sticky pod tabs + toolbar.
+   Keď je filter collapse otvorený, JS nižšie posunie top dynamicky. */
+#ordersTableWrap > table#example1 > thead > tr > th {
+  position: sticky;
+  top: calc(var(--orders-sticky-top) + var(--orders-tabs-h) + var(--orders-toolbar-h) - 5px);
+  z-index: 997;
+  background: #343a40;
+  color: #fff;
+  box-shadow: 0 1px 0 rgba(255,255,255,.12);
+  z-index: 897;
+}
   /* ────────────────────────────────────────────────────────────────────── */
 </style>
 
@@ -1744,7 +1781,7 @@ $deptOptions = [
 
             <!-- Detail row (hidden, will be filled via AJAX) -->
             <tr class="order-detail-row">
-              <td colspan="11s">
+              <td colspan="11">
                 <div id="detail-<?= $orderId ?>" class="detail-wrap"></div>
               </td>
             </tr>
@@ -2954,6 +2991,66 @@ $deptOptions = [
   $(document).on('change', '#ordersFilterForm select', function () {
     $('#ordersFilterForm').trigger('submit');
   });
+function updateOrdersStickyOffsets() {
+  const baseTop = 50; // AdminLTE navbar výška
+
+  const tabsH = $('.orders-quicktabs').outerHeight() || 42;
+  const toolbarH = $('.orders-toolbar').outerHeight() || 38;
+
+  const $collapse = $('#ordersFilterCollapse');
+  const filterH = $collapse.is(':visible') ? ($collapse.outerHeight(true) || 0) : 0;
+
+  document.documentElement.style.setProperty('--orders-tabs-h', tabsH + 'px');
+  document.documentElement.style.setProperty('--orders-toolbar-h', toolbarH + 'px');
+
+  const tableTop = baseTop + tabsH + toolbarH + filterH - 1;
+
+  $('#ordersTableWrap > table#example1 > thead > tr > th').css('top', tableTop + 'px');
+}
+$(document).ready(function () {
+  updateOrdersStickyOffsets();
+
+  setTimeout(updateOrdersStickyOffsets, 100);
+  setTimeout(updateOrdersStickyOffsets, 350);
+});
+
+$(window).on('resize scroll', updateOrdersStickyOffsets);
+
+$('#ordersFilterCollapse')
+  .on('show.bs.collapse shown.bs.collapse hide.bs.collapse hidden.bs.collapse', function () {
+    updateOrdersStickyOffsets();
+    setTimeout(updateOrdersStickyOffsets, 100);
+    setTimeout(updateOrdersStickyOffsets, 350);
+  });
+
+
+
+$(document).ready(function () {
+  updateOrdersStickyOffsets();
+});
+
+$('#ordersFilterCollapse')
+  .on('show.bs.collapse', function () {
+    setTimeout(updateOrdersStickyOffsets, 20);
+    setTimeout(updateOrdersStickyOffsets, 180);
+    setTimeout(updateOrdersStickyOffsets, 360);
+  })
+  .on('shown.bs.collapse', function () {
+    updateOrdersStickyOffsets();
+  })
+  .on('hide.bs.collapse', function () {
+    $('#ordersTableWrap > table#example1 > thead > tr > th').css(
+      'top',
+      (50 + ($('.orders-quicktabs').outerHeight() || 42) + ($('.orders-toolbar').outerHeight() || 38) - 1) + 'px'
+    );
+
+    setTimeout(updateOrdersStickyOffsets, 360);
+  })
+  .on('hidden.bs.collapse', function () {
+    updateOrdersStickyOffsets();
+  });
+
+$(window).on('resize', updateOrdersStickyOffsets);
 </script>
 <script src="scripts/orders/order_detail_actions.js"></script>
 <div class="modal fade" id="optionsModal" tabindex="-1" role="dialog" aria-hidden="true">

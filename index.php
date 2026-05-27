@@ -1,12 +1,10 @@
 <?php
 
 // pred session_start()
-ini_set('session.gc_maxlifetime', 60 * 60 * 24 * 7);
-
-//session_save_path('/volume1/homes/admin/sessions'); // ← pridaj toto
-
+ini_set('session.gc_maxlifetime', 60 * 60 * 24 * 7); // 7 dní
+//session_save_path('volume1/homes/admin/sessions'); // ← pridaj toto
 session_set_cookie_params([
-  'lifetime' => 60 * 60 * 24 * 7,
+  'lifetime' => 60 * 60 * 24 * 7, // 7 dní
   'path' => '/',
   'httponly' => true,
   'samesite' => 'Lax',
@@ -143,26 +141,6 @@ $pageLabels = [
     <!-- Content Wrapper. Contains page content -->
     <div class="content-wrapper">
       <!-- Content Header (Page header) -->
-      <section class="content-header">
-        <div class="container-fluid">
-          <div class="row mb-2">
-            <div class="col-sm-6">
-
-            </div>
-            <div class="col-sm-6">
-              <ol class="breadcrumb float-sm-right">
-                <li class="breadcrumb-item"><a href="index.php">Home</a></li>
-                <li class="breadcrumb-item active">
-                  <?php
-                  $page = @$_GET['page'];
-                  echo isset($pageLabels[$page]) ? $pageLabels[$page] : ucfirst(str_replace('_', ' ', $page));
-                  ?>
-                </li>
-              </ol>
-            </div>
-          </div>
-        </div><!-- /.container-fluid -->
-      </section>
 
       <!-- Main content -->
       <section class="content">

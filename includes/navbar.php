@@ -89,6 +89,7 @@
       z-index: 1080;
       width: 360px;
       max-width: calc(100vw - 2rem);
+      
     }
 
     .chat-toast-container .toast {

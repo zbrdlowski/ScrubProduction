@@ -1,4 +1,15 @@
+<style>
+  .main-sidebar {
+  z-index: 2000 !important;
+}
 
+.main-sidebar .sidebar,
+.main-sidebar .nav-sidebar,
+.main-sidebar .nav-treeview {
+  position: relative;
+  z-index: 2010 !important;
+}
+</style>
 <?php
 $currentPage = $_GET['page'] ?? '';
 function isActive($page) {

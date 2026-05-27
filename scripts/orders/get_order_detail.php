@@ -584,6 +584,11 @@ ob_start();
     border-radius: 10px;
     font-weight: 600;
 }*/
+.order-detail-table td,
+.order-detail-table th {
+  box-shadow: none !important;
+  outline: none !important;
+}
 </style>
 <div class="p-3">
   <div class="card card-dark mb-0" style="border-radius:14px; overflow:hidden;">
