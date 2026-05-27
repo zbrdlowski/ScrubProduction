@@ -567,16 +567,19 @@ ob_start();
     background-color: #4a1d96 !important;
     color: #e9d5ff !important;
   }
+
   .bg-pending .badge-light {
     background-color: rgba(233, 213, 255, 0.18) !important;
     color: #e9d5ff !important;
   }
+
   .bg-pending select,
   .bg-pending .form-control {
     background-color: rgba(74, 29, 150, 0.6) !important;
     border-color: #7c3aed !important;
     color: #e9d5ff !important;
   }
+
   /* get_order_detail.php → <style> blok 
 .badge {
     font-size: 1rem !important;
@@ -584,11 +587,11 @@ ob_start();
     border-radius: 10px;
     font-weight: 600;
 }*/
-.order-detail-table td,
-.order-detail-table th {
-  box-shadow: none !important;
-  outline: none !important;
-}
+  .order-detail-table td,
+  .order-detail-table th {
+    box-shadow: none !important;
+    outline: none !important;
+  }
 </style>
 <div class="p-3">
   <div class="card card-dark mb-0" style="border-radius:14px; overflow:hidden;">
@@ -603,8 +606,7 @@ ob_start();
         </div>
         <?php if ((int) ($_SESSION['permission'] ?? 0) >= 300): ?>
           <button type="button" class="btn btn-sm btn-light ml-2 btn-edit-order-header"
-            data-order-id="<?php echo (int) $orderId; ?>"
-            data-mode="edit">
+            data-order-id="<?php echo (int) $orderId; ?>" data-mode="edit">
             ✏️ Edit header
           </button>
         <?php endif; ?>
@@ -643,16 +645,16 @@ ob_start();
           }
 
           $statusLabels = [
-            'PENDING'          => '⏳ Pending payment',
-            'NEW'              => 'New',
-            'IN_PROGRESS'      => 'In Progress',
-            'NEED_INFO'        => 'Need Info',
-            'DRAFT_READY'      => 'Draft Ready',
+            'PENDING' => '⏳ Pending payment',
+            'NEW' => 'New',
+            'IN_PROGRESS' => 'In Progress',
+            'NEED_INFO' => 'Need Info',
+            'DRAFT_READY' => 'Draft Ready',
             'READY_TO_INVOICE' => 'Ready to Invoice',
-            'READY_TO_SHIP'    => 'Ready to Ship',
-            'SHIPPED'          => 'Shipped',
-            'HOLD'             => 'Hold',
-            'CANCELLED'        => 'Cancelled',
+            'READY_TO_SHIP' => 'Ready to Ship',
+            'SHIPPED' => 'Shipped',
+            'HOLD' => 'Hold',
+            'CANCELLED' => 'Cancelled',
           ];
           ?>
 
@@ -665,10 +667,8 @@ ob_start();
             <?php endforeach; ?>
           </select>
 
-          <select class="form-control form-control-sm order-status-select"
-            data-order-id="<?php echo (int) $orderId; ?>"
-            data-original-status="<?php echo h($currentStatus); ?>"
-            style="min-width:180px;">
+          <select class="form-control form-control-sm order-status-select" data-order-id="<?php echo (int) $orderId; ?>"
+            data-original-status="<?php echo h($currentStatus); ?>" style="min-width:180px;">
 
             <?php foreach ($statusOptions as $st): ?>
               <option value="<?php echo h($st); ?>" <?php echo ($currentStatus === $st ? 'selected' : ''); ?>>
@@ -1190,7 +1190,7 @@ ob_start();
               <th>Waiting</th>
               <th>Action</th>
               <th>Product</th>
-              <th class="text-center">View</th>
+              <th class="text-center">Detail</th>
               <th class="text-center">Copy</th>
               <?php if ((int) ($_SESSION['permission'] ?? 0) >= 300): ?>
                 <th class="text-center">Save</th>
@@ -1199,7 +1199,7 @@ ob_start();
             </tr>
           </thead>
           <tbody>
-            
+
             <?php foreach ($items as $it): ?>
               <?php
               $t = strtoupper((string) ($it['item_type_code'] ?? 'NULL'));
@@ -1446,18 +1446,23 @@ ob_start();
                 </td>
 
                 <?php
-                $formattedOptions = prepareOptionsJsonForModal($conn, (string) ($it['options_json'] ?? '{}'));
+                $rawOptions = (string) ($it['options_json'] ?? '{}');
+                $formattedOptions = prepareOptionsJsonForModal($conn, $rawOptions);
                 $internalOptions = (string) ($it['internal_options_json'] ?? '{}');
                 if (trim($internalOptions) === '') {
                   $internalOptions = '{}';
                 }
                 ?>
-
+                <script>
+                  window.isSuperAdmin = <?php echo ((int) ($_SESSION['permission'] ?? 0) === 900 ? 'true' : 'false'); ?>;
+                </script>
                 <td class="text-center">
                   <button type="button" class="btn btn-xs btn-outline-info btn-view-options"
                     data-item-id="<?= (int) $it['id'] ?>" data-options="<?= h($formattedOptions) ?>"
+                    data-options-raw="<?= h($rawOptions) ?>"
+                    data-can-edit-options="<?= ((int) ($_SESSION['permission'] ?? 0) >= 300 ? '1' : '0') ?>"
                     data-internal-options="<?= h($internalOptions) ?>">
-                    View
+                    Detail
                   </button>
                 </td>
 

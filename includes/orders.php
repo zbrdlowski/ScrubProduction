@@ -107,7 +107,7 @@ if ($fWorker <= 0 || !isset($workerOptions[$fWorker])) {
   $fWorker = 0;
 }
 
-$allowedStatuses = ['NEW', 'IN_PROGRESS', 'DRAFT_READY', 'READY_TO_INVOICE', 'READY_TO_SHIP', 'SHIPPED', 'DONE', 'HOLD', 'CANCELLED', 'PENDING'];
+$allowedStatuses = ['NEW', 'IN_PROGRESS', 'NEED_INFO', 'DRAFT_READY', 'READY_TO_INVOICE', 'READY_TO_SHIP', 'SHIPPED', 'DONE', 'HOLD', 'CANCELLED', 'PENDING'];
 if ($fStatus !== '' && !in_array($fStatus, $allowedStatuses, true))
   $fStatus = '';
 
@@ -116,11 +116,15 @@ $quickTabCounts = [];
 $qtRes = $conn->query("SELECT
   SUM(status='SHIPPED') AS cnt_shipped,
   SUM(status='PENDING') AS cnt_pending,
+  SUM(status='NEED_INFO') AS cnt_need_info,
+  SUM(status='DRAFT_READY') AS cnt_draft_ready,
   SUM(status NOT IN ('PENDING','SHIPPED')) AS cnt_open
 FROM orders");
 if ($qtRes && $qtRow = $qtRes->fetch_assoc()) {
-  $quickTabCounts['shipped']    = (int)($qtRow['cnt_shipped'] ?? 0);
-  $quickTabCounts['pending']    = (int)($qtRow['cnt_pending'] ?? 0);
+  $quickTabCounts['shipped']     = (int)($qtRow['cnt_shipped'] ?? 0);
+  $quickTabCounts['pending']     = (int)($qtRow['cnt_pending'] ?? 0);
+  $quickTabCounts['need_info']   = (int)($qtRow['cnt_need_info'] ?? 0);
+  $quickTabCounts['draft_ready'] = (int)($qtRow['cnt_draft_ready'] ?? 0);
   $quickTabCounts['open_orders'] = (int)($qtRow['cnt_open'] ?? 0);
 }
 // ─────────────────────────────────────────────────────────────────────────────
@@ -817,6 +821,10 @@ $deptOptions = [
     background: #6f42c1;
   }
 
+  .orders-quicktabs .qtab .qtab-badge.badge-info {
+    background: #17a2b8;
+  }
+
   /* ── Filter collapse bar ────────────────────────────────────────────── */
   .orders-toolbar {
     display: flex;
@@ -930,6 +938,8 @@ $deptOptions = [
   $quickTabs = [
     /*['id' => 'all',         'label' => 'Všetky objednávky', 'params' => []],*/
     ['id' => 'open_orders', 'label' => 'Open Orders',       'params' => ['exclude_status' => 'PENDING,SHIPPED'], 'badge_key' => 'open_orders'],
+    ['id' => 'need_info',   'label' => 'Need Info',         'params' => ['status' => 'NEED_INFO'], 'badge_key' => 'need_info'],
+    ['id' => 'draft_ready', 'label' => 'Draft Ready',       'params' => ['status' => 'DRAFT_READY'], 'badge_key' => 'draft_ready', 'badge_class' => 'badge-info'],
     ['id' => 'shipped',     'label' => 'Shipped',            'params' => ['status' => 'SHIPPED'], 'badge_key' => 'shipped'],
     ['id' => 'pending',     'label' => '⏳ Pending',         'params' => ['status' => 'PENDING'], 'badge_key' => 'pending', 'badge_class' => 'badge-purple'],
     // -- sem pridaj ďalšie taby --
@@ -943,10 +953,8 @@ $deptOptions = [
       $badgeHtml = '';
       if (!empty($tab['badge_key'])) {
         $cnt = $quickTabCounts[$tab['badge_key']] ?? 0;
-        if ($cnt > 0) {
-          $bc = htmlspecialchars($tab['badge_class'] ?? '');
-          $badgeHtml = '<span class="qtab-badge ' . $bc . '">' . $cnt . '</span>';
-        }
+        $bc = htmlspecialchars($tab['badge_class'] ?? '');
+        $badgeHtml = '<span class="qtab-badge ' . $bc . '">' . $cnt . '</span>';
       }
     ?>
       <a href="<?= htmlspecialchars($url) ?>" class="qtab <?= $isActive ? 'active' : '' ?>">
@@ -1079,7 +1087,7 @@ $deptOptions = [
     $hasActiveFilters = !empty($activeFilterBadges);
 
     // Zisti či je aktívny filter nastavený TABom — v takom prípade collapse NEOTVÁRAŤ
-    $tabStatusValues = ['SHIPPED', 'PENDING'];
+    $tabStatusValues = ['SHIPPED', 'PENDING', 'NEED_INFO', 'DRAFT_READY'];
     $filterIsOnlyFromTab = (
       // tab so status=
       (count($activeFilterBadges) === 1
@@ -1168,6 +1176,7 @@ $deptOptions = [
                 'NEW' => 'New',
                 'PENDING' => '⏳ Pending payment',
                 'IN_PROGRESS' => 'In Progress',
+                'NEED_INFO' => 'Need Info',
                 'DRAFT_READY' => 'Draft Ready',
                 'READY_TO_INVOICE' => 'Ready to Invoice',
                 'READY_TO_SHIP' => 'Ready to Ship',
@@ -1339,12 +1348,11 @@ $deptOptions = [
           <tr style="background:#343a40;color:#fff;">
             <th class="text-center" width="5%">Date</th>
             <th class="text-center" width="5%">Source</th>
-            <th class="text-center" width="4%">Country</th>
             <th class="text-center" width="8%">Order #</th>
-            <th class="text-center">Types</th>
             <th>Customer</th>
+            <th class="text-center" width="4%">Country</th>
+            <th class="text-center">Types</th>
             <th class="text-center">Semafor</th>
-            <th class="text-center">Priority</th>
             <th class="text-center">Status</th>
             <th class="text-center">Assigned</th>
             <th>Detail</th>
@@ -1396,6 +1404,17 @@ $deptOptions = [
               </td>
               <td class="text-center"><?= htmlspecialchars((string) $row['source_code']) ?></td>
               <td class="text-center">
+                <div><b><?= htmlspecialchars((string) ($row['order_number'] ?? $row['external_order_id'] ?? '')) ?></b>
+                </div>
+
+                <?php if (!empty($row['external_order_id']) && $row['external_order_id'] !== $row['order_number']): ?>
+                  <small class="text-muted">Ext: <?= htmlspecialchars((string) $row['external_order_id']) ?></small>
+
+                <?php endif; ?>
+
+              </td>
+              <td><?= htmlspecialchars($customer) ?></td>
+              <td class="text-center">
                 <?php
                 $cc = strtoupper(trim((string) ($row['country_code'] ?? '')));
 
@@ -1417,24 +1436,11 @@ $deptOptions = [
                 }
                 ?>
               </td>
-
-              <td class="text-center">
-                <div><b><?= htmlspecialchars((string) ($row['order_number'] ?? $row['external_order_id'] ?? '')) ?></b>
-                </div>
-
-                <?php if (!empty($row['external_order_id']) && $row['external_order_id'] !== $row['order_number']): ?>
-                  <small class="text-muted">Ext: <?= htmlspecialchars((string) $row['external_order_id']) ?></small>
-
-                <?php endif; ?>
-
-              </td>
               <td class="text-center">
                 <?php
                 if ($hasManualTypes) {
-                  // manual override – napr. GFPS
                   $types = [normalizeTypesOrder($typesStr)];
                 } else {
-                  // AUTO režim
                   if ((int) ($row['has_gfp'] ?? 0) === 1) {
                     $types = ['GFP'];
                   } else {
@@ -1447,9 +1453,7 @@ $deptOptions = [
                 ?>
 
                 <?php foreach ($types as $t): ?>
-
                   <?php
-
                   $tClean = strtoupper(trim($t));
                   $badge = 'badge-secondary';
 
@@ -1475,10 +1479,6 @@ $deptOptions = [
                   <span class="badge <?= $badge ?> badge-type mr-1"><?= htmlspecialchars($tClean) ?></span>
                 <?php endforeach; ?>
               </td>
-              <td><?= htmlspecialchars($customer) ?></td>
-
-              <!-- semafor -->
-
               <td class="text-center traffic-cell">
                 <?php
                 $summaryRaw = (string) ($row['traffic_summary_json'] ?? '');
@@ -1518,37 +1518,8 @@ $deptOptions = [
                   </span>
                 <?php endforeach; ?>
               </td>
-
-              <td class="text-center" data-priority-cell="<?= $orderId ?>">
-                <?php
-                $priorityLabel = $priorityOptions[$priorityValue] ?? ('Priority ' . $priorityValue);
-                if ($priorityValue >= 20) {
-                  $priorityBadge = 'badge-danger';
-                  $priorityEmoji = '🔴';
-                } elseif ($priorityValue >= 10) {
-                  $priorityBadge = 'badge-warning';
-                  $priorityEmoji = '🟠';
-                } else {
-                  $priorityBadge = 'badge-success';
-                  $priorityEmoji = '🟢';
-                }
-                ?>
-                <span class="badge <?= $priorityBadge ?>"><?= $priorityEmoji ?> <?= htmlspecialchars($priorityLabel) ?></span>
-              </td>
-
               <td class="text-center" data-status-cell="<?= $orderId ?>">
                 <?php
-                // nastavenie farby badge podľa statusu
-                if ($status === 'NEW')
-                  $statusBadge = 'badge-danger';
-                elseif ($status === 'IN_PROGRESS')
-                  $statusBadge = 'badge-primary';
-                elseif ($status === 'HOLD')
-                  $statusBadge = 'badge-info';
-                elseif ($status === 'DONE' || $status === 'SHIPPED')
-                  $statusBadge = 'badge-success';
-
-
                 $status = strtoupper((string) ($row['status'] ?? ''));
 
                 switch ($status) {
@@ -1563,8 +1534,11 @@ $deptOptions = [
                     break;
 
                   case 'IN_PROGRESS':
-                  case 'DRAFT_READY':
                     $btnClass = 'btn-outline-warning';
+                    break;
+
+                  case 'DRAFT_READY':
+                    $btnClass = 'btn-outline-info';
                     break;
 
                   case 'WAITING_PARTS':
@@ -1781,7 +1755,7 @@ $deptOptions = [
 
             <!-- Detail row (hidden, will be filled via AJAX) -->
             <tr class="order-detail-row">
-              <td colspan="11">
+              <td colspan="10">
                 <div id="detail-<?= $orderId ?>" class="detail-wrap"></div>
               </td>
             </tr>
@@ -2406,9 +2380,48 @@ $deptOptions = [
 
   $(document).on('keypress', '.tracking-number', function (e) {
     if (e.which === 13) {
+      e.preventDefault();
+      e.stopPropagation();
       $(this).closest('.form-row').find('.btn-add-tracking').click();
     }
   });
+
+  $(document)
+    .off('keydown.orderDetailEnterInvoice')
+    .on('keydown.orderDetailEnterInvoice', '.invoice-number', function (e) {
+      if ((e.key && e.key !== 'Enter') || (!e.key && e.which !== 13)) return;
+
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      $(this).closest('.form-row').find('.btn-add-invoice').trigger('click');
+    });
+
+  $(document)
+    .off('keydown.orderDetailEnterItemSave')
+    .on('keydown.orderDetailEnterItemSave', '.item-title, .item-sku, .item-label, .item-qty', function (e) {
+      if ((e.key && e.key !== 'Enter') || (!e.key && e.which !== 13)) return;
+
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      $(this).closest('tr').find('.btn-save-item').trigger('click');
+    });
+
+  $(document)
+    .off('keydown.orderDetailEnterWaitingSave')
+    .on('keydown.orderDetailEnterWaitingSave', '.item-waiting-note, .item-expected-date', function (e) {
+      if ((e.key && e.key !== 'Enter') || (!e.key && e.which !== 13)) return;
+
+      e.preventDefault();
+      e.stopImmediatePropagation();
+
+      const $row = $(this).closest('tr');
+      const $status = $row.find('.item-status-select').first();
+      if ($status.length) {
+        $status.trigger('change');
+      } else {
+        $row.find('.btn-save-item').trigger('click');
+      }
+    });
 
 
   $(document).on('click', '.btn-add-invoice', function () {
@@ -3052,7 +3065,8 @@ $('#ordersFilterCollapse')
 
 $(window).on('resize', updateOrdersStickyOffsets);
 </script>
-<script src="scripts/orders/order_detail_actions.js"></script>
+<?php $orderDetailActionsVersion = @filemtime(__DIR__ . '/../scripts/orders/order_detail_actions.js') ?: time(); ?>
+<script src="scripts/orders/order_detail_actions.js?v=<?= (int) $orderDetailActionsVersion ?>"></script>
 <div class="modal fade" id="optionsModal" tabindex="-1" role="dialog" aria-hidden="true">
   <div class="modal-dialog modal-lg" role="document">
     <div class="modal-content bg-dark text-light">

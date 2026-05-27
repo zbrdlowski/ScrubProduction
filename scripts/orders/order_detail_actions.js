@@ -1,36 +1,36 @@
-console.log('ORDER DETAIL ACTIONS LOADED v-profile-1');
+console.log("ORDER DETAIL ACTIONS LOADED v-profile-1");
 $(document)
-  .off('click.takeOrder', '.btn-take-order')
-  .on('click.takeOrder', '.btn-take-order', function (e) {
+  .off("click.takeOrder", ".btn-take-order")
+  .on("click.takeOrder", ".btn-take-order", function (e) {
     e.preventDefault();
     e.stopPropagation();
 
     const $btn = $(this);
-    const orderId = $btn.data('order-id');
+    const orderId = $btn.data("order-id");
 
     if (!orderId) {
-      alert('Missing order ID');
+      alert("Missing order ID");
       return;
     }
 
-    $btn.prop('disabled', true).text('...');
+    $btn.prop("disabled", true).text("...");
 
     $.ajax({
-      url: 'scripts/orders/take_order.php',
-      method: 'POST',
-      dataType: 'json',
+      url: "scripts/orders/take_order.php",
+      method: "POST",
+      dataType: "json",
       data: {
-        order_id: orderId
+        order_id: orderId,
       },
       success: function (resp) {
         if (!resp || !resp.ok) {
-          alert('TAKE error: ' + (resp && resp.error ? resp.error : 'unknown'));
-          $btn.prop('disabled', false).text('TAKE');
+          alert("TAKE error: " + (resp && resp.error ? resp.error : "unknown"));
+          $btn.prop("disabled", false).text("TAKE");
           return;
         }
 
         // V profile contexte refreshujeme zoznam + znova otvoríme detail
-        if (typeof window.refreshProfileOrdersList === 'function') {
+        if (typeof window.refreshProfileOrdersList === "function") {
           window.refreshProfileOrdersList(orderId);
           return;
         }
@@ -39,27 +39,29 @@ $(document)
       },
       error: function (xhr) {
         console.log(xhr.responseText);
-        alert('TAKE error request failed');
-        $btn.prop('disabled', false).text('TAKE');
-      }
+        alert("TAKE error request failed");
+        $btn.prop("disabled", false).text("TAKE");
+      },
     });
   });
 (function () {
   let currentOptionsItemId = 0;
   let currentInternalOptions = {};
+  let currentCustomerOptions = {};
+  let currentCanEditOptions = false;
 
   function copyTextFallback(text) {
-    const textarea = document.createElement('textarea');
+    const textarea = document.createElement("textarea");
     textarea.value = text;
-    textarea.style.position = 'fixed';
-    textarea.style.left = '-9999px';
+    textarea.style.position = "fixed";
+    textarea.style.left = "-9999px";
     document.body.appendChild(textarea);
     textarea.focus();
     textarea.select();
 
     let copied = false;
     try {
-      copied = document.execCommand('copy');
+      copied = document.execCommand("copy");
     } catch (e) {
       copied = false;
     }
@@ -69,16 +71,16 @@ $(document)
   }
 
   function escapeHtml(str) {
-    return String(str ?? '')
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&#039;');
+    return String(str ?? "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#039;");
   }
 
   function getOptionsData($btn) {
-    const raw = $btn.attr('data-options') || '{}';
+    const raw = $btn.attr("data-options") || "{}";
 
     try {
       return JSON.parse(raw);
@@ -89,21 +91,46 @@ $(document)
 
   window.getOptionsData = getOptionsData;
 
+  function getRawOptionsData($btn) {
+    const raw =
+      $btn.attr("data-options-raw") || $btn.attr("data-options") || "{}";
+
+    try {
+      const parsed = JSON.parse(raw);
+      return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+        ? parsed
+        : {};
+    } catch (e) {
+      return {};
+    }
+  }
+
+  function stripProtectedOptions(data) {
+  const copy = { ...(data || {}) };
+
+  if (!window.isSuperAdmin) {
+    delete copy._item;
+    delete copy._source_raw;
+  }
+
+  return copy;
+}
+
   function renderOptionsPretty(data) {
     if (!data || Object.keys(data).length === 0) {
       return '<div class="text-muted">No options</div>';
     }
 
     function section(title, obj) {
-      if (!obj || Object.keys(obj).length === 0) return '';
+      if (!obj || Object.keys(obj).length === 0) return "";
 
-      let rows = '';
+      let rows = "";
 
       for (let k in obj) {
         rows += `
           <div class="mb-1">
             <span class="text-muted">${escapeHtml(k)}:</span>
-            <b>${escapeHtml(obj[k])}</b>
+            <b style="white-space:pre-wrap;">${escapeHtml(obj[k])}</b>
           </div>
         `;
       }
@@ -127,68 +154,199 @@ $(document)
     const other = {};
 
     for (let k in data) {
+      // technické raw import dáta iba pre superadmina
+      if (!window.isSuperAdmin && (k === "_item" || k === "_source_raw")) {
+        continue;
+      }
       let v = data[k];
 
-      if (v === null || v === '' || typeof v === 'object') continue;
+      if (v === null || v === "") continue;
+      if (String(k).startsWith("_")) continue;
+      if (typeof v === "object") continue;
 
       let label = k;
 
-      if (k === 'name-color') label = 'number plates color';
-      if (k === 'applyinggraphics') label = 'Fitting';
+      if (k === "name-color") label = "number plates color";
+      if (k === "applyinggraphics") label = "Fitting";
 
-      if (k === 'number-font' || k === 'name-font') {
+      if (k === "number-font" || k === "name-font") {
         const match = String(v).match(/(\d+)$/);
         if (match) v = match[1];
       }
 
       const key = k.toLowerCase();
 
-      if (k === 'Category Info' || key.includes('category') || key.includes('bike') || key.includes('manufacturer')) {
+      if (
+        k === "Category Info" ||
+        key.includes("category") ||
+        key.includes("bike") ||
+        key.includes("manufacturer")
+      ) {
         bike[label] = v;
-      } else if (key.includes('name') || key.includes('number') || key.includes('font')) {
+      } else if (
+        key.includes("name") ||
+        key.includes("number") ||
+        key.includes("font")
+      ) {
         personal[label] = v;
-      } else if (key.includes('material') || key.includes('finish') || key.includes('graphics') || key.includes('rim') || key.includes('fork')) {
+      } else if (
+        key.includes("material") ||
+        key.includes("finish") ||
+        key.includes("graphics") ||
+        key.includes("rim") ||
+        key.includes("fork")
+      ) {
         graphics[label] = v;
-      } else if (key.includes('file') || key.includes('logo') || key.includes('upload')) {
+      } else if (
+        key.includes("file") ||
+        key.includes("logo") ||
+        key.includes("upload")
+      ) {
         files[label] = v;
-      } else if (!key.startsWith('_') && key !== 'source_raw') {
+      } else {
         other[label] = v;
       }
     }
 
     let warnings = [];
 
-    if (!data.name && !data.Name) warnings.push('Missing rider name');
-    if (!data.file && !data.logo && !data.uploaded_file) warnings.push('Missing uploaded file / logo');
+    if (!data.name && !data.Name) warnings.push("Missing rider name");
+    if (!data.file && !data.logo && !data.uploaded_file)
+      warnings.push("Missing uploaded file / logo");
 
-    let html = '';
+    let html = "";
 
     if (warnings.length) {
       html += `
         <div class="alert alert-warning">
           <b>Check before production:</b><br>
-          ${warnings.map(w => `<span class="badge badge-danger mr-1">${escapeHtml(w)}</span>`).join('')}
+          ${warnings.map((w) => `<span class="badge badge-danger mr-1">${escapeHtml(w)}</span>`).join("")}
         </div>
       `;
     }
 
-    html += section('Bike / Category', bike);
-    html += section('Personalization', personal);
-    html += section('Graphics', graphics);
-    html += section('Files', files);
-    html += section('Other', other);
+    html += section("Bike / Category", bike);
+    html += section("Personalization", personal);
+    html += section("Graphics", graphics);
+    html += section("Files", files);
+    html += section("Other", other);
 
     return html;
   }
 
   window.renderOptionsPretty = renderOptionsPretty;
 
+  function optionEditorType(value) {
+    if (typeof value === "number") return "number";
+    if (typeof value === "boolean") return "boolean";
+    if (value !== null && typeof value === "object") return "json";
+    return "text";
+  }
+
+  function optionEditorValue(value, type) {
+    if (type === "json") {
+      return JSON.stringify(value, null, 2);
+    }
+    if (value === null || typeof value === "undefined") {
+      return "";
+    }
+    return String(value);
+  }
+
+  function optionTypeOptions(selected) {
+    return ["text", "number", "boolean", "json"]
+      .map(function (type) {
+        return (
+          '<option value="' +
+          type +
+          '"' +
+          (type === selected ? " selected" : "") +
+          ">" +
+          type +
+          "</option>"
+        );
+      })
+      .join("");
+  }
+
+  function renderCustomerOptionsEditor(data) {
+    const keys = Object.keys(data || {});
+    if (!keys.length) {
+      keys.push("");
+    }
+
+    let html = "";
+    keys.forEach(function (key) {
+      const value = key === "" ? "" : data[key];
+      const type = key === "" ? "text" : optionEditorType(value);
+
+      html += `
+        <div class="card bg-secondary mb-2 customer-option-row">
+          <div class="card-body py-2">
+            <div class="form-row align-items-start">
+              <div class="col-md-4 mb-2 mb-md-0">
+                <input type="text"
+                       class="form-control form-control-sm customer-option-key"
+                       value="${escapeHtml(key)}"
+                       placeholder="Field">
+              </div>
+              <div class="col-md-2 mb-2 mb-md-0">
+                <select class="form-control form-control-sm customer-option-type">
+                  ${optionTypeOptions(type)}
+                </select>
+              </div>
+              <div class="col-md-5 mb-2 mb-md-0">
+                <textarea class="form-control form-control-sm customer-option-value"
+                          rows="${type === "json" ? 4 : 1}"
+                          placeholder="Value">${escapeHtml(optionEditorValue(value, type))}</textarea>
+              </div>
+              <div class="col-md-1 text-right">
+                <button type="button" class="btn btn-xs btn-outline-danger btn-remove-customer-option">×</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+    });
+
+    $("#customerOptionsEditor").html(html);
+  }
+
+  function collectCustomerOptionsEditorData() {
+    const data = {};
+
+    $("#customerOptionsEditor .customer-option-row").each(function () {
+      const $row = $(this);
+      const key = $row.find(".customer-option-key").val().trim();
+      if (!key) return;
+
+      const type = $row.find(".customer-option-type").val();
+      const rawValue = $row.find(".customer-option-value").val();
+
+      if (type === "number") {
+        const value = Number(rawValue);
+        if (!Number.isFinite(value)) {
+          throw new Error('Invalid number for "' + key + '"');
+        }
+        data[key] = value;
+      } else if (type === "boolean") {
+        data[key] = /^(1|true|yes|y|ano)$/i.test(String(rawValue).trim());
+      } else if (type === "json") {
+        data[key] = rawValue.trim() === "" ? null : JSON.parse(rawValue);
+      } else {
+        data[key] = rawValue;
+      }
+    });
+
+    return data;
+  }
+
   function renderInternalOptions(data) {
     if (!data || Object.keys(data).length === 0) {
       return '<div class="text-muted">No internal production blocks yet.</div>';
     }
 
-    let html = '';
+    let html = "";
 
     Object.keys(data).forEach(function (blockName) {
       html += `
@@ -221,13 +379,13 @@ $(document)
   window.renderInternalOptions = renderInternalOptions;
 
   function renderInternalEditor(data) {
-    let html = '';
+    let html = "";
 
     if (!data || Object.keys(data).length === 0) {
       data = {
-        'Production Info': {
-          'Note': ''
-        }
+        "Production Info": {
+          Note: "",
+        },
       };
     }
 
@@ -278,25 +436,27 @@ $(document)
       `;
     });
 
-    $('#internalBlocksEditor').html(html);
+    $("#internalBlocksEditor").html(html);
   }
   window.renderInternalEditor = renderInternalEditor;
   function collectInternalEditorData() {
     const data = {};
 
-    $('#internalBlocksEditor .internal-block').each(function () {
-      const blockName = $(this).find('.internal-block-name').val().trim();
+    $("#internalBlocksEditor .internal-block").each(function () {
+      const blockName = $(this).find(".internal-block-name").val().trim();
 
       if (!blockName) return;
 
       data[blockName] = {};
 
-      $(this).find('.internal-field').each(function () {
-        const key = $(this).find('.internal-field-key').val().trim();
-        const value = $(this).find('.internal-field-value').val().trim();
+      $(this)
+        .find(".internal-field")
+        .each(function () {
+          const key = $(this).find(".internal-field-key").val().trim();
+          const value = $(this).find(".internal-field-value").val().trim();
 
-        if (key) data[blockName][key] = value;
-      });
+          if (key) data[blockName][key] = value;
+        });
 
       if (Object.keys(data[blockName]).length === 0) {
         delete data[blockName];
@@ -307,200 +467,298 @@ $(document)
   }
   window.collectInternalEditorData = collectInternalEditorData;
 
-function findOpenOrderIdFromElement($el) {
-  // profile_orders.php detail row
-  const $profileDetailRow = $el.closest('tr.profile-order-detail-row, .profile-order-detail-row');
-  if ($profileDetailRow.length) {
-    return parseInt($profileDetailRow.data('detail-for'), 10) || 0;
-  }
-
-  // orders.php detail wrapper/row
-  const $detailWrap = $el.closest('.detail-wrap');
-  if ($detailWrap.length) {
-    const $detailRow = $detailWrap.closest('tr');
-    const $ordersRow = $detailRow.prev('.order-row');
-
-    if ($ordersRow.length) {
-      return parseInt($ordersRow.data('order-id'), 10) || 0;
+  function findOpenOrderIdFromElement($el) {
+    // profile_orders.php detail row
+    const $profileDetailRow = $el.closest(
+      "tr.profile-order-detail-row, .profile-order-detail-row",
+    );
+    if ($profileDetailRow.length) {
+      return parseInt($profileDetailRow.data("detail-for"), 10) || 0;
     }
+
+    // orders.php detail wrapper/row
+    const $detailWrap = $el.closest(".detail-wrap");
+    if ($detailWrap.length) {
+      const $detailRow = $detailWrap.closest("tr");
+      const $ordersRow = $detailRow.prev(".order-row");
+
+      if ($ordersRow.length) {
+        return parseInt($ordersRow.data("order-id"), 10) || 0;
+      }
+    }
+
+    // fallback: button/select has order id directly
+    const directOrderId = $el.data("order-id");
+    if (directOrderId) {
+      return parseInt(directOrderId, 10) || 0;
+    }
+
+    return 0;
   }
 
-  // fallback: button/select has order id directly
-  const directOrderId = $el.data('order-id');
-  if (directOrderId) {
-    return parseInt(directOrderId, 10) || 0;
-  }
+  function refreshOrderDetail(orderId) {
+    orderId = parseInt(orderId, 10) || 0;
 
-  return 0;
-}
-
-function refreshOrderDetail(orderId) {
-  orderId = parseInt(orderId, 10) || 0;
-
-  if (!orderId) {
-    location.reload();
-    return;
-  }
-
-  $.post('scripts/orders/get_order_detail.php', {
-    order_id: orderId
-  }, function (res) {
-    if (!res || !res.ok) {
+    if (!orderId) {
       location.reload();
       return;
     }
 
-    // orders.php layout
-    const $ordersDetail = $('#detail-' + orderId);
-    if ($ordersDetail.length) {
-      $ordersDetail.html(res.html).show();
-      return;
-    }
+    $.post(
+      "scripts/orders/get_order_detail.php",
+      {
+        order_id: orderId,
+      },
+      function (res) {
+        if (!res || !res.ok) {
+          location.reload();
+          return;
+        }
 
-    // profile_orders.php layout — vždy znova hľadáme element v aktuálnom DOM
-    // (nie cez closure premenné, ktoré môžu ukazovať na detached elementy)
-    const $profileDetailRow = $('.profile-order-detail-row[data-detail-for="' + orderId + '"]');
-    if ($profileDetailRow.length) {
-      $profileDetailRow.show();
-      // Hľadáme bunku priamo v aktuálnom DOM — nie zo starej premennej
-      $profileDetailRow.find('td').first().html(res.html);
-      return;
-    }
+        // orders.php layout
+        const $ordersDetail = $("#detail-" + orderId);
+        if ($ordersDetail.length) {
+          $ordersDetail.html(res.html).show();
+          return;
+        }
 
-    location.reload();
-  }, 'json').fail(function () {
-    location.reload();
-  });
-}
+        // profile_orders.php layout — vždy znova hľadáme element v aktuálnom DOM
+        // (nie cez closure premenné, ktoré môžu ukazovať na detached elementy)
+        const $profileDetailRow = $(
+          '.profile-order-detail-row[data-detail-for="' + orderId + '"]',
+        );
+        if ($profileDetailRow.length) {
+          $profileDetailRow.show();
+          // Hľadáme bunku priamo v aktuálnom DOM — nie zo starej premennej
+          $profileDetailRow.find("td").first().html(res.html);
+          return;
+        }
 
-/**
- * Aplikuje traffic summary + order status button priamo na riadok tabuľky — čisté DOM, žiadny AJAX.
- * Volaná s dátami ktoré už prišli v odpovedi update_item_status.php.
- */
-function applyTrafficSummaryToRow(orderId, summary, orderStatus) {
-  orderId = parseInt(orderId, 10) || 0;
-  if (!orderId) return;
-
-  const $row = $(
-    '.profile-order-row[data-order-id="' + orderId + '"], ' +
-    '.order-row[data-order-id="' + orderId + '"]'
-  );
-  if (!$row.length) return;
-
-  // ── 1. SEMAFOR ──────────────────────────────────────────────────
-  if (summary) {
-    let $trafficCell = $row.find('td.traffic-cell').first();
-
-    if (!$trafficCell.length) {
-      $trafficCell = $row.find('td').filter(function () {
-        return $(this).find('.badge').filter(function () {
-          return /^[GPSF]$/.test($(this).text().trim());
-        }).length > 0;
-      }).first();
-    }
-
-    if ($trafficCell.length) {
-      const colorMap = { 'GREEN': 'badge-success', 'ORANGE': 'badge-warning', 'RED': 'badge-danger' };
-      let html = '';
-      ['G', 'F', 'P', 'S'].forEach(function (type) {
-        if (!summary[type]) return;
-        const state = String(summary[type]).toUpperCase();
-        const cls = colorMap[state] || 'badge-secondary';
-        html += '<span class="badge ' + cls + ' mr-1" style="font-size:1rem;padding:.5em .7em;" title="' + type + ' ' + state + '">' + type + '</span>';
-      });
-      $trafficCell.html(html);
-    }
+        location.reload();
+      },
+      "json",
+    ).fail(function () {
+      location.reload();
+    });
   }
 
-  // ── 2. STATUS BUTTON ─────────────────────────────────────────────
-  if (orderStatus) {
-    const $statusCell = $row.find('td[data-status-cell]').first();
-    if ($statusCell.length) {
-      const s = String(orderStatus).toUpperCase();
+  function triggerEnterSave($field) {
+    function clickButton($btn, allowHidden) {
+      $btn = $btn
+        .filter(function () {
+          return allowHidden || $(this).is(":visible");
+        })
+        .filter(":not(:disabled)")
+        .first();
+      if (!$btn.length) return false;
 
-      const btnClassMap = {
-        'NEW':              'btn-outline-danger',
-        'NEED_INFO':        'btn-outline-danger',
-        'IN_PROGRESS':      'btn-outline-warning',
-        'READY_TO_INVOICE': 'btn-outline-warning',
-        'WAITING_PARTS':    'btn-outline-warning',
-        'HOLD':             'btn-outline-secondary',
-        'CANCELLED':        'btn-outline-secondary',
-        'DONE':             'btn-outline-success',
-        'COMPLETED':        'btn-outline-success',
-        'SHIPPED':          'btn-outline-success',
-        'READY':            'btn-outline-success',
-        'READY_TO_SHIP':    'btn-outline-success',
-      };
+      $btn.trigger("click");
+      return true;
+    }
 
-      const btnClass = btnClassMap[s] || 'btn-outline-secondary';
-      const label = s.replace(/_/g, ' ') || '-';
+    if (
+      $field.is(
+        ".order-priority-select, .order-status-select, .order-types-select, .item-status-select",
+      )
+    ) {
+      $field.trigger("change");
+      return true;
+    }
 
-      $statusCell.html(
-        '<button class="btn btn-xs ' + btnClass + '" style="pointer-events:none;">' + label + '</button>'
-      );
+    const $headerEdit = $field.closest(".order-header-edit");
+    if ($headerEdit.length) {
+      return clickButton($headerEdit.find(".btn-save-order-header"), true);
+    }
+
+    const $invoiceRow = $field.closest(".form-row");
+    if ($invoiceRow.find(".btn-add-invoice").length) {
+      return clickButton($invoiceRow.find(".btn-add-invoice"));
+    }
+
+    const $trackingRow = $field.closest(".form-row");
+    if ($trackingRow.find(".btn-add-tracking").length) {
+      return clickButton($trackingRow.find(".btn-add-tracking"));
+    }
+
+    const $noteEditor = $field.closest(".production-note-editor");
+    if ($noteEditor.length) {
+      return clickButton($noteEditor.find(".btn-save-production-note"));
+    }
+
+    const $manualItemBox = $field.closest(".manual-item-box");
+    if ($manualItemBox.length) {
+      return clickButton($manualItemBox.find(".btn-add-manual-item"));
+    }
+
+    const $itemRow = $field.closest("tr");
+    if ($itemRow.length) {
+      if ($field.is(".item-waiting-note, .item-expected-date")) {
+        const $statusSelect = $itemRow.find(".item-status-select").first();
+        if ($statusSelect.length && !$statusSelect.prop("disabled")) {
+          $statusSelect.trigger("change");
+          return true;
+        }
+      }
+
+      if (clickButton($itemRow.find(".btn-save-item"))) {
+        return true;
+      }
+    }
+
+    if ($field.closest("#customerOptionsEditBox").length) {
+      return clickButton($("#btnSaveCustomerOptions"));
+    }
+
+    if ($field.closest("#internalOptionsEditBox").length) {
+      return clickButton($("#btnSaveInternalOptions"));
+    }
+
+    const $scope = $field.closest(
+      ".form-row, .card, .modal-content, .detail-wrap, .profile-order-detail-row",
+    );
+    return clickButton(
+      $scope.find(
+        '.btn-save, .btn-add, [class*="btn-save-"], [class*="btn-add-"]',
+      ),
+    );
+  }
+
+  $(document)
+    .off("keydown.orderDetailEnterSave")
+    .on(
+      "keydown.orderDetailEnterSave",
+      ".detail-wrap input, .detail-wrap textarea, .detail-wrap select, .profile-order-detail-row input, .profile-order-detail-row textarea, .profile-order-detail-row select, #optionsModal input, #optionsModal textarea, #optionsModal select",
+      function (e) {
+        if ((e.key && e.key !== "Enter") || (!e.key && e.which !== 13)) return;
+        if (e.isComposing || e.shiftKey) return;
+
+        const $field = $(this);
+        if ($field.is(":disabled, [readonly]")) return;
+
+        if (triggerEnterSave($field)) {
+          e.preventDefault();
+          e.stopPropagation();
+        }
+      },
+    );
+
+  /**
+   * Aplikuje traffic summary + order status button priamo na riadok tabuľky — čisté DOM, žiadny AJAX.
+   * Volaná s dátami ktoré už prišli v odpovedi update_item_status.php.
+   */
+  function applyTrafficSummaryToRow(orderId, summary, orderStatus) {
+    orderId = parseInt(orderId, 10) || 0;
+    if (!orderId) return;
+
+    const $row = $(
+      '.profile-order-row[data-order-id="' +
+        orderId +
+        '"], ' +
+        '.order-row[data-order-id="' +
+        orderId +
+        '"]',
+    );
+    if (!$row.length) return;
+
+    // ── 1. SEMAFOR ──────────────────────────────────────────────────
+    if (summary) {
+      let $trafficCell = $row.find("td.traffic-cell").first();
+
+      if (!$trafficCell.length) {
+        $trafficCell = $row
+          .find("td")
+          .filter(function () {
+            return (
+              $(this)
+                .find(".badge")
+                .filter(function () {
+                  return /^[GPSF]$/.test($(this).text().trim());
+                }).length > 0
+            );
+          })
+          .first();
+      }
+
+      if ($trafficCell.length) {
+        const colorMap = {
+          GREEN: "badge-success",
+          ORANGE: "badge-warning",
+          RED: "badge-danger",
+        };
+        let html = "";
+        ["G", "F", "P", "S"].forEach(function (type) {
+          if (!summary[type]) return;
+          const state = String(summary[type]).toUpperCase();
+          const cls = colorMap[state] || "badge-secondary";
+          html +=
+            '<span class="badge ' +
+            cls +
+            ' mr-1" style="font-size:1rem;padding:.5em .7em;" title="' +
+            type +
+            " " +
+            state +
+            '">' +
+            type +
+            "</span>";
+        });
+        $trafficCell.html(html);
+      }
+    }
+
+    // ── 2. STATUS BUTTON ─────────────────────────────────────────────
+    if (orderStatus) {
+      const $statusCell = $row.find("td[data-status-cell]").first();
+      if ($statusCell.length) {
+        const s = String(orderStatus).toUpperCase();
+
+        const btnClassMap = {
+          NEW: "btn-outline-danger",
+          NEED_INFO: "btn-outline-danger",
+          IN_PROGRESS: "btn-outline-warning",
+          READY_TO_INVOICE: "btn-outline-warning",
+          WAITING_PARTS: "btn-outline-warning",
+          HOLD: "btn-outline-secondary",
+          CANCELLED: "btn-outline-secondary",
+          DONE: "btn-outline-success",
+          COMPLETED: "btn-outline-success",
+          SHIPPED: "btn-outline-success",
+          READY: "btn-outline-success",
+          READY_TO_SHIP: "btn-outline-success",
+        };
+
+        const btnClass = btnClassMap[s] || "btn-outline-secondary";
+        const label = s.replace(/_/g, " ") || "-";
+
+        $statusCell.html(
+          '<button class="btn btn-xs ' +
+            btnClass +
+            '" style="pointer-events:none;">' +
+            label +
+            "</button>",
+        );
+      }
     }
   }
-}
 
   function ensureOptionsModal() {
-    if ($('#optionsModal').length) return;
+    if ($("#optionsModal").length) {
+      return;
+    }
 
-    $('body').append(`
+    $("body").append(`
       <div class="modal fade" id="optionsModal" tabindex="-1" role="dialog" aria-hidden="true">
         <div class="modal-dialog modal-lg" role="document">
           <div class="modal-content bg-dark text-light">
             <div class="modal-header border-secondary">
               <h5 class="modal-title">
-                <i class="fas fa-list-alt mr-1"></i> Product Options
+                <i class="fas fa-list-alt mr-1"></i> Product Detail
               </h5>
               <button type="button" class="close text-light" data-dismiss="modal" data-bs-dismiss="modal" aria-label="Close">
                 <span aria-hidden="true">&times;</span>
               </button>
             </div>
 
-            <div class="modal-body">
-              <div class="mb-3">
-                <h6 class="text-muted mb-2">
-                  <i class="fas fa-download mr-1"></i> Imported Product Options
-                </h6>
-                <div id="optionsModalBody"></div>
-              </div>
-
-              <hr class="border-secondary my-3">
-
-              <div class="mb-2">
-                <div class="d-flex justify-content-between align-items-center mb-2">
-                  <h6 class="text-muted mb-0">
-                    <i class="fas fa-tools mr-1"></i> Internal Production Blocks
-                  </h6>
-
-                  <button type="button" class="btn btn-sm btn-outline-warning" id="btnEditInternalOptions">
-                    <i class="fas fa-edit mr-1"></i> Edit internal
-                  </button>
-                </div>
-
-                <div id="internalOptionsView" class="mb-2"></div>
-
-                <div id="internalOptionsEditBox" style="display:none;">
-                  <div class="d-flex justify-content-between align-items-center mb-2">
-                    <small class="text-muted">Add production information as blocks and fields.</small>
-
-                    <button type="button" class="btn btn-sm btn-outline-info" id="btnAddInternalBlock">
-                      <i class="fas fa-plus mr-1"></i> Add block
-                    </button>
-                  </div>
-
-                  <div id="internalBlocksEditor"></div>
-
-                  <div class="d-flex justify-content-end mt-2">
-                    <button type="button" class="btn btn-sm btn-success" id="btnSaveInternalOptions">
-                      <i class="fas fa-save mr-1"></i> Save internal
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
+            <div class="modal-body"></div>
 
             <div class="modal-footer border-secondary">
               <button type="button" class="btn btn-secondary" data-dismiss="modal" data-bs-dismiss="modal">
@@ -513,51 +771,137 @@ function applyTrafficSummaryToRow(orderId, summary, orderStatus) {
     `);
   }
 
+  function resetOptionsModalShell() {
+    $("#optionsModal .modal-title").html(
+      '<i class="fas fa-list-alt mr-1"></i> Product Detail',
+    );
+    $("#optionsModal .modal-body").html(`
+      <div class="mb-3">
+        <div class="d-flex justify-content-between align-items-center mb-2">
+          <h6 class="text-muted mb-0">
+            <i class="fas fa-download mr-1"></i> Customer / Imported Options
+          </h6>
+
+          <button type="button" class="btn btn-sm btn-outline-warning" id="btnEditCustomerOptions">
+            <i class="fas fa-edit mr-1"></i> Edit options
+          </button>
+        </div>
+
+        <div id="customerOptionsView"></div>
+
+        <div id="customerOptionsEditBox" style="display:none;">
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <small class="text-muted">Changes here rewrite the customer-facing item options.</small>
+
+            <button type="button" class="btn btn-sm btn-outline-info" id="btnAddCustomerOption">
+              <i class="fas fa-plus mr-1"></i> Add field
+            </button>
+          </div>
+
+          <div id="customerOptionsEditor"></div>
+
+          <div class="d-flex justify-content-end mt-2" style="gap:6px;">
+            <button type="button" class="btn btn-sm btn-secondary" id="btnCancelCustomerOptions">
+              Cancel
+            </button>
+            <button type="button" class="btn btn-sm btn-success" id="btnSaveCustomerOptions">
+              <i class="fas fa-save mr-1"></i> Save options
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <hr class="border-secondary my-3">
+
+      <div class="mb-2">
+        <div class="d-flex justify-content-between align-items-center mb-2">
+          <h6 class="text-muted mb-0">
+            <i class="fas fa-tools mr-1"></i> Internal Production Blocks
+          </h6>
+
+          <button type="button" class="btn btn-sm btn-outline-warning" id="btnEditInternalOptions">
+            <i class="fas fa-edit mr-1"></i> Edit internal
+          </button>
+        </div>
+
+        <div id="internalOptionsView" class="mb-2"></div>
+
+        <div id="internalOptionsEditBox" style="display:none;">
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <small class="text-muted">Add production information as blocks and fields.</small>
+
+            <button type="button" class="btn btn-sm btn-outline-info" id="btnAddInternalBlock">
+              <i class="fas fa-plus mr-1"></i> Add block
+            </button>
+          </div>
+
+          <div id="internalBlocksEditor"></div>
+
+          <div class="d-flex justify-content-end mt-2">
+            <button type="button" class="btn btn-sm btn-success" id="btnSaveInternalOptions">
+              <i class="fas fa-save mr-1"></i> Save internal blocks
+            </button>
+          </div>
+        </div>
+      </div>
+    `);
+  }
+
   $(document)
-    .off('click.orderDetailActions', '.btn-view-options')
-    .on('click.orderDetailActions', '.btn-view-options', function (e) {
+    .off("click.orderDetailActions", ".btn-view-options")
+    .on("click.orderDetailActions", ".btn-view-options", function (e) {
       e.preventDefault();
       e.stopPropagation();
 
       ensureOptionsModal();
+      resetOptionsModalShell();
 
       const $btn = $(this);
       const data = getOptionsData($btn);
+      currentCustomerOptions = stripProtectedOptions(getRawOptionsData($btn));
+      currentCanEditOptions =
+        String($btn.attr("data-can-edit-options") || "0") === "1";
 
-      $('#optionsModalBody').html(renderOptionsPretty(data));
+      $("#customerOptionsView").html(renderOptionsPretty(data));
+      $("#customerOptionsEditBox").hide();
+      $("#btnEditCustomerOptions").toggle(currentCanEditOptions);
 
-      currentOptionsItemId = $btn.data('item-id') || 0;
+      currentOptionsItemId = $btn.data("item-id") || 0;
 
       try {
-        currentInternalOptions = JSON.parse($btn.attr('data-internal-options') || '{}');
+        currentInternalOptions = JSON.parse(
+          $btn.attr("data-internal-options") || "{}",
+        );
       } catch (err) {
         currentInternalOptions = {};
       }
 
-      $('#internalOptionsView').html(renderInternalOptions(currentInternalOptions));
-      $('#internalOptionsEditBox').hide();
-      $('#btnEditInternalOptions').show();
+      $("#internalOptionsView").html(
+        renderInternalOptions(currentInternalOptions),
+      );
+      $("#internalOptionsEditBox").hide();
+      $("#btnEditInternalOptions").toggle(currentCanEditOptions);
 
-      $('#optionsModal').modal('show');
+      $("#optionsModal").modal("show");
     });
 
   $(document)
-    .off('click.orderDetailActions', '.btn-copy-options')
-    .on('click.orderDetailActions', '.btn-copy-options', async function (e) {
+    .off("click.orderDetailActions", ".btn-copy-options")
+    .on("click.orderDetailActions", ".btn-copy-options", async function (e) {
       e.preventDefault();
       e.stopPropagation();
 
       const data = getOptionsData($(this));
-      let text = '';
+      let text = "";
 
       for (let k in data) {
-        if (k.startsWith('_')) continue;
-        if (typeof data[k] === 'object') continue;
+        if (k.startsWith("_")) continue;
+        if (typeof data[k] === "object") continue;
         text += `${k}: ${data[k]}\n`;
       }
 
       if (!text.trim()) {
-        alert('Nothing to copy');
+        alert("Nothing to copy");
         return;
       }
 
@@ -569,18 +913,18 @@ function applyTrafficSummaryToRow(orderId, summary, orderStatus) {
 
       const $btn = $(this);
       const oldText = $btn.text();
-      $btn.text('COPIED');
+      $btn.text("COPIED");
       setTimeout(() => $btn.text(oldText), 1000);
     });
 
   $(document)
-    .off('click.orderDetailActions', '.btn-copy-inline')
-    .on('click.orderDetailActions', '.btn-copy-inline', async function (e) {
+    .off("click.orderDetailActions", ".btn-copy-inline")
+    .on("click.orderDetailActions", ".btn-copy-inline", async function (e) {
       e.preventDefault();
       e.stopPropagation();
 
       const $btn = $(this);
-      const text = $btn.attr('data-copy') || '';
+      const text = $btn.attr("data-copy") || "";
 
       if (navigator.clipboard && window.isSecureContext) {
         await navigator.clipboard.writeText(text);
@@ -589,215 +933,371 @@ function applyTrafficSummaryToRow(orderId, summary, orderStatus) {
       }
 
       const oldText = $btn.text();
-      $btn.text('✔');
+      $btn.text("✔");
       setTimeout(() => $btn.text(oldText), 800);
     });
 
   $(document)
-    .off('click.orderDetailActions', '.btn-assign-item')
-    .on('click.orderDetailActions', '.btn-assign-item', function (e) {
-  e.preventDefault();
-  e.stopPropagation();
-
-  const $btn = $(this);
-  const itemId = $btn.data('item-id');
-
-  $.ajax({
-    url: 'scripts/orders/assign_order_item.php',
-    method: 'POST',
-    dataType: 'json',
-    data: { item_id: itemId },
-    success: function (resp) {
-      if (!resp || !resp.ok) {
-        alert(resp && resp.error ? resp.error : 'Assign item failed');
-        return;
-      }
-
-      refreshOrderDetail(findOpenOrderIdFromElement($btn));
-    },
-    error: function (xhr) {
-      console.log(xhr.responseText);
-      alert('Assign item request failed');
-    }
-  });
-});
-
-  $(document)
-  .off('click.removeAssignment', '.btn-remove-assignment')
-  .on('click.removeAssignment', '.btn-remove-assignment', function (e) {
-    e.preventDefault();
-    e.stopPropagation();
-
-    const $btn = $(this);
-    const assignmentId = $btn.data('assignment-id');
-
-    if (!assignmentId) {
-      alert('Missing assignment ID');
-      return;
-    }
-
-    if (!confirm('Remove this assignment?')) {
-      return;
-    }
-
-    $btn.prop('disabled', true);
-
-    $.ajax({
-      url: 'scripts/orders/remove_order_assignment.php',
-      method: 'POST',
-      dataType: 'json',
-      data: {
-        assignment_id: assignmentId
-      },
-      success: function (resp) {
-        if (!resp || !resp.ok) {
-          alert(resp && resp.error ? resp.error : 'Remove assignment failed');
-          $btn.prop('disabled', false);
-          return;
-        }
-
-        location.reload();
-      },
-      error: function (xhr) {
-        console.log(xhr.responseText);
-        alert('Remove assignment request failed');
-        $btn.prop('disabled', false);
-      }
-    });
-  });
-
-$(document)
-  .off('change.orderDetailActions', '.item-status-select')
-  .on('change.orderDetailActions', '.item-status-select', function (e) {
-    e.preventDefault();
-    e.stopPropagation();
-
-    const $select = $(this);
-    const itemId = parseInt($select.data('item-id'), 10) || 0;
-    const status = $select.val();
-    const orderId = findOpenOrderIdFromElement($select);
-
-    if (!itemId) {
-      alert('Missing item ID');
-      return;
-    }
-
-    $select.prop('disabled', true);
-
-    const $scope = $select.closest('tr');
-    const note = $scope.find('.item-waiting-note').val() || $('.item-waiting-note[data-item-id="' + itemId + '"]').val() || '';
-    const expectedDate = $scope.find('.item-expected-date').val() || $('.item-expected-date[data-item-id="' + itemId + '"]').val() || '';
-
-    $.ajax({
-      url: 'scripts/orders/update_item_status.php',
-      method: 'POST',
-      dataType: 'json',
-      data: {
-        item_id: itemId,
-        status: status,
-        note: note,
-        expected_date: expectedDate
-      },
-      success: function (resp) {
-  if (!resp || (!resp.success && !resp.ok)) {
-    alert(resp && (resp.message || resp.error) ? (resp.message || resp.error) : 'Status update failed');
-    $select.prop('disabled', false);
-    return;
-  }
-
-  const resolvedOrderId = findOpenOrderIdFromElement($select);
-
-  // Ak odpoveď obsahuje traffic_summary, aplikujeme ho priamo — bez extra requestu
-  if (resp.traffic_summary && resp.order_id) {
-    applyTrafficSummaryToRow(resp.order_id, resp.traffic_summary, resp.order_status);
-  }
-
-  refreshOrderDetail(resolvedOrderId);
-},
-      error: function (xhr) {
-        console.log(xhr.responseText);
-        alert('Status update request failed');
-        $select.prop('disabled', false);
-      }
-    });
-  });
-
-  $(document)
-    .off('click.orderDetailActions', '.btn-edit-production-note')
-    .on('click.orderDetailActions', '.btn-edit-production-note', function (e) {
-      e.preventDefault();
-      e.stopPropagation();
-
-      const $box = $(this).closest('.production-note-box');
-
-      $box.find('.production-note-display').hide();
-      $box.find('.btn-edit-production-note').hide();
-      $box.find('.production-note-editor').show();
-      $box.find('.production-note-input').focus();
-    });
-
-  $(document)
-    .off('click.orderDetailActions', '.btn-cancel-production-note')
-    .on('click.orderDetailActions', '.btn-cancel-production-note', function (e) {
-      e.preventDefault();
-      e.stopPropagation();
-
-      const $box = $(this).closest('.production-note-box');
-
-      $box.find('.production-note-editor').hide();
-      $box.find('.production-note-display').show();
-      $box.find('.btn-edit-production-note').show();
-    });
-
-  $(document)
-    .off('click.orderDetailActions', '.btn-save-production-note')
-    .on('click.orderDetailActions', '.btn-save-production-note', function (e) {
+    .off("click.orderDetailActions", ".btn-assign-item")
+    .on("click.orderDetailActions", ".btn-assign-item", function (e) {
       e.preventDefault();
       e.stopPropagation();
 
       const $btn = $(this);
-      const orderId = $btn.data('order-id');
-      const $box = $btn.closest('.production-note-box');
-      const note = $box.find('.production-note-input').val();
+      const itemId = $btn.data("item-id");
 
-      $btn.prop('disabled', true).text('Saving...');
+      $.ajax({
+        url: "scripts/orders/assign_order_item.php",
+        method: "POST",
+        dataType: "json",
+        data: { item_id: itemId },
+        success: function (resp) {
+          if (!resp || !resp.ok) {
+            alert(resp && resp.error ? resp.error : "Assign item failed");
+            return;
+          }
 
-      $.post('scripts/orders/update_production_note.php', {
-        order_id: orderId,
-        production_note: note
-      }, function (res) {
-        if (!res || !res.ok) {
-          alert(res && res.error ? res.error : 'Save failed');
-          $btn.prop('disabled', false).text('Save');
-          return;
-        }
-
-        refreshOrderDetail(orderId);
-      }, 'json').fail(function () {
-        alert('Save note request failed');
-        $btn.prop('disabled', false).text('Save');
+          refreshOrderDetail(findOpenOrderIdFromElement($btn));
+        },
+        error: function (xhr) {
+          console.log(xhr.responseText);
+          alert("Assign item request failed");
+        },
       });
     });
 
   $(document)
-    .off('click.orderDetailActions', '#btnEditInternalOptions')
-    .on('click.orderDetailActions', '#btnEditInternalOptions', function (e) {
+    .off("click.removeAssignment", ".btn-remove-assignment")
+    .on("click.removeAssignment", ".btn-remove-assignment", function (e) {
+      e.preventDefault();
+      e.stopPropagation();
+
+      const $btn = $(this);
+      const assignmentId = $btn.data("assignment-id");
+
+      if (!assignmentId) {
+        alert("Missing assignment ID");
+        return;
+      }
+
+      if (!confirm("Remove this assignment?")) {
+        return;
+      }
+
+      $btn.prop("disabled", true);
+
+      $.ajax({
+        url: "scripts/orders/remove_order_assignment.php",
+        method: "POST",
+        dataType: "json",
+        data: {
+          assignment_id: assignmentId,
+        },
+        success: function (resp) {
+          if (!resp || !resp.ok) {
+            alert(resp && resp.error ? resp.error : "Remove assignment failed");
+            $btn.prop("disabled", false);
+            return;
+          }
+
+          location.reload();
+        },
+        error: function (xhr) {
+          console.log(xhr.responseText);
+          alert("Remove assignment request failed");
+          $btn.prop("disabled", false);
+        },
+      });
+    });
+
+  $(document)
+    .off("change.orderDetailActions", ".item-status-select")
+    .on("change.orderDetailActions", ".item-status-select", function (e) {
+      e.preventDefault();
+      e.stopPropagation();
+
+      const $select = $(this);
+      const itemId = parseInt($select.data("item-id"), 10) || 0;
+      const status = $select.val();
+      const orderId = findOpenOrderIdFromElement($select);
+
+      if (!itemId) {
+        alert("Missing item ID");
+        return;
+      }
+
+      $select.prop("disabled", true);
+
+      const $scope = $select.closest("tr");
+      const note =
+        $scope.find(".item-waiting-note").val() ||
+        $('.item-waiting-note[data-item-id="' + itemId + '"]').val() ||
+        "";
+      const expectedDate =
+        $scope.find(".item-expected-date").val() ||
+        $('.item-expected-date[data-item-id="' + itemId + '"]').val() ||
+        "";
+
+      $.ajax({
+        url: "scripts/orders/update_item_status.php",
+        method: "POST",
+        dataType: "json",
+        data: {
+          item_id: itemId,
+          status: status,
+          note: note,
+          expected_date: expectedDate,
+        },
+        success: function (resp) {
+          if (!resp || (!resp.success && !resp.ok)) {
+            alert(
+              resp && (resp.message || resp.error)
+                ? resp.message || resp.error
+                : "Status update failed",
+            );
+            $select.prop("disabled", false);
+            return;
+          }
+
+          const resolvedOrderId = findOpenOrderIdFromElement($select);
+
+          // Ak odpoveď obsahuje traffic_summary, aplikujeme ho priamo — bez extra requestu
+          if (resp.traffic_summary && resp.order_id) {
+            applyTrafficSummaryToRow(
+              resp.order_id,
+              resp.traffic_summary,
+              resp.order_status,
+            );
+          }
+
+          refreshOrderDetail(resolvedOrderId);
+        },
+        error: function (xhr) {
+          console.log(xhr.responseText);
+          alert("Status update request failed");
+          $select.prop("disabled", false);
+        },
+      });
+    });
+
+  $(document)
+    .off("click.orderDetailActions", ".btn-edit-production-note")
+    .on("click.orderDetailActions", ".btn-edit-production-note", function (e) {
+      e.preventDefault();
+      e.stopPropagation();
+
+      const $box = $(this).closest(".production-note-box");
+
+      $box.find(".production-note-display").hide();
+      $box.find(".btn-edit-production-note").hide();
+      $box.find(".production-note-editor").show();
+      $box.find(".production-note-input").focus();
+    });
+
+  $(document)
+    .off("click.orderDetailActions", ".btn-cancel-production-note")
+    .on(
+      "click.orderDetailActions",
+      ".btn-cancel-production-note",
+      function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+
+        const $box = $(this).closest(".production-note-box");
+
+        $box.find(".production-note-editor").hide();
+        $box.find(".production-note-display").show();
+        $box.find(".btn-edit-production-note").show();
+      },
+    );
+
+  $(document)
+    .off("click.orderDetailActions", ".btn-save-production-note")
+    .on("click.orderDetailActions", ".btn-save-production-note", function (e) {
+      e.preventDefault();
+      e.stopPropagation();
+
+      const $btn = $(this);
+      const orderId = $btn.data("order-id");
+      const $box = $btn.closest(".production-note-box");
+      const note = $box.find(".production-note-input").val();
+
+      $btn.prop("disabled", true).text("Saving...");
+
+      $.post(
+        "scripts/orders/update_production_note.php",
+        {
+          order_id: orderId,
+          production_note: note,
+        },
+        function (res) {
+          if (!res || !res.ok) {
+            alert(res && res.error ? res.error : "Save failed");
+            $btn.prop("disabled", false).text("Save");
+            return;
+          }
+
+          refreshOrderDetail(orderId);
+        },
+        "json",
+      ).fail(function () {
+        alert("Save note request failed");
+        $btn.prop("disabled", false).text("Save");
+      });
+    });
+
+  $(document)
+    .off("click.orderDetailActions", "#btnEditCustomerOptions")
+    .on("click.orderDetailActions", "#btnEditCustomerOptions", function (e) {
+      e.preventDefault();
+      e.stopPropagation();
+
+      if (!currentCanEditOptions) return;
+
+      renderCustomerOptionsEditor(currentCustomerOptions);
+      $("#customerOptionsEditBox").show();
+      $("#btnEditCustomerOptions").hide();
+    });
+
+  $(document)
+    .off("click.orderDetailActions", "#btnCancelCustomerOptions")
+    .on("click.orderDetailActions", "#btnCancelCustomerOptions", function (e) {
+      e.preventDefault();
+      e.stopPropagation();
+
+      $("#customerOptionsEditBox").hide();
+      $("#btnEditCustomerOptions").show();
+    });
+
+  $(document)
+    .off("click.orderDetailActions", "#btnAddCustomerOption")
+    .on("click.orderDetailActions", "#btnAddCustomerOption", function (e) {
+      e.preventDefault();
+      e.stopPropagation();
+
+      $("#customerOptionsEditor").append(`
+        <div class="card bg-secondary mb-2 customer-option-row">
+          <div class="card-body py-2">
+            <div class="form-row align-items-start">
+              <div class="col-md-4 mb-2 mb-md-0">
+                <input type="text" class="form-control form-control-sm customer-option-key" placeholder="Field">
+              </div>
+              <div class="col-md-2 mb-2 mb-md-0">
+                <select class="form-control form-control-sm customer-option-type">
+                  ${optionTypeOptions("text")}
+                </select>
+              </div>
+              <div class="col-md-5 mb-2 mb-md-0">
+                <textarea class="form-control form-control-sm customer-option-value" rows="1" placeholder="Value"></textarea>
+              </div>
+              <div class="col-md-1 text-right">
+                <button type="button" class="btn btn-xs btn-outline-danger btn-remove-customer-option">×</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      `);
+      $(
+        "#customerOptionsEditor .customer-option-row:last .customer-option-key",
+      ).focus();
+    });
+
+  $(document)
+    .off("click.orderDetailActions", ".btn-remove-customer-option")
+    .on(
+      "click.orderDetailActions",
+      ".btn-remove-customer-option",
+      function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+
+        $(this).closest(".customer-option-row").remove();
+      },
+    );
+
+  $(document)
+    .off("change.orderDetailActions", ".customer-option-type")
+    .on("change.orderDetailActions", ".customer-option-type", function () {
+      const rows = $(this).val() === "json" ? 4 : 1;
+      $(this)
+        .closest(".customer-option-row")
+        .find(".customer-option-value")
+        .attr("rows", rows);
+    });
+
+  $(document)
+    .off("click.orderDetailActions", "#btnSaveCustomerOptions")
+    .on("click.orderDetailActions", "#btnSaveCustomerOptions", function (e) {
+      e.preventDefault();
+      e.stopPropagation();
+
+      const $btn = $(this);
+      let data;
+
+      try {
+        data = stripProtectedOptions(collectCustomerOptionsEditorData());
+      } catch (err) {
+        alert(err && err.message ? err.message : "Invalid options data");
+        return;
+      }
+
+      $btn.prop("disabled", true).text("Saving...");
+
+      $.post(
+        "scripts/orders/update_item_options.php",
+        {
+          item_id: currentOptionsItemId,
+          options_json: JSON.stringify(data),
+        },
+        function (res) {
+          if (!res || (!res.ok && !res.success)) {
+            alert(
+              res && (res.error || res.message)
+                ? res.error || res.message
+                : "Save failed",
+            );
+            $btn.prop("disabled", false).text("Save options");
+            return;
+          }
+
+          $("#optionsModal").modal("hide");
+          refreshOrderDetail(
+            findOpenOrderIdFromElement(
+              $(
+                '.btn-view-options[data-item-id="' +
+                  currentOptionsItemId +
+                  '"]',
+              ),
+            ),
+          );
+        },
+        "json",
+      ).fail(function (xhr) {
+        console.log(xhr.responseText);
+        alert("Save options request failed");
+        $btn.prop("disabled", false).text("Save options");
+      });
+    });
+
+  $(document)
+    .off("click.orderDetailActions", "#btnEditInternalOptions")
+    .on("click.orderDetailActions", "#btnEditInternalOptions", function (e) {
       e.preventDefault();
       e.stopPropagation();
 
       renderInternalEditor(currentInternalOptions);
 
-      $('#internalOptionsEditBox').show();
-      $('#btnEditInternalOptions').hide();
+      $("#internalOptionsEditBox").show();
+      $("#btnEditInternalOptions").hide();
     });
 
   $(document)
-    .off('click.orderDetailActions', '#btnAddInternalBlock')
-    .on('click.orderDetailActions', '#btnAddInternalBlock', function (e) {
+    .off("click.orderDetailActions", "#btnAddInternalBlock")
+    .on("click.orderDetailActions", "#btnAddInternalBlock", function (e) {
       e.preventDefault();
       e.stopPropagation();
 
-      $('#internalBlocksEditor').append(`
+      $("#internalBlocksEditor").append(`
         <div class="card bg-secondary mb-2 internal-block">
           <div class="card-header py-2 d-flex justify-content-between align-items-center">
             <input type="text" class="form-control form-control-sm internal-block-name" value="" placeholder="Block name" style="max-width:320px;">
@@ -816,12 +1316,12 @@ $(document)
     });
 
   $(document)
-    .off('click.orderDetailActions', '.btn-add-internal-field')
-    .on('click.orderDetailActions', '.btn-add-internal-field', function (e) {
+    .off("click.orderDetailActions", ".btn-add-internal-field")
+    .on("click.orderDetailActions", ".btn-add-internal-field", function (e) {
       e.preventDefault();
       e.stopPropagation();
 
-      $(this).closest('.internal-block').find('.internal-fields').append(`
+      $(this).closest(".internal-block").find(".internal-fields").append(`
         <div class="form-row align-items-center mb-2 internal-field">
           <div class="col-md-4">
             <input type="text" class="form-control form-control-sm internal-field-key" placeholder="Field name">
@@ -837,81 +1337,96 @@ $(document)
     });
 
   $(document)
-    .off('click.orderDetailActions', '.btn-remove-internal-field')
-    .on('click.orderDetailActions', '.btn-remove-internal-field', function (e) {
+    .off("click.orderDetailActions", ".btn-remove-internal-field")
+    .on("click.orderDetailActions", ".btn-remove-internal-field", function (e) {
       e.preventDefault();
       e.stopPropagation();
 
-      $(this).closest('.internal-field').remove();
+      $(this).closest(".internal-field").remove();
     });
 
   $(document)
-    .off('click.orderDetailActions', '.btn-remove-internal-block')
-    .on('click.orderDetailActions', '.btn-remove-internal-block', function (e) {
+    .off("click.orderDetailActions", ".btn-remove-internal-block")
+    .on("click.orderDetailActions", ".btn-remove-internal-block", function (e) {
       e.preventDefault();
       e.stopPropagation();
 
-      if (confirm('Remove this block?')) {
-        $(this).closest('.internal-block').remove();
+      if (confirm("Remove this block?")) {
+        $(this).closest(".internal-block").remove();
       }
     });
 
   $(document)
-    .off('click.orderDetailActions', '#btnSaveInternalOptions')
-    .on('click.orderDetailActions', '#btnSaveInternalOptions', function (e) {
+    .off("click.orderDetailActions", "#btnSaveInternalOptions")
+    .on("click.orderDetailActions", "#btnSaveInternalOptions", function (e) {
       e.preventDefault();
       e.stopPropagation();
 
       const data = collectInternalEditorData();
 
-$.post('scripts/orders/update_item_internal_options.php', {
-  item_id: currentOptionsItemId,
-  internal_options_json: JSON.stringify(data)
-}, function (res) {
-  if (!res || (!res.ok && !res.success)) {
-    alert(res && (res.error || res.message) ? (res.error || res.message) : 'Save failed');
-    return;
-  }
+      $.post(
+        "scripts/orders/update_item_internal_options.php",
+        {
+          item_id: currentOptionsItemId,
+          internal_options_json: JSON.stringify(data),
+        },
+        function (res) {
+          if (!res || (!res.ok && !res.success)) {
+            alert(
+              res && (res.error || res.message)
+                ? res.error || res.message
+                : "Save failed",
+            );
+            return;
+          }
 
-  $('#optionsModal').modal('hide');
-  refreshOrderDetail(
-    findOpenOrderIdFromElement($('.btn-view-options[data-item-id="' + currentOptionsItemId + '"]'))
-  );
-}, 'json').fail(function (xhr) {
-  console.log(xhr.responseText);
-  alert('Save internal options request failed');
-});
+          $("#optionsModal").modal("hide");
+          refreshOrderDetail(
+            findOpenOrderIdFromElement(
+              $(
+                '.btn-view-options[data-item-id="' +
+                  currentOptionsItemId +
+                  '"]',
+              ),
+            ),
+          );
+        },
+        "json",
+      ).fail(function (xhr) {
+        console.log(xhr.responseText);
+        alert("Save internal options request failed");
+      });
     });
 
   $(document)
-    .off('change.orderPriority', '.order-priority-select')
-    .on('change.orderPriority', '.order-priority-select', function (e) {
+    .off("change.orderPriority", ".order-priority-select")
+    .on("change.orderPriority", ".order-priority-select", function (e) {
       e.preventDefault();
       e.stopPropagation();
 
       const $select = $(this);
-      const orderId = $select.data('order-id');
+      const orderId = $select.data("order-id");
       const priority = $select.val();
 
-      if (!orderId || priority === '') {
-        alert('Missing order ID or priority');
+      if (!orderId || priority === "") {
+        alert("Missing order ID or priority");
         return;
       }
 
-      $select.prop('disabled', true);
+      $select.prop("disabled", true);
 
       $.ajax({
-        url: 'scripts/orders/update_order_priority.php',
-        method: 'POST',
-        dataType: 'json',
+        url: "scripts/orders/update_order_priority.php",
+        method: "POST",
+        dataType: "json",
         data: {
           order_id: orderId,
-          priority: priority
+          priority: priority,
         },
         success: function (resp) {
           if (!resp || !resp.ok) {
-            alert(resp && resp.error ? resp.error : 'Priority update failed');
-            $select.prop('disabled', false);
+            alert(resp && resp.error ? resp.error : "Priority update failed");
+            $select.prop("disabled", false);
             return;
           }
 
@@ -919,79 +1434,85 @@ $.post('scripts/orders/update_item_internal_options.php', {
         },
         error: function (xhr) {
           console.log(xhr.responseText);
-          alert('Priority update request failed');
-          $select.prop('disabled', false);
-        }
+          alert("Priority update request failed");
+          $select.prop("disabled", false);
+        },
       });
     });
 
   $(document)
-  .off('change.orderStatus', '.order-status-select')
-  .on('change.orderStatus', '.order-status-select', function (e) {
-    e.preventDefault();
-    e.stopPropagation();
+    .off("change.orderStatus", ".order-status-select")
+    .on("change.orderStatus", ".order-status-select", function (e) {
+      e.preventDefault();
+      e.stopPropagation();
 
-    const $select = $(this);
-    const orderId = $select.data('order-id');
-    const status = $select.val();
-    const prevStatus = ($select.data('prev-status') || $select.find('option:selected').data('prev') || '').toUpperCase();
+      const $select = $(this);
+      const orderId = $select.data("order-id");
+      const status = $select.val();
+      const prevStatus = (
+        $select.data("prev-status") ||
+        $select.find("option:selected").data("prev") ||
+        ""
+      ).toUpperCase();
 
-    if (!orderId || !status) {
-      alert('Missing order ID or status');
-      return;
-    }
-
-    // Ochrana: zmena Z stavu PENDING je nezvratná — vyžaduj potvrdenie
-    const wasPending = (prevStatus === 'PENDING') ||
-      ($select.find('option[value="PENDING"]').length &&
-       $select.data('original-status') === 'PENDING');
-
-    if (wasPending && status !== 'PENDING') {
-      const ok = confirm(
-        '⚠️ Táto objednávka je PENDING (nezaplatená).\n\n' +
-        'Zmenou statusu na "' + status.replace(/_/g, ' ') + '" potvrzuješ, že platba bola prijatá.\n\n' +
-        'Pokračovať?'
-      );
-      if (!ok) {
-        $select.val('PENDING');
+      if (!orderId || !status) {
+        alert("Missing order ID or status");
         return;
       }
-    }
 
-    $select.prop('disabled', true);
+      // Ochrana: zmena Z stavu PENDING je nezvratná — vyžaduj potvrdenie
+      const wasPending =
+        prevStatus === "PENDING" ||
+        ($select.find('option[value="PENDING"]').length &&
+          $select.data("original-status") === "PENDING");
 
-    $.ajax({
-      url: 'scripts/orders/update_order_status.php',
-      method: 'POST',
-      dataType: 'json',
-      data: {
-        order_id: orderId,
-        status: status
-      },
-      success: function (resp) {
-        if (!resp || !resp.ok) {
-          alert(resp && resp.error ? resp.error : 'Status update failed');
-          $select.prop('disabled', false);
+      if (wasPending && status !== "PENDING") {
+        const ok = confirm(
+          "⚠️ Táto objednávka je PENDING (nezaplatená).\n\n" +
+            'Zmenou statusu na "' +
+            status.replace(/_/g, " ") +
+            '" potvrzuješ, že platba bola prijatá.\n\n' +
+            "Pokračovať?",
+        );
+        if (!ok) {
+          $select.val("PENDING");
           return;
         }
-
-        // V profile contexte refreshujeme zoznam (lebo sa mohol zmeniť status badge)
-        // + znova otvoríme detail — bez full reload
-        if (typeof window.refreshProfileOrdersList === 'function') {
-          window.refreshProfileOrdersList(orderId);
-          return;
-        }
-
-        location.reload();
-      },
-      error: function (xhr) {
-        console.log(xhr.responseText);
-        alert('Status update request failed');
-        $select.prop('disabled', false);
       }
-    });
-  });
 
+      $select.prop("disabled", true);
+
+      $.ajax({
+        url: "scripts/orders/update_order_status.php",
+        method: "POST",
+        dataType: "json",
+        data: {
+          order_id: orderId,
+          status: status,
+        },
+        success: function (resp) {
+          if (!resp || !resp.ok) {
+            alert(resp && resp.error ? resp.error : "Status update failed");
+            $select.prop("disabled", false);
+            return;
+          }
+
+          // V profile contexte refreshujeme zoznam (lebo sa mohol zmeniť status badge)
+          // + znova otvoríme detail — bez full reload
+          if (typeof window.refreshProfileOrdersList === "function") {
+            window.refreshProfileOrdersList(orderId);
+            return;
+          }
+
+          location.reload();
+        },
+        error: function (xhr) {
+          console.log(xhr.responseText);
+          alert("Status update request failed");
+          $select.prop("disabled", false);
+        },
+      });
+    });
 })();
 
 // -- Edit header button toggle --
@@ -999,48 +1520,52 @@ $.post('scripts/orders/update_item_internal_options.php', {
 
 function getHeaderPanel($btn) {
   // btn je v div.d-flex, ktory je child toho isteho parenta ako .order-header-edit
-  return $btn.closest('div').parent().find('.order-header-edit').first();
+  return $btn.closest("div").parent().find(".order-header-edit").first();
 }
 
 function resetEditHeaderBtn($btn) {
-  $btn.data('mode', 'edit')
-      .removeClass('btn-warning').addClass('btn-light')
-      .html('✏️ Edit header');
+  $btn
+    .data("mode", "edit")
+    .removeClass("btn-warning")
+    .addClass("btn-light")
+    .html("✏️ Edit header");
 }
 
 $(document)
-  .off('click.editHeaderToggle', '.btn-edit-order-header')
-  .on('click.editHeaderToggle', '.btn-edit-order-header', function () {
-    var $btn   = $(this);
-    var mode   = $btn.data('mode') || 'edit';
+  .off("click.editHeaderToggle", ".btn-edit-order-header")
+  .on("click.editHeaderToggle", ".btn-edit-order-header", function () {
+    var $btn = $(this);
+    var mode = $btn.data("mode") || "edit";
     var $panel = getHeaderPanel($btn);
 
     if (!$panel.length) {
-      console.warn('[editHeader] .order-header-edit not found');
+      console.warn("[editHeader] .order-header-edit not found");
       return;
     }
 
-    if (mode === 'edit') {
+    if (mode === "edit") {
       $panel.slideDown(150);
-      $btn.data('mode', 'save')
-          .removeClass('btn-light').addClass('btn-warning')
-          .html('💾 Save changes');
+      $btn
+        .data("mode", "save")
+        .removeClass("btn-light")
+        .addClass("btn-warning")
+        .html("💾 Save changes");
     } else {
-      $panel.find('.btn-save-order-header').trigger('click');
+      $panel.find(".btn-save-order-header").trigger("click");
     }
   });
 
 $(document)
-  .off('click.editHeaderCancel', '.btn-cancel-order-header')
-  .on('click.editHeaderCancel', '.btn-cancel-order-header', function () {
-    var $panel = $(this).closest('.order-header-edit');
+  .off("click.editHeaderCancel", ".btn-cancel-order-header")
+  .on("click.editHeaderCancel", ".btn-cancel-order-header", function () {
+    var $panel = $(this).closest(".order-header-edit");
     $panel.slideUp(150);
-    resetEditHeaderBtn($panel.parent().find('.btn-edit-order-header').first());
+    resetEditHeaderBtn($panel.parent().find(".btn-edit-order-header").first());
   });
 
 $(document)
-  .off('click.editHeaderSave', '.btn-save-order-header')
-  .on('click.editHeaderSave', '.btn-save-order-header', function () {
-    var $panel = $(this).closest('.order-header-edit');
-    resetEditHeaderBtn($panel.parent().find('.btn-edit-order-header').first());
+  .off("click.editHeaderSave", ".btn-save-order-header")
+  .on("click.editHeaderSave", ".btn-save-order-header", function () {
+    var $panel = $(this).closest(".order-header-edit");
+    resetEditHeaderBtn($panel.parent().find(".btn-edit-order-header").first());
   });
