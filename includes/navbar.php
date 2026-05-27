@@ -20,6 +20,9 @@
       <li class="nav-item d-none d-sm-inline-block">
         <a href="?page=chat" class="nav-link">Scrub Chat</a>
       </li>
+      <li class="nav-item d-none d-sm-inline-block">
+        <a href="?page=orders&exclude_status=PENDING%2CSHIPPED" class="nav-link">Open Orders</a>
+      </li>
     </ul>
     <!-- Right navbar links -->
     <ul class="navbar-nav ml-auto">

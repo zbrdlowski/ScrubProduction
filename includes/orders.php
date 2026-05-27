@@ -52,6 +52,24 @@ $fQ = isset($_GET['q']) ? trim((string) $_GET['q']) : '';
 // ── Nové filtre ──────────────────────────────────────────────────────────────
 $fStatus = isset($_GET['status']) ? trim((string) $_GET['status']) : '';
 $fSource = isset($_GET['source']) ? trim((string) $_GET['source']) : '';
+
+// Špeciálny parameter pre "Open Orders" tab — vylúčenie viacerých statusov
+// Hodnoty oddelené čiarkou, napr. "PENDING,SHIPPED"
+$fExcludeStatuses = isset($_GET['exclude_status']) ? trim((string) $_GET['exclude_status']) : '';
+
+// Ak nie je nastavený žiadny filter a ani žiadny status filter → defaultne zapni "Open Orders"
+$noFiltersSet = (
+  empty($_GET['status']) && empty($_GET['exclude_status']) &&
+  empty($_GET['source']) && empty($_GET['country']) &&
+  empty($_GET['payment']) && empty($_GET['shipping']) &&
+  empty($_GET['priority']) && empty($_GET['date_from']) &&
+  empty($_GET['date_to']) && empty($_GET['worker']) &&
+  empty($_GET['dept']) && empty($_GET['cat']) &&
+  empty($_GET['type']) && empty($_GET['q'])
+);
+if ($noFiltersSet) {
+  $fExcludeStatuses = 'PENDING,SHIPPED';
+}
 $fCountry = isset($_GET['country']) ? strtoupper(trim((string) $_GET['country'])) : '';
 $fPayment = isset($_GET['payment']) ? trim((string) $_GET['payment']) : '';
 $fShipping = isset($_GET['shipping']) ? trim((string) $_GET['shipping']) : '';
@@ -92,6 +110,20 @@ if ($fWorker <= 0 || !isset($workerOptions[$fWorker])) {
 $allowedStatuses = ['NEW', 'IN_PROGRESS', 'DRAFT_READY', 'READY_TO_INVOICE', 'READY_TO_SHIP', 'SHIPPED', 'DONE', 'HOLD', 'CANCELLED', 'PENDING'];
 if ($fStatus !== '' && !in_array($fStatus, $allowedStatuses, true))
   $fStatus = '';
+
+// ── Quick-tab counts ──────────────────────────────────────────────────────────
+$quickTabCounts = [];
+$qtRes = $conn->query("SELECT
+  SUM(status='SHIPPED') AS cnt_shipped,
+  SUM(status='PENDING') AS cnt_pending,
+  SUM(status NOT IN ('PENDING','SHIPPED')) AS cnt_open
+FROM orders");
+if ($qtRes && $qtRow = $qtRes->fetch_assoc()) {
+  $quickTabCounts['shipped']    = (int)($qtRow['cnt_shipped'] ?? 0);
+  $quickTabCounts['pending']    = (int)($qtRow['cnt_pending'] ?? 0);
+  $quickTabCounts['open_orders'] = (int)($qtRow['cnt_open'] ?? 0);
+}
+// ─────────────────────────────────────────────────────────────────────────────
 
 $allowedSources = ['EBAY', 'SHOPTET', 'MX_LOCKER'];
 if ($fSource !== '' && !in_array($fSource, $allowedSources, true))
@@ -259,6 +291,17 @@ if ($fStatus !== '') {
   $where[] = 'o.status = ?';
   $types .= 's';
   $params[] = $fStatus;
+}
+
+// Exclude statuses (pre Open Orders tab)
+if ($fExcludeStatuses !== '') {
+  $excList = array_filter(array_map('trim', explode(',', $fExcludeStatuses)));
+  if ($excList) {
+    $placeholders = implode(',', array_fill(0, count($excList), '?'));
+    $where[] = "o.status NOT IN ($placeholders)";
+    $types .= str_repeat('s', count($excList));
+    array_push($params, ...$excList);
+  }
 }
 
 // Order source (EBAY, SHOPTET, MX_LOCKER)
@@ -528,9 +571,33 @@ $deptOptions = [
 
   .order-row {
     cursor: pointer;
+    transition: opacity .2s;
   }
 
-  .btn-copy-inline {
+  /* Keď je v tabuľke otvorený riadok — ostatné sa stlmia */
+  #example1.table-has-open .order-row:not(.order-row-open) {
+    opacity: 0.35;
+  }
+  #example1.table-has-open .order-detail-row {
+    opacity: 1 !important;
+  }
+
+  /* Otvorený riadok — výrazný highlight */
+  .order-row-open {
+    background: rgba(63, 158, 255, 0.13) !important;
+    box-shadow:
+      inset 4px 0 0 #3f9eff,
+      0 -1px 0 rgba(63, 158, 255, 0.35),
+      0  1px 0 rgba(63, 158, 255, 0.35);
+    opacity: 1 !important;
+  }
+
+  /* Detail riadok pod otvoreným — vizuálne "lepí" sa naň */
+  .order-row-open + .order-detail-row td {
+    border-top: none !important;
+    background: rgba(63, 158, 255, 0.05);
+    box-shadow: inset 4px 0 0 #3f9eff, 0 3px 0 rgba(63, 158, 255, 0.25);
+  }
     background: transparent;
     border: none;
     color: #adb5bd;
@@ -683,6 +750,113 @@ $deptOptions = [
   .table th {
     vertical-align: middle !important;
   }
+
+  /* ── Quick-tab lišta ─────────────────────────────────────────────────── */
+  .orders-quicktabs {
+    display: flex;
+    align-items: flex-end;
+    flex-wrap: wrap;
+    background: transparent;
+    padding: 8px 12px 0 12px;
+    gap: 3px;
+    border-bottom: 2px solid rgba(255, 255, 255, 0.12);
+  }
+
+  .orders-quicktabs .qtab {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 7px 16px;
+    font-size: 12.5px;
+    font-weight: 400;
+    color: rgba(255, 255, 255, 0.45);
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.10);
+    border-bottom: none;
+    border-radius: 5px 5px 0 0;
+    cursor: pointer;
+    text-decoration: none;
+    white-space: nowrap;
+    margin-bottom: -2px;
+    transition: background .15s, color .15s, border-color .15s;
+  }
+
+  .orders-quicktabs .qtab:hover {
+    background: rgba(255, 255, 255, 0.10);
+    color: rgba(255, 255, 255, 0.75);
+    border-color: rgba(255, 255, 255, 0.18);
+    text-decoration: none;
+  }
+
+  .orders-quicktabs .qtab.active {
+    font-weight: 600;
+    color: #fff;
+    background: rgba(255, 255, 255, 0.10);
+    border-color: rgba(255, 255, 255, 0.20);
+    border-bottom: 2px solid #3f9eff;
+    padding-bottom: 9px;
+    text-decoration: none;
+  }
+
+  .orders-quicktabs .qtab .qtab-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 18px;
+    height: 18px;
+    padding: 0 5px;
+    border-radius: 9px;
+    font-size: 10px;
+    font-weight: 700;
+    background: #dc3545;
+    color: #fff;
+  }
+
+  .orders-quicktabs .qtab .qtab-badge.badge-purple {
+    background: #6f42c1;
+  }
+
+  /* ── Filter collapse bar ────────────────────────────────────────────── */
+  .orders-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 12px;
+    background: rgba(0,0,0,.12);
+    border-bottom: 1px solid rgba(255,255,255,.06);
+    min-height: 38px;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .orders-toolbar .active-pills {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px;
+    flex: 1;
+  }
+
+  #ordersFilterCollapse {
+    border-bottom: 1px solid rgba(255,255,255,.07);
+  }
+
+  /* ── Sticky thead ───────────────────────────────────────────────────── */
+  #ordersTableWrap {
+    overflow-x: auto;
+    overflow-y: auto;
+    max-height: calc(100vh - 260px);
+  }
+
+  #ordersTableWrap thead th {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    background: #343a40;
+    color: #fff;
+    box-shadow: 0 1px 0 rgba(255,255,255,.12);
+  }
+  /* ────────────────────────────────────────────────────────────────────── */
 </style>
 
 <div class="card card-dark">
@@ -691,6 +865,57 @@ $deptOptions = [
       Orders
       <?php if ($dpt === 6): ?><span class="badge badge-warning ml-2">T/M highlighted</span><?php endif; ?>
     </h3>
+  </div>
+
+  <?php
+  // ── Quick-tab helpers ────────────────────────────────────────────────────
+  function qtabIsActive(array $tabParams): bool {
+    $filterKeys = ['status','exclude_status','source','country','payment','shipping','priority','date_from','date_to','worker','dept','cat','type','q'];
+    foreach ($tabParams as $k => $v) {
+      if (($_GET[$k] ?? '') !== $v) return false;
+    }
+    if (empty($tabParams)) {
+      foreach ($filterKeys as $k) {
+        if (!empty($_GET[$k])) return false;
+      }
+    }
+    return true;
+  }
+  function qtabUrl(array $tabParams): string {
+    $current = $_GET;
+    foreach (['status','exclude_status','source','country','payment','shipping','priority','date_from','date_to','worker','dept','cat','type','q'] as $k) {
+      unset($current[$k]);
+    }
+    $qs = http_build_query(array_merge($current, $tabParams));
+    return '?' . ($qs ?: '');
+  }
+
+  $quickTabs = [
+    /*['id' => 'all',         'label' => 'Všetky objednávky', 'params' => []],*/
+    ['id' => 'open_orders', 'label' => 'Open Orders',       'params' => ['exclude_status' => 'PENDING,SHIPPED'], 'badge_key' => 'open_orders'],
+    ['id' => 'shipped',     'label' => 'Shipped',            'params' => ['status' => 'SHIPPED'], 'badge_key' => 'shipped'],
+    ['id' => 'pending',     'label' => '⏳ Pending',         'params' => ['status' => 'PENDING'], 'badge_key' => 'pending', 'badge_class' => 'badge-purple'],
+    // -- sem pridaj ďalšie taby --
+  ];
+  ?>
+
+  <div class="orders-quicktabs">
+    <?php foreach ($quickTabs as $tab):
+      $isActive  = qtabIsActive($tab['params']);
+      $url       = qtabUrl($tab['params']);
+      $badgeHtml = '';
+      if (!empty($tab['badge_key'])) {
+        $cnt = $quickTabCounts[$tab['badge_key']] ?? 0;
+        if ($cnt > 0) {
+          $bc = htmlspecialchars($tab['badge_class'] ?? '');
+          $badgeHtml = '<span class="qtab-badge ' . $bc . '">' . $cnt . '</span>';
+        }
+      }
+    ?>
+      <a href="<?= htmlspecialchars($url) ?>" class="qtab <?= $isActive ? 'active' : '' ?>">
+        <?= htmlspecialchars($tab['label']) ?><?= $badgeHtml ?>
+      </a>
+    <?php endforeach; ?>
   </div>
 
   <div class="card-body">
@@ -702,6 +927,7 @@ $deptOptions = [
       $sel = ($current === $val) ? ' selected' : '';
       return '<option value="' . htmlspecialchars($val) . '"' . $sel . '>' . htmlspecialchars($label) . '</option>';
     }
+
 
     // ── Zostavenie zoznamu aktívnych filtrov pre badge ───────────────────────
     // Každý záznam: [ 'label' => 'Status', 'value' => 'IN_PROGRESS', 'display' => 'In Progress' ]
@@ -812,6 +1038,49 @@ $deptOptions = [
       }
     </style>
 
+    <?php
+    $hasActiveFilters = !empty($activeFilterBadges);
+
+    // Zisti či je aktívny filter nastavený TABom — v takom prípade collapse NEOTVÁRAŤ
+    $tabStatusValues = ['SHIPPED', 'PENDING'];
+    $filterIsOnlyFromTab = (
+      // tab so status=
+      (count($activeFilterBadges) === 1
+        && isset($activeFilterBadges[0]['label'])
+        && $activeFilterBadges[0]['label'] === 'Status'
+        && in_array(strtoupper($fStatus), $tabStatusValues, true))
+      // tab s exclude_status= (Open Orders)
+      || ($fExcludeStatuses !== '' && empty($fStatus) && count($activeFilterBadges) === 0)
+    );
+    $collapseShow = ($hasActiveFilters && !$filterIsOnlyFromTab) ? 'show' : '';
+    ?>
+
+    <!-- ── Toolbar: active pills + Filters button ──────────────────────── -->
+    <div class="orders-toolbar">
+      <div class="active-pills">
+        <?php if ($hasActiveFilters): ?>
+          <span class="text-muted small mr-1" style="white-space:nowrap;">Filters:</span>
+          <?php foreach ($activeFilterBadges as $af): ?>
+            <span class="active-filter-pill">
+              <span class="pill-label"><?= htmlspecialchars($af['label']) ?>:</span>
+              <span class="pill-value"><?= htmlspecialchars((string) $af['display']) ?></span>
+            </span>
+          <?php endforeach; ?>
+        <?php else: ?>
+          <span class="text-muted small">No filters active</span>
+        <?php endif; ?>
+      </div>
+      <button class="btn btn-sm btn-outline-secondary ml-auto"
+              type="button"
+              data-toggle="collapse"
+              data-target="#ordersFilterCollapse"
+              aria-expanded="<?= $hasActiveFilters ? 'true' : 'false' ?>">
+        <i class="fas fa-filter mr-1"></i>+ Filters
+      </button>
+    </div>
+
+    <!-- ── Filter form (collapse) ──────────────────────────────────────── -->
+    <div class="collapse <?= $collapseShow ?>" id="ordersFilterCollapse">
     <form method="get" id="ordersFilterForm" class="mb-2">
       <input type="hidden" name="page" value="<?= htmlspecialchars($page) ?>" />
 
@@ -1020,23 +1289,14 @@ $deptOptions = [
             <i class="fas fa-times mr-1"></i>Reset
           </a>
 
-          <?php if (!empty($activeFilterBadges)): ?>
-            <span class="text-muted small mr-1" style="white-space:nowrap;">Active:</span>
-            <?php foreach ($activeFilterBadges as $af): ?>
-              <span class="active-filter-pill">
-                <span class="pill-label"><?= htmlspecialchars($af['label']) ?>:</span>
-                <span class="pill-value"><?= htmlspecialchars((string) $af['display']) ?></span>
-              </span>
-            <?php endforeach; ?>
-          <?php endif; ?>
-
         </div>
 
       </div><!-- /filter-panel -->
 
     </form>
+    </div><!-- /collapse -->
 
-    <div class="table-responsive">
+    <div id="ordersTableWrap">
       <table id="example1" class="table table-bordered table-hover table-sm">
         <thead>
           <tr style="background:#343a40;color:#fff;">
@@ -1546,7 +1806,11 @@ $deptOptions = [
 
       // toggle if already loaded
       if ($wrap.data('loaded')) {
-        $wrap.slideToggle(120);
+        $wrap.slideToggle(120, function () {
+          if (!$wrap.is(':visible')) {
+            $('#example1').removeClass('table-has-open');
+          }
+        });
         return;
       }
 
@@ -1683,12 +1947,15 @@ $deptOptions = [
     const orderId = $(this).data('order-id');
     const $btn = $(this).find('.btn-toggle-detail');
     const $row = $(this).closest('tr.order-row');
+    const $table = $('#example1');
 
     if ($row.hasClass('order-row-open')) {
       $row.removeClass('order-row-open');
+      $table.removeClass('table-has-open');
     } else {
       $('.order-row').removeClass('order-row-open');
       $row.addClass('order-row-open');
+      $table.addClass('table-has-open');
     }
 
     if ($btn.length) {

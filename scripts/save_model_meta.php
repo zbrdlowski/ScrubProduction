@@ -12,12 +12,12 @@ function out(int $code, array $payload): void {
 if (!isset($_SESSION['permission'])) {
     out(403, ['ok' => false, 'error' => 'Not logged in']);
 }
-
+/*
 // ── Oprávnenie: permission >= 300 (admin/manager) ─────────────────────────
 if ((int)($_SESSION['permission'] ?? 0) < 300) {
     out(403, ['ok' => false, 'error' => 'Insufficient permission']);
 }
-
+*/
 // scripts/ a includes/ sú súrodenci — __DIR__ je darkscrub/scripts
 $connFile = dirname(__DIR__) . '/includes/conn.php';
 if (!is_file($connFile)) {

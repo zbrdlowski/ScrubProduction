@@ -379,14 +379,14 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == '1') {
 
             <?php elseif ($activeTab === 'orders'): ?>
 
-              <div id="profileOrdersContainer"  class="detail-wrap">
+              <div id="profileOrdersContainer" class="detail-wrap">
                 <?php include 'includes/profile_orders.php'; ?>
               </div>
 
             <?php else: ?>
 
               <!-- ONLINE STAV (mriežka) -->
-              <div id="onlineGridContainer">
+              <div id="onlineGridContainer" class="detail-wrap">
                 <?php include 'includes/profile_online_grid.php'; ?>
               </div>
 

@@ -157,7 +157,7 @@ function isMenuOpen($pages = []) {
             <a href="#" class="nav-link" style="background-color:#2a3036;"><i class="nav-icon fas fa-globe-africa"  style="color:#ffc107;"></i><p>Scrub Orders<i class="right fas fa-angle-left"></i></p></a> 
       <ul class="nav nav-treeview">
               <li class="nav-item"><a href="index.php?page=orders_dashboard" class="nav-link <?= ($_GET['page'] ?? '') === 'orders_dashboard' ? 'active' : '' ?>"><i class="nav-icon fas fa-chart-line"></i>DASHBOARD</a></li>
-              <li class="nav-item"><? if($path == 'tab'){echo '<a href=pages/orders.php" class="nav-link">';}else{echo '<a href="'.$path.'?page=orders" class="nav-link '. isActive('orders') .'">';}?><i class="far fa fa-caret-right nav-icon"></i><p>Open Orders</p></a></li>
+              <li class="nav-item"><? if($path == 'tab'){echo '<a href=pages/orders.php" class="nav-link">';}else{echo '<a href="'.$path.'?page=orders&exclude_status=PENDING%2CSHIPPED" class="nav-link '. isActive('orders') .'">';}?><i class="far fa fa-caret-right nav-icon"></i><p>Open Orders</p></a></li>
       
 <li class="nav-item"><a href="#" class="nav-link"style="background-color:#2a3036;"><i class="nav-icon fas fa-globe-africa" style="color:#28a745;"></i><p>Finished Orders<i class="right fas fa-angle-left"></i></p></a>
        <ul class="nav nav-treeview">
