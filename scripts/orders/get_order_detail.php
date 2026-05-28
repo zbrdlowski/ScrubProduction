@@ -340,6 +340,7 @@ $stmt = $conn->prepare("SELECT
     custom_label,
     item_type_code,
     qty,
+    unit_price,
     options_json,
     internal_options_json,
     product_url,
@@ -613,9 +614,9 @@ ob_start();
         <div class="d-flex justify-content-end align-items-center" style="gap:6px;">
           <?php
           $priorityOptions = [
-            0 => 'Normal',
-            10 => 'High',
-            20 => 'Urgent',
+            0  => 'Normal',
+            10 => 'Deadline',
+            20 => 'Priority',
           ];
           $currentPriority = (int) ($order['priority'] ?? 0);
           if (!isset($priorityOptions[$currentPriority])) {
@@ -1186,6 +1187,7 @@ ob_start();
               <th>SKU</th>
               <th>Label</th>
               <th>Qty</th>
+              <th>Price</th>
               <th>Status</th>
               <th>Waiting</th>
               <th>Action</th>
@@ -1381,6 +1383,18 @@ ob_start();
                       value="<?php echo (int) $it['qty']; ?>" min="1">
                   <?php else: ?>
                     <?php echo (int) $it['qty']; ?>
+                  <?php endif; ?>
+                </td>
+
+                <td style="min-width:90px;">
+                  <?php if ((int) ($_SESSION['permission'] ?? 0) >= 300): ?>
+                    <div class="input-group input-group-sm">
+                      <input type="number" class="form-control form-control-sm item-unit-price"
+                        value="<?php echo $it['unit_price'] !== null ? number_format((float)$it['unit_price'], 2, '.', '') : ''; ?>"
+                        min="0" step="0.01" placeholder="0.00">
+                    </div>
+                  <?php else: ?>
+                    <?php echo $it['unit_price'] !== null ? number_format((float)$it['unit_price'], 2, '.', '') : '—'; ?>
                   <?php endif; ?>
                 </td>
 

@@ -80,8 +80,7 @@ $fWorker = isset($_GET['worker']) ? (int) $_GET['worker'] : 0;
 // ── koniec nových filtrov ─────────────────────────────────────────────────
 
 $workerOptions = [];
-$workerRes = $conn->query("
-  SELECT
+$workerRes = $conn->query("SELECT
     e.id,
     TRIM(CONCAT(e.firstname, ' ', e.lastname)) AS emp_name
   FROM employees e
@@ -111,25 +110,29 @@ $allowedStatuses = ['NEW', 'IN_PROGRESS', 'NEED_INFO', 'DRAFT_READY', 'READY_TO_
 if ($fStatus !== '' && !in_array($fStatus, $allowedStatuses, true))
   $fStatus = '';
 
-// ── Quick-tab counts ──────────────────────────────────────────────────────────
+// ── Počty objednávok pre jednotlivé taby ──────────────────────────────────────────────────────────
 $quickTabCounts = [];
 $qtRes = $conn->query("SELECT
   SUM(status='SHIPPED') AS cnt_shipped,
   SUM(status='PENDING') AS cnt_pending,
   SUM(status='NEED_INFO') AS cnt_need_info,
   SUM(status='DRAFT_READY') AS cnt_draft_ready,
+  SUM(status='READY_TO_INVOICE') AS cnt_ready_to_invoice,
+  SUM(status='READY_TO_SHIP') AS cnt_ready_to_ship,
   SUM(status NOT IN ('PENDING','SHIPPED')) AS cnt_open
 FROM orders");
 if ($qtRes && $qtRow = $qtRes->fetch_assoc()) {
-  $quickTabCounts['shipped']     = (int)($qtRow['cnt_shipped'] ?? 0);
-  $quickTabCounts['pending']     = (int)($qtRow['cnt_pending'] ?? 0);
-  $quickTabCounts['need_info']   = (int)($qtRow['cnt_need_info'] ?? 0);
-  $quickTabCounts['draft_ready'] = (int)($qtRow['cnt_draft_ready'] ?? 0);
-  $quickTabCounts['open_orders'] = (int)($qtRow['cnt_open'] ?? 0);
+  $quickTabCounts['shipped'] = (int) ($qtRow['cnt_shipped'] ?? 0);
+  $quickTabCounts['pending'] = (int) ($qtRow['cnt_pending'] ?? 0);
+  $quickTabCounts['need_info'] = (int) ($qtRow['cnt_need_info'] ?? 0);
+  $quickTabCounts['draft_ready'] = (int) ($qtRow['cnt_draft_ready'] ?? 0);
+  $quickTabCounts['ready_to_invoice'] = (int) ($qtRow['cnt_ready_to_invoice'] ?? 0);
+  $quickTabCounts['ready_to_ship'] = (int) ($qtRow['cnt_ready_to_ship'] ?? 0);
+  $quickTabCounts['open_orders'] = (int) ($qtRow['cnt_open'] ?? 0);
 }
 // ─────────────────────────────────────────────────────────────────────────────
 
-$allowedSources = ['EBAY', 'SHOPTET', 'MX_LOCKER'];
+$allowedSources = ['EBAY', 'SHOPTET', 'MX_LOCKER', 'SO'];
 if ($fSource !== '' && !in_array($fSource, $allowedSources, true))
   $fSource = '';
 
@@ -163,7 +166,7 @@ $deptTypeFilter = [
 $effectiveDept = $dpt;
 $deptCodeMap = [2 => 'GRAPHICS', 6 => 'PLASTICS', 8 => 'SEATCOVER', 9 => 'FITTING'];
 
-if ($allAccess && $fDept > 0) {
+if ($fDept > 0) {
   $effectiveDept = $fDept;
 }
 
@@ -478,11 +481,23 @@ LEFT JOIN order_addresses oa_ship
 LEFT JOIN order_addresses oa_bill
   ON oa_bill.order_id = o.id AND UPPER(oa_bill.type) = 'BILLING'
 $whereSql
+
 ORDER BY
-  o.priority DESC,       -- Urgent (20) a High (10) navrchu, Normal (0) dole
-  o.order_date ASC       -- v rámci rovnakej priority od najstaršieho
-LIMIT 500
-";
+  CASE
+    WHEN o.priority >= 20 THEN 0 -- Urgent (20) a High (10) navrchu, Normal (0) dole
+    WHEN o.priority >= 10 THEN 1 -- v rámci rovnakej priority od najstaršieho
+    ELSE 2
+  END ASC,
+
+  CASE
+    WHEN o.order_date IS NULL THEN 1
+    ELSE 0
+  END ASC,
+
+  o.order_date ASC,
+
+  o.id ASC
+LIMIT 500";
 
 $stmt = $conn->prepare($sql);
 if (!$stmt) {
@@ -579,10 +594,11 @@ $deptOptions = [
   }
 
   /* Keď je v tabuľke otvorený riadok — ostatné sa stlmia */
-  #example1.table-has-open .order-row:not(.order-row-open) {
+  #ordersTable.table-has-open .order-row:not(.order-row-open) {
     opacity: 0.35;
   }
-  #example1.table-has-open .order-detail-row {
+
+  #ordersTable.table-has-open .order-detail-row {
     opacity: 1 !important;
   }
 
@@ -592,21 +608,22 @@ $deptOptions = [
     box-shadow:
       inset 4px 0 0 #3f9eff,
       0 -1px 0 rgba(63, 158, 255, 0.35),
-      0  1px 0 rgba(63, 158, 255, 0.35);
+      0 1px 0 rgba(63, 158, 255, 0.35);
     opacity: 1 !important;
   }
 
   /* Detail riadok pod otvoreným — vizuálne "lepí" sa naň */
-  .order-row-open + .order-detail-row td {
+  .order-row-open+.order-detail-row td {
     border-top: none !important;
     background: rgba(63, 158, 255, 0.05);
     box-shadow: inset 4px 0 0 #3f9eff, 0 3px 0 rgba(63, 158, 255, 0.25);
   }
-    background: transparent;
-    border: none;
-    color: #adb5bd;
-    cursor: pointer;
-    padding: 0 4px;
+
+  background: transparent;
+  border: none;
+  color: #adb5bd;
+  cursor: pointer;
+  padding: 0 4px;
   }
 
   .btn-copy-inline:hover {
@@ -716,6 +733,7 @@ $deptOptions = [
     border-color: #6f42c1;
     background: transparent;
   }
+
   .btn-outline-pending:hover {
     background: rgba(111, 66, 193, 0.20);
     border-color: #a78bfa;
@@ -831,8 +849,8 @@ $deptOptions = [
     align-items: center;
     justify-content: space-between;
     padding: 6px 12px;
-    background: rgba(0,0,0,.12);
-    border-bottom: 1px solid rgba(255,255,255,.06);
+    background: rgba(0, 0, 0, .12);
+    border-bottom: 1px solid rgba(255, 255, 255, .06);
     min-height: 38px;
     flex-wrap: wrap;
     gap: 6px;
@@ -848,59 +866,61 @@ $deptOptions = [
   }
 
   #ordersFilterCollapse {
-    border-bottom: 1px solid rgba(255,255,255,.07);
+    border-bottom: 1px solid rgba(255, 255, 255, .07);
   }
 
   /* ── Sticky thead ───────────────────────────────────────────────────── */
-:root {
-  --orders-sticky-top: 50px; /* AdminLTE top navbar height */
-  --orders-tabs-h: 42px;
-  --orders-toolbar-h: 38px;
-}
+  :root {
+    --orders-sticky-top: 50px;
+    /* AdminLTE top navbar height */
+    --orders-tabs-h: 42px;
+    --orders-toolbar-h: 38px;
+  }
 
-/* Quick tabs sticky */
-.orders-quicktabs {
-  position: sticky;
-  top: var(--orders-sticky-top);
-  z-index: 1000;
-  background: #343a40;
-}
+  /* Quick tabs sticky */
+  .orders-quicktabs {
+    position: sticky;
+    top: var(--orders-sticky-top);
+    z-index: 1000;
+    background: #343a40;
+  }
 
-/* Filter toolbar sticky pod tabs */
-.orders-toolbar {
-  position: sticky;
-  top: calc(var(--orders-sticky-top) + var(--orders-tabs-h));
-  z-index: 999;
-  background: #2f343a;
-}
+  /* Filter toolbar sticky pod tabs */
+  .orders-toolbar {
+    position: sticky;
+    top: calc(var(--orders-sticky-top) + var(--orders-tabs-h));
+    z-index: 999;
+    background: #2f343a;
+  }
 
-/* Rozbalený filter sticky pod toolbar */
-#ordersFilterCollapse {
-  position: sticky;
-  top: calc(var(--orders-sticky-top) + var(--orders-tabs-h) + var(--orders-toolbar-h));
-  z-index: 998;
-  background: #2f343a;
-}
+  /* Rozbalený filter sticky pod toolbar */
+  #ordersFilterCollapse {
+    position: sticky;
+    top: calc(var(--orders-sticky-top) + var(--orders-tabs-h) + var(--orders-toolbar-h));
+    z-index: 998;
+    background: #2f343a;
+  }
 
-/* Table wrapper bez vnútorného scrollbaru */
-#ordersTableWrap {
-  overflow-x: visible;
-  overflow-y: visible;
-  max-height: none;
-  margin-top: -2px;
-}
+  /* Table wrapper bez vnútorného scrollbaru */
+  #ordersTableWrap {
+    overflow-x: visible;
+    overflow-y: visible;
+    max-height: none;
+    margin-top: -2px;
+  }
 
-/* Table header sticky pod tabs + toolbar.
+  /* Table header sticky pod tabs + toolbar.
    Keď je filter collapse otvorený, JS nižšie posunie top dynamicky. */
-#ordersTableWrap > table#example1 > thead > tr > th {
-  position: sticky;
-  top: calc(var(--orders-sticky-top) + var(--orders-tabs-h) + var(--orders-toolbar-h) - 5px);
-  z-index: 997;
-  background: #343a40;
-  color: #fff;
-  box-shadow: 0 1px 0 rgba(255,255,255,.12);
-  z-index: 897;
-}
+  #ordersTableWrap>table#ordersTable>thead>tr>th {
+    position: sticky;
+    top: calc(var(--orders-sticky-top) + var(--orders-tabs-h) + var(--orders-toolbar-h) - 5px);
+    z-index: 997;
+    background: #343a40;
+    color: #fff;
+    box-shadow: 0 1px 0 rgba(255, 255, 255, .12);
+    z-index: 897;
+  }
+
   /* ────────────────────────────────────────────────────────────────────── */
 </style>
 
@@ -914,21 +934,25 @@ $deptOptions = [
 
   <?php
   // ── Quick-tab helpers ────────────────────────────────────────────────────
-  function qtabIsActive(array $tabParams): bool {
-    $filterKeys = ['status','exclude_status','source','country','payment','shipping','priority','date_from','date_to','worker','dept','cat','type','q'];
+  function qtabIsActive(array $tabParams): bool
+  {
+    $filterKeys = ['status', 'exclude_status', 'source', 'country', 'payment', 'shipping', 'priority', 'date_from', 'date_to', 'worker', 'dept', 'cat', 'type', 'q'];
     foreach ($tabParams as $k => $v) {
-      if (($_GET[$k] ?? '') !== $v) return false;
+      if (($_GET[$k] ?? '') !== $v)
+        return false;
     }
     if (empty($tabParams)) {
       foreach ($filterKeys as $k) {
-        if (!empty($_GET[$k])) return false;
+        if (!empty($_GET[$k]))
+          return false;
       }
     }
     return true;
   }
-  function qtabUrl(array $tabParams): string {
+  function qtabUrl(array $tabParams): string
+  {
     $current = $_GET;
-    foreach (['status','exclude_status','source','country','payment','shipping','priority','date_from','date_to','worker','dept','cat','type','q'] as $k) {
+    foreach (['status', 'exclude_status', 'source', 'country', 'payment', 'shipping', 'priority', 'date_from', 'date_to', 'worker', 'dept', 'cat', 'type', 'q'] as $k) {
       unset($current[$k]);
     }
     $qs = http_build_query(array_merge($current, $tabParams));
@@ -937,28 +961,35 @@ $deptOptions = [
 
   $quickTabs = [
     /*['id' => 'all',         'label' => 'Všetky objednávky', 'params' => []],*/
-    ['id' => 'open_orders', 'label' => 'Open Orders',       'params' => ['exclude_status' => 'PENDING,SHIPPED'], 'badge_key' => 'open_orders'],
-    ['id' => 'need_info',   'label' => 'Need Info',         'params' => ['status' => 'NEED_INFO'], 'badge_key' => 'need_info'],
-    ['id' => 'draft_ready', 'label' => 'Draft Ready',       'params' => ['status' => 'DRAFT_READY'], 'badge_key' => 'draft_ready', 'badge_class' => 'badge-info'],
-    ['id' => 'shipped',     'label' => 'Shipped',            'params' => ['status' => 'SHIPPED'], 'badge_key' => 'shipped'],
-    ['id' => 'pending',     'label' => '⏳ Pending',         'params' => ['status' => 'PENDING'], 'badge_key' => 'pending', 'badge_class' => 'badge-purple'],
+    ['id' => 'open_orders', 'label' => 'Open Orders', 'params' => ['exclude_status' => 'PENDING,SHIPPED'], 'badge_key' => 'open_orders'],
+    ['id' => 'need_info', 'label' => 'Need Info', 'params' => ['status' => 'NEED_INFO'], 'badge_key' => 'need_info'],
+    [
+      'id' => 'draft_ready',
+      'label' => 'Draft Ready',
+      'params' => ['status' => 'DRAFT_READY'],
+      'badge_key' => 'draft_ready',
+      'badge_class' => 'badge-info'
+    ],
+    ['id' => 'ready_to_invoice', 'label' => 'Ready to Invoice', 'params' => ['status' => 'READY_TO_INVOICE'], 'badge_key' => 'ready_to_invoice', 'badge_class' => 'badge-success'],
+    ['id' => 'ready_to_ship', 'label' => 'Ready to Ship', 'params' => ['status' => 'READY_TO_SHIP'], 'badge_key' => 'ready_to_ship', 'badge_class' => 'badge-success'],
+    ['id' => 'pending', 'label' => '⏳ Pending', 'params' => ['status' => 'PENDING'], 'badge_key' => 'pending', 'badge_class' => 'badge-purple'],
     // -- sem pridaj ďalšie taby --
   ];
   ?>
 
   <div class="orders-quicktabs">
     <?php foreach ($quickTabs as $tab):
-      $isActive  = qtabIsActive($tab['params']);
-      $url       = qtabUrl($tab['params']);
+      $isActive = qtabIsActive($tab['params']);
+      $url = qtabUrl($tab['params']);
       $badgeHtml = '';
       if (!empty($tab['badge_key'])) {
         $cnt = $quickTabCounts[$tab['badge_key']] ?? 0;
         $bc = htmlspecialchars($tab['badge_class'] ?? '');
         $badgeHtml = '<span class="qtab-badge ' . $bc . '">' . $cnt . '</span>';
       }
-    ?>
+      ?>
       <a href="<?= htmlspecialchars($url) ?>" class="qtab <?= $isActive ? 'active' : '' ?>">
-        <?= htmlspecialchars($tab['label']) ?><?= $badgeHtml ?>
+        <?= htmlspecialchars($tab['label']) ?>   <?= $badgeHtml ?>
       </a>
     <?php endforeach; ?>
   </div>
@@ -1087,15 +1118,26 @@ $deptOptions = [
     $hasActiveFilters = !empty($activeFilterBadges);
 
     // Zisti či je aktívny filter nastavený TABom — v takom prípade collapse NEOTVÁRAŤ
-    $tabStatusValues = ['SHIPPED', 'PENDING', 'NEED_INFO', 'DRAFT_READY'];
+    $tabStatuses = [];
+
+    foreach ($quickTabs as $qt) {
+      if (!empty($qt['params']['status'])) {
+        $tabStatuses[] = strtoupper($qt['params']['status']);
+      }
+    }
+
     $filterIsOnlyFromTab = (
-      // tab so status=
-      (count($activeFilterBadges) === 1
+      (
+        count($activeFilterBadges) === 1
         && isset($activeFilterBadges[0]['label'])
         && $activeFilterBadges[0]['label'] === 'Status'
-        && in_array(strtoupper($fStatus), $tabStatusValues, true))
-      // tab s exclude_status= (Open Orders)
-      || ($fExcludeStatuses !== '' && empty($fStatus) && count($activeFilterBadges) === 0)
+        && in_array(strtoupper($fStatus), $tabStatuses, true)
+      )
+      || (
+        $fExcludeStatuses !== ''
+        && empty($fStatus)
+        && count($activeFilterBadges) === 0
+      )
     );
     $collapseShow = ($hasActiveFilters && !$filterIsOnlyFromTab) ? 'show' : '';
     ?>
@@ -1115,32 +1157,29 @@ $deptOptions = [
           <span class="text-muted small">No filters active</span>
         <?php endif; ?>
       </div>
-      <button class="btn btn-sm btn-outline-secondary ml-auto"
-              type="button"
-              data-toggle="collapse"
-              data-target="#ordersFilterCollapse"
-              aria-expanded="<?= $hasActiveFilters ? 'true' : 'false' ?>">
+      <button class="btn btn-sm btn-outline-secondary ml-auto" type="button" data-toggle="collapse"
+        data-target="#ordersFilterCollapse" aria-expanded="<?= $hasActiveFilters ? 'true' : 'false' ?>">
         <i class="fas fa-filter mr-1"></i>+ Filters
       </button>
     </div>
 
     <!-- ── Filter form (collapse) ──────────────────────────────────────── -->
     <div class="collapse <?= $collapseShow ?>" id="ordersFilterCollapse">
-    <form method="get" id="ordersFilterForm" class="mb-2">
-      <input type="hidden" name="page" value="<?= htmlspecialchars($page) ?>" />
+      <form method="get" id="ordersFilterForm" class="mb-2">
+        <input type="hidden" name="page" value="<?= htmlspecialchars($page) ?>" />
 
-      <div class="filter-panel">
+        <div class="filter-panel">
 
-        <!-- ── ROW 1: 6 polí ─────────────────────────────────────────────────
+          <!-- ── ROW 1: 6 polí ─────────────────────────────────────────────────
              Pridať pole: skopíruj <div class="form-group [fActive(...)]"> blok,
              vlož do filter-grid, pridaj $fXxx do PHP filtrov na začiatku súboru.
              ──────────────────────────────────────────────────────────────── -->
-        <div class="filter-grid">
+          <div class="filter-grid">
 
-          <!-- 1. Department -->
-          <div class="form-group <?= fActiveDept($fDept) ?>">
-            <label class="small mb-1">Department</label>
-            <?php if ($allAccess): ?>
+            <!-- 1. Department -->
+            <div class="form-group <?= fActiveDept($fDept) ?>">
+              <label class="small mb-1">Department</label>
+
               <select class="form-control form-control-sm" name="dept">
                 <?php foreach ($deptOptions as $k => $dLabel): ?>
                   <option value="<?= (int) $k ?>" <?= ($fDept === (int) $k ? 'selected' : '') ?>>
@@ -1148,202 +1187,198 @@ $deptOptions = [
                   </option>
                 <?php endforeach; ?>
               </select>
-            <?php else: ?>
-              <input class="form-control form-control-sm"
-                value="<?= htmlspecialchars((string) ($_SESSION['dpt_name'] ?? ('dpt ' . $dpt))) ?>" disabled />
-            <?php endif; ?>
+            </div>
+
+            <!-- 2. Worker -->
+            <div class="form-group <?= fActiveDept($fWorker) ?>">
+              <label class="small mb-1">Worker</label>
+              <select class="form-control form-control-sm" name="worker">
+                <option value="">&mdash; All &mdash;</option>
+                <?php foreach ($workerOptions as $workerId => $workerName): ?>
+                  <option value="<?= (int) $workerId ?>" <?= ($fWorker === (int) $workerId ? 'selected' : '') ?>>
+                    <?= htmlspecialchars($workerName) ?>
+                  </option>
+                <?php endforeach; ?>
+              </select>
+            </div>
+
+            <!-- 3. Order Status -->
+            <div class="form-group <?= fActive($fStatus) ?>">
+              <label class="small mb-1">Order Status</label>
+              <select class="form-control form-control-sm" name="status">
+                <option value="">— All —</option>
+                <?php foreach ([
+                  'NEW' => 'New',
+                  'PENDING' => '⏳ Pending payment',
+                  'IN_PROGRESS' => 'In Progress',
+                  'NEED_INFO' => 'Need Info',
+                  'DRAFT_READY' => 'Draft Ready',
+                  'READY_TO_INVOICE' => 'Ready to Invoice',
+                  'READY_TO_SHIP' => 'Ready to Ship',
+                  'SHIPPED' => 'Shipped',
+                  'DONE' => 'Done',
+                  'HOLD' => 'Hold',
+                  'CANCELLED' => 'Cancelled',
+                  // ── sem pridaj ──
+                ] as $val => $lbl): ?>
+                  <?= fOpt($val, $lbl, $fStatus) ?>
+                <?php endforeach; ?>
+              </select>
+            </div>
+
+            <!-- 4. Source -->
+            <div class="form-group <?= fActive($fSource) ?>">
+              <label class="small mb-1">Source</label>
+              <select class="form-control form-control-sm" name="source">
+                <option value="">— All —</option>
+                <?php foreach ([
+                  'EBAY' => 'eBay',
+                  'SHOPTET' => 'Shoptet',
+                  'MX_LOCKER' => 'MX Locker',
+                  // ── sem pridaj ──
+                ] as $val => $lbl): ?>
+                  <?= fOpt($val, $lbl, $fSource) ?>
+                <?php endforeach; ?>
+              </select>
+            </div>
+
+            <!-- 5. Priority -->
+            <div class="form-group <?= fActive($fPriority) ?>">
+              <label class="small mb-1">Priority</label>
+              <select class="form-control form-control-sm" name="priority">
+                <option value="">— All —</option>
+                <?php foreach ([
+                  '20' => '🔴 Urgent',
+                  '10' => '🟠 High',
+                  '0' => '🟢 Normal',
+                  // ── sem pridaj ──
+                ] as $val => $lbl): ?>
+                  <?= fOpt((string) $val, $lbl, $fPriority) ?>
+                <?php endforeach; ?>
+              </select>
+            </div>
+
+            <!-- 6. Category -->
+            <div class="form-group <?= fActive($fCat) ?>">
+              <label class="small mb-1">Category</label>
+              <select class="form-control form-control-sm" name="cat">
+                <option value="">— All —</option>
+                <?php foreach ([
+                  'GRAPHICS' => 'Graphics',
+                  'PLASTICS' => 'Plastics',
+                  'SEATCOVER' => 'Seat Cover',
+                  'FITTING' => 'Fitting',
+                  // ── sem pridaj ──
+                ] as $val => $lbl): ?>
+                  <?= fOpt($val, $lbl, $fCat) ?>
+                <?php endforeach; ?>
+              </select>
+            </div>
+
+            <!-- 8. Item Type -->
+            <div class="form-group <?= fActive($fType) ?>">
+              <label class="small mb-1">Item Type</label>
+              <select class="form-control form-control-sm" name="type">
+                <option value="">— All —</option>
+                <?php foreach (['G', 'T', 'M', 'P', 'S', 'F', '(NULL)'] as $t): ?>
+                  <?= fOpt($t, $t, $fType) ?>
+                <?php endforeach; ?>
+              </select>
+            </div>
+
+          </div><!-- /filter-grid row 1 -->
+
+          <hr class="filter-row-divider">
+
+          <!-- ── ROW 2: 6 polí ───────────────────────────────────────────────── -->
+          <div class="filter-grid filter-grid-row2">
+
+            <!-- 9. Search -->
+            <div class="form-group col-span-2 <?= fActive($fQ) ?>">
+              <label class="small mb-1">Search</label>
+              <input class="form-control form-control-sm" name="q" value="<?= htmlspecialchars($fQ) ?>"
+                placeholder="Order #, ext. ID, customer, email…" />
+            </div>
+
+            <!-- 10. Date from -->
+            <div class="form-group <?= fActive($fDateFrom) ?>">
+              <label class="small mb-1">Date from</label>
+              <input type="date" class="form-control form-control-sm" name="date_from"
+                value="<?= htmlspecialchars($fDateFrom) ?>" />
+            </div>
+
+            <!-- 11. Date to — pridaj ďalší filter sem ako 7. stĺpec alebo rozšír span -->
+            <div class="form-group <?= fActive($fDateTo) ?>">
+              <label class="small mb-1">Date to</label>
+              <input type="date" class="form-control form-control-sm" name="date_to"
+                value="<?= htmlspecialchars($fDateTo) ?>" />
+            </div>
+
+            <!-- 12. Country -->
+            <div class="form-group <?= fActive($fCountry) ?>">
+              <label class="small mb-1">Country</label>
+              <input class="form-control form-control-sm" name="country" value="<?= htmlspecialchars($fCountry) ?>"
+                placeholder="SK, US, DE…" maxlength="3" style="text-transform:uppercase;" />
+            </div>
+
+            <!-- 13. Payment -->
+            <div class="form-group <?= fActive($fPayment) ?>">
+              <label class="small mb-1">Payment</label>
+              <select class="form-control form-control-sm" name="payment">
+                <option value="">— All —</option>
+                <?php foreach ([
+                  'PayPal' => 'PayPal',
+                  'Bank transfer' => 'Bank Transfer',
+                  'Google Pay' => 'Google Pay',
+                  'Apple Pay' => 'Apple Pay',
+                  'Online payment via credit card' => 'Credit Card',
+                  // ── sem pridaj ──
+                ] as $val => $lbl): ?>
+                  <?= fOpt($val, $lbl, $fPayment) ?>
+                <?php endforeach; ?>
+              </select>
+            </div>
+
+            <!-- 14. Shipping -->
+            <div class="form-group <?= fActive($fShipping) ?>">
+              <label class="small mb-1">Shipping</label>
+              <select class="form-control form-control-sm" name="shipping">
+                <option value="">— All —</option>
+                <?php foreach ([
+                  'FedEx Economy' => 'FedEx Economy',
+                  'FedEx Express' => 'FedEx Express',
+                  'FedEx International Economy' => 'FedEx Intl Economy',
+                  'DHL Express Worldwide' => 'DHL Express WW',
+                  'DHL Paket International' => 'DHL Paket Intl',
+                  'GLS Paket' => 'GLS Paket',
+                  // ── sem pridaj ──
+                ] as $val => $lbl): ?>
+                  <?= fOpt($val, $lbl, $fShipping) ?>
+                <?php endforeach; ?>
+              </select>
+            </div>
+          </div><!-- /filter-grid row 2 -->
+
+          <!-- ── Tlačidlá + active filter pills ─────────────────────────────── -->
+          <div class="d-flex align-items-center flex-wrap mt-1" style="gap: 6px;">
+
+            <button class="btn btn-primary btn-sm" type="submit">
+              <i class="fas fa-search mr-1"></i>Search
+            </button>
+
+            <a class="btn btn-secondary btn-sm" href="index.php?page=orders">
+              <i class="fas fa-times mr-1"></i>Reset
+            </a>
+
           </div>
 
-          <!-- 2. Worker -->
-          <div class="form-group <?= fActiveDept($fWorker) ?>">
-            <label class="small mb-1">Worker</label>
-            <select class="form-control form-control-sm" name="worker">
-              <option value="">&mdash; All &mdash;</option>
-              <?php foreach ($workerOptions as $workerId => $workerName): ?>
-                <option value="<?= (int) $workerId ?>" <?= ($fWorker === (int) $workerId ? 'selected' : '') ?>>
-                  <?= htmlspecialchars($workerName) ?>
-                </option>
-              <?php endforeach; ?>
-            </select>
-          </div>
+        </div><!-- /filter-panel -->
 
-          <!-- 3. Order Status -->
-          <div class="form-group <?= fActive($fStatus) ?>">
-            <label class="small mb-1">Order Status</label>
-            <select class="form-control form-control-sm" name="status">
-              <option value="">— All —</option>
-              <?php foreach ([
-                'NEW' => 'New',
-                'PENDING' => '⏳ Pending payment',
-                'IN_PROGRESS' => 'In Progress',
-                'NEED_INFO' => 'Need Info',
-                'DRAFT_READY' => 'Draft Ready',
-                'READY_TO_INVOICE' => 'Ready to Invoice',
-                'READY_TO_SHIP' => 'Ready to Ship',
-                'SHIPPED' => 'Shipped',
-                'DONE' => 'Done',
-                'HOLD' => 'Hold',
-                'CANCELLED' => 'Cancelled',
-                // ── sem pridaj ──
-              ] as $val => $lbl): ?>
-                <?= fOpt($val, $lbl, $fStatus) ?>
-              <?php endforeach; ?>
-            </select>
-          </div>
-
-          <!-- 4. Source -->
-          <div class="form-group <?= fActive($fSource) ?>">
-            <label class="small mb-1">Source</label>
-            <select class="form-control form-control-sm" name="source">
-              <option value="">— All —</option>
-              <?php foreach ([
-                'EBAY' => 'eBay',
-                'SHOPTET' => 'Shoptet',
-                'MX_LOCKER' => 'MX Locker',
-                // ── sem pridaj ──
-              ] as $val => $lbl): ?>
-                <?= fOpt($val, $lbl, $fSource) ?>
-              <?php endforeach; ?>
-            </select>
-          </div>
-
-          <!-- 5. Priority -->
-          <div class="form-group <?= fActive($fPriority) ?>">
-            <label class="small mb-1">Priority</label>
-            <select class="form-control form-control-sm" name="priority">
-              <option value="">— All —</option>
-              <?php foreach ([
-                '20' => '🔴 Urgent',
-                '10' => '🟠 High',
-                '0'  => '🟢 Normal',
-                // ── sem pridaj ──
-              ] as $val => $lbl): ?>
-                <?= fOpt((string) $val, $lbl, $fPriority) ?>
-              <?php endforeach; ?>
-            </select>
-          </div>
-
-          <!-- 6. Category -->
-          <div class="form-group <?= fActive($fCat) ?>">
-            <label class="small mb-1">Category</label>
-            <select class="form-control form-control-sm" name="cat">
-              <option value="">— All —</option>
-              <?php foreach ([
-                'GRAPHICS' => 'Graphics',
-                'PLASTICS' => 'Plastics',
-                'SEATCOVER' => 'Seat Cover',
-                'FITTING' => 'Fitting',
-                // ── sem pridaj ──
-              ] as $val => $lbl): ?>
-                <?= fOpt($val, $lbl, $fCat) ?>
-              <?php endforeach; ?>
-            </select>
-          </div>
-
-          <!-- 8. Item Type -->
-          <div class="form-group <?= fActive($fType) ?>">
-            <label class="small mb-1">Item Type</label>
-            <select class="form-control form-control-sm" name="type">
-              <option value="">— All —</option>
-              <?php foreach (['G', 'T', 'M', 'P', 'S', 'F', '(NULL)'] as $t): ?>
-                <?= fOpt($t, $t, $fType) ?>
-              <?php endforeach; ?>
-            </select>
-          </div>
-
-        </div><!-- /filter-grid row 1 -->
-
-        <hr class="filter-row-divider">
-
-        <!-- ── ROW 2: 6 polí ───────────────────────────────────────────────── -->
-        <div class="filter-grid filter-grid-row2">
-
-          <!-- 9. Search -->
-          <div class="form-group col-span-2 <?= fActive($fQ) ?>">
-            <label class="small mb-1">Search</label>
-            <input class="form-control form-control-sm" name="q" value="<?= htmlspecialchars($fQ) ?>"
-              placeholder="Order #, ext. ID, customer, email…" />
-          </div>
-
-          <!-- 10. Date from -->
-          <div class="form-group <?= fActive($fDateFrom) ?>">
-            <label class="small mb-1">Date from</label>
-            <input type="date" class="form-control form-control-sm" name="date_from"
-              value="<?= htmlspecialchars($fDateFrom) ?>" />
-          </div>
-
-          <!-- 11. Date to — pridaj ďalší filter sem ako 7. stĺpec alebo rozšír span -->
-          <div class="form-group <?= fActive($fDateTo) ?>">
-            <label class="small mb-1">Date to</label>
-            <input type="date" class="form-control form-control-sm" name="date_to"
-              value="<?= htmlspecialchars($fDateTo) ?>" />
-          </div>
-
-          <!-- 12. Country -->
-          <div class="form-group <?= fActive($fCountry) ?>">
-            <label class="small mb-1">Country</label>
-            <input class="form-control form-control-sm" name="country" value="<?= htmlspecialchars($fCountry) ?>"
-              placeholder="SK, US, DE…" maxlength="3" style="text-transform:uppercase;" />
-          </div>
-
-          <!-- 13. Payment -->
-          <div class="form-group <?= fActive($fPayment) ?>">
-            <label class="small mb-1">Payment</label>
-            <select class="form-control form-control-sm" name="payment">
-              <option value="">— All —</option>
-              <?php foreach ([
-                'PayPal' => 'PayPal',
-                'Bank transfer' => 'Bank Transfer',
-                'Google Pay' => 'Google Pay',
-                'Apple Pay' => 'Apple Pay',
-                'Online payment via credit card' => 'Credit Card',
-                // ── sem pridaj ──
-              ] as $val => $lbl): ?>
-                <?= fOpt($val, $lbl, $fPayment) ?>
-              <?php endforeach; ?>
-            </select>
-          </div>
-
-          <!-- 14. Shipping -->
-          <div class="form-group <?= fActive($fShipping) ?>">
-            <label class="small mb-1">Shipping</label>
-            <select class="form-control form-control-sm" name="shipping">
-              <option value="">— All —</option>
-              <?php foreach ([
-                'FedEx Economy' => 'FedEx Economy',
-                'FedEx Express' => 'FedEx Express',
-                'FedEx International Economy' => 'FedEx Intl Economy',
-                'DHL Express Worldwide' => 'DHL Express WW',
-                'DHL Paket International' => 'DHL Paket Intl',
-                'GLS Paket' => 'GLS Paket',
-                // ── sem pridaj ──
-              ] as $val => $lbl): ?>
-                <?= fOpt($val, $lbl, $fShipping) ?>
-              <?php endforeach; ?>
-            </select>
-          </div>
-        </div><!-- /filter-grid row 2 -->
-
-        <!-- ── Tlačidlá + active filter pills ─────────────────────────────── -->
-        <div class="d-flex align-items-center flex-wrap mt-1" style="gap: 6px;">
-
-          <button class="btn btn-primary btn-sm" type="submit">
-            <i class="fas fa-search mr-1"></i>Search
-          </button>
-
-          <a class="btn btn-secondary btn-sm" href="index.php?page=orders">
-            <i class="fas fa-times mr-1"></i>Reset
-          </a>
-
-        </div>
-
-      </div><!-- /filter-panel -->
-
-    </form>
+      </form>
     </div><!-- /collapse -->
 
     <div id="ordersTableWrap">
-      <table id="example1" class="table table-bordered table-hover table-sm">
+      <table id="ordersTable" class="table table-bordered table-hover table-sm">
         <thead>
           <tr style="background:#343a40;color:#fff;">
             <th class="text-center" width="5%">Date</th>
@@ -1353,6 +1388,7 @@ $deptOptions = [
             <th class="text-center" width="4%">Country</th>
             <th class="text-center">Types</th>
             <th class="text-center">Semafor</th>
+            <th class="text-center">Priority</th>
             <th class="text-center">Status</th>
             <th class="text-center">Assigned</th>
             <th>Detail</th>
@@ -1390,7 +1426,9 @@ $deptOptions = [
             if ($customer === '')
               $customer = (string) ($row['customer_email'] ?? '-');
             ?>
-            <tr class="<?= $rowClass ?> order-row" data-order-id="<?= $orderId ?>">
+            <tr class="<?= $rowClass ?> order-row" data-order-id="<?= $orderId ?>"
+              data-priority-sort="<?= ($priorityValue >= 20 ? 0 : ($priorityValue >= 10 ? 1 : 2)) ?>"
+              data-date-sort="<?= htmlspecialchars((string) ($row['order_date'] ?? '9999-12-31')) ?>">
               <td class="text-center">
                 <?php
                 $dateRaw = $row['order_date'] ?? null;
@@ -1517,6 +1555,28 @@ $deptOptions = [
                     <?= htmlspecialchars($type) ?>
                   </span>
                 <?php endforeach; ?>
+              </td>
+              <td class="text-center" data-priority-cell="<?= $orderId ?>">
+                <?php
+                $priorityValue = (int) ($row['priority'] ?? 0);
+
+                $priorityLabel = $priorityOptions[$priorityValue] ?? ('Priority ' . $priorityValue);
+
+                if ($priorityValue >= 20) {
+                  $priorityBadge = 'badge-danger';
+                  $priorityEmoji = '🔴';
+                } elseif ($priorityValue >= 10) {
+                  $priorityBadge = 'badge-warning';
+                  $priorityEmoji = '🟠';
+                } else {
+                  $priorityBadge = 'badge-success';
+                  $priorityEmoji = '🟢';
+                }
+                ?>
+
+                <span class="badge <?= $priorityBadge ?>">
+                  <?= $priorityEmoji ?>   <?= htmlspecialchars($priorityLabel) ?>
+                </span>
               </td>
               <td class="text-center" data-status-cell="<?= $orderId ?>">
                 <?php
@@ -1755,7 +1815,7 @@ $deptOptions = [
 
             <!-- Detail row (hidden, will be filled via AJAX) -->
             <tr class="order-detail-row">
-              <td colspan="10">
+              <td colspan="11">
                 <div id="detail-<?= $orderId ?>" class="detail-wrap"></div>
               </td>
             </tr>
@@ -1819,7 +1879,7 @@ $deptOptions = [
       if ($wrap.data('loaded')) {
         $wrap.slideToggle(120, function () {
           if (!$wrap.is(':visible')) {
-            $('#example1').removeClass('table-has-open');
+            $('#ordersTable').removeClass('table-has-open');
           }
         });
         return;
@@ -1958,7 +2018,7 @@ $deptOptions = [
     const orderId = $(this).data('order-id');
     const $btn = $(this).find('.btn-toggle-detail');
     const $row = $(this).closest('tr.order-row');
-    const $table = $('#example1');
+    const $table = $('#ordersTable');
 
     if ($row.hasClass('order-row-open')) {
       $row.removeClass('order-row-open');
@@ -2268,15 +2328,15 @@ $deptOptions = [
   });
   $(document).on('click', '.btn-edit-order-header', function () {
     const $editBtn = $(this);
-    const mode     = $editBtn.data('mode') || 'edit';
-    const $detail  = $editBtn.closest('.detail-wrap');
-    const $panel   = $detail.find('.order-header-edit');
+    const mode = $editBtn.data('mode') || 'edit';
+    const $detail = $editBtn.closest('.detail-wrap');
+    const $panel = $detail.find('.order-header-edit');
 
     if (mode === 'edit') {
       $panel.slideDown(150);
       $editBtn.data('mode', 'save')
-              .removeClass('btn-light').addClass('btn-warning')
-              .html('💾 Save changes');
+        .removeClass('btn-light').addClass('btn-warning')
+        .html('💾 Save changes');
     } else {
       // Deleguj na skrytý save button
       $panel.find('.btn-save-order-header').trigger('click');
@@ -2284,18 +2344,18 @@ $deptOptions = [
   });
 
   $(document).on('click', '.btn-cancel-order-header', function () {
-    const $panel   = $(this).closest('.order-header-edit');
+    const $panel = $(this).closest('.order-header-edit');
     const $editBtn = $panel.closest('.detail-wrap').find('.btn-edit-order-header');
     $panel.slideUp(150);
     $editBtn.data('mode', 'edit')
-            .removeClass('btn-warning').addClass('btn-light')
-            .html('✏️ Edit header');
+      .removeClass('btn-warning').addClass('btn-light')
+      .html('✏️ Edit header');
   });
 
   $(document).on('click', '.btn-save-order-header', function () {
-    const $box     = $(this).closest('.order-header-edit');
-    const orderId  = $box.find('.edit-order-id').val();
-    const $btn     = $(this);
+    const $box = $(this).closest('.order-header-edit');
+    const orderId = $box.find('.edit-order-id').val();
+    const $btn = $(this);
     const $editBtn = $box.closest('.detail-wrap').find('.btn-edit-order-header');
 
     $btn.prop('disabled', true).text('Saving...');
@@ -2336,8 +2396,8 @@ $deptOptions = [
 
         // Reset Edit header buttonu pred refreshom detailu
         $editBtn.data('mode', 'edit')
-                .removeClass('btn-warning').addClass('btn-light')
-                .html('✏️ Edit header');
+          .removeClass('btn-warning').addClass('btn-light')
+          .html('✏️ Edit header');
 
         const $wrap = $('#detail-' + orderId);
         $wrap.removeData('loaded');
@@ -3004,66 +3064,99 @@ $deptOptions = [
   $(document).on('change', '#ordersFilterForm select', function () {
     $('#ordersFilterForm').trigger('submit');
   });
-function updateOrdersStickyOffsets() {
-  const baseTop = 50; // AdminLTE navbar výška
+  function updateOrdersStickyOffsets() {
+    const baseTop = 50; // AdminLTE navbar výška
 
-  const tabsH = $('.orders-quicktabs').outerHeight() || 42;
-  const toolbarH = $('.orders-toolbar').outerHeight() || 38;
+    const tabsH = $('.orders-quicktabs').outerHeight() || 42;
+    const toolbarH = $('.orders-toolbar').outerHeight() || 38;
 
-  const $collapse = $('#ordersFilterCollapse');
-  const filterH = $collapse.is(':visible') ? ($collapse.outerHeight(true) || 0) : 0;
+    const $collapse = $('#ordersFilterCollapse');
+    const filterH = $collapse.is(':visible') ? ($collapse.outerHeight(true) || 0) : 0;
 
-  document.documentElement.style.setProperty('--orders-tabs-h', tabsH + 'px');
-  document.documentElement.style.setProperty('--orders-toolbar-h', toolbarH + 'px');
+    document.documentElement.style.setProperty('--orders-tabs-h', tabsH + 'px');
+    document.documentElement.style.setProperty('--orders-toolbar-h', toolbarH + 'px');
 
-  const tableTop = baseTop + tabsH + toolbarH + filterH - 1;
+    const tableTop = baseTop + tabsH + toolbarH + filterH - 1;
 
-  $('#ordersTableWrap > table#example1 > thead > tr > th').css('top', tableTop + 'px');
-}
-$(document).ready(function () {
-  updateOrdersStickyOffsets();
-
-  setTimeout(updateOrdersStickyOffsets, 100);
-  setTimeout(updateOrdersStickyOffsets, 350);
-});
-
-$(window).on('resize scroll', updateOrdersStickyOffsets);
-
-$('#ordersFilterCollapse')
-  .on('show.bs.collapse shown.bs.collapse hide.bs.collapse hidden.bs.collapse', function () {
+    $('#ordersTableWrap > table#ordersTable > thead > tr > th').css('top', tableTop + 'px');
+  }
+  $(document).ready(function () {
     updateOrdersStickyOffsets();
+
     setTimeout(updateOrdersStickyOffsets, 100);
     setTimeout(updateOrdersStickyOffsets, 350);
   });
 
+  $(window).on('resize scroll', updateOrdersStickyOffsets);
+
+  $('#ordersFilterCollapse')
+    .on('show.bs.collapse shown.bs.collapse hide.bs.collapse hidden.bs.collapse', function () {
+      updateOrdersStickyOffsets();
+      setTimeout(updateOrdersStickyOffsets, 100);
+      setTimeout(updateOrdersStickyOffsets, 350);
+    });
 
 
-$(document).ready(function () {
-  updateOrdersStickyOffsets();
-});
 
-$('#ordersFilterCollapse')
-  .on('show.bs.collapse', function () {
-    setTimeout(updateOrdersStickyOffsets, 20);
-    setTimeout(updateOrdersStickyOffsets, 180);
-    setTimeout(updateOrdersStickyOffsets, 360);
-  })
-  .on('shown.bs.collapse', function () {
-    updateOrdersStickyOffsets();
-  })
-  .on('hide.bs.collapse', function () {
-    $('#ordersTableWrap > table#example1 > thead > tr > th').css(
-      'top',
-      (50 + ($('.orders-quicktabs').outerHeight() || 42) + ($('.orders-toolbar').outerHeight() || 38) - 1) + 'px'
-    );
-
-    setTimeout(updateOrdersStickyOffsets, 360);
-  })
-  .on('hidden.bs.collapse', function () {
+  $(document).ready(function () {
     updateOrdersStickyOffsets();
   });
 
-$(window).on('resize', updateOrdersStickyOffsets);
+  $('#ordersFilterCollapse')
+    .on('show.bs.collapse', function () {
+      setTimeout(updateOrdersStickyOffsets, 20);
+      setTimeout(updateOrdersStickyOffsets, 180);
+      setTimeout(updateOrdersStickyOffsets, 360);
+    })
+    .on('shown.bs.collapse', function () {
+      updateOrdersStickyOffsets();
+    })
+    .on('hide.bs.collapse', function () {
+      $('#ordersTableWrap > table#ordersTable > thead > tr > th').css(
+        'top',
+        (50 + ($('.orders-quicktabs').outerHeight() || 42) + ($('.orders-toolbar').outerHeight() || 38) - 1) + 'px'
+      );
+
+      setTimeout(updateOrdersStickyOffsets, 360);
+    })
+    .on('hidden.bs.collapse', function () {
+      updateOrdersStickyOffsets();
+    });
+
+  $(window).on('resize', updateOrdersStickyOffsets);
+  function sortOrdersByPriorityAndDate() {
+    const $tbody = $('#ordersTable tbody');
+
+    const pairs = [];
+
+    $tbody.find('tr.order-row').each(function () {
+      const $orderRow = $(this);
+      const $detailRow = $orderRow.next('.order-detail-row');
+
+      pairs.push({
+        priority: parseInt($orderRow.data('priority-sort'), 10),
+        date: String($orderRow.data('date-sort') || '9999-12-31'),
+        id: parseInt($orderRow.data('order-id'), 10),
+        orderRow: $orderRow,
+        detailRow: $detailRow
+      });
+    });
+
+    pairs.sort(function (a, b) {
+      if (a.priority !== b.priority) return a.priority - b.priority;
+      if (a.date !== b.date) return a.date.localeCompare(b.date);
+      return a.id - b.id;
+    });
+
+    pairs.forEach(function (p) {
+      $tbody.append(p.orderRow);
+      $tbody.append(p.detailRow);
+    });
+  }
+
+  $(document).ready(function () {
+    sortOrdersByPriorityAndDate();
+  });
 </script>
 <?php $orderDetailActionsVersion = @filemtime(__DIR__ . '/../scripts/orders/order_detail_actions.js') ?: time(); ?>
 <script src="scripts/orders/order_detail_actions.js?v=<?= (int) $orderDetailActionsVersion ?>"></script>

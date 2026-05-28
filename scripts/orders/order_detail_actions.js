@@ -269,41 +269,108 @@ $(document)
       .join("");
   }
 
+  function optionGroupForKey(key) {
+    const normalized = String(key || "").toLowerCase();
+
+    if (
+      key === "Category Info" ||
+      normalized.includes("category") ||
+      normalized.includes("bike") ||
+      normalized.includes("manufacturer")
+    ) {
+      return "Bike / Category";
+    }
+
+    if (
+      normalized.includes("name") ||
+      normalized.includes("number") ||
+      normalized.includes("font")
+    ) {
+      return "Personalization";
+    }
+
+    if (
+      normalized.includes("material") ||
+      normalized.includes("finish") ||
+      normalized.includes("graphics") ||
+      normalized.includes("rim") ||
+      normalized.includes("fork")
+    ) {
+      return "Graphics";
+    }
+
+    if (
+      normalized.includes("file") ||
+      normalized.includes("logo") ||
+      normalized.includes("upload")
+    ) {
+      return "Files";
+    }
+
+    return "Other";
+  }
+
+  function optionEditorRow(key, value) {
+    const type = key === "" ? "text" : optionEditorType(value);
+
+    return `
+      <div class="customer-option-row py-2 border-bottom border-secondary">
+        <div class="form-row align-items-start">
+          <div class="col-md-4 mb-2 mb-md-0">
+            <input type="text"
+                   class="form-control form-control-sm customer-option-key"
+                   value="${escapeHtml(key)}"
+                   placeholder="Field">
+          </div>
+          <div class="col-md-2 mb-2 mb-md-0">
+            <select class="form-control form-control-sm customer-option-type">
+              ${optionTypeOptions(type)}
+            </select>
+          </div>
+          <div class="col-md-5 mb-2 mb-md-0">
+            <textarea class="form-control form-control-sm customer-option-value"
+                      rows="${type === "json" ? 4 : 1}"
+                      placeholder="Value">${escapeHtml(optionEditorValue(value, type))}</textarea>
+          </div>
+          <div class="col-md-1 text-right">
+            <button type="button" class="btn btn-xs btn-outline-danger btn-remove-customer-option">×</button>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
   function renderCustomerOptionsEditor(data) {
     const keys = Object.keys(data || {});
     if (!keys.length) {
       keys.push("");
     }
 
-    let html = "";
+    const groups = {
+      "Bike / Category": [],
+      Personalization: [],
+      Graphics: [],
+      Files: [],
+      Other: [],
+    };
+
     keys.forEach(function (key) {
       const value = key === "" ? "" : data[key];
-      const type = key === "" ? "text" : optionEditorType(value);
+      const groupName = key === "" ? "Other" : optionGroupForKey(key);
+      groups[groupName].push(optionEditorRow(key, value));
+    });
+
+    let html = "";
+    Object.keys(groups).forEach(function (groupName) {
+      if (!groups[groupName].length) return;
 
       html += `
-        <div class="card bg-secondary mb-2 customer-option-row">
-          <div class="card-body py-2">
-            <div class="form-row align-items-start">
-              <div class="col-md-4 mb-2 mb-md-0">
-                <input type="text"
-                       class="form-control form-control-sm customer-option-key"
-                       value="${escapeHtml(key)}"
-                       placeholder="Field">
-              </div>
-              <div class="col-md-2 mb-2 mb-md-0">
-                <select class="form-control form-control-sm customer-option-type">
-                  ${optionTypeOptions(type)}
-                </select>
-              </div>
-              <div class="col-md-5 mb-2 mb-md-0">
-                <textarea class="form-control form-control-sm customer-option-value"
-                          rows="${type === "json" ? 4 : 1}"
-                          placeholder="Value">${escapeHtml(optionEditorValue(value, type))}</textarea>
-              </div>
-              <div class="col-md-1 text-right">
-                <button type="button" class="btn btn-xs btn-outline-danger btn-remove-customer-option">×</button>
-              </div>
-            </div>
+        <div class="card bg-secondary mb-3 customer-option-group" data-option-group="${escapeHtml(groupName)}">
+          <div class="card-header py-2">
+            <b>${escapeHtml(groupName)}</b>
+          </div>
+          <div class="card-body py-0 customer-option-group-body">
+            ${groups[groupName].join("")}
           </div>
         </div>
       `;
@@ -776,7 +843,7 @@ $(document)
       '<i class="fas fa-list-alt mr-1"></i> Product Detail',
     );
     $("#optionsModal .modal-body").html(`
-      <div class="mb-3">
+      <div class="mb-3" id="customerOptionsSection">
         <div class="d-flex justify-content-between align-items-center mb-2">
           <h6 class="text-muted mb-0">
             <i class="fas fa-download mr-1"></i> Customer / Imported Options
@@ -802,7 +869,7 @@ $(document)
 
           <div class="d-flex justify-content-end mt-2" style="gap:6px;">
             <button type="button" class="btn btn-sm btn-secondary" id="btnCancelCustomerOptions">
-              Cancel
+              Back
             </button>
             <button type="button" class="btn btn-sm btn-success" id="btnSaveCustomerOptions">
               <i class="fas fa-save mr-1"></i> Save options
@@ -811,9 +878,9 @@ $(document)
         </div>
       </div>
 
-      <hr class="border-secondary my-3">
+      <hr class="border-secondary my-3" id="optionsSectionsDivider">
 
-      <div class="mb-2">
+      <div class="mb-2" id="internalOptionsSection">
         <div class="d-flex justify-content-between align-items-center mb-2">
           <h6 class="text-muted mb-0">
             <i class="fas fa-tools mr-1"></i> Internal Production Blocks
@@ -1155,8 +1222,10 @@ $(document)
       if (!currentCanEditOptions) return;
 
       renderCustomerOptionsEditor(currentCustomerOptions);
+      $("#customerOptionsView").hide();
       $("#customerOptionsEditBox").show();
       $("#btnEditCustomerOptions").hide();
+      $("#optionsSectionsDivider, #internalOptionsSection").hide();
     });
 
   $(document)
@@ -1166,7 +1235,9 @@ $(document)
       e.stopPropagation();
 
       $("#customerOptionsEditBox").hide();
+      $("#customerOptionsView").show();
       $("#btnEditCustomerOptions").show();
+      $("#optionsSectionsDivider, #internalOptionsSection").show();
     });
 
   $(document)
@@ -1175,28 +1246,20 @@ $(document)
       e.preventDefault();
       e.stopPropagation();
 
-      $("#customerOptionsEditor").append(`
-        <div class="card bg-secondary mb-2 customer-option-row">
-          <div class="card-body py-2">
-            <div class="form-row align-items-start">
-              <div class="col-md-4 mb-2 mb-md-0">
-                <input type="text" class="form-control form-control-sm customer-option-key" placeholder="Field">
-              </div>
-              <div class="col-md-2 mb-2 mb-md-0">
-                <select class="form-control form-control-sm customer-option-type">
-                  ${optionTypeOptions("text")}
-                </select>
-              </div>
-              <div class="col-md-5 mb-2 mb-md-0">
-                <textarea class="form-control form-control-sm customer-option-value" rows="1" placeholder="Value"></textarea>
-              </div>
-              <div class="col-md-1 text-right">
-                <button type="button" class="btn btn-xs btn-outline-danger btn-remove-customer-option">×</button>
-              </div>
+      let $otherGroup = $('#customerOptionsEditor .customer-option-group[data-option-group="Other"]');
+      if (!$otherGroup.length) {
+        $("#customerOptionsEditor").append(`
+          <div class="card bg-secondary mb-3 customer-option-group" data-option-group="Other">
+            <div class="card-header py-2">
+              <b>Other</b>
             </div>
+            <div class="card-body py-0 customer-option-group-body"></div>
           </div>
-        </div>
-      `);
+        `);
+        $otherGroup = $('#customerOptionsEditor .customer-option-group[data-option-group="Other"]');
+      }
+
+      $otherGroup.find(".customer-option-group-body").append(optionEditorRow("", ""));
       $(
         "#customerOptionsEditor .customer-option-row:last .customer-option-key",
       ).focus();

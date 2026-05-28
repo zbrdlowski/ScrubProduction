@@ -20,6 +20,8 @@ $type  = strtoupper(trim((string)($_POST['type'] ?? '')));
 $qty   = max(1, (int)($_POST['qty'] ?? 1));
 $sku   = trim((string)($_POST['sku'] ?? ''));
 $customLabel = trim((string)($_POST['custom_label'] ?? ''));
+$unitPriceRaw = trim((string)($_POST['unit_price'] ?? ''));
+$unitPrice = ($unitPriceRaw !== '') ? round((float)$unitPriceRaw, 2) : null;
 
 $userId = (int)($_SESSION['user_id'] ?? 0);
 
@@ -28,7 +30,7 @@ if ($itemId <= 0 || $title === '' || $type === '') {
 }
 
 $stmt = $conn->prepare("
-  SELECT order_id, title, item_type_code, qty, sku, custom_label
+  SELECT order_id, title, item_type_code, qty, sku, custom_label, unit_price
   FROM order_items
   WHERE id=? AND deleted_at IS NULL
 ");
@@ -46,17 +48,19 @@ $stmt = $conn->prepare("
       qty=?,
       sku=?,
       custom_label=?,
+      unit_price=?,
       updated_by=?,
       updated_at=NOW()
   WHERE id=?
 ");
 $stmt->bind_param(
-  'ssissii',
+  'ssissdii',
   $title,
   $type,
   $qty,
   $sku,
   $customLabel,
+  $unitPrice,
   $userId,
   $itemId
 );
@@ -76,7 +80,8 @@ log_order_activity(
     'type'=>$type,
     'qty'=>$qty,
     'sku'=>$sku,
-    'custom_label' => $customLabel
+    'custom_label' => $customLabel,
+    'unit_price'   => $unitPrice,
   ]],
   'Item updated'
 );

@@ -174,6 +174,21 @@ function import_darkscrub_unified_csv(mysqli $conn, string $csvPath): array {
 
       $optionsJson = oi_merge_options_json($r);
 
+      // --- Cena položky podľa zdroja ---
+      // eBay / MXLocker: item_unit_price_with_vat  (napr. "EU355.98", "399.9")
+      // Shoptet:         item_total_price_with_vat  (napr. "64,90") — celková, nie jednotková
+      //                  pri qty>1 vydelíme qty
+      $rawUnitPrice = null;
+      if ($sourceCode === 'SHOPTET') {
+        $rawUnitPrice = oi_parse_money($r['item_total_price_with_vat'] ?? null);
+        if ($rawUnitPrice !== null && $qty > 1) {
+          $rawUnitPrice = round($rawUnitPrice / $qty, 2);
+        }
+      } else {
+        // EBAY, MXLOCKER aj ostatné — unit price priamo
+        $rawUnitPrice = oi_parse_money($r['item_unit_price_with_vat'] ?? null);
+      }
+
       // --- GFP expansion ---
       // If the SKU prefix is GFP, the item is imported as G (graphics) and we
       // automatically generate a companion PLASTICS item and a FITTING item.
@@ -184,15 +199,8 @@ function import_darkscrub_unified_csv(mysqli $conn, string $csvPath): array {
       if ($isGfp) $itemType = 'G';
 
       $itemId = oi_insert_item_unified(
-        $conn,
-        $orderId,
-        $lineNo ?: null,
-        $sku,
-        $title,
-        $customLabel,
-        $itemType,
-        $qty,
-        $optionsJson
+        $conn, $orderId, $lineNo ?: null,
+        $sku, $title, $customLabel, $itemType, $qty, $optionsJson, $rawUnitPrice
       );
 
       $categoryCodes = oi_item_type_to_category_codes($itemType, $sku, $customLabel, $title);
@@ -209,7 +217,8 @@ function import_darkscrub_unified_csv(mysqli $conn, string $csvPath): array {
           $conn, $orderId, $autoLineNo++,
           $sku, $title, $customLabel,
           'P', $qty,
-          oi_auto_item_options_json($optionsJson, 'GFP_AUTO_PLASTICS')
+          oi_auto_item_options_json($optionsJson, 'GFP_AUTO_PLASTICS'),
+          null  // cena len na G položke
         );
         oi_add_item_categories($conn, $plasticId, [$catIds['PLASTICS']]);
         $stats['items']++;
@@ -219,25 +228,24 @@ function import_darkscrub_unified_csv(mysqli $conn, string $csvPath): array {
           $conn, $orderId, $autoLineNo++,
           $sku, $title, $customLabel,
           'F', $qty,
-          oi_auto_item_options_json($optionsJson, 'GFP_AUTO_FITTING')
+          oi_auto_item_options_json($optionsJson, 'GFP_AUTO_FITTING'),
+          null
         );
         oi_add_item_categories($conn, $fittingId, [$catIds['FITTING']]);
         $stats['items']++;
       }
 
-      // --- Shoptet variant expansion (applyinggraphics / seat-cover / mid-forks / grip) ---
+      // --- Shoptet variant expansion ---
       $extraItems = oi_extract_shoptet_variant_items($r, $qty, $autoLineNo);
       foreach ($extraItems as $extra) {
         $autoLineNo++;
         $extraItemId = oi_insert_item_unified(
           $conn, $orderId,
           $extra['line_no'],
-          $sku,                           // same SKU as parent
-          $extra['title'],
-          $customLabel,
-          $extra['item_type'],
-          $extra['qty'],
-          oi_auto_item_options_json($optionsJson, $extra['auto_tag'])
+          $sku, $extra['title'], $customLabel,
+          $extra['item_type'], $extra['qty'],
+          oi_auto_item_options_json($optionsJson, $extra['auto_tag']),
+          null  // extra varianty nemajú vlastnú cenu
         );
         $extraCatCode = oi_item_type_to_category_codes($extra['item_type']);
         $extraCatIds = [];
@@ -429,17 +437,17 @@ function oi_merge_options_json(array $r): ?string {
   return $opts ? json_encode($opts, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) : null;
 }
 
-function oi_insert_item_unified(mysqli $conn, int $orderId, ?int $lineNo, ?string $sku, ?string $title, ?string $customLabel, ?string $itemTypeCode, int $qty, ?string $optionsJson): int {
+function oi_insert_item_unified(mysqli $conn, int $orderId, ?int $lineNo, ?string $sku, ?string $title, ?string $customLabel, ?string $itemTypeCode, int $qty, ?string $optionsJson, ?float $unitPrice = null): int {
   $sku = oi_trim($sku);
   $title = oi_trim($title);
   $customLabel = oi_trim($customLabel);
   $itemTypeCode = oi_trim($itemTypeCode);
 
   $stmt = $conn->prepare('
-    INSERT INTO order_items (order_id, line_no, sku, title, custom_label, item_type_code, qty, options_json)
-    VALUES (?,?,?,?,?,?,?,?)
+    INSERT INTO order_items (order_id, line_no, sku, title, custom_label, item_type_code, qty, unit_price, options_json)
+    VALUES (?,?,?,?,?,?,?,?,?)
   ');
-  $stmt->bind_param('iissssis', $orderId, $lineNo, $sku, $title, $customLabel, $itemTypeCode, $qty, $optionsJson);
+  $stmt->bind_param('iissssids', $orderId, $lineNo, $sku, $title, $customLabel, $itemTypeCode, $qty, $unitPrice, $optionsJson);
   $stmt->execute();
   $id = (int)$stmt->insert_id;
   $stmt->close();
