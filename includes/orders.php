@@ -1902,7 +1902,16 @@ $deptOptions = [
           $wrap.data('loaded', true);
         },
         error: function (xhr) {
-          $wrap.html('<div class="p-3"><div class="alert alert-danger mb-0">Chyba pri načítaní detailu</div></div>');
+          const msg = xhr && xhr.responseText
+            ? xhr.responseText.substring(0, 600)
+            : 'No response body';
+          $wrap.html(
+            '<div class="p-3"><div class="alert alert-danger mb-0">' +
+            '<b>Chyba pri načítaní detailu</b><br>' +
+            'HTTP ' + escapeHtml(xhr.status || 'error') + '<br>' +
+            '<small style="white-space:pre-wrap;">' + escapeHtml(msg) + '</small>' +
+            '</div></div>'
+          );
         }
       });
     });

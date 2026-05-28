@@ -53,6 +53,20 @@ if (!is_array($oldData)) {
 }
 
 $oldNormalizedJson = json_encode($oldData, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+
+$mergedData = $data;
+foreach ($oldData as $key => $value) {
+  $key = (string) $key;
+  if (strpos($key, '_') === 0 || is_array($value) || is_object($value)) {
+    $mergedData[$key] = $value;
+  }
+}
+
+$normalizedJson = json_encode($mergedData, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+if ($normalizedJson === false) {
+  out(['ok' => false, 'error' => 'Could not encode merged JSON']);
+}
+
 if ($oldNormalizedJson === $normalizedJson) {
   out(['ok' => true, 'unchanged' => true]);
 }
@@ -69,9 +83,9 @@ $stmt->execute();
 $stmt->close();
 
 $changedKeys = [];
-foreach (array_unique(array_merge(array_keys($oldData), array_keys($data))) as $key) {
+foreach (array_unique(array_merge(array_keys($oldData), array_keys($mergedData))) as $key) {
   $oldValue = $oldData[$key] ?? null;
-  $newValue = $data[$key] ?? null;
+  $newValue = $mergedData[$key] ?? null;
   if (json_encode($oldValue, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) !== json_encode($newValue, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)) {
     $changedKeys[] = (string) $key;
   }

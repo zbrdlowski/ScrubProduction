@@ -7,7 +7,8 @@ header('Content-Type: application/json; charset=utf-8');
 function out(int $code, array $payload): void
 {
   http_response_code($code);
-  echo json_encode($payload, JSON_UNESCAPED_UNICODE);
+  $json = json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_PARTIAL_OUTPUT_ON_ERROR);
+  echo $json !== false ? $json : '{"ok":false,"error":"JSON encode failed"}';
   exit;
 }
 
@@ -445,7 +446,29 @@ function prepareOptionsJsonForModal(mysqli $conn, string $json): string
     }
   }
 
-  return json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+  return json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?: '{}';
+}
+
+function prepareEditableOptionsJsonForModal(string $json): string
+{
+  $data = json_decode($json ?: '{}', true);
+  if (!is_array($data)) {
+    return '{}';
+  }
+
+  $editable = [];
+  foreach ($data as $key => $value) {
+    $key = (string) $key;
+    if ($key === '' || strpos($key, '_') === 0) {
+      continue;
+    }
+    if ($value === null || $value === '' || is_array($value) || is_object($value)) {
+      continue;
+    }
+    $editable[$key] = $value;
+  }
+
+  return json_encode($editable, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?: '{}';
 }
 
 // Hľadá prvú existujúcu a neprázdnu hodnotu z poľa kľúčov
@@ -1462,18 +1485,16 @@ ob_start();
                 <?php
                 $rawOptions = (string) ($it['options_json'] ?? '{}');
                 $formattedOptions = prepareOptionsJsonForModal($conn, $rawOptions);
+                $editableOptions = prepareEditableOptionsJsonForModal($rawOptions);
                 $internalOptions = (string) ($it['internal_options_json'] ?? '{}');
                 if (trim($internalOptions) === '') {
                   $internalOptions = '{}';
                 }
                 ?>
-                <script>
-                  window.isSuperAdmin = <?php echo ((int) ($_SESSION['permission'] ?? 0) === 900 ? 'true' : 'false'); ?>;
-                </script>
                 <td class="text-center">
                   <button type="button" class="btn btn-xs btn-outline-info btn-view-options"
                     data-item-id="<?= (int) $it['id'] ?>" data-options="<?= h($formattedOptions) ?>"
-                    data-options-raw="<?= h($rawOptions) ?>"
+                    data-options-raw="<?= h($editableOptions) ?>"
                     data-can-edit-options="<?= ((int) ($_SESSION['permission'] ?? 0) >= 300 ? '1' : '0') ?>"
                     data-internal-options="<?= h($internalOptions) ?>">
                     Detail
