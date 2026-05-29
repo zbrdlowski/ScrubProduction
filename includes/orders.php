@@ -137,9 +137,9 @@ if ($fSource !== '' && !in_array($fSource, $allowedSources, true))
   $fSource = '';
 
 $priorityOptions = [
-  0 => 'Normal',
-  10 => 'High',
-  20 => 'Urgent',
+  0  => 'Normal',
+  10 => 'Deadline',
+  20 => 'Priority',
 ];
 $allowedPriorities = array_map('strval', array_keys($priorityOptions));
 if ($fPriority !== '' && !in_array($fPriority, $allowedPriorities, true))
@@ -369,6 +369,7 @@ $sql = " SELECT
   o.imported_at,
   o.status,
   o.priority,
+  o.priority_date,
   o.traffic_light,
   o.traffic_blocker,
   o.traffic_summary_json,
@@ -484,7 +485,7 @@ $whereSql
 
 ORDER BY
   CASE
-    WHEN o.priority >= 20 THEN 0 -- Urgent (20) a High (10) navrchu, Normal (0) dole
+    WHEN o.priority >= 20 THEN 0 -- Priority (20) a Deadline (10) navrchu, Normal (0) dole
     WHEN o.priority >= 10 THEN 1 -- v rámci rovnakej priority od najstaršieho
     ELSE 2
   END ASC,
@@ -1248,8 +1249,8 @@ $deptOptions = [
               <select class="form-control form-control-sm" name="priority">
                 <option value="">— All —</option>
                 <?php foreach ([
-                  '20' => '🔴 Urgent',
-                  '10' => '🟠 High',
+                  '20' => '🔴 Priority',
+                  '10' => '🟠 Deadline',
                   '0' => '🟢 Normal',
                   // ── sem pridaj ──
                 ] as $val => $lbl): ?>
@@ -1558,9 +1559,12 @@ $deptOptions = [
               </td>
               <td class="text-center" data-priority-cell="<?= $orderId ?>">
                 <?php
-                $priorityValue = (int) ($row['priority'] ?? 0);
-
-                $priorityLabel = $priorityOptions[$priorityValue] ?? ('Priority ' . $priorityValue);
+                $priorityValue   = (int) ($row['priority'] ?? 0);
+                $priorityLabel   = $priorityOptions[$priorityValue] ?? ('Priority ' . $priorityValue);
+                $priorityDateRaw = !empty($row['priority_date'])
+                  ? (new DateTime($row['priority_date']))->format('Y-m-d') : '';
+                $priorityDateFmt = !empty($row['priority_date'])
+                  ? (new DateTime($row['priority_date']))->format('d.m.Y') : null;
 
                 if ($priorityValue >= 20) {
                   $priorityBadge = 'badge-danger';
@@ -1572,11 +1576,29 @@ $deptOptions = [
                   $priorityBadge = 'badge-success';
                   $priorityEmoji = '🟢';
                 }
-                ?>
 
-                <span class="badge <?= $priorityBadge ?>">
-                  <?= $priorityEmoji ?>   <?= htmlspecialchars($priorityLabel) ?>
-                </span>
+                $badgeStyle = 'display:inline-flex;align-items:center;gap:6px;padding:4px 10px;font-size:12px;font-weight:500;white-space:nowrap;';
+                if ($priorityValue > 0) $badgeStyle .= 'cursor:pointer;';
+                ?>
+                <?php if ($perm >= 300): ?>
+                  <span class="badge <?= $priorityBadge ?> priority-badge-clickable"
+                    style="<?= $badgeStyle ?>"
+                    data-order-id="<?= $orderId ?>"
+                    data-priority="<?= $priorityValue ?>"
+                    data-priority-date="<?= htmlspecialchars($priorityDateRaw) ?>">
+                    <?= $priorityEmoji ?> <?= htmlspecialchars($priorityLabel) ?>
+                    <?php if ($priorityDateFmt): ?>
+                      <span style="opacity:.75;font-weight:400;">· <?= htmlspecialchars($priorityDateFmt) ?></span>
+                    <?php endif; ?>
+                  </span>
+                <?php else: ?>
+                  <span class="badge <?= $priorityBadge ?>" style="<?= $badgeStyle ?>">
+                    <?= $priorityEmoji ?> <?= htmlspecialchars($priorityLabel) ?>
+                    <?php if ($priorityDateFmt): ?>
+                      <span style="opacity:.75;font-weight:400;">· <?= htmlspecialchars($priorityDateFmt) ?></span>
+                    <?php endif; ?>
+                  </span>
+                <?php endif; ?>
               </td>
               <td class="text-center" data-status-cell="<?= $orderId ?>">
                 <?php
@@ -3248,3 +3270,99 @@ $deptOptions = [
     </div>
   </div>
 </div>
+
+<!-- ── Priority Date Modal ────────────────────────────────────────── -->
+<div class="modal fade" id="priorityDateModal" tabindex="-1" role="dialog" aria-hidden="true">
+  <div class="modal-dialog modal-sm" role="document">
+    <div class="modal-content bg-dark text-white">
+      <div class="modal-header border-secondary">
+        <h5 class="modal-title"><i class="fas fa-flag mr-2"></i>Set Priority</h5>
+        <button type="button" class="close text-white"
+          onclick="$('#priorityDateModal').modal('hide')"
+          aria-label="Close">
+          <span aria-hidden="true">&times;</span>
+        </button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="priorityModalOrderId">
+        <div class="form-group mb-3">
+          <label class="text-muted small mb-1">Priority level</label>
+          <select id="priorityModalLevel" class="form-control form-control-sm bg-dark text-white border-secondary">
+            <option value="0">🟢 Normal</option>
+            <option value="10">🟠 Deadline</option>
+            <option value="20">🔴 Priority</option>
+          </select>
+        </div>
+        <div class="form-group mb-0" id="priorityModalDateWrap">
+          <label class="text-muted small mb-1">Date</label>
+          <input type="date" id="priorityModalDate" class="form-control form-control-sm bg-dark text-white border-secondary">
+          <small class="text-muted">Required for Deadline and Priority</small>
+        </div>
+      </div>
+      <div class="modal-footer border-secondary">
+        <button type="button" class="btn btn-secondary btn-sm"
+          onclick="$('#priorityDateModal').modal('hide')">Cancel</button>
+        <button type="button" class="btn btn-primary btn-sm" id="priorityModalSave">
+          <i class="fas fa-save mr-1"></i>Save
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+$(function () {
+
+  $(document).on('click', '.priority-badge-clickable', function () {
+    var orderId  = $(this).data('order-id');
+    var priority = parseInt($(this).data('priority'), 10) || 0;
+    var date     = $(this).data('priority-date') || '';
+
+    $('#priorityModalOrderId').val(orderId);
+    $('#priorityModalLevel').val(priority);
+    $('#priorityModalDate').val(date);
+    $('#priorityModalDateWrap').toggle(priority > 0);
+    $('#priorityDateModal').modal('show');
+  });
+
+  $('#priorityModalLevel').on('change', function () {
+    var val = parseInt($(this).val(), 10);
+    $('#priorityModalDateWrap').toggle(val > 0);
+    if (val === 0) $('#priorityModalDate').val('');
+  });
+
+  $('#priorityModalSave').on('click', function () {
+    var orderId  = $('#priorityModalOrderId').val();
+    var priority = $('#priorityModalLevel').val();
+    var date     = $('#priorityModalDate').val();
+
+    if (parseInt(priority) > 0 && !date) {
+      alert('Please select a date for Deadline or Priority.');
+      return;
+    }
+
+    var $btn = $(this).prop('disabled', true).html('Saving…');
+
+    $.ajax({
+      url: 'scripts/orders/update_order_priority.php',
+      method: 'POST',
+      dataType: 'json',
+      data: { order_id: orderId, priority: priority, priority_date: date },
+      success: function (resp) {
+        if (!resp || !resp.ok) {
+          alert(resp && resp.error ? resp.error : 'Failed to save priority');
+          $btn.prop('disabled', false).html('<i class="fas fa-save mr-1"></i>Save');
+          return;
+        }
+        $('#priorityDateModal').modal('hide');
+        location.reload();
+      },
+      error: function () {
+        alert('Request failed');
+        $btn.prop('disabled', false).html('<i class="fas fa-save mr-1"></i>Save');
+      }
+    });
+  });
+
+});
+</script>

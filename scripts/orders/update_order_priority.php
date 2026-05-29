@@ -21,9 +21,9 @@ $newPriority = (int) ($_POST['priority'] ?? -1);
 $userId = (int) ($_SESSION['user_id'] ?? 0);
 
 $priorityLabels = [
-  0 => 'Normal',
-  10 => 'High',
-  20 => 'Urgent',
+  0  => 'Normal',
+  10 => 'Deadline',
+  20 => 'Priority',
 ];
 
 if ($orderId <= 0 || !isset($priorityLabels[$newPriority])) {
@@ -89,15 +89,15 @@ log_order_activity(
 );
 
 // Badge HTML + row CSS class pre JS in-place update (bez reloadu)
-// Normal=badge-success/zelená, High=badge-warning/oranžová, Urgent=badge-danger/červená
+// Normal=badge-success/zelená, Deadline=badge-warning/oranžová, Priority=badge-danger/červená
 if ($newPriority >= 20) {
   $badgeClass    = 'badge-danger';
   $priorityEmoji = '🔴';
-  $rowClass      = 'order-priority-urgent';
+  $rowClass      = 'order-priority-priority';
 } elseif ($newPriority >= 10) {
   $badgeClass    = 'badge-warning';
   $priorityEmoji = '🟠';
-  $rowClass      = 'order-priority-high';
+  $rowClass      = 'order-priority-deadline';
 } else {
   $badgeClass    = 'badge-success';
   $priorityEmoji = '🟢';
