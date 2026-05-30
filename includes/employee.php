@@ -223,10 +223,24 @@
               }
             ?>
 
-            <div class="box-header with-border">
+            <div class="box-header with-border" style="display:flex; align-items:center; flex-wrap:wrap; gap:8px;">
               <a href="#addnew" data-toggle="modal" class="btn btn-primary btn-sm btn-flat">
                 <i class="fa fa-plus"></i> Pridaj
               </a>
+
+              <div class="input-group input-group-sm" style="width:200px;">
+                <span class="input-group-addon" style="background:#3c8dbc; border-color:#3c8dbc; color:#fff; padding:0 12px; line-height:28px; text-align:center;">
+                  <i class="fa fa-search"></i>
+                </span>
+                <input
+                  type="text"
+                  id="empInstantSearch"
+                  class="form-control"
+                  placeholder="Hľadaj zamestnanca…"
+                  autocomplete="off"
+                  style="border-color:#3c8dbc;"
+                >
+              </div>
 
               <?php
                 if(empty($_GET['activedisp'])){
@@ -298,6 +312,10 @@
             </div>
 
             <br>
+
+            <div id="empNoResults" style="display:none; color:#fff; background:#3c8dbc; border-radius:6px; padding:14px 18px; font-size:15px;">
+              <i class="fa fa-search"></i>&nbsp; Žiadny zamestnanec nezodpovedá hľadaniu.
+            </div>
 
             <div class="employee-list-wrap">
               <?php
@@ -381,7 +399,17 @@
                     break;
                   }
               ?>
-                <div class="emp-banner">
+                <div class="emp-banner" data-search="<?php echo htmlspecialchars(
+                  strtolower(implode(' ', array_filter([
+                    $row['firstname'] ?? '',
+                    $row['lastname'] ?? '',
+                    $position,
+                    $username,
+                    $phone,
+                    $address,
+                    $userpermitions
+                  ])))
+                , ENT_QUOTES, 'UTF-8'); ?>">
                   <div class="emp-left">
                     <a
                       href="index.php?page=employee_edit&user-id=<?php echo (int)$row['empid']; ?>"
@@ -508,3 +536,26 @@
 </section>
 
 <?php include 'includes/employee_modal.php'; ?>
+
+<script>
+(function(){
+  var input    = document.getElementById('empInstantSearch');
+  var noResult = document.getElementById('empNoResults');
+  if(!input) return;
+
+  input.addEventListener('input', function(){
+    var q = this.value.toLowerCase().trim();
+    var banners = document.querySelectorAll('.employee-list-wrap .emp-banner');
+    var visible = 0;
+
+    banners.forEach(function(el){
+      var haystack = el.getAttribute('data-search') || '';
+      var show = (q === '' || haystack.indexOf(q) !== -1);
+      el.style.display = show ? '' : 'none';
+      if(show) visible++;
+    });
+
+    noResult.style.display = (visible === 0 && q !== '') ? 'block' : 'none';
+  });
+})();
+</script>

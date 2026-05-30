@@ -7,6 +7,7 @@ $(document)
 
     const $btn = $(this);
     const orderId = $btn.data("order-id");
+    const deptCode = $btn.data("dept-code") || "";
 
     if (!orderId) {
       alert("Missing order ID");
@@ -21,6 +22,7 @@ $(document)
       dataType: "json",
       data: {
         order_id: orderId,
+        dept_code: deptCode,
       },
       success: function (resp) {
         if (!resp || !resp.ok) {
@@ -106,15 +108,15 @@ $(document)
   }
 
   function stripProtectedOptions(data) {
-  const copy = { ...(data || {}) };
+    const copy = { ...(data || {}) };
 
-  if (!window.isSuperAdmin) {
-    delete copy._item;
-    delete copy._source_raw;
+    if (!window.isSuperAdmin) {
+      delete copy._item;
+      delete copy._source_raw;
+    }
+
+    return copy;
   }
-
-  return copy;
-}
 
   function renderOptionsPretty(data) {
     if (!data || Object.keys(data).length === 0) {
@@ -719,11 +721,11 @@ $(document)
 
     const $row = $(
       '.profile-order-row[data-order-id="' +
-        orderId +
-        '"], ' +
-        '.order-row[data-order-id="' +
-        orderId +
-        '"]',
+      orderId +
+      '"], ' +
+      '.order-row[data-order-id="' +
+      orderId +
+      '"]',
     );
     if (!$row.length) return;
 
@@ -798,10 +800,10 @@ $(document)
 
         $statusCell.html(
           '<button class="btn btn-xs ' +
-            btnClass +
-            '" style="pointer-events:none;">' +
-            label +
-            "</button>",
+          btnClass +
+          '" style="pointer-events:none;">' +
+          label +
+          "</button>",
         );
       }
     }
@@ -1032,8 +1034,8 @@ $(document)
         },
       });
     });
+    $(document)
 
-  $(document)
     .off("click.removeAssignment", ".btn-remove-assignment")
     .on("click.removeAssignment", ".btn-remove-assignment", function (e) {
       e.preventDefault();
@@ -1064,6 +1066,21 @@ $(document)
           if (!resp || !resp.ok) {
             alert(resp && resp.error ? resp.error : "Remove assignment failed");
             $btn.prop("disabled", false);
+            return;
+          }
+
+          const orderId = findOpenOrderIdFromElement($btn);
+
+          if (
+            typeof window.refreshProfileOrdersList === "function" &&
+            orderId
+          ) {
+            window.refreshProfileOrdersList(orderId);
+            return;
+          }
+
+          if (orderId) {
+            refreshOrderDetail(orderId);
             return;
           }
 
@@ -1328,8 +1345,8 @@ $(document)
             findOpenOrderIdFromElement(
               $(
                 '.btn-view-options[data-item-id="' +
-                  currentOptionsItemId +
-                  '"]',
+                currentOptionsItemId +
+                '"]',
               ),
             ),
           );
@@ -1448,8 +1465,8 @@ $(document)
             findOpenOrderIdFromElement(
               $(
                 '.btn-view-options[data-item-id="' +
-                  currentOptionsItemId +
-                  '"]',
+                currentOptionsItemId +
+                '"]',
               ),
             ),
           );
@@ -1532,10 +1549,10 @@ $(document)
       if (wasPending && status !== "PENDING") {
         const ok = confirm(
           "⚠️ Táto objednávka je PENDING (nezaplatená).\n\n" +
-            'Zmenou statusu na "' +
-            status.replace(/_/g, " ") +
-            '" potvrzuješ, že platba bola prijatá.\n\n' +
-            "Pokračovať?",
+          'Zmenou statusu na "' +
+          status.replace(/_/g, " ") +
+          '" potvrzuješ, že platba bola prijatá.\n\n' +
+          "Pokračovať?",
         );
         if (!ok) {
           $select.val("PENDING");

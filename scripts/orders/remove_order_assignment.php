@@ -6,10 +6,7 @@ header('Content-Type: application/json; charset=utf-8');
 require_once __DIR__ . '/../../includes/conn.php';
 require_once __DIR__ . '/activity_helper.php';
 
-if ((int)($_SESSION['permission'] ?? 0) < 300) {
-  echo json_encode(['ok' => false, 'error' => 'No permission']);
-  exit;
-}
+$perm = (int)($_SESSION['permission'] ?? 0);
 
 $assignmentId = (int)($_POST['assignment_id'] ?? 0);
 $userId = (int)($_SESSION['user_id'] ?? 0);
@@ -33,6 +30,14 @@ $stmt->close();
 
 if (!$a) {
   echo json_encode(['ok' => false, 'error' => 'Assignment not found']);
+  exit;
+}
+
+if (
+  $perm < 300 &&
+  (int)$a['employee_id'] !== $userId
+) {
+  echo json_encode(['ok' => false, 'error' => 'No permission']);
   exit;
 }
 

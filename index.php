@@ -126,11 +126,11 @@ $pageLabels = [
   class="hold-transition dark-mode sidebar-mini sidebar-collapse layout-fixed layout-navbar-fixed layout-footer-fixed">
   <div class="wrapper">
 
-    <!-- Preloader -->
+    <!-- Preloader 
     <div class="preloader flex-column justify-content-center align-items-center">
       <img class="animation__wobble" src="dist/img/loading-logo.png" alt="Scrubdesignz Logo" height="60" width="60">
     </div>
-
+-->
     <!-- Navbar -->
     <? include 'includes/navbar.php'; ?>
     <!-- /.navbar -->

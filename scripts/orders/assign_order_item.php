@@ -23,17 +23,12 @@ $deptTypeMap = [
   9 => 'F',
 ];
 
-if ($itemId <= 0) {
-  echo json_encode(['ok' => false, 'error' => 'Invalid item']);
-  exit;
-}
+$perm = (int)($_SESSION['permission'] ?? 0);
+$isAdmin = $perm >= 400;
 
-if (!isset($deptTypeMap[$dpt])) {
-  echo json_encode(['ok' => false, 'error' => 'This department cannot assign items']);
-  exit;
-}
-
-$expectedType = $deptTypeMap[$dpt];
+// Admin môže assignovať kohokoľvek — department check preskočíme
+// Admin nemá department — fallback na null, typ sa nekontroluje nižšie
+$expectedType = $deptTypeMap[$dpt] ?? null;
 
 $stmt = $conn->prepare("
   SELECT id, order_id, item_type_code, sku, title
@@ -52,51 +47,87 @@ if (!$item) {
   exit;
 }
 
-$orderId = (int)$item['order_id'];
+$orderId  = (int)$item['order_id'];
 $itemType = strtoupper((string)$item['item_type_code']);
 
-if ($itemType !== $expectedType) {
+if (!$isAdmin && $itemType !== 'F' && !isset($deptTypeMap[$dpt])) {
+  echo json_encode(['ok' => false, 'error' => 'This department cannot assign items']);
+  exit;
+}
+
+if (!$isAdmin && $itemType === 'F') {
+  $empCheck = $conn->prepare("
+    SELECT active, personal_orders
+    FROM employees
+    WHERE id = ?
+    LIMIT 1
+  ");
+  $empCheck->bind_param('i', $userId);
+  $empCheck->execute();
+  $emp = $empCheck->get_result()->fetch_assoc();
+  $empCheck->close();
+
+  if (!$emp || (string)$emp['active'] !== 'Active' || (int)($emp['personal_orders'] ?? 0) !== 1) {
+    echo json_encode(['ok' => false, 'error' => 'You are not enabled for personal orders']);
+    exit;
+  }
+}
+
+// Kontrola departmentu:
+// - Admin (perm >= 400): môže na akúkoľvek položku
+// - Fitting položka (F): môže ktokoľvek
+// - Inak: musí sedieť s departmentom
+if (!$isAdmin && $itemType !== 'F' && $itemType !== $expectedType) {
   echo json_encode(['ok' => false, 'error' => 'This item belongs to another department']);
   exit;
 }
-$perm = (int)($_SESSION['permission'] ?? 0);
 
 if ($perm < 400) {
   $deptRoleMap = [
-    2 => ['PRIMARY_GRAPHICS', 'COLLAB_GRAPHICS'],
-    6 => ['PRIMARY_PLASTICS', 'COLLAB_PLASTICS'],
+    2 => ['PRIMARY_GRAPHICS',  'COLLAB_GRAPHICS'],
+    6 => ['PRIMARY_PLASTICS',  'COLLAB_PLASTICS'],
     8 => ['PRIMARY_SEATCOVER', 'COLLAB_SEATCOVER'],
-    9 => ['PRIMARY_FITTING', 'COLLAB_FITTING'],
+    9 => ['PRIMARY_FITTING',   'COLLAB_FITTING'],
   ];
 
   $allowedRoles = $deptRoleMap[$dpt] ?? [];
 
-  if (!$allowedRoles) {
-    echo json_encode(['ok' => false, 'error' => 'No assignment permission']);
-    exit;
+  // Pre Fitting môže ktokoľvek — aj bez order assignment
+  if ($itemType === 'F') {
+    $allowedRoles = [
+      'PRIMARY_GRAPHICS',  'COLLAB_GRAPHICS',
+      'PRIMARY_PLASTICS',  'COLLAB_PLASTICS',
+      'PRIMARY_SEATCOVER', 'COLLAB_SEATCOVER',
+      'PRIMARY_FITTING',   'COLLAB_FITTING',
+    ];
   }
 
-  $placeholders = implode(',', array_fill(0, count($allowedRoles), '?'));
-  $types = 'ii' . str_repeat('s', count($allowedRoles));
-  $params = array_merge([$orderId, $userId], $allowedRoles);
+  // Pre Fitting: namiesto order_assignment check stačí byť prihlásený
+  if ($itemType === 'F') {
+    // skip order assignment check — môže ktokoľvek
+  } else {
+    $placeholders = implode(',', array_fill(0, count($allowedRoles), '?'));
+    $types  = 'ii' . str_repeat('s', count($allowedRoles));
+    $params = array_merge([$orderId, $userId], $allowedRoles);
 
-  $stmt = $conn->prepare("
-    SELECT 1
-    FROM order_assignments
-    WHERE order_id = ?
-      AND employee_id = ?
-      AND role IN ($placeholders)
-      AND removed_at IS NULL
-    LIMIT 1
-  ");
-  $stmt->bind_param($types, ...$params);
-  $stmt->execute();
-  $hasOrderAssignment = (bool)$stmt->get_result()->fetch_row();
-  $stmt->close();
+    $stmt = $conn->prepare("
+      SELECT 1
+      FROM order_assignments
+      WHERE order_id = ?
+        AND employee_id = ?
+        AND role IN ($placeholders)
+        AND removed_at IS NULL
+      LIMIT 1
+    ");
+    $stmt->bind_param($types, ...$params);
+    $stmt->execute();
+    $hasOrderAssignment = (bool)$stmt->get_result()->fetch_row();
+    $stmt->close();
 
-  if (!$hasOrderAssignment) {
-    echo json_encode(['ok' => false, 'error' => 'You must be assigned or invited to this order first']);
-    exit;
+    if (!$hasOrderAssignment) {
+      echo json_encode(['ok' => false, 'error' => 'You must be assigned or invited to this order first']);
+      exit;
+    }
   }
 }
 

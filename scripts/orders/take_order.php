@@ -30,11 +30,82 @@ $deptMap = [
   9 => 'FITTING',
 ];
 
-$deptCode = $deptMap[$dpt] ?? null;
+$sessionDeptCode = $deptMap[$dpt] ?? null;
+$deptCode = $sessionDeptCode;
+$postDeptCode = strtoupper(trim((string)($_POST['dept_code'] ?? '')));
+$validDeptCodes = ['GRAPHICS', 'PLASTICS', 'SEATCOVER', 'FITTING'];
+
+if (in_array($postDeptCode, $validDeptCodes, true)) {
+  if ($perm >= 400 || $postDeptCode === $sessionDeptCode || $postDeptCode === 'FITTING') {
+    $deptCode = $postDeptCode;
+  }
+}
+
+// Fitting môže vziať ktokoľvek — ak objednávka je Fitting type, povolíme
+// Departmentový check prebehne až po načítaní objednávky
 if (!$deptCode) {
+  // Skontrolujeme či je objednávka Fitting — ak áno, povolíme
+  $fittingCheck = $conn->prepare("
+    SELECT COUNT(*) AS cnt
+    FROM order_items
+    WHERE order_id = ? AND item_type_code = 'F' AND deleted_at IS NULL
+  ");
+  $fittingCheck->bind_param('i', $orderId);
+  $fittingCheck->execute();
+  $fittingRow = $fittingCheck->get_result()->fetch_assoc();
+  $fittingCheck->close();
+
+  if ((int)($fittingRow['cnt'] ?? 0) === 0) {
+    http_response_code(403);
+    echo json_encode(['ok' => false, 'error' => 'This department cannot take orders']);
+    exit;
+  }
+  // Je to Fitting objednávka — nastavíme deptCode
+  $deptCode = 'FITTING';
+}
+
+if ($perm < 400 && $deptCode !== $sessionDeptCode && $deptCode !== 'FITTING') {
   http_response_code(403);
-  echo json_encode(['ok'=>false,'error'=>'This department cannot take orders']);
+  echo json_encode(['ok' => false, 'error' => 'This department cannot take orders']);
   exit;
+}
+
+if ($deptCode === 'FITTING') {
+  $empCheck = $conn->prepare("
+    SELECT active, personal_orders
+    FROM employees
+    WHERE id = ?
+    LIMIT 1
+  ");
+  $empCheck->bind_param('i', $userId);
+  $empCheck->execute();
+  $emp = $empCheck->get_result()->fetch_assoc();
+  $empCheck->close();
+
+  if (!$emp || (string)$emp['active'] !== 'Active' || (int)($emp['personal_orders'] ?? 0) !== 1) {
+    http_response_code(403);
+    echo json_encode(['ok' => false, 'error' => 'You are not enabled for personal orders']);
+    exit;
+  }
+
+  $fittingCheck = $conn->prepare("
+    SELECT 1
+    FROM order_items
+    WHERE order_id = ?
+      AND item_type_code = 'F'
+      AND deleted_at IS NULL
+    LIMIT 1
+  ");
+  $fittingCheck->bind_param('i', $orderId);
+  $fittingCheck->execute();
+  $hasFitting = (bool)$fittingCheck->get_result()->fetch_row();
+  $fittingCheck->close();
+
+  if (!$hasFitting) {
+    http_response_code(403);
+    echo json_encode(['ok' => false, 'error' => 'This order has no fitting item']);
+    exit;
+  }
 }
 
 $rolePrimary = 'PRIMARY_' . $deptCode;

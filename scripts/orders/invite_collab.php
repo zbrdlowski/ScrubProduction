@@ -44,23 +44,8 @@ if (!$deptCode) {
   exit;
 }
 
-$deptPositionMap = [
-  'GRAPHICS' => 2,
-  'PLASTICS' => 6,
-  'SEATCOVER' => 8,
-  'FITTING' => 9,
-];
-
-$requiredPositionId = $deptPositionMap[$deptCode] ?? 0;
-
-if ($requiredPositionId <= 0) {
-  http_response_code(400);
-  echo json_encode(['ok'=>false,'error'=>'Invalid department']);
-  exit;
-}
-
 $empCheck = $conn->prepare("
-  SELECT id, active, position_id
+  SELECT id, active, personal_orders
   FROM employees
   WHERE id = ?
   LIMIT 1
@@ -82,9 +67,11 @@ if ((string)$emp['active'] !== 'Active') {
   exit;
 }
 
-if ((int)$emp['position_id'] !== $requiredPositionId) {
+// Admin (perm >= 400) môže assignovať kohokoľvek do akéhokoľvek departmentu
+// Ostatní: employee musí patriť do požadovaného departmentu
+if ((int)($emp['personal_orders'] ?? 0) !== 1) {
   http_response_code(400);
-  echo json_encode(['ok'=>false,'error'=>'Employee does not belong to selected department']);
+  echo json_encode(['ok'=>false,'error'=>'Employee is not enabled for personal orders']);
   exit;
 }
 

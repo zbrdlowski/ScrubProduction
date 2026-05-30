@@ -28,6 +28,32 @@ $orderId = (int) ($_POST['order_id'] ?? 0);
 if ($orderId <= 0)
   out(400, ['ok' => false, 'error' => 'Invalid order_id']);
 
+$currentUserId = (int) ($_SESSION['user_id'] ?? 0);
+$currentUserHasPersonalOrders = ((int) ($_SESSION['personal_orders'] ?? 0) === 1);
+
+if ($currentUserId > 0) {
+  $userAccessStmt = $conn->prepare("
+    SELECT active, personal_orders
+    FROM employees
+    WHERE id = ?
+    LIMIT 1
+  ");
+
+  if ($userAccessStmt) {
+    $userAccessStmt->bind_param('i', $currentUserId);
+    $userAccessStmt->execute();
+    $userAccess = $userAccessStmt->get_result()->fetch_assoc();
+    $userAccessStmt->close();
+
+    $currentUserHasPersonalOrders = (
+      $userAccess
+      && (string) ($userAccess['active'] ?? '') === 'Active'
+      && (int) ($userAccess['personal_orders'] ?? 0) === 1
+    );
+    $_SESSION['personal_orders'] = $currentUserHasPersonalOrders ? 1 : 0;
+  }
+}
+
 $dpt = (int) ($_SESSION['dpt'] ?? 0);
 $allAccess = in_array($dpt, [1, 3, 4, 5, 7], true);
 
@@ -212,6 +238,35 @@ function status_badge_class($status): string
   }
 }
 
+function status_accent_color($status): string
+{
+  $s = strtoupper(trim((string) $status));
+
+  switch ($s) {
+    case 'NEW':
+      return '#17a2b8';
+    case 'PENDING':
+      return '#7c3aed';
+    case 'IN_PROGRESS':
+      return '#ffc107';
+    case 'NEED_INFO':
+      return '#dc3545';
+    case 'DRAFT_READY':
+      return '#20c997';
+    case 'READY_TO_INVOICE':
+    case 'READY_TO_SHIP':
+    case 'DONE':
+    case 'COMPLETED':
+    case 'SHIPPED':
+      return '#28a745';
+    case 'HOLD':
+    case 'CANCELLED':
+      return '#6c757d';
+    default:
+      return '#3f9eff';
+  }
+}
+
 function item_type_category_badge(array $item): string
 {
   $map = [
@@ -247,7 +302,7 @@ $stmt = $conn->prepare(" SELECT
   LIMIT 1
 ");
 if (!$stmt)
-  out(500, ['ok' => false, 'error' => 'SQL prepare failed: ' . $conn->error]);
+  out(500, ['ok' => false, 'error' => 'SQL prepare failed: ' . mysqli_error($conn)]);
 $stmt->bind_param('i', $orderId);
 $stmt->execute();
 $order = $stmt->get_result()->fetch_assoc();
@@ -277,7 +332,7 @@ if (!$allAccess) {
     LIMIT 1
   ");
   if (!$q)
-    out(500, ['ok' => false, 'error' => 'ACL prepare failed: ' . $conn->error]);
+    out(500, ['ok' => false, 'error' => 'ACL prepare failed: ' . mysqli_error($conn)]);
   $q->bind_param($types, ...$params);
   $q->execute();
   $ok = (bool) $q->get_result()->fetch_row();
@@ -345,26 +400,40 @@ $stmt = $conn->prepare("SELECT
     options_json,
     internal_options_json,
     product_url,
-   status AS item_status,
+    status AS item_status,
     waiting_note,
     expected_date,
     completed_by,
     completed_at,
     (
-  SELECT GROUP_CONCAT(
-    CONCAT(
-      e.id, '|',
-      e.firstname, ' ', e.lastname, '|',
-      COALESCE(e.photo, '')
-    )
-    ORDER BY e.firstname, e.lastname
-    SEPARATOR ';;'
-  )
-  FROM order_item_assignments oia
-  JOIN employees e ON e.id = oia.employee_id
-  WHERE oia.item_id = order_items.id
-    AND oia.removed_at IS NULL
-) AS item_assigned_users
+      SELECT GROUP_CONCAT(
+        CONCAT(
+          e.id, '|',
+          e.firstname, ' ', e.lastname, '|',
+          COALESCE(e.photo, ''), '|',
+          COALESCE((
+            SELECT oa.id
+            FROM order_assignments oa
+            WHERE oa.order_id = oia.order_id
+              AND oa.employee_id = oia.employee_id
+              AND oa.removed_at IS NULL
+            ORDER BY
+              CASE
+                WHEN oa.role LIKE 'PRIMARY_%' THEN 1
+                ELSE 2
+              END,
+              oa.id
+            LIMIT 1
+          ), 0)
+        )
+        ORDER BY e.firstname, e.lastname
+        SEPARATOR ';;'
+      )
+      FROM order_item_assignments oia
+      JOIN employees e ON e.id = oia.employee_id
+      WHERE oia.item_id = order_items.id
+        AND oia.removed_at IS NULL
+    ) AS item_assigned_users
 FROM order_items
 WHERE order_id=?
   AND deleted_at IS NULL
@@ -380,8 +449,90 @@ while ($it = $r->fetch_assoc())
   $items[] = $it;
 $stmt->close();
 
+// Zoradiť položky podľa departmentu: G → P → F → ostatné
+$deptOrder = ['G' => 1, 'P' => 2, 'T' => 2, 'M' => 2, 'S' => 2, 'F' => 3];
+usort($items, function (array $a, array $b) use ($deptOrder): int {
+  $ta = strtoupper(trim((string)($a['item_type_code'] ?? '')));
+  $tb = strtoupper(trim((string)($b['item_type_code'] ?? '')));
+  $wa = $deptOrder[$ta] ?? 99;
+  $wb = $deptOrder[$tb] ?? 99;
+  if ($wa !== $wb) return $wa <=> $wb;
+  // V rámci rovnakého departmentu zachovaj pôvodné poradie (line_no, id)
+  $la = (int)($a['line_no'] ?? 999999);
+  $lb = (int)($b['line_no'] ?? 999999);
+  if ($la !== $lb) return $la <=> $lb;
+  return (int)($a['id'] ?? 0) <=> (int)($b['id'] ?? 0);
+});
+
 $status = (string) ($order['status'] ?? '');
 $badgeClass = status_badge_class($status);
+$detailAccentColor = status_accent_color($status);
+
+$priorityOptions = [
+  0 => 'Normal',
+  10 => 'Deadline',
+  20 => 'Priority',
+];
+$currentPriority = (int) ($order['priority'] ?? 0);
+if (!isset($priorityOptions[$currentPriority])) {
+  $currentPriority = 0;
+}
+
+$statusOptions = [
+  'PENDING',
+  'NEW',
+  'IN_PROGRESS',
+  'NEED_INFO',
+  'DRAFT_READY',
+  'READY_TO_INVOICE',
+  'READY_TO_SHIP',
+  'SHIPPED',
+  'HOLD',
+  'CANCELLED'
+];
+
+$currentStatus = strtoupper(trim((string) ($order['status'] ?? 'NEW')));
+if ($currentStatus === '') {
+  $currentStatus = 'NEW';
+}
+if (!in_array($currentStatus, $statusOptions, true)) {
+  $statusOptions[] = $currentStatus;
+}
+
+$statusLabels = [
+  'PENDING' => 'Pending payment',
+  'NEW' => 'New',
+  'IN_PROGRESS' => 'In Progress',
+  'NEED_INFO' => 'Need Info',
+  'DRAFT_READY' => 'Draft Ready',
+  'READY_TO_INVOICE' => 'Ready to Invoice',
+  'READY_TO_SHIP' => 'Ready to Ship',
+  'SHIPPED' => 'Shipped',
+  'HOLD' => 'Hold',
+  'CANCELLED' => 'Cancelled',
+];
+$currentStatusLabel = $statusLabels[$currentStatus] ?? str_replace('_', ' ', $currentStatus);
+
+$manualTypes = strtoupper((string) ($order['manual_types_override'] ?? ''));
+$hasManualTypes = $manualTypes !== '';
+$typeOptions = [
+  '' => 'AUTO',
+  'G' => 'G',
+  'P' => 'P',
+  'S' => 'S',
+  'F' => 'F',
+  'GP' => 'GP',
+  'GS' => 'GS',
+  'GF' => 'GF',
+  'PS' => 'PS',
+  'PF' => 'PF',
+  'SF' => 'SF',
+  'GPS' => 'GPS',
+  'GPF' => 'GFP',
+  'GSF' => 'GSF',
+  'PSF' => 'PSF',
+  'GPSF' => 'GFPS',
+];
 
 // Čistí text aktivity od technických informácií o ID tvorcov
 function formatActivityText(string $text): string
@@ -616,17 +767,173 @@ ob_start();
     box-shadow: none !important;
     outline: none !important;
   }
+
+  .order-detail-card {
+    border: 1px solid rgba(255, 255, 255, 0.12) !important;
+    border-left: 4px solid var(--order-detail-accent, #3f9eff) !important;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.20);
+  }
+
+  .order-detail-header {
+    background: rgba(255, 255, 255, 0.025);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.10);
+    padding: 12px 14px;
+  }
+
+  .order-detail-header-title {
+    min-width: 220px;
+  }
+
+  .order-detail-header-actions {
+    gap: 6px;
+    flex: 0 0 auto;
+    flex-wrap: nowrap !important;
+    max-width: 100%;
+  }
+
+  .order-detail-header-selects {
+    display: inline-flex;
+    align-items: center;
+    flex: 0 0 auto;
+    flex-wrap: nowrap;
+    gap: 6px;
+  }
+
+  .order-detail-header-selects .form-control {
+    width: auto !important;
+    min-width: 0 !important;
+    flex: 0 0 auto;
+  }
+
+  .order-detail-header-selects .order-status-select {
+    width: 180px !important;
+  }
+
+  .order-detail-header-selects .order-types-select {
+    width: 86px !important;
+  }
+
+  .order-detail-header .form-control {
+    background-color: rgba(0, 0, 0, 0.18) !important;
+    border-color: rgba(255, 255, 255, 0.18) !important;
+    color: #f8f9fa !important;
+  }
+
+  .order-detail-header .btn-edit-order-header.btn-light {
+    background: transparent !important;
+    border-color: rgba(255, 255, 255, 0.22) !important;
+    color: #f8f9fa !important;
+  }
+
+  .order-detail-header .btn-close-order-detail {
+    border-color: var(--order-detail-accent, #3f9eff) !important;
+    color: #f8f9fa !important;
+  }
+
+  .order-detail-header .btn-close-order-detail:hover {
+    background: var(--order-detail-accent, #3f9eff) !important;
+    border-color: var(--order-detail-accent, #3f9eff) !important;
+    color: #0f1720 !important;
+  }
+
+  @media (max-width: 575.98px) {
+    .order-detail-header-actions {
+      justify-content: flex-start !important;
+      margin-top: 8px;
+      width: 100%;
+    }
+  }
+
+  .assigned-avatar-wrap {
+    position: relative;
+    display: inline-flex;
+    width: 28px;
+    height: 28px;
+  }
+
+  .btn-remove-item-assignment {
+    position: absolute;
+    top: -6px;
+    right: -6px;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    border: 1px solid rgba(255, 255, 255, .45);
+    background: #dc3545;
+    color: #fff;
+    font-size: 11px;
+    line-height: 13px;
+    padding: 0;
+    display: none;
+    cursor: pointer;
+  }
+
+  .assigned-avatar-wrap:hover .btn-remove-item-assignment {
+    display: block;
+  }
+
+  /* ── Printing settings autocomplete ─────────────────────────── */
+  .print-ac-dropdown {
+    position: absolute;
+    left: 0; right: 0;
+    top: 100%;
+    background: #1e2530;
+    border: 1px solid rgba(255,255,255,.18);
+    border-radius: 4px;
+    z-index: 9999;
+    max-height: 160px;
+    overflow-y: auto;
+    box-shadow: 0 4px 12px rgba(0,0,0,.45);
+  }
+  .print-ac-item {
+    padding: 5px 10px;
+    cursor: pointer;
+    font-size: 12px;
+    color: #e2e8f0;
+    border-bottom: 1px solid rgba(255,255,255,.06);
+  }
+  .print-ac-item:hover, .print-ac-item.active {
+    background: rgba(63,158,255,.22);
+    color: #fff;
+  }
+  .print-settings-cell .form-control-sm {
+    font-size: 11px;
+    padding: 2px 6px;
+    height: auto;
+  }
+
+  /* ── Printing Settings block in modal ───────────────────────── */
+  .printing-settings-block {
+    background: rgba(63,158,255,.08);
+    border: 1px solid rgba(63,158,255,.25);
+    border-radius: 8px;
+    padding: 12px 16px;
+    margin-bottom: 12px;
+  }
+  .printing-settings-block .ps-label {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: .5px;
+    opacity: .7;
+    margin-bottom: 2px;
+  }
+  .printing-settings-block .ps-value {
+    font-size: 14px;
+    font-weight: 600;
+  }
 </style>
 <div class="p-3">
-  <div class="card card-dark mb-0" style="border-radius:14px; overflow:hidden;">
-    <div class="<?php echo h($badgeClass); ?>" style="padding:10px 14px;">
-      <div class="d-flex justify-content-between align-items-center">
-        <div>
+  <div class="card card-dark order-detail-card mb-0"
+    style="--order-detail-accent: <?php echo h($detailAccentColor); ?>; border-radius:14px; overflow:hidden;">
+    <div class="order-detail-header">
+      <div class="d-flex justify-content-between align-items-start flex-wrap">
+        <div class="order-detail-header-title">
           <b>#<?php echo h($order['order_number'] ?? $order['external_order_id'] ?? $orderId); ?></b>
           <span class="ml-2 badge badge-light"><?php echo h($order['source_code'] ?? ''); ?></span>
           <?php if (!empty($cats)): ?>
             <span class="ml-2 text-dark badge badge-dark"><?php echo h(implode(' · ', $cats)); ?></span>
           <?php endif; ?>
+          <span class="ml-2 badge <?php echo h($badgeClass); ?>"><?php echo h($currentStatusLabel); ?></span>
         </div>
         <?php if ((int) ($_SESSION['permission'] ?? 0) >= 300): ?>
           <button type="button" class="btn btn-sm btn-light ml-2 btn-edit-order-header"
@@ -634,10 +941,10 @@ ob_start();
             ✏️ Edit header
           </button>
         <?php endif; ?>
-        <div class="d-flex justify-content-end align-items-center" style="gap:6px;">
+        <div class="d-flex justify-content-end align-items-center flex-wrap order-detail-header-actions">
           <?php
           $priorityOptions = [
-            0  => 'Normal',
+            0 => 'Normal',
             10 => 'Deadline',
             20 => 'Priority',
           ];
@@ -682,25 +989,19 @@ ob_start();
           ];
           ?>
 
-          <select class="form-control form-control-sm order-priority-select"
-            data-order-id="<?php echo (int) $orderId; ?>" title="Priority" style="min-width:120px;">
-            <?php foreach ($priorityOptions as $priorityValue => $priorityLabel): ?>
-              <option value="<?php echo (int) $priorityValue; ?>" <?php echo ($currentPriority === (int) $priorityValue ? 'selected' : ''); ?>>
-                <?php echo h($priorityLabel); ?>
-              </option>
-            <?php endforeach; ?>
-          </select>
 
-          <select class="form-control form-control-sm order-status-select" data-order-id="<?php echo (int) $orderId; ?>"
-            data-original-status="<?php echo h($currentStatus); ?>" style="min-width:180px;">
 
-            <?php foreach ($statusOptions as $st): ?>
-              <option value="<?php echo h($st); ?>" <?php echo ($currentStatus === $st ? 'selected' : ''); ?>>
-                <?php echo h($statusLabels[$st] ?? str_replace('_', ' ', $st)); ?>
-              </option>
-            <?php endforeach; ?>
+          <div class="order-detail-header-selects">
+            <select class="form-control form-control-sm order-status-select" data-order-id="<?php echo (int) $orderId; ?>"
+              data-original-status="<?php echo h($currentStatus); ?>">
 
-          </select>
+              <?php foreach ($statusOptions as $st): ?>
+                <option value="<?php echo h($st); ?>" <?php echo ($currentStatus === $st ? 'selected' : ''); ?>>
+                  <?php echo h($statusLabels[$st] ?? str_replace('_', ' ', $st)); ?>
+                </option>
+              <?php endforeach; ?>
+
+            </select>
           <?php
           $manualTypes = strtoupper((string) ($order['manual_types_override'] ?? ''));
           $hasManualTypes = $manualTypes !== '';
@@ -724,9 +1025,9 @@ ob_start();
           ];
           ?>
 
-          <?php if ((int) ($_SESSION['permission'] ?? 0) >= 300): ?>
-            <select class="form-control form-control-sm order-types-select mt-1"
-              data-order-id="<?php echo (int) $orderId; ?>" style="min-width:180px;">
+          <?php if ((int) ($_SESSION['permission'] ?? 0) === 900): ?>
+            <select class="form-control form-control-sm order-types-select"
+              data-order-id="<?php echo (int) $orderId; ?>">
               <?php foreach ($typeOptions as $val => $label): ?>
                 <option value="<?php echo h($val); ?>" <?php echo ($manualTypes === $val ? 'selected' : ''); ?>>
                   <?php echo h($label); ?>
@@ -734,6 +1035,11 @@ ob_start();
               <?php endforeach; ?>
             </select>
           <?php endif; ?>
+          </div>
+          <button type="button" class="btn btn-sm btn-outline-light btn-close-order-detail"
+            data-order-id="<?php echo (int) $orderId; ?>" title="Close detail">
+            <i class="fas fa-chevron-up"></i> Close
+          </button>
         </div>
       </div>
     </div>
@@ -1214,6 +1520,7 @@ ob_start();
               <th>Status</th>
               <th>Waiting</th>
               <th>Action</th>
+              <th title="Printer / Material / Finish — iba pre grafiku">🖨️ Print</th>
               <th>Product</th>
               <th class="text-center">Detail</th>
               <th class="text-center">Copy</th>
@@ -1277,6 +1584,7 @@ ob_start();
                           'id' => (int) $bits[0],
                           'name' => $bits[1],
                           'photo' => $bits[2],
+                          'assignment_id' => (int) ($bits[3] ?? 0),
                         ];
                       }
                     }
@@ -1335,6 +1643,53 @@ ob_start();
                       }
                     }
                   }
+                  $deptPrimaryRoleMap = [
+                    2 => 'PRIMARY_GRAPHICS',
+                    6 => 'PRIMARY_PLASTICS',
+                    8 => 'PRIMARY_SEATCOVER',
+                    9 => 'PRIMARY_FITTING',
+                  ];
+                  $deptCodeMap = [
+                    2 => 'GRAPHICS',
+                    6 => 'PLASTICS',
+                    8 => 'SEATCOVER',
+                    9 => 'FITTING',
+                  ];
+
+                  $isFittingItem = ($itemType === 'F');
+                  $currentDeptPrimaryRole = $isFittingItem
+                    ? 'PRIMARY_FITTING'
+                    : ($deptPrimaryRoleMap[$userDpt] ?? '');
+                  $currentDeptCode = $isFittingItem
+                    ? 'FITTING'
+                    : ($deptCodeMap[$userDpt] ?? '');
+                  $currentUserCanPersonalOrders = $currentUserHasPersonalOrders;
+
+                  $orderTakenForMyDept = false;
+
+                  if ($currentDeptPrimaryRole !== '') {
+                    $stmtTaken = $conn->prepare("
+                      SELECT 1
+                      FROM order_assignments
+                      WHERE order_id = ?
+                        AND role = ?
+                        AND removed_at IS NULL
+                      LIMIT 1
+                    ");
+                    $stmtTaken->bind_param('is', $orderId, $currentDeptPrimaryRole);
+                    $stmtTaken->execute();
+                    $orderTakenForMyDept = (bool) $stmtTaken->get_result()->fetch_row();
+                    $stmtTaken->close();
+                  }
+
+                  $canTakeOrderFromDetail = (
+                    $currentDeptPrimaryRole !== ''
+                    && !$orderTakenForMyDept
+                    && (
+                      ($isFittingItem && $currentUserCanPersonalOrders)
+                      || (isset($dptItemMap[$userDpt]) && $dptItemMap[$userDpt] === $itemType)
+                    )
+                  );
                   ?>
 
                   <div class="d-flex justify-content-center align-items-center flex-wrap" style="gap:4px;">
@@ -1350,25 +1705,46 @@ ob_start();
                         }
                       }
                       $initials = mb_substr($initials, 0, 2);
+
+                      $canRemoveThisAssignment = (
+                        !empty($a['assignment_id'])
+                        && (
+                          (int) ($_SESSION['permission'] ?? 0) >= 300
+                          || (int) $a['id'] === $currentUserId
+                        )
+                      );
                       ?>
 
-                      <?php if ($photo !== ''): ?>
-                        <img src="images/<?= h($photo) ?>" class="img-circle elevation-2"
-                          style="width:28px; height:28px; object-fit:cover;" title="<?= h($name) ?>">
-                      <?php else: ?>
-                        <span class="badge badge-secondary"
-                          style="width:28px; height:28px; line-height:28px; border-radius:50%;" title="<?= h($name) ?>">
-                          <?= h($initials ?: '?') ?>
-                        </span>
-                      <?php endif; ?>
+                      <span class="assigned-avatar-wrap">
+
+                        <?php if ($photo !== ''): ?>
+                          <img src="images/<?= h($photo) ?>" class="img-circle elevation-2"
+                            style="width:28px; height:28px; object-fit:cover;" title="<?= h($name) ?>">
+                        <?php else: ?>
+                          <span class="badge badge-secondary"
+                            style="width:28px; height:28px; line-height:28px; border-radius:50%;" title="<?= h($name) ?>">
+                            <?= h($initials ?: '?') ?>
+                          </span>
+                        <?php endif; ?>
+
+                        <?php if ($canRemoveThisAssignment): ?>
+                          <button type="button" class="btn-remove-assignment"
+                            data-assignment-id="<?= (int) $a['assignment_id'] ?>"
+                            title="<?= ((int) $a['id'] === $currentUserId ? 'Remove my assignment' : 'Remove assignment') ?>">
+                            ×
+                          </button>
+                        <?php endif; ?>
+
+                      </span>
                     <?php endforeach; ?>
 
-                    <?php if ($canAssignThisItem && empty($itemAssigned)): ?>
-                      <button type="button"
-                        class="btn btn-outline-warning btn-assign-item d-flex align-items-center justify-content-center"
-                        data-item-id="<?= (int) $it['id'] ?>" title="Assign me to this item"
-                        style="width:28px; height:28px; padding:0; border-radius:6px;">
-                        <i class="fas fa-plus"></i>
+                    <?php if ($canTakeOrderFromDetail && empty($itemAssigned)): ?>
+                      <button type="button" class="btn btn-sm btn-warning btn-take-order px-2 py-1"
+                        style="font-size:11px; font-weight:700; border-radius:8px; letter-spacing:.3px;"
+                        data-order-id="<?= (int) $orderId ?>" data-dept-code="<?= h($currentDeptCode) ?>"
+                        title="Take this order for my department"
+                        style="font-size:11px; font-weight:700; padding:2px 8px; border-radius:8px;">
+                        TAKE
                       </button>
                     <?php endif; ?>
                   </div>
@@ -1413,11 +1789,11 @@ ob_start();
                   <?php if ((int) ($_SESSION['permission'] ?? 0) >= 300): ?>
                     <div class="input-group input-group-sm">
                       <input type="number" class="form-control form-control-sm item-unit-price"
-                        value="<?php echo $it['unit_price'] !== null ? number_format((float)$it['unit_price'], 2, '.', '') : ''; ?>"
+                        value="<?php echo $it['unit_price'] !== null ? number_format((float) $it['unit_price'], 2, '.', '') : ''; ?>"
                         min="0" step="0.01" placeholder="0.00">
                     </div>
                   <?php else: ?>
-                    <?php echo $it['unit_price'] !== null ? number_format((float)$it['unit_price'], 2, '.', '') : '—'; ?>
+                    <?php echo $it['unit_price'] !== null ? number_format((float) $it['unit_price'], 2, '.', '') : '—'; ?>
                   <?php endif; ?>
                 </td>
 
@@ -1466,7 +1842,71 @@ ob_start();
                 </td>
                 <?php
                 $productUrl = itemProductUrl($order, $it);
+                // --- Printing settings (stored in internal_options_json) ---
+                $internalOptRaw = (string) ($it['internal_options_json'] ?? '{}');
+                if (trim($internalOptRaw) === '') $internalOptRaw = '{}';
+                $internalOptArr = json_decode($internalOptRaw, true);
+                if (!is_array($internalOptArr)) $internalOptArr = [];
+                // Also read base-material / graphics-finish from options_json
+                $extOptArr = json_decode((string)($it['options_json'] ?? '{}'), true);
+                if (!is_array($extOptArr)) $extOptArr = [];
+
+                $printPrinter  = (string)($internalOptArr['_printer']        ?? '');
+                $printMaterial = (string)($internalOptArr['_print_material']  ?? ($extOptArr['base-material'] ?? ''));
+                $printFinish   = (string)($internalOptArr['_print_finish']    ?? ($extOptArr['graphics-finish'] ?? ''));
+                $isGraphicsItem = (strtoupper(trim((string)($it['item_type_code'] ?? ''))) === 'G');
+                $canEditPrint = ((int)($_SESSION['permission'] ?? 0) >= 300);
                 ?>
+
+                <?php if ($isGraphicsItem): ?>
+                <td class="print-settings-cell" style="min-width:170px;">
+                  <?php if ($canEditPrint): ?>
+                    <div class="print-setting-field mb-1" style="position:relative;">
+                      <input type="text"
+                        class="form-control form-control-sm item-print-printer print-ac-input"
+                        data-ac-key="printer"
+                        data-item-id="<?= (int)$it['id'] ?>"
+                        value="<?= h($printPrinter) ?>"
+                        placeholder="🖨️ Printer"
+                        autocomplete="off">
+                      <div class="print-ac-dropdown" style="display:none;"></div>
+                    </div>
+                    <div class="print-setting-field mb-1" style="position:relative;">
+                      <input type="text"
+                        class="form-control form-control-sm item-print-material print-ac-input"
+                        data-ac-key="material"
+                        data-item-id="<?= (int)$it['id'] ?>"
+                        value="<?= h($printMaterial) ?>"
+                        placeholder="🧱 Material"
+                        autocomplete="off">
+                      <div class="print-ac-dropdown" style="display:none;"></div>
+                    </div>
+                    <div class="print-setting-field" style="position:relative;">
+                      <input type="text"
+                        class="form-control form-control-sm item-print-finish print-ac-input"
+                        data-ac-key="finish"
+                        data-item-id="<?= (int)$it['id'] ?>"
+                        value="<?= h($printFinish) ?>"
+                        placeholder="✨ Finish"
+                        autocomplete="off">
+                      <div class="print-ac-dropdown" style="display:none;"></div>
+                    </div>
+                  <?php else: ?>
+                    <div class="small">
+                      <?php if ($printPrinter !== ''): ?><div>🖨️ <?= h($printPrinter) ?></div><?php endif; ?>
+                      <?php if ($printMaterial !== ''): ?><div>🧱 <?= h($printMaterial) ?></div><?php endif; ?>
+                      <?php if ($printFinish !== ''): ?><div>✨ <?= h($printFinish) ?></div><?php endif; ?>
+                      <?php if ($printPrinter === '' && $printMaterial === '' && $printFinish === ''): ?>
+                        <span class="text-muted">—</span>
+                      <?php endif; ?>
+                    </div>
+                  <?php endif; ?>
+                </td>
+                <?php else: ?>
+                <td class="text-center text-muted print-settings-cell" style="font-size:11px; color:#555 !important;">
+                  <span title="Printing settings sa netýka tejto kategórie">—</span>
+                </td>
+                <?php endif; ?>
 
                 <td class="text-center">
                   <?php if ($productUrl !== ''): ?>
@@ -1486,17 +1926,21 @@ ob_start();
                 $rawOptions = (string) ($it['options_json'] ?? '{}');
                 $formattedOptions = prepareOptionsJsonForModal($conn, $rawOptions);
                 $editableOptions = prepareEditableOptionsJsonForModal($rawOptions);
-                $internalOptions = (string) ($it['internal_options_json'] ?? '{}');
-                if (trim($internalOptions) === '') {
-                  $internalOptions = '{}';
-                }
+                // Strip _printer/_print_material/_print_finish from modal display — they are shown separately
+                $internalOptForModal = $internalOptArr;
+                unset($internalOptForModal['_printer'], $internalOptForModal['_print_material'], $internalOptForModal['_print_finish']);
+                $internalOptions = json_encode($internalOptForModal, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?: '{}';
                 ?>
                 <td class="text-center">
                   <button type="button" class="btn btn-xs btn-outline-info btn-view-options"
                     data-item-id="<?= (int) $it['id'] ?>" data-options="<?= h($formattedOptions) ?>"
                     data-options-raw="<?= h($editableOptions) ?>"
                     data-can-edit-options="<?= ((int) ($_SESSION['permission'] ?? 0) >= 300 ? '1' : '0') ?>"
-                    data-internal-options="<?= h($internalOptions) ?>">
+                    data-internal-options="<?= h($internalOptions) ?>"
+                    data-is-graphics="<?= $isGraphicsItem ? '1' : '0' ?>"
+                    data-print-printer="<?= h($printPrinter) ?>"
+                    data-print-material="<?= h($printMaterial) ?>"
+                    data-print-finish="<?= h($printFinish) ?>">
                     Detail
                   </button>
                 </td>
@@ -1598,6 +2042,174 @@ ob_start();
     </div>
   </div>
 </div>
+
+<script>
+/* ── Printing Settings: Autocomplete + Save-on-Enter ─────────────────────── */
+(function () {
+  'use strict';
+
+  // Cache for suggestions per key (printer / material / finish)
+  var acCache = {};
+
+  function fetchSuggestions(key, query, cb) {
+    var cacheKey = key + ':' + query;
+    if (acCache[cacheKey] !== undefined) { cb(acCache[cacheKey]); return; }
+    $.post('scripts/orders/get_print_suggestions.php', { key: key, q: query }, function (res) {
+      if (res && res.ok && Array.isArray(res.items)) {
+        acCache[cacheKey] = res.items;
+        cb(res.items);
+      } else {
+        cb([]);
+      }
+    }, 'json').fail(function () { cb([]); });
+  }
+
+  function showDropdown($input, items) {
+    var $drop = $input.siblings('.print-ac-dropdown');
+    if (!items.length) { $drop.hide().empty(); return; }
+    $drop.empty();
+    items.forEach(function (val) {
+      $('<div class="print-ac-item">').text(val).on('mousedown', function (e) {
+        e.preventDefault();
+        $input.val(val).trigger('change');
+        $drop.hide().empty();
+      }).appendTo($drop);
+    });
+    $drop.show();
+  }
+
+  function hideAllDropdowns() {
+    $('.print-ac-dropdown').hide().empty();
+  }
+
+  function savePrintSettings($tr, itemId, orderId) {
+    var printer  = $tr.find('.item-print-printer').val()  || '';
+    var material = $tr.find('.item-print-material').val() || '';
+    var finish   = $tr.find('.item-print-finish').val()   || '';
+
+    // Read existing internal_options_json from the Detail button's data attribute
+    var $detailBtn = $tr.find('.btn-view-options');
+    var existing = {};
+    try { existing = JSON.parse($detailBtn.attr('data-internal-options') || '{}'); } catch(e) {}
+
+    existing['_printer']       = printer;
+    existing['_print_material']= material;
+    existing['_print_finish']  = finish;
+
+    var newJson = JSON.stringify(existing);
+
+    $.post('scripts/orders/update_item_internal_options.php', {
+      item_id: itemId,
+      internal_options_json: newJson
+    }, function (res) {
+      if (!res || !res.ok) {
+        alert(res && res.error ? res.error : 'Save failed');
+        return;
+      }
+      // Update data attr on Detail button so modal will reflect new values
+      $detailBtn.attr('data-internal-options', newJson);
+      $detailBtn.attr('data-print-printer', printer);
+      $detailBtn.attr('data-print-material', material);
+      $detailBtn.attr('data-print-finish', finish);
+      // Brief visual feedback
+      $tr.find('.print-settings-cell input').css('border-color', '#28a745');
+      setTimeout(function () {
+        $tr.find('.print-settings-cell input').css('border-color', '');
+      }, 1000);
+    }, 'json').fail(function () { alert('Request failed'); });
+  }
+
+  // Input events — autocomplete
+  $(document).on('input', '.print-ac-input', function () {
+    var $inp  = $(this);
+    var key   = $inp.data('ac-key');
+    var query = $inp.val().trim();
+    if (query.length === 0) { hideAllDropdowns(); return; }
+    fetchSuggestions(key, query, function (items) { showDropdown($inp, items); });
+  });
+
+  // Keyboard navigation + Enter to save
+  $(document).on('keydown', '.print-ac-input', function (e) {
+    var $inp  = $(this);
+    var $drop = $inp.siblings('.print-ac-dropdown');
+    var $items = $drop.find('.print-ac-item');
+
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      var $active = $items.filter('.active');
+      if ($active.length) { $active.removeClass('active').next().addClass('active'); }
+      else { $items.first().addClass('active'); }
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      var $active2 = $items.filter('.active');
+      if ($active2.length) { $active2.removeClass('active').prev().addClass('active'); }
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      var $active3 = $items.filter('.active');
+      if ($active3.length) {
+        $inp.val($active3.text());
+        $drop.hide().empty();
+      }
+      // Always save on Enter regardless of dropdown state
+      var $tr    = $inp.closest('tr');
+      var itemId = $inp.data('item-id');
+      var orderId = $tr.closest('.order-detail-card').find('[data-order-id]').first().data('order-id');
+      savePrintSettings($tr, itemId, orderId);
+    } else if (e.key === 'Escape') {
+      $drop.hide().empty();
+    }
+  });
+
+  // Close dropdown on outside click
+  $(document).on('click', function (e) {
+    if (!$(e.target).closest('.print-setting-field').length) {
+      hideAllDropdowns();
+    }
+  });
+
+  // ── Modal: show Printing Settings block ─────────────────────────────────
+  $(document).on('click', '.btn-view-options', function () {
+    var $btn       = $(this);
+    var isGraphics = $btn.data('is-graphics') === 1 || $btn.data('is-graphics') === '1';
+    var printer    = $.trim($btn.data('print-printer')  || '');
+    var material   = $.trim($btn.data('print-material') || '');
+    var finish     = $.trim($btn.data('print-finish')   || '');
+
+    // Remove any previous block
+    $('#printingSettingsModalBlock').remove();
+
+    var $modal = $('#optionsModal');
+
+    if (isGraphics) {
+      var hasSomething = printer !== '' || material !== '' || finish !== '';
+      var $block = $('<div id="printingSettingsModalBlock" class="printing-settings-block mb-3">');
+      $block.append('<h6 class="text-info mb-3"><i class="fas fa-print mr-2"></i>Printing Settings</h6>');
+
+      var $row = $('<div class="row">');
+
+      function psCol(label, val) {
+        var $col = $('<div class="col-sm-4 mb-2">');
+        $col.append('<div class="ps-label">' + label + '</div>');
+        $col.append('<div class="ps-value">' + (val !== '' ? $('<span>').text(val).html() : '<span class="text-muted">—</span>') + '</div>');
+        return $col;
+      }
+
+      $row.append(psCol('🖨️ Printer', printer));
+      $row.append(psCol('🧱 Material', material));
+      $row.append(psCol('✨ Finish', finish));
+      $block.append($row);
+
+      if (!hasSomething) {
+        $block.append('<p class="text-muted small mb-0">Žiadne print nastavenia ešte neboli vyplnené.</p>');
+      }
+
+      // Prepend before the imported options section inside modal body
+      $modal.find('.modal-body').prepend($block);
+    }
+  });
+
+})();
+</script>
 <?php
 $html = ob_get_clean();
 out(200, ['ok' => true, 'html' => $html]);

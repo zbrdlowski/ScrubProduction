@@ -65,7 +65,8 @@ $noFiltersSet = (
   empty($_GET['priority']) && empty($_GET['date_from']) &&
   empty($_GET['date_to']) && empty($_GET['worker']) &&
   empty($_GET['dept']) && empty($_GET['cat']) &&
-  empty($_GET['type']) && empty($_GET['q'])
+  empty($_GET['type']) && empty($_GET['q']) &&
+  empty($_GET['print_printer']) && empty($_GET['print_material']) && empty($_GET['print_finish'])
 );
 if ($noFiltersSet) {
   $fExcludeStatuses = 'PENDING,SHIPPED';
@@ -77,7 +78,63 @@ $fPriority = isset($_GET['priority']) ? trim((string) $_GET['priority']) : '';
 $fDateFrom = isset($_GET['date_from']) ? trim((string) $_GET['date_from']) : '';
 $fDateTo = isset($_GET['date_to']) ? trim((string) $_GET['date_to']) : '';
 $fWorker = isset($_GET['worker']) ? (int) $_GET['worker'] : 0;
+// ── Print settings filters ─────────────────────────────────────────────────
+$fPrinter  = isset($_GET['print_printer'])  ? trim((string)$_GET['print_printer'])  : '';
+$fPrintMat = isset($_GET['print_material']) ? trim((string)$_GET['print_material']) : '';
+$fPrintFin = isset($_GET['print_finish'])   ? trim((string)$_GET['print_finish'])   : '';
+// ── koniec print settings filtrov ─────────────────────────────────────────
 // ── koniec nových filtrov ─────────────────────────────────────────────────
+
+// ── Print settings filter options ──────────────────────────────────────────
+$printPrinterOptions  = [];
+$printMaterialOptions = [];
+$printFinishOptions   = [];
+
+$psRes = $conn->query("
+  SELECT
+    DISTINCT JSON_UNQUOTE(JSON_EXTRACT(internal_options_json, '$._printer'))       AS printer,
+             JSON_UNQUOTE(JSON_EXTRACT(internal_options_json, '$._print_material')) AS material,
+             JSON_UNQUOTE(JSON_EXTRACT(internal_options_json, '$._print_finish'))   AS finish
+  FROM order_items
+  WHERE deleted_at IS NULL
+    AND item_type_code = 'G'
+    AND internal_options_json IS NOT NULL
+    AND internal_options_json != ''
+    AND internal_options_json != '{}'
+");
+if ($psRes) {
+  while ($psRow = $psRes->fetch_assoc()) {
+    $v = trim((string)($psRow['printer'] ?? ''));
+    if ($v !== '' && $v !== 'null' && !in_array($v, $printPrinterOptions, true)) $printPrinterOptions[] = $v;
+    $v = trim((string)($psRow['material'] ?? ''));
+    if ($v !== '' && $v !== 'null' && !in_array($v, $printMaterialOptions, true)) $printMaterialOptions[] = $v;
+    $v = trim((string)($psRow['finish'] ?? ''));
+    if ($v !== '' && $v !== 'null' && !in_array($v, $printFinishOptions, true)) $printFinishOptions[] = $v;
+  }
+  $psRes->free();
+}
+// Also pull base-material / graphics-finish from options_json
+$psRes2 = $conn->query("
+  SELECT DISTINCT
+    JSON_UNQUOTE(JSON_EXTRACT(options_json, '$.\"base-material\"'))     AS material,
+    JSON_UNQUOTE(JSON_EXTRACT(options_json, '$.\"graphics-finish\"'))   AS finish
+  FROM order_items
+  WHERE deleted_at IS NULL AND item_type_code = 'G'
+    AND options_json IS NOT NULL AND options_json != ''
+");
+if ($psRes2) {
+  while ($psRow2 = $psRes2->fetch_assoc()) {
+    $v = trim((string)($psRow2['material'] ?? ''));
+    if ($v !== '' && $v !== 'null' && !in_array($v, $printMaterialOptions, true)) $printMaterialOptions[] = $v;
+    $v = trim((string)($psRow2['finish'] ?? ''));
+    if ($v !== '' && $v !== 'null' && !in_array($v, $printFinishOptions, true)) $printFinishOptions[] = $v;
+  }
+  $psRes2->free();
+}
+sort($printPrinterOptions);
+sort($printMaterialOptions);
+sort($printFinishOptions);
+// ── koniec print settings filter options ──────────────────────────────────
 
 $workerOptions = [];
 $workerRes = $conn->query("SELECT
@@ -137,7 +194,7 @@ if ($fSource !== '' && !in_array($fSource, $allowedSources, true))
   $fSource = '';
 
 $priorityOptions = [
-  0  => 'Normal',
+  0 => 'Normal',
   10 => 'Deadline',
   20 => 'Priority',
 ];
@@ -359,6 +416,49 @@ if ($fDateTo !== '') {
 }
 // ── koniec nových WHERE podmienok ───────────────────────────────────────────
 
+// Print settings filters (iba G položky s internal_options_json)
+if ($fPrinter !== '') {
+  $where[] = "EXISTS (
+    SELECT 1 FROM order_items oips
+    WHERE oips.order_id = o.id
+      AND oips.deleted_at IS NULL
+      AND oips.item_type_code = 'G'
+      AND JSON_UNQUOTE(JSON_EXTRACT(oips.internal_options_json, '$._printer')) LIKE CONCAT('%', ?, '%')
+  )";
+  $types .= 's';
+  $params[] = $fPrinter;
+}
+if ($fPrintMat !== '') {
+  $where[] = "EXISTS (
+    SELECT 1 FROM order_items oipm
+    WHERE oipm.order_id = o.id
+      AND oipm.deleted_at IS NULL
+      AND oipm.item_type_code = 'G'
+      AND (
+        JSON_UNQUOTE(JSON_EXTRACT(oipm.internal_options_json, '$._print_material')) LIKE CONCAT('%', ?, '%')
+        OR JSON_UNQUOTE(JSON_EXTRACT(oipm.options_json, '$.\x22base-material\x22')) LIKE CONCAT('%', ?, '%')
+      )
+  )";
+  $types .= 'ss';
+  $params[] = $fPrintMat;
+  $params[] = $fPrintMat;
+}
+if ($fPrintFin !== '') {
+  $where[] = "EXISTS (
+    SELECT 1 FROM order_items oipf
+    WHERE oipf.order_id = o.id
+      AND oipf.deleted_at IS NULL
+      AND oipf.item_type_code = 'G'
+      AND (
+        JSON_UNQUOTE(JSON_EXTRACT(oipf.internal_options_json, '$._print_finish')) LIKE CONCAT('%', ?, '%')
+        OR JSON_UNQUOTE(JSON_EXTRACT(oipf.options_json, '$.\x22graphics-finish\x22')) LIKE CONCAT('%', ?, '%')
+      )
+  )";
+  $types .= 'ss';
+  $params[] = $fPrintFin;
+  $params[] = $fPrintFin;
+}
+
 $whereSql = $where ? ('WHERE ' . implode(' AND ', $where)) : '';
 
 $sql = " SELECT
@@ -485,18 +585,23 @@ $whereSql
 
 ORDER BY
   CASE
-    WHEN o.priority >= 20 THEN 0 -- Priority (20) a Deadline (10) navrchu, Normal (0) dole
-    WHEN o.priority >= 10 THEN 1 -- v rámci rovnakej priority od najstaršieho
+    WHEN o.priority >= 20 THEN 0
+    WHEN o.priority >= 10 THEN 1
     ELSE 2
   END ASC,
 
   CASE
-    WHEN o.order_date IS NULL THEN 1
-    ELSE 0
+    WHEN o.priority > 0 AND o.priority_date IS NOT NULL THEN 0
+    WHEN o.priority > 0 THEN 1
+    ELSE 2
+  END ASC,
+
+  CASE
+    WHEN o.priority > 0 THEN o.priority_date
+    ELSE o.order_date
   END ASC,
 
   o.order_date ASC,
-
   o.id ASC
 LIMIT 500";
 
@@ -604,36 +709,39 @@ $deptOptions = [
   }
 
   /* Otvorený riadok — výrazný highlight */
-  .order-row-open {
-    background: rgba(63, 158, 255, 0.13) !important;
-    box-shadow:
-      inset 4px 0 0 #3f9eff,
-      0 -1px 0 rgba(63, 158, 255, 0.35),
-      0 1px 0 rgba(63, 158, 255, 0.35);
+  #ordersTable .order-row.order-row-open>td {
+    background: linear-gradient(90deg, rgba(63, 158, 255, 0.24), rgba(63, 158, 255, 0.11)) !important;
+    border-top: 1px solid rgba(63, 158, 255, 0.45) !important;
+    border-bottom: 1px solid rgba(63, 158, 255, 0.45) !important;
+    box-shadow: inset 4px 0 0 #3f9eff;
     opacity: 1 !important;
   }
 
-  /* Detail riadok pod otvoreným — vizuálne "lepí" sa naň */
-  .order-row-open+.order-detail-row td {
-    border-top: none !important;
-    background: rgba(63, 158, 255, 0.05);
-    box-shadow: inset 4px 0 0 #3f9eff, 0 3px 0 rgba(63, 158, 255, 0.25);
+  #ordersTable .order-row.order-row-open>td:first-child {
+    border-left: 1px solid rgba(63, 158, 255, 0.45) !important;
   }
 
-  background: transparent;
-  border: none;
-  color: #adb5bd;
-  cursor: pointer;
-  padding: 0 4px;
+  #ordersTable .order-row.order-row-open>td:last-child {
+    border-right: 1px solid rgba(63, 158, 255, 0.45) !important;
+  }
+
+  /* Detail riadok pod otvoreným — vizuálne "lepí" sa naň */
+  #ordersTable .order-row-open+.order-detail-row>td {
+    border-top: none !important;
+    background: rgba(63, 158, 255, 0.035);
+    box-shadow: inset 4px 0 0 #3f9eff, 0 3px 0 rgba(63, 158, 255, 0.22);
+  }
+
+  .btn-copy-inline {
+    background: transparent;
+    border: none;
+    color: #adb5bd;
+    cursor: pointer;
+    padding: 0 4px;
   }
 
   .btn-copy-inline:hover {
     color: #17a2b8;
-  }
-
-  .order-row-open {
-    background: rgba(23, 162, 184, 0.18) !important;
-    box-shadow: inset 4px 0 0 #17a2b8;
   }
 
   .btn-delete-tracking:hover {
@@ -937,7 +1045,7 @@ $deptOptions = [
   // ── Quick-tab helpers ────────────────────────────────────────────────────
   function qtabIsActive(array $tabParams): bool
   {
-    $filterKeys = ['status', 'exclude_status', 'source', 'country', 'payment', 'shipping', 'priority', 'date_from', 'date_to', 'worker', 'dept', 'cat', 'type', 'q'];
+    $filterKeys = ['status', 'exclude_status', 'source', 'country', 'payment', 'shipping', 'priority', 'date_from', 'date_to', 'worker', 'dept', 'cat', 'type', 'q', 'print_printer', 'print_material', 'print_finish'];
     foreach ($tabParams as $k => $v) {
       if (($_GET[$k] ?? '') !== $v)
         return false;
@@ -1036,6 +1144,12 @@ $deptOptions = [
       $activeFilterBadges[] = ['label' => 'To', 'display' => $fDateTo];
     if ($fDept > 0 && $allAccess)
       $activeFilterBadges[] = ['label' => 'Dept', 'display' => ($deptOptions[$fDept] ?? $fDept)];
+    if ($fPrinter !== '')
+      $activeFilterBadges[] = ['label' => '🖨️ Printer', 'display' => $fPrinter];
+    if ($fPrintMat !== '')
+      $activeFilterBadges[] = ['label' => '🧱 Material', 'display' => $fPrintMat];
+    if ($fPrintFin !== '')
+      $activeFilterBadges[] = ['label' => '✨ Finish', 'display' => $fPrintFin];
 
     // Pomocná funkcia — CSS trieda pre aktívne pole
     // Vracia 'filter-active' ak hodnota nie je prázdna, inak ''
@@ -1360,6 +1474,54 @@ $deptOptions = [
             </div>
           </div><!-- /filter-grid row 2 -->
 
+          <?php if (!empty($printPrinterOptions) || !empty($printMaterialOptions) || !empty($printFinishOptions)): ?>
+          <hr class="filter-row-divider">
+
+          <!-- ── ROW 3: Print settings filters ──────────────────────────────── -->
+          <div class="filter-grid" style="grid-template-columns: repeat(3, 1fr); gap: 10px;">
+
+            <!-- Printer -->
+            <div class="form-group <?= !empty($fPrinter) ? 'filter-active' : '' ?>">
+              <label class="small mb-1">🖨️ Printer</label>
+              <select class="form-control form-control-sm" name="print_printer">
+                <option value="">— All —</option>
+                <?php foreach ($printPrinterOptions as $pv): ?>
+                  <option value="<?= htmlspecialchars($pv) ?>" <?= ($fPrinter === $pv ? 'selected' : '') ?>>
+                    <?= htmlspecialchars($pv) ?>
+                  </option>
+                <?php endforeach; ?>
+              </select>
+            </div>
+
+            <!-- Material -->
+            <div class="form-group <?= !empty($fPrintMat) ? 'filter-active' : '' ?>">
+              <label class="small mb-1">🧱 Material</label>
+              <select class="form-control form-control-sm" name="print_material">
+                <option value="">— All —</option>
+                <?php foreach ($printMaterialOptions as $pv): ?>
+                  <option value="<?= htmlspecialchars($pv) ?>" <?= ($fPrintMat === $pv ? 'selected' : '') ?>>
+                    <?= htmlspecialchars($pv) ?>
+                  </option>
+                <?php endforeach; ?>
+              </select>
+            </div>
+
+            <!-- Finish -->
+            <div class="form-group <?= !empty($fPrintFin) ? 'filter-active' : '' ?>">
+              <label class="small mb-1">✨ Finish</label>
+              <select class="form-control form-control-sm" name="print_finish">
+                <option value="">— All —</option>
+                <?php foreach ($printFinishOptions as $pv): ?>
+                  <option value="<?= htmlspecialchars($pv) ?>" <?= ($fPrintFin === $pv ? 'selected' : '') ?>>
+                    <?= htmlspecialchars($pv) ?>
+                  </option>
+                <?php endforeach; ?>
+              </select>
+            </div>
+
+          </div><!-- /filter-grid row 3 -->
+          <?php endif; ?>
+
           <!-- ── Tlačidlá + active filter pills ─────────────────────────────── -->
           <div class="d-flex align-items-center flex-wrap mt-1" style="gap: 6px;">
 
@@ -1428,8 +1590,11 @@ $deptOptions = [
               $customer = (string) ($row['customer_email'] ?? '-');
             ?>
             <tr class="<?= $rowClass ?> order-row" data-order-id="<?= $orderId ?>"
-              data-priority-sort="<?= ($priorityValue >= 20 ? 0 : ($priorityValue >= 10 ? 1 : 2)) ?>"
-              data-date-sort="<?= htmlspecialchars((string) ($row['order_date'] ?? '9999-12-31')) ?>">
+              data-priority-sort="<?= ($priorityValue >= 20 ? 0 : ($priorityValue >= 10 ? 1 : 2)) ?>" data-date-sort="<?= htmlspecialchars((string) (
+                              ($priorityValue > 0 && !empty($row['priority_date']))
+                              ? $row['priority_date']
+                              : ($row['order_date'] ?? '9999-12-31')
+                            )) ?>">
               <td class="text-center">
                 <?php
                 $dateRaw = $row['order_date'] ?? null;
@@ -1559,8 +1724,8 @@ $deptOptions = [
               </td>
               <td class="text-center" data-priority-cell="<?= $orderId ?>">
                 <?php
-                $priorityValue   = (int) ($row['priority'] ?? 0);
-                $priorityLabel   = $priorityOptions[$priorityValue] ?? ('Priority ' . $priorityValue);
+                $priorityValue = (int) ($row['priority'] ?? 0);
+                $priorityLabel = $priorityOptions[$priorityValue] ?? ('Priority ' . $priorityValue);
                 $priorityDateRaw = !empty($row['priority_date'])
                   ? (new DateTime($row['priority_date']))->format('Y-m-d') : '';
                 $priorityDateFmt = !empty($row['priority_date'])
@@ -1578,22 +1743,21 @@ $deptOptions = [
                 }
 
                 $badgeStyle = 'display:inline-flex;align-items:center;gap:6px;padding:4px 10px;font-size:12px;font-weight:500;white-space:nowrap;';
-                if ($priorityValue > 0) $badgeStyle .= 'cursor:pointer;';
+                if ($priorityValue > 0)
+                  $badgeStyle .= 'cursor:pointer;';
                 ?>
                 <?php if ($perm >= 300): ?>
-                  <span class="badge <?= $priorityBadge ?> priority-badge-clickable"
-                    style="<?= $badgeStyle ?>"
-                    data-order-id="<?= $orderId ?>"
-                    data-priority="<?= $priorityValue ?>"
+                  <span class="badge <?= $priorityBadge ?> priority-badge-clickable" style="<?= $badgeStyle ?>"
+                    data-order-id="<?= $orderId ?>" data-priority="<?= $priorityValue ?>"
                     data-priority-date="<?= htmlspecialchars($priorityDateRaw) ?>">
-                    <?= $priorityEmoji ?> <?= htmlspecialchars($priorityLabel) ?>
+                    <?= $priorityEmoji ?>     <?= htmlspecialchars($priorityLabel) ?>
                     <?php if ($priorityDateFmt): ?>
                       <span style="opacity:.75;font-weight:400;">· <?= htmlspecialchars($priorityDateFmt) ?></span>
                     <?php endif; ?>
                   </span>
                 <?php else: ?>
                   <span class="badge <?= $priorityBadge ?>" style="<?= $badgeStyle ?>">
-                    <?= $priorityEmoji ?> <?= htmlspecialchars($priorityLabel) ?>
+                    <?= $priorityEmoji ?>     <?= htmlspecialchars($priorityLabel) ?>
                     <?php if ($priorityDateFmt): ?>
                       <span style="opacity:.75;font-weight:400;">· <?= htmlspecialchars($priorityDateFmt) ?></span>
                     <?php endif; ?>
@@ -1723,9 +1887,20 @@ $deptOptions = [
                             </span>
                           <?php endif; ?>
 
-                          <?php if ($perm >= 300 && !empty($a['assignment_id'])): ?>
+                          <?php
+                          $canRemoveThisAssignment = (
+                            !empty($a['assignment_id'])
+                            && (
+                              $perm >= 300
+                              || (int) $a['id'] === $meUserId
+                            )
+                          );
+                          ?>
+
+                          <?php if ($canRemoveThisAssignment): ?>
                             <button type="button" class="btn-remove-assignment"
-                              data-assignment-id="<?= (int) $a['assignment_id'] ?>" title="Remove assignment">
+                              data-assignment-id="<?= (int) $a['assignment_id'] ?>"
+                              title="<?= ((int) $a['id'] === $meUserId ? 'Remove my assignment' : 'Remove assignment') ?>">
                               ×
                             </button>
                           <?php endif; ?>
@@ -1792,7 +1967,7 @@ $deptOptions = [
                   <?php if (!$isTakenForDept): ?>
 
                     <button type="button" class="btn btn-sm btn-success btn-take-order mr-1" data-order-id="<?= $orderId ?>"
-                      title="Take order">
+                      data-dept-code="<?= htmlspecialchars((string) $uiDeptCode) ?>" title="Take order">
                       TAKE
                     </button>
                     <!-- Assign To (len admin/mod) -->
@@ -1806,7 +1981,7 @@ $deptOptions = [
                   <?php else: ?>
 
                     <button type="button" class="btn btn-sm btn-secondary btn-take-order mr-1" data-order-id="<?= $orderId ?>"
-                      disabled title="Already assigned">
+                      data-dept-code="<?= htmlspecialchars((string) $uiDeptCode) ?>" disabled title="Already assigned">
                       TAKE
                     </button>
 
@@ -1866,14 +2041,14 @@ $deptOptions = [
         <input type="hidden" id="inviteMode" value="">
         <input type="hidden" id="inviteDeptCode" value="">
 
-        <label class="text-muted">Search active employee</label>
+        <label class="text-muted">Search employee</label>
         <input type="text" id="empSearch" class="form-control form-control-sm bg-dark text-light"
           placeholder="Type name, e.g. Andrej">
 
         <div id="empResults" class="list-group mt-2"></div>
 
         <small class="text-muted d-block mt-2">
-          Search is filtered by selected department.
+          Search shows employees enabled for personal orders.
         </small>
       </div>
 
@@ -1887,27 +2062,59 @@ $deptOptions = [
   </div>
 </div>
 <script>
+  function orderRowById(orderId) {
+    return $('#ordersTable .order-row[data-order-id="' + orderId + '"]');
+  }
+
+  function openOrderDetailState(orderId) {
+    const $wrap = $('#detail-' + orderId);
+
+    $('.detail-wrap').not($wrap).filter(':visible').stop(true, true).slideUp(120);
+    $('#ordersTable .order-row').removeClass('order-row-open');
+    orderRowById(orderId).addClass('order-row-open');
+    $('#ordersTable').addClass('table-has-open');
+  }
+
+  function closeOrderDetailState(orderId) {
+    const $wrap = $('#detail-' + orderId);
+    const $row = orderRowById(orderId);
+
+    $wrap.stop(true, true).slideUp(120, function () {
+      $row.removeClass('order-row-open');
+
+      if (!$('#ordersTable .order-row-open').length) {
+        $('#ordersTable').removeClass('table-has-open');
+      }
+    });
+  }
+
   $(function () {
 
     function escapeHtml(s) {
       return ('' + s).replace(/[&<>"']/g, (m) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }[m]));
     }
 
-    $('.btn-toggle-detail').on('click', function () {
+    $('.btn-toggle-detail').on('click', function (e) {
+      e.preventDefault();
+      e.stopPropagation();
+
       const orderId = $(this).data('order-id');
       const $wrap = $('#detail-' + orderId);
+      const isOpen = $wrap.is(':visible') && orderRowById(orderId).hasClass('order-row-open');
 
       // toggle if already loaded
       if ($wrap.data('loaded')) {
-        $wrap.slideToggle(120, function () {
-          if (!$wrap.is(':visible')) {
-            $('#ordersTable').removeClass('table-has-open');
-          }
-        });
+        if (isOpen) {
+          closeOrderDetailState(orderId);
+        } else {
+          openOrderDetailState(orderId);
+          $wrap.stop(true, true).slideDown(120);
+        }
         return;
       }
 
       $wrap.html('<div class="p-3 text-muted"><span class="spinner-border spinner-border-sm"></span> Načítavam detail…</div>');
+      openOrderDetailState(orderId);
       $wrap.show();
 
       $.ajax({
@@ -1937,6 +2144,13 @@ $deptOptions = [
         }
       });
     });
+  });
+
+
+  $(document).on('click', '.btn-close-order-detail', function (e) {
+    e.preventDefault();
+    e.stopPropagation();
+    closeOrderDetailState($(this).data('order-id'));
   });
 
 
@@ -2042,23 +2256,11 @@ $deptOptions = [
   $(document).on('click', '.order-row', function (e) {
 
     // ak klikol na tlačidlo alebo ikonku → ignoruj
-    if ($(e.target).closest('button, a, .btn').length) {
+    if ($(e.target).closest('button, a, .btn, .priority-badge-clickable').length) {
       return;
     }
 
-    const orderId = $(this).data('order-id');
     const $btn = $(this).find('.btn-toggle-detail');
-    const $row = $(this).closest('tr.order-row');
-    const $table = $('#ordersTable');
-
-    if ($row.hasClass('order-row-open')) {
-      $row.removeClass('order-row-open');
-      $table.removeClass('table-has-open');
-    } else {
-      $('.order-row').removeClass('order-row-open');
-      $row.addClass('order-row-open');
-      $table.addClass('table-has-open');
-    }
 
     if ($btn.length) {
       $btn.trigger('click');
@@ -3277,8 +3479,7 @@ $deptOptions = [
     <div class="modal-content bg-dark text-white">
       <div class="modal-header border-secondary">
         <h5 class="modal-title"><i class="fas fa-flag mr-2"></i>Set Priority</h5>
-        <button type="button" class="close text-white"
-          onclick="$('#priorityDateModal').modal('hide')"
+        <button type="button" class="close text-white" onclick="$('#priorityDateModal').modal('hide')"
           aria-label="Close">
           <span aria-hidden="true">&times;</span>
         </button>
@@ -3295,7 +3496,8 @@ $deptOptions = [
         </div>
         <div class="form-group mb-0" id="priorityModalDateWrap">
           <label class="text-muted small mb-1">Date</label>
-          <input type="date" id="priorityModalDate" class="form-control form-control-sm bg-dark text-white border-secondary">
+          <input type="date" id="priorityModalDate"
+            class="form-control form-control-sm bg-dark text-white border-secondary">
           <small class="text-muted">Required for Deadline and Priority</small>
         </div>
       </div>
@@ -3311,58 +3513,61 @@ $deptOptions = [
 </div>
 
 <script>
-$(function () {
+  $(function () {
 
-  $(document).on('click', '.priority-badge-clickable', function () {
-    var orderId  = $(this).data('order-id');
-    var priority = parseInt($(this).data('priority'), 10) || 0;
-    var date     = $(this).data('priority-date') || '';
+    $(document).on('click', '.priority-badge-clickable', function (e) {
+      e.preventDefault();
+      e.stopPropagation();
 
-    $('#priorityModalOrderId').val(orderId);
-    $('#priorityModalLevel').val(priority);
-    $('#priorityModalDate').val(date);
-    $('#priorityModalDateWrap').toggle(priority > 0);
-    $('#priorityDateModal').modal('show');
-  });
+      var orderId = $(this).data('order-id');
+      var priority = parseInt($(this).data('priority'), 10) || 0;
+      var date = $(this).data('priority-date') || '';
 
-  $('#priorityModalLevel').on('change', function () {
-    var val = parseInt($(this).val(), 10);
-    $('#priorityModalDateWrap').toggle(val > 0);
-    if (val === 0) $('#priorityModalDate').val('');
-  });
-
-  $('#priorityModalSave').on('click', function () {
-    var orderId  = $('#priorityModalOrderId').val();
-    var priority = $('#priorityModalLevel').val();
-    var date     = $('#priorityModalDate').val();
-
-    if (parseInt(priority) > 0 && !date) {
-      alert('Please select a date for Deadline or Priority.');
-      return;
-    }
-
-    var $btn = $(this).prop('disabled', true).html('Saving…');
-
-    $.ajax({
-      url: 'scripts/orders/update_order_priority.php',
-      method: 'POST',
-      dataType: 'json',
-      data: { order_id: orderId, priority: priority, priority_date: date },
-      success: function (resp) {
-        if (!resp || !resp.ok) {
-          alert(resp && resp.error ? resp.error : 'Failed to save priority');
-          $btn.prop('disabled', false).html('<i class="fas fa-save mr-1"></i>Save');
-          return;
-        }
-        $('#priorityDateModal').modal('hide');
-        location.reload();
-      },
-      error: function () {
-        alert('Request failed');
-        $btn.prop('disabled', false).html('<i class="fas fa-save mr-1"></i>Save');
-      }
+      $('#priorityModalOrderId').val(orderId);
+      $('#priorityModalLevel').val(priority);
+      $('#priorityModalDate').val(date);
+      $('#priorityModalDateWrap').toggle(priority > 0);
+      $('#priorityDateModal').modal('show');
     });
-  });
 
-});
+    $('#priorityModalLevel').on('change', function () {
+      var val = parseInt($(this).val(), 10);
+      $('#priorityModalDateWrap').toggle(val > 0);
+      if (val === 0) $('#priorityModalDate').val('');
+    });
+
+    $('#priorityModalSave').on('click', function () {
+      var orderId = $('#priorityModalOrderId').val();
+      var priority = $('#priorityModalLevel').val();
+      var date = $('#priorityModalDate').val();
+
+      if (parseInt(priority) > 0 && !date) {
+        alert('Please select a date for Deadline or Priority.');
+        return;
+      }
+
+      var $btn = $(this).prop('disabled', true).html('Saving…');
+
+      $.ajax({
+        url: 'scripts/orders/update_order_priority.php',
+        method: 'POST',
+        dataType: 'json',
+        data: { order_id: orderId, priority: priority, priority_date: date },
+        success: function (resp) {
+          if (!resp || !resp.ok) {
+            alert(resp && resp.error ? resp.error : 'Failed to save priority');
+            $btn.prop('disabled', false).html('<i class="fas fa-save mr-1"></i>Save');
+            return;
+          }
+          $('#priorityDateModal').modal('hide');
+          location.reload();
+        },
+        error: function () {
+          alert('Request failed');
+          $btn.prop('disabled', false).html('<i class="fas fa-save mr-1"></i>Save');
+        }
+      });
+    });
+
+  });
 </script>

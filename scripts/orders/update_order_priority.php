@@ -31,10 +31,10 @@ if ($orderId <= 0 || !isset($priorityLabels[$newPriority])) {
 }
 
 $stmt = $conn->prepare("
-  SELECT priority
-  FROM orders
-  WHERE id = ?
-  LIMIT 1
+  SELECT priority, priority_date
+FROM orders
+WHERE id = ?
+LIMIT 1
 ");
 if (!$stmt) {
   out(['ok' => false, 'error' => $conn->error]);
@@ -50,14 +50,24 @@ if (!$row) {
 }
 
 $oldPriority = (int) ($row['priority'] ?? 0);
-
+/*
 if ($oldPriority === $newPriority) {
   out(['ok' => true, 'unchanged' => true]);
+}
+*/
+$priorityDate = trim((string)($_POST['priority_date'] ?? ''));
+
+if ($newPriority > 0) {
+  if ($priorityDate === '' || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $priorityDate)) {
+    out(['ok' => false, 'error' => 'Invalid priority date']);
+  }
+} else {
+  $priorityDate = null;
 }
 
 $stmt = $conn->prepare("
   UPDATE orders
-  SET priority = ?
+  SET priority = ?, priority_date = ?
   WHERE id = ?
   LIMIT 1
 ");
@@ -65,7 +75,7 @@ if (!$stmt) {
   out(['ok' => false, 'error' => $conn->error]);
 }
 
-$stmt->bind_param('ii', $newPriority, $orderId);
+$stmt->bind_param('isi', $newPriority, $priorityDate, $orderId);
 $stmt->execute();
 $stmt->close();
 
