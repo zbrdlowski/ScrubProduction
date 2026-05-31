@@ -120,6 +120,7 @@ function import_darkscrub_unified_csv(mysqli $conn, string $csvPath): array {
     oi_upsert_address($conn, $orderId, 'BILLING', [
       'name' => $first['bill_name'] ?? null,
       'company' => $first['bill_company'] ?? null,
+      'company_id' => $first['bill_company_id'] ?? null,
       'street' => oi_join_street($first['bill_street'] ?? null, $first['bill_house_number'] ?? null),
       'city' => $first['bill_city'] ?? null,
       'zip' => $first['bill_zip'] ?? null,
@@ -131,6 +132,7 @@ function import_darkscrub_unified_csv(mysqli $conn, string $csvPath): array {
     oi_upsert_address($conn, $orderId, 'SHIPPING', [
       'name' => oi_first_nonempty($first['delivery_name'] ?? null, $first['bill_name'] ?? null),
       'company' => oi_first_nonempty($first['delivery_company'] ?? null, $first['bill_company'] ?? null),
+      'company_id' => oi_first_nonempty($first['delivery_company_id'] ?? null, $first['bill_company_id'] ?? null),
       'street' => oi_join_street(
         oi_first_nonempty($first['delivery_street'] ?? null, $first['bill_street'] ?? null),
         oi_first_nonempty($first['delivery_house_number'] ?? null, $first['bill_house_number'] ?? null)

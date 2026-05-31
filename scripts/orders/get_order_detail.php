@@ -358,7 +358,7 @@ while ($x = $r->fetch_assoc())
 $stmt->close();
 
 // --- addresses ---
-$stmt = $conn->prepare("SELECT type, name, company, street, city, zip, country, email, phone
+$stmt = $conn->prepare("SELECT type, name, company, company_id, street, city, zip, country, email, phone
 FROM order_addresses
 WHERE order_id=?
 ");
@@ -1127,8 +1127,16 @@ ob_start();
                   <h6>Billing</h6>
                   <input class="form-control form-control-sm mb-1 edit-billing-name" placeholder="Name"
                     value="<?php echo h($b['name'] ?? ''); ?>">
-                  <input class="form-control form-control-sm mb-1 edit-billing-company" placeholder="Company"
-                    value="<?php echo h($b['company'] ?? ''); ?>">
+                  <div class="form-row mb-1">
+                    <div class="col-md-8">
+                      <input class="form-control form-control-sm edit-billing-company" placeholder="Company"
+                        value="<?php echo h($b['company'] ?? ''); ?>">
+                    </div>
+                    <div class="col-md-4">
+                      <input class="form-control form-control-sm edit-billing-company-id" placeholder="Company ID"
+                        value="<?php echo h($b['company_id'] ?? ''); ?>">
+                    </div>
+                  </div>
                   <input class="form-control form-control-sm mb-1 edit-billing-street" placeholder="Street"
                     value="<?php echo h($b['street'] ?? ''); ?>">
                   <input class="form-control form-control-sm mb-1 edit-billing-city" placeholder="City"
@@ -1148,8 +1156,16 @@ ob_start();
                   <h6>Shipping</h6>
                   <input class="form-control form-control-sm mb-1 edit-shipping-name" placeholder="Name"
                     value="<?php echo h($s['name'] ?? ''); ?>">
-                  <input class="form-control form-control-sm mb-1 edit-shipping-company" placeholder="Company"
-                    value="<?php echo h($s['company'] ?? ''); ?>">
+                  <div class="form-row mb-1">
+                    <div class="col-md-8">
+                      <input class="form-control form-control-sm edit-shipping-company" placeholder="Company"
+                        value="<?php echo h($s['company'] ?? ''); ?>">
+                    </div>
+                    <div class="col-md-4">
+                      <input class="form-control form-control-sm edit-shipping-company-id" placeholder="Company ID"
+                        value="<?php echo h($s['company_id'] ?? ''); ?>">
+                    </div>
+                  </div>
                   <input class="form-control form-control-sm mb-1 edit-shipping-street" placeholder="Street"
                     value="<?php echo h($s['street'] ?? ''); ?>">
                   <input class="form-control form-control-sm mb-1 edit-shipping-city" placeholder="City"
@@ -1204,7 +1220,22 @@ ob_start();
               </button>
               <div>
                 <?php echo h($b['name'] ?? '-'); ?>
-                <?php echo !empty($b['company']) ? ' (' . h($b['company']) . ')' : ''; ?>
+                <?php 
+                $companyPart = '';
+                if (!empty($b['company'])) {
+                  $companyPart = h($b['company']);
+                }
+                if (!empty($b['company_id'])) {
+                  if ($companyPart) {
+                    $companyPart .= ' [' . h($b['company_id']) . ']';
+                  } else {
+                    $companyPart = '[' . h($b['company_id']) . ']';
+                  }
+                }
+                if ($companyPart) {
+                  echo ' (' . $companyPart . ')';
+                }
+                ?>
               </div>
               <div class="text-muted">
                 <?php echo h(trim(($b['street'] ?? '') . ', ' . ($b['city'] ?? '') . ' ' . ($b['zip'] ?? ''))); ?>
@@ -1304,7 +1335,22 @@ ob_start();
 
               <div>
                 <?php echo h($s['name'] ?? '-'); ?>
-                <?php echo !empty($s['company']) ? ' (' . h($s['company']) . ')' : ''; ?>
+                <?php 
+                $companyPart = '';
+                if (!empty($s['company'])) {
+                  $companyPart = h($s['company']);
+                }
+                if (!empty($s['company_id'])) {
+                  if ($companyPart) {
+                    $companyPart .= ' [' . h($s['company_id']) . ']';
+                  } else {
+                    $companyPart = '[' . h($s['company_id']) . ']';
+                  }
+                }
+                if ($companyPart) {
+                  echo ' (' . $companyPart . ')';
+                }
+                ?>
               </div>
 
               <div class="text-muted">

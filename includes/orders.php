@@ -485,6 +485,8 @@ $sql = " SELECT
   cu.name AS customer_name,
   cu.email AS customer_email,
   COALESCE(oa_ship.country, oa_bill.country) AS country_code,
+  COALESCE(oa_bill.company, '') AS billing_company,
+  COALESCE(oa_bill.company_id, '') AS billing_company_id,
 
   (
     SELECT GROUP_CONCAT(DISTINCT c.code ORDER BY c.code SEPARATOR ', ')
@@ -1593,6 +1595,10 @@ $deptOptions = [
             $customer = trim((string) ($row['customer_name'] ?? ''));
             if ($customer === '')
               $customer = (string) ($row['customer_email'] ?? '-');
+            
+            $billingCompany = trim((string) ($row['billing_company'] ?? ''));
+            $billingCompanyId = trim((string) ($row['billing_company_id'] ?? ''));
+            $hasCompanyInfo = ($billingCompany !== '' || $billingCompanyId !== '');
             ?>
             <tr class="<?= $rowClass ?> order-row" data-order-id="<?= $orderId ?>"
               data-priority-sort="<?= ($priorityValue >= 20 ? 0 : ($priorityValue >= 10 ? 1 : 2)) ?>" data-date-sort="<?= htmlspecialchars((string) (
@@ -1622,7 +1628,16 @@ $deptOptions = [
                 <?php endif; ?>
 
               </td>
-              <td><?= htmlspecialchars($customer) ?></td>
+              <td>
+                <span style="white-space: nowrap;">
+                  <?= htmlspecialchars($customer) ?>
+                  <?php if ($hasCompanyInfo): ?>
+                    <span title="<?= htmlspecialchars('Company: ' . ($billingCompany ?: '-') . ' | ID: ' . ($billingCompanyId ?: '-')) ?>" style="margin-left: 4px; font-size: 1.1em;">🏢</span>
+                  <?php else: ?>
+                    <span title="Individual customer" style="margin-left: 4px; font-size: 1.1em;">👤</span>
+                  <?php endif; ?>
+                </span>
+              </td>
               <td class="text-center">
                 <?php
                 $cc = strtoupper(trim((string) ($row['country_code'] ?? '')));
@@ -2609,6 +2624,7 @@ $deptOptions = [
 
         'billing[name]': $box.find('.edit-billing-name').val(),
         'billing[company]': $box.find('.edit-billing-company').val(),
+        'billing[company_id]': $box.find('.edit-billing-company-id').val(),
         'billing[street]': $box.find('.edit-billing-street').val(),
         'billing[city]': $box.find('.edit-billing-city').val(),
         'billing[zip]': $box.find('.edit-billing-zip').val(),
@@ -2618,6 +2634,7 @@ $deptOptions = [
 
         'shipping[name]': $box.find('.edit-shipping-name').val(),
         'shipping[company]': $box.find('.edit-shipping-company').val(),
+        'shipping[company_id]': $box.find('.edit-shipping-company-id').val(),
         'shipping[street]': $box.find('.edit-shipping-street').val(),
         'shipping[city]': $box.find('.edit-shipping-city').val(),
         'shipping[zip]': $box.find('.edit-shipping-zip').val(),

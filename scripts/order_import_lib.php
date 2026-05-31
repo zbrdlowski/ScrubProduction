@@ -286,6 +286,7 @@ function oi_upsert_address(mysqli $conn, int $orderId, string $type, array $a): 
   $type = strtoupper($type);
   $name = oi_trim($a['name'] ?? null);
   $company = oi_trim($a['company'] ?? null);
+  $company_id = oi_trim($a['company_id'] ?? null);
   $street = oi_trim($a['street'] ?? null);
   $city = oi_trim($a['city'] ?? null);
   $zip = oi_trim($a['zip'] ?? null);
@@ -302,20 +303,20 @@ function oi_upsert_address(mysqli $conn, int $orderId, string $type, array $a): 
   if ($row) {
     $upd = $conn->prepare("
       UPDATE order_addresses
-      SET name=?, company=?, street=?, city=?, zip=?, country=?, email=?, phone=?
+      SET name=?, company=?, company_id=?, street=?, city=?, zip=?, country=?, email=?, phone=?
       WHERE order_id=? AND type=?
     ");
-    $upd->bind_param('ssssssssis', $name, $company, $street, $city, $zip, $country, $email, $phone, $orderId, $type);
+    $upd->bind_param('sssssssssis', $name, $company, $company_id, $street, $city, $zip, $country, $email, $phone, $orderId, $type);
     $upd->execute();
     $upd->close();
     return;
   }
 
   $ins = $conn->prepare("
-    INSERT INTO order_addresses (order_id, type, name, company, street, city, zip, country, email, phone)
-    VALUES (?,?,?,?,?,?,?,?,?,?)
+    INSERT INTO order_addresses (order_id, type, name, company, company_id, street, city, zip, country, email, phone)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?)
   ");
-  $ins->bind_param('isssssssss', $orderId, $type, $name, $company, $street, $city, $zip, $country, $email, $phone);
+  $ins->bind_param('issssssssss', $orderId, $type, $name, $company, $company_id, $street, $city, $zip, $country, $email, $phone);
   $ins->execute();
   $ins->close();
 }

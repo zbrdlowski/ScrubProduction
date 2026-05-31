@@ -55,6 +55,7 @@ try {
   foreach ($addressTypes as $type => $a) {
     $name    = clean($a['name'] ?? '');
     $company = clean($a['company'] ?? '');
+    $company_id = clean($a['company_id'] ?? '');
     $street  = clean($a['street'] ?? '');
     $city    = clean($a['city'] ?? '');
     $zip     = clean($a['zip'] ?? '');
@@ -76,29 +77,29 @@ try {
     if ($existing) {
       $stmt = $conn->prepare("
         UPDATE order_addresses
-        SET name=?, company=?, street=?, city=?, zip=?, country=?, email=?, phone=?
+        SET name=?, company=?, company_id=?, street=?, city=?, zip=?, country=?, email=?, phone=?
         WHERE id=?
         LIMIT 1
       ");
       if (!$stmt) throw new Exception($conn->error);
       $addrId = (int)$existing['id'];
       $stmt->bind_param(
-        'ssssssssi',
-        $name, $company, $street, $city, $zip, $country, $email, $phone, $addrId
+        'sssssssssi',
+        $name, $company, $company_id, $street, $city, $zip, $country, $email, $phone, $addrId
       );
       $stmt->execute();
       $stmt->close();
     } else {
       $stmt = $conn->prepare("
         INSERT INTO order_addresses
-          (order_id, type, name, company, street, city, zip, country, email, phone)
+          (order_id, type, name, company, company_id, street, city, zip, country, email, phone)
         VALUES
-          (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ");
       if (!$stmt) throw new Exception($conn->error);
       $stmt->bind_param(
-        'isssssssss',
-        $orderId, $type, $name, $company, $street, $city, $zip, $country, $email, $phone
+        'issssssssss',
+        $orderId, $type, $name, $company, $company_id, $street, $city, $zip, $country, $email, $phone
       );
       $stmt->execute();
       $stmt->close();
