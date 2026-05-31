@@ -1629,12 +1629,12 @@ $deptOptions = [
 
               </td>
               <td>
-                <span style="white-space: nowrap;">
-                  <?= htmlspecialchars($customer) ?>
+                <span style="display:flex; justify-content:space-between; align-items:center; gap:6px; white-space:nowrap;">
+                  <span><?= htmlspecialchars($customer) ?></span>
                   <?php if ($hasCompanyInfo): ?>
-                    <span title="<?= htmlspecialchars('Company: ' . ($billingCompany ?: '-') . ' | ID: ' . ($billingCompanyId ?: '-')) ?>" style="margin-left: 4px; font-size: 1.1em;">🏢</span>
+                    <span title="<?= htmlspecialchars('Company: ' . ($billingCompany ?: '-') . ' | ID: ' . ($billingCompanyId ?: '-')) ?>" style="font-size:1.1em; flex-shrink:0;">🏢</span>
                   <?php else: ?>
-                    <span title="Individual customer" style="margin-left: 4px; font-size: 1.1em;">👤</span>
+                    <span title="Individual customer" style="font-size:1.1em; flex-shrink:0;">👤</span>
                   <?php endif; ?>
                 </span>
               </td>
