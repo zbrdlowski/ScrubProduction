@@ -79,16 +79,16 @@ $fDateFrom = isset($_GET['date_from']) ? trim((string) $_GET['date_from']) : '';
 $fDateTo = isset($_GET['date_to']) ? trim((string) $_GET['date_to']) : '';
 $fWorker = isset($_GET['worker']) ? (int) $_GET['worker'] : 0;
 // ── Print settings filters ─────────────────────────────────────────────────
-$fPrinter  = isset($_GET['print_printer'])  ? trim((string)$_GET['print_printer'])  : '';
-$fPrintMat = isset($_GET['print_material']) ? trim((string)$_GET['print_material']) : '';
-$fPrintFin = isset($_GET['print_finish'])   ? trim((string)$_GET['print_finish'])   : '';
+$fPrinter = isset($_GET['print_printer']) ? trim((string) $_GET['print_printer']) : '';
+$fPrintMat = isset($_GET['print_material']) ? trim((string) $_GET['print_material']) : '';
+$fPrintFin = isset($_GET['print_finish']) ? trim((string) $_GET['print_finish']) : '';
 // ── koniec print settings filtrov ─────────────────────────────────────────
 // ── koniec nových filtrov ─────────────────────────────────────────────────
 
 // ── Print settings filter options ──────────────────────────────────────────
-$printPrinterOptions  = [];
+$printPrinterOptions = [];
 $printMaterialOptions = [];
-$printFinishOptions   = [];
+$printFinishOptions = [];
 
 $psRes = $conn->query("
   SELECT
@@ -104,12 +104,15 @@ $psRes = $conn->query("
 ");
 if ($psRes) {
   while ($psRow = $psRes->fetch_assoc()) {
-    $v = trim((string)($psRow['printer'] ?? ''));
-    if ($v !== '' && $v !== 'null' && !in_array($v, $printPrinterOptions, true)) $printPrinterOptions[] = $v;
-    $v = trim((string)($psRow['material'] ?? ''));
-    if ($v !== '' && $v !== 'null' && !in_array($v, $printMaterialOptions, true)) $printMaterialOptions[] = $v;
-    $v = trim((string)($psRow['finish'] ?? ''));
-    if ($v !== '' && $v !== 'null' && !in_array($v, $printFinishOptions, true)) $printFinishOptions[] = $v;
+    $v = trim((string) ($psRow['printer'] ?? ''));
+    if ($v !== '' && $v !== 'null' && !in_array($v, $printPrinterOptions, true))
+      $printPrinterOptions[] = $v;
+    $v = trim((string) ($psRow['material'] ?? ''));
+    if ($v !== '' && $v !== 'null' && !in_array($v, $printMaterialOptions, true))
+      $printMaterialOptions[] = $v;
+    $v = trim((string) ($psRow['finish'] ?? ''));
+    if ($v !== '' && $v !== 'null' && !in_array($v, $printFinishOptions, true))
+      $printFinishOptions[] = $v;
   }
   $psRes->free();
 }
@@ -124,10 +127,12 @@ $psRes2 = $conn->query("
 ");
 if ($psRes2) {
   while ($psRow2 = $psRes2->fetch_assoc()) {
-    $v = trim((string)($psRow2['material'] ?? ''));
-    if ($v !== '' && $v !== 'null' && !in_array($v, $printMaterialOptions, true)) $printMaterialOptions[] = $v;
-    $v = trim((string)($psRow2['finish'] ?? ''));
-    if ($v !== '' && $v !== 'null' && !in_array($v, $printFinishOptions, true)) $printFinishOptions[] = $v;
+    $v = trim((string) ($psRow2['material'] ?? ''));
+    if ($v !== '' && $v !== 'null' && !in_array($v, $printMaterialOptions, true))
+      $printMaterialOptions[] = $v;
+    $v = trim((string) ($psRow2['finish'] ?? ''));
+    if ($v !== '' && $v !== 'null' && !in_array($v, $printFinishOptions, true))
+      $printFinishOptions[] = $v;
   }
   $psRes2->free();
 }
@@ -1475,51 +1480,51 @@ $deptOptions = [
           </div><!-- /filter-grid row 2 -->
 
           <?php if (!empty($printPrinterOptions) || !empty($printMaterialOptions) || !empty($printFinishOptions)): ?>
-          <hr class="filter-row-divider">
+            <hr class="filter-row-divider">
 
-          <!-- ── ROW 3: Print settings filters ──────────────────────────────── -->
-          <div class="filter-grid" style="grid-template-columns: repeat(3, 1fr); gap: 10px;">
+            <!-- ── ROW 3: Print settings filters ──────────────────────────────── -->
+            <div class="filter-grid" style="grid-template-columns: repeat(3, 1fr); gap: 10px;">
 
-            <!-- Printer -->
-            <div class="form-group <?= !empty($fPrinter) ? 'filter-active' : '' ?>">
-              <label class="small mb-1">🖨️ Printer</label>
-              <select class="form-control form-control-sm" name="print_printer">
-                <option value="">— All —</option>
-                <?php foreach ($printPrinterOptions as $pv): ?>
-                  <option value="<?= htmlspecialchars($pv) ?>" <?= ($fPrinter === $pv ? 'selected' : '') ?>>
-                    <?= htmlspecialchars($pv) ?>
-                  </option>
-                <?php endforeach; ?>
-              </select>
-            </div>
+              <!-- Printer -->
+              <div class="form-group <?= !empty($fPrinter) ? 'filter-active' : '' ?>">
+                <label class="small mb-1">🖨️ Printer</label>
+                <select class="form-control form-control-sm" name="print_printer">
+                  <option value="">— All —</option>
+                    <?php foreach ($printPrinterOptions as $pv): ?>
+                    <option value="<?= htmlspecialchars($pv) ?>" <?= ($fPrinter === $pv ? 'selected' : '') ?>>
+                        <?= htmlspecialchars($pv) ?>
+                    </option>
+                    <?php endforeach; ?>
+                </select>
+              </div>
 
-            <!-- Material -->
-            <div class="form-group <?= !empty($fPrintMat) ? 'filter-active' : '' ?>">
-              <label class="small mb-1">🧱 Material</label>
-              <select class="form-control form-control-sm" name="print_material">
-                <option value="">— All —</option>
-                <?php foreach ($printMaterialOptions as $pv): ?>
-                  <option value="<?= htmlspecialchars($pv) ?>" <?= ($fPrintMat === $pv ? 'selected' : '') ?>>
-                    <?= htmlspecialchars($pv) ?>
-                  </option>
-                <?php endforeach; ?>
-              </select>
-            </div>
+              <!-- Material -->
+              <div class="form-group <?= !empty($fPrintMat) ? 'filter-active' : '' ?>">
+                <label class="small mb-1">🧱 Material</label>
+                <select class="form-control form-control-sm" name="print_material">
+                  <option value="">— All —</option>
+                    <?php foreach ($printMaterialOptions as $pv): ?>
+                    <option value="<?= htmlspecialchars($pv) ?>" <?= ($fPrintMat === $pv ? 'selected' : '') ?>>
+                        <?= htmlspecialchars($pv) ?>
+                    </option>
+                    <?php endforeach; ?>
+                </select>
+              </div>
 
-            <!-- Finish -->
-            <div class="form-group <?= !empty($fPrintFin) ? 'filter-active' : '' ?>">
-              <label class="small mb-1">✨ Finish</label>
-              <select class="form-control form-control-sm" name="print_finish">
-                <option value="">— All —</option>
-                <?php foreach ($printFinishOptions as $pv): ?>
-                  <option value="<?= htmlspecialchars($pv) ?>" <?= ($fPrintFin === $pv ? 'selected' : '') ?>>
-                    <?= htmlspecialchars($pv) ?>
-                  </option>
-                <?php endforeach; ?>
-              </select>
-            </div>
+              <!-- Finish -->
+              <div class="form-group <?= !empty($fPrintFin) ? 'filter-active' : '' ?>">
+                <label class="small mb-1">✨ Finish</label>
+                <select class="form-control form-control-sm" name="print_finish">
+                  <option value="">— All —</option>
+                    <?php foreach ($printFinishOptions as $pv): ?>
+                    <option value="<?= htmlspecialchars($pv) ?>" <?= ($fPrintFin === $pv ? 'selected' : '') ?>>
+                        <?= htmlspecialchars($pv) ?>
+                    </option>
+                    <?php endforeach; ?>
+                </select>
+              </div>
 
-          </div><!-- /filter-grid row 3 -->
+            </div><!-- /filter-grid row 3 -->
           <?php endif; ?>
 
           <!-- ── Tlačidlá + active filter pills ─────────────────────────────── -->
