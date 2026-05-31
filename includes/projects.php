@@ -104,6 +104,40 @@ function projectEnsureEmployeeStat(array &$stats, int $id, string $name, ?string
     $stats[$id]['photo'] = $photo;
   }
 }
+function projectNormalizeTaskId(mysqli $conn, ?int $taskId, int $projectId): ?int
+{
+  if (!$taskId || $projectId <= 0) {
+    return null;
+  }
+
+  $stmt = $conn->prepare("SELECT id FROM project_tasks WHERE id=? AND project_id=?");
+  if (!$stmt) {
+    return null;
+  }
+  $stmt->bind_param('ii', $taskId, $projectId);
+  $stmt->execute();
+  $exists = (bool) $stmt->get_result()->fetch_assoc();
+  $stmt->close();
+
+  return $exists ? $taskId : null;
+}
+function projectNormalizeEmployeeId(mysqli $conn, int $employeeId): int
+{
+  if ($employeeId <= 0) {
+    return 0;
+  }
+
+  $stmt = $conn->prepare("SELECT id FROM employees WHERE id=?");
+  if (!$stmt) {
+    return 0;
+  }
+  $stmt->bind_param('i', $employeeId);
+  $stmt->execute();
+  $exists = (bool) $stmt->get_result()->fetch_assoc();
+  $stmt->close();
+
+  return $exists ? $employeeId : 0;
+}
 function projectRedirect(string $url): void
 {
   if (!headers_sent()) {
@@ -372,22 +406,36 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $tid = intval($_POST['task_id']);
     $status = $_POST['task_status'] ?? 'waiting';
     $pid = intval($_POST['project_id']);
-    if ($tid > 0) {
-      $stmt = $conn->prepare("UPDATE project_tasks SET status=? WHERE id=?");
-      $stmt->bind_param('si', $status, $tid);
+    $allowedTaskStatuses = ['waiting', 'in_progress', 'stuck', 'done'];
+    if (!in_array($status, $allowedTaskStatuses, true)) {
+      $status = 'waiting';
+    }
+
+    if ($tid > 0 && $pid > 0 && ($isAdmin || $empId > 0)) {
+      if ($isAdmin) {
+        $stmt = $conn->prepare("UPDATE project_tasks SET status=? WHERE id=? AND project_id=?");
+        $stmt->bind_param('sii', $status, $tid, $pid);
+      } else {
+        $stmt = $conn->prepare("UPDATE project_tasks SET status=? WHERE id=? AND project_id=? AND assigned_to=?");
+        $stmt->bind_param('siii', $status, $tid, $pid, $empId);
+      }
+
       $stmt->execute();
+      $changed = $stmt->affected_rows > 0;
       $stmt->close();
 
-      require_once dirname(__DIR__) . '/scripts/orders/activity_helper.php';
-      log_order_activity(
-        $conn,
-        null,
-        $empId,
-        'task_status_changed',
-        'project_task',
-        $tid,
-        ['project_id' => $pid, 'new_status' => $status]
-      );
+      if ($changed) {
+        require_once dirname(__DIR__) . '/scripts/orders/activity_helper.php';
+        log_order_activity(
+          $conn,
+          null,
+          $empId,
+          'task_status_changed',
+          'project_task',
+          $tid,
+          ['project_id' => $pid, 'new_status' => $status]
+        );
+      }
     }
     projectRedirect($_SERVER['PHP_SELF'] . '?page=projects&view=' . $pid);
   }
@@ -425,6 +473,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $note = trim($_POST['log_note'] ?? '');
 
     if ($pid > 0 && $hours > 0) {
+      $tid = projectNormalizeTaskId($conn, $tid, $pid);
       $stmt = $conn->prepare("INSERT INTO project_time_log
                 (project_id, task_id, employee_id, logged_date, hours, note)
                 VALUES (?,?,?,?,?,?)");
@@ -444,6 +493,87 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         ['hours' => $hours, 'date' => $date, 'task_id' => $tid],
         $note
       );
+    }
+    projectRedirect($_SERVER['PHP_SELF'] . '?page=projects&view=' . $pid);
+  }
+
+  // Edit time log. Admin can edit all rows, users can edit only their own rows.
+  if ($act === 'edit_time_log') {
+    $logId = intval($_POST['time_log_id'] ?? 0);
+    $pid = intval($_POST['project_id'] ?? 0);
+    $tid = intval($_POST['task_id'] ?? 0) ?: null;
+    $postedEmployeeId = intval($_POST['employee_id'] ?? 0) ?: $empId;
+    $targetEmployeeId = $isAdmin ? projectNormalizeEmployeeId($conn, $postedEmployeeId) : $empId;
+    $hours = floatval($_POST['hours'] ?? 0);
+    $date = $_POST['logged_date'] ?: date('Y-m-d');
+    $note = trim($_POST['log_note'] ?? '');
+
+    if ($logId > 0 && $pid > 0 && $hours > 0 && $targetEmployeeId > 0) {
+      $tid = projectNormalizeTaskId($conn, $tid, $pid);
+
+      if ($isAdmin) {
+        $stmt = $conn->prepare("UPDATE project_time_log
+                  SET employee_id=?, task_id=?, logged_date=?, hours=?, note=?
+                  WHERE id=? AND project_id=?");
+        $stmt->bind_param('iisdsii', $targetEmployeeId, $tid, $date, $hours, $note, $logId, $pid);
+      } else {
+        $stmt = $conn->prepare("UPDATE project_time_log
+                  SET task_id=?, logged_date=?, hours=?, note=?
+                  WHERE id=? AND project_id=? AND employee_id=?");
+        $stmt->bind_param('isdsiii', $tid, $date, $hours, $note, $logId, $pid, $empId);
+      }
+
+      $stmt->execute();
+      $changed = $stmt->affected_rows > 0;
+      $stmt->close();
+
+      if ($changed) {
+        require_once dirname(__DIR__) . '/scripts/orders/activity_helper.php';
+        log_order_activity(
+          $conn,
+          null,
+          $empId,
+          'time_log_updated',
+          'project',
+          $pid,
+          ['log_id' => $logId, 'employee_id' => $targetEmployeeId, 'hours' => $hours, 'date' => $date, 'task_id' => $tid],
+          $note
+        );
+      }
+    }
+    projectRedirect($_SERVER['PHP_SELF'] . '?page=projects&view=' . $pid);
+  }
+
+  // Delete time log. Admin can delete all rows, users can delete only their own rows.
+  if ($act === 'delete_time_log') {
+    $logId = intval($_POST['time_log_id'] ?? 0);
+    $pid = intval($_POST['project_id'] ?? 0);
+
+    if ($logId > 0 && $pid > 0 && ($isAdmin || $empId > 0)) {
+      if ($isAdmin) {
+        $stmt = $conn->prepare("DELETE FROM project_time_log WHERE id=? AND project_id=?");
+        $stmt->bind_param('ii', $logId, $pid);
+      } else {
+        $stmt = $conn->prepare("DELETE FROM project_time_log WHERE id=? AND project_id=? AND employee_id=?");
+        $stmt->bind_param('iii', $logId, $pid, $empId);
+      }
+
+      $stmt->execute();
+      $deleted = $stmt->affected_rows > 0;
+      $stmt->close();
+
+      if ($deleted) {
+        require_once dirname(__DIR__) . '/scripts/orders/activity_helper.php';
+        log_order_activity(
+          $conn,
+          null,
+          $empId,
+          'time_log_deleted',
+          'project',
+          $pid,
+          ['log_id' => $logId]
+        );
+      }
     }
     projectRedirect($_SERVER['PHP_SELF'] . '?page=projects&view=' . $pid);
   }
@@ -539,6 +669,34 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
   .project-task-done .text-muted {
     color: #aebfb4 !important;
+  }
+
+  .project-task-in-progress>td {
+    background: rgba(255, 193, 7, .16) !important;
+    color: #f7e8b1 !important;
+    border-color: rgba(255, 193, 7, .28) !important;
+  }
+
+  .project-task-in-progress>td:first-child {
+    box-shadow: inset 3px 0 0 rgba(255, 193, 7, .9);
+  }
+
+  .project-task-in-progress .text-muted {
+    color: #d9c98f !important;
+  }
+
+  .project-task-stuck>td {
+    background: rgba(220, 53, 69, .16) !important;
+    color: #f4c2c8 !important;
+    border-color: rgba(220, 53, 69, .3) !important;
+  }
+
+  .project-task-stuck>td:first-child {
+    box-shadow: inset 3px 0 0 rgba(220, 53, 69, .9);
+  }
+
+  .project-task-stuck .text-muted {
+    color: #d8a1a8 !important;
   }
 
   .project-general-icon {
@@ -669,9 +827,11 @@ if ($viewId > 0) {
   // time logs
   $timeLogs = [];
   $totalHours = 0;
-  $res = $conn->query("SELECT ptl.*, CONCAT_WS(' ', e.firstname, e.lastname) as employee_name, e.photo AS employee_photo
+  $res = $conn->query("SELECT ptl.*, CONCAT_WS(' ', e.firstname, e.lastname) as employee_name, e.photo AS employee_photo,
+              pt.title AS task_title
         FROM project_time_log ptl
         LEFT JOIN employees e ON e.id = ptl.employee_id
+        LEFT JOIN project_tasks pt ON pt.id = ptl.task_id
         WHERE ptl.project_id = {$viewId}
         ORDER BY ptl.logged_date DESC LIMIT 50");
   if ($res)
@@ -858,22 +1018,40 @@ if ($viewId > 0) {
                   </tr>
                 </thead>
                 <tbody>
-                  <?php foreach ($tasks as $t): ?>
-                    <tr class="<?= $t['status'] === 'done' ? 'project-task-done' : '' ?>">
+                  <?php foreach ($tasks as $t):
+                    $canToggleTask = $isAdmin || intval($t['assigned_to'] ?? 0) === $empId;
+                    $taskRowClass = '';
+                    if ($t['status'] === 'done') {
+                      $taskRowClass = 'project-task-done';
+                    } elseif ($t['status'] === 'in_progress') {
+                      $taskRowClass = 'project-task-in-progress';
+                    } elseif ($t['status'] === 'stuck') {
+                      $taskRowClass = 'project-task-stuck';
+                    }
+                    ?>
+                    <tr class="<?= $taskRowClass ?>">
                       <td>
-                        <!-- Quick toggle done/undone -->
-                        <form method="POST" style="display:inline;">
-                          <input type="hidden" name="action" value="update_task_status">
-                          <input type="hidden" name="task_id" value="<?= $t['id'] ?>">
-                          <input type="hidden" name="project_id" value="<?= $viewId ?>">
-                          <input type="hidden" name="task_status"
-                            value="<?= $t['status'] === 'done' ? 'in_progress' : 'done' ?>">
-                          <button type="submit"
+                        <?php if ($canToggleTask): ?>
+                          <!-- Quick toggle done/undone -->
+                          <form method="POST" style="display:inline;">
+                            <input type="hidden" name="action" value="update_task_status">
+                            <input type="hidden" name="task_id" value="<?= $t['id'] ?>">
+                            <input type="hidden" name="project_id" value="<?= $viewId ?>">
+                            <input type="hidden" name="task_status"
+                              value="<?= $t['status'] === 'done' ? 'in_progress' : 'done' ?>">
+                            <button type="submit"
+                              class="btn btn-xs <?= $t['status'] === 'done' ? 'btn-success' : 'btn-outline-secondary' ?>"
+                              title="<?= $t['status'] === 'done' ? 'Mark undone' : 'Mark done' ?>">
+                              <i class="fas fa-check"></i>
+                            </button>
+                          </form>
+                        <?php else: ?>
+                          <button type="button"
                             class="btn btn-xs <?= $t['status'] === 'done' ? 'btn-success' : 'btn-outline-secondary' ?>"
-                            title="<?= $t['status'] === 'done' ? 'Mark undone' : 'Mark done' ?>">
+                            title="Only assigned user can change this task" disabled>
                             <i class="fas fa-check"></i>
                           </button>
-                        </form>
+                        <?php endif; ?>
                       </td>
                       <td>
                         <span class="<?= $t['status'] === 'done' ? 'text-muted' : '' ?>"
@@ -947,13 +1125,17 @@ if ($viewId > 0) {
                 <thead>
                   <tr>
                     <th>Employee</th>
+                    <th>Task</th>
                     <th>Date</th>
                     <th>Hours</th>
                     <th>Note</th>
+                    <th style="width:76px;"></th>
                   </tr>
                 </thead>
                 <tbody>
-                  <?php foreach ($timeLogs as $tl): ?>
+                  <?php foreach ($timeLogs as $tl):
+                    $canEditTimeLog = $isAdmin || intval($tl['employee_id'] ?? 0) === $empId;
+                    ?>
                     <tr>
                       <td>
                         <div class="project-user-line">
@@ -961,14 +1143,48 @@ if ($viewId > 0) {
                           <span class="project-user-text"><?= htmlspecialchars($tl['employee_name'] ?? '—') ?></span>
                         </div>
                       </td>
+                      <td>
+                        <?php if (!empty($tl['task_title'])): ?>
+                          <?= htmlspecialchars($tl['task_title']) ?>
+                        <?php else: ?>
+                          <span class="text-muted">Project level</span>
+                        <?php endif; ?>
+                      </td>
                       <td><?= date('d.m.Y', strtotime($tl['logged_date'])) ?></td>
                       <td><strong><?= number_format($tl['hours'], 1) ?>h</strong></td>
                       <td><?= htmlspecialchars($tl['note'] ?? '') ?></td>
+                      <td class="text-right">
+                        <?php if ($canEditTimeLog): ?>
+                          <div class="d-flex justify-content-end" style="gap:4px;">
+                            <button type="button" class="btn btn-xs btn-outline-warning" title="Edit time log"
+                              onclick="openEditTimeLog(<?= htmlspecialchars(json_encode([
+                                'id' => intval($tl['id']),
+                                'project_id' => $viewId,
+                                'employee_id' => $tl['employee_id'],
+                                'task_id' => $tl['task_id'],
+                                'logged_date' => $tl['logged_date'],
+                                'hours' => $tl['hours'],
+                                'note' => $tl['note'],
+                              ]), ENT_QUOTES, 'UTF-8') ?>)">
+                              <i class="fas fa-pencil-alt"></i>
+                            </button>
+                            <form method="POST" onsubmit="return confirm('Delete time log?');" style="display:inline;">
+                              <input type="hidden" name="action" value="delete_time_log">
+                              <input type="hidden" name="time_log_id" value="<?= intval($tl['id']) ?>">
+                              <input type="hidden" name="project_id" value="<?= $viewId ?>">
+                              <button type="submit" class="btn btn-xs btn-danger" title="Delete time log">
+                                <i class="fas fa-trash"></i>
+                              </button>
+                            </form>
+                          </div>
+                        <?php endif; ?>
+                      </td>
                     </tr>
                   <?php endforeach; ?>
                   <tr style="background:#17a2b8;color:#fff;font-weight:bold;">
-                    <td colspan="2">Total</td>
+                    <td colspan="3">Total</td>
                     <td><?= number_format($totalHours, 1) ?>h</td>
+                    <td></td>
                     <td></td>
                   </tr>
                 </tbody>
@@ -1290,6 +1506,60 @@ if ($viewId > 0) {
       </div>
     </div>
 
+    <div class="modal fade" id="editTimeLogModal" tabindex="-1">
+      <div class="modal-dialog modal-sm">
+        <div class="modal-content">
+          <form method="POST">
+            <input type="hidden" name="action" value="edit_time_log">
+            <input type="hidden" name="time_log_id" id="editTimeLogId">
+            <input type="hidden" name="project_id" id="editTimeLogProjectId" value="<?= $viewId ?>">
+            <div class="modal-header bg-warning">
+              <h5 class="modal-title">Edit Time Log</h5>
+              <button type="button" class="close" data-dismiss="modal">&times;</button>
+            </div>
+            <div class="modal-body">
+              <?php if ($isAdmin): ?>
+                <div class="form-group">
+                  <label>Employee</label>
+                  <select name="employee_id" id="editTimeLogEmployeeId" class="form-control form-control-sm">
+                    <?php foreach ($employees as $e): ?>
+                      <option value="<?= $e['id'] ?>"><?= htmlspecialchars($e['name']) ?></option>
+                    <?php endforeach; ?>
+                  </select>
+                </div>
+              <?php endif; ?>
+              <div class="form-group">
+                <label>Date</label>
+                <input type="date" name="logged_date" id="editTimeLogDate" class="form-control" required>
+              </div>
+              <div class="form-group">
+                <label>Hours</label>
+                <input type="number" name="hours" id="editTimeLogHours" class="form-control" step="0.25" min="0.25"
+                  max="24" required>
+              </div>
+              <div class="form-group">
+                <label>Task (optional)</label>
+                <select name="task_id" id="editTimeLogTaskId" class="form-control form-control-sm">
+                  <option value="">project level</option>
+                  <?php foreach ($tasks as $t): ?>
+                    <option value="<?= $t['id'] ?>"><?= htmlspecialchars($t['title']) ?></option>
+                  <?php endforeach; ?>
+                </select>
+              </div>
+              <div class="form-group">
+                <label>Note</label>
+                <input type="text" name="log_note" id="editTimeLogNote" class="form-control form-control-sm">
+              </div>
+            </div>
+            <div class="modal-footer">
+              <button type="button" class="btn btn-secondary btn-sm" data-dismiss="modal">Cancel</button>
+              <button type="submit" class="btn btn-warning btn-sm">Save Time</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+
     <?php if ($isAdmin): ?>
       <div class="modal fade" id="detailEditProjectModal" tabindex="-1">
         <div class="modal-dialog modal-lg">
@@ -1412,6 +1682,18 @@ if ($viewId > 0) {
         $('#editTaskDue').val(data.due_date ? String(data.due_date).substring(0, 10) : '');
         $('#editTaskNotes').val(data.notes || '');
         $('#editTaskModal').modal('show');
+      }
+
+      function openEditTimeLog(data) {
+        data = data || {};
+        $('#editTimeLogId').val(data.id || '');
+        $('#editTimeLogProjectId').val(data.project_id || <?= $viewId ?>);
+        $('#editTimeLogEmployeeId').val(data.employee_id || '');
+        $('#editTimeLogTaskId').val(data.task_id || '');
+        $('#editTimeLogDate').val(data.logged_date ? String(data.logged_date).substring(0, 10) : '');
+        $('#editTimeLogHours').val(data.hours || '');
+        $('#editTimeLogNote').val(data.note || '');
+        $('#editTimeLogModal').modal('show');
       }
 
       function projectCloseModal($modal) {
@@ -1571,6 +1853,7 @@ if ($viewId > 0) {
       }
     }
   }
+  $defaultEmployeeFilter = isset($employeeStats[$empId]) ? (string) $empId : 'all';
   $employeeStats = array_values($employeeStats);
   usort($employeeStats, fn($a, $b) => $b['active_projects'] <=> $a['active_projects'] ?: strcasecmp($a['name'], $b['name']));
   ?>
@@ -1659,9 +1942,9 @@ if ($viewId > 0) {
           <select id="employeeFilter"
                   class="form-control form-control-sm"
                   style="width:220px;">
-            <option value="all">All employees</option>
+            <option value="all" <?= $defaultEmployeeFilter === 'all' ? 'selected' : '' ?>>All employees</option>
             <?php foreach ($employeeStats as $stat): ?>
-              <option value="<?= intval($stat['id']) ?>">
+              <option value="<?= intval($stat['id']) ?>" <?= $defaultEmployeeFilter === (string) intval($stat['id']) ? 'selected' : '' ?>>
                 <?= htmlspecialchars($stat['name']) ?>
               </option>
             <?php endforeach; ?>
@@ -2113,6 +2396,8 @@ if ($viewId > 0) {
     });
 
     $(document).ready(function () {
+      filterProjects();
+
       // Small delay so CSS transition is visible
       setTimeout(function () {
         $('.progress-bar[data-target]').each(function () {
