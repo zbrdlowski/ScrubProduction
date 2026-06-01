@@ -1952,8 +1952,7 @@ $deptOptions = [
                 <button type="button" class="btn btn-sm btn-outline-light btn-toggle-detail mr-1"
                   data-order-id="<?= $orderId ?>">
                   <i class="fas fa-search"></i>
-                </button>
-                </span>
+                </button>                
                 <?php if ($perm >= 400 && empty($uiDeptCode)): ?>
                   <span class="badge badge-info ml-2" title="Select department filter first">
                     Select dept

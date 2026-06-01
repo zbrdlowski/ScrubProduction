@@ -328,15 +328,23 @@ for ($i = 0; $i < 6; $i++) {
     border-radius: 50%;
     object-fit: cover;
     margin-right: 6px;
-    border: 1px solid rgba(255, 255, 255, .22);
+    border: 1px solid rgba(255, 255, 255, .28);
+  }
+
+  .holiday-month-card {
+    background: #404852;
+    border: 1px solid #56616c;
+    border-radius: 6px;
+    overflow: hidden;
+    box-shadow: 0 0 0 1px rgba(23, 162, 184, .12);
   }
 
   .holiday-month-card .card-header {
     position: sticky;
     top: 0;
     z-index: 4;
-    background: #2f4858;
-    border-bottom: 1px solid rgba(23, 162, 184, .55);
+    background: #263f4d;
+    border-bottom: 1px solid rgba(23, 162, 184, .65);
     color: #f8f9fa;
   }
 
@@ -345,15 +353,22 @@ for ($i = 0; $i < 6; $i++) {
     font-weight: 700;
   }
 
+  .holiday-month-card .card-body {
+    background: #404852;
+  }
+
   .holiday-table-wrap {
     overflow-x: auto;
     max-width: 100%;
+    background: #404852;
   }
 
   .holiday-grid {
     table-layout: fixed;
     min-width: 1180px;
     margin-bottom: 0;
+    background: #404852;
+    border: 1px solid #56616c;
   }
 
   .holiday-grid th,
@@ -362,41 +377,53 @@ for ($i = 0; $i < 6; $i++) {
     vertical-align: middle !important;
     padding: 4px 3px !important;
     height: 34px;
+    border-color: #56616c !important;
+    color: #e4e6eb;
   }
 
   .holiday-grid .holiday-employee-col {
+    padding-left: 8px !important;
     position: sticky;
     left: 0;
     z-index: 3;
     min-width: 210px;
     width: 210px;
     text-align: left;
-    background: #343a40;
+    background: #32383e !important;
+    color: #f1f3f5;
   }
 
   .holiday-grid thead .holiday-employee-col {
     z-index: 5;
-    background: #2f353b;
+    background: #28323a !important;
+    color: #ffffff;
   }
 
   .holiday-dept-row td {
-    background: #2f353b !important;
-    color: #f8f9fa;
+    padding-left: 8px !important;
+    background: linear-gradient(
+      90deg,
+      rgba(23, 162, 184, .28),
+      #2c3338 260px,
+      #2c3338
+    ) !important;
+    color: #8fe6f7 !important;
     font-weight: 700;
     text-align: left;
+    border-left: 3px solid #17a2b8 !important;
   }
 
   .holiday-day-weekend {
-    background: rgba(220, 53, 69, .12) !important;
+    background: rgba(220, 53, 69, .16) !important;
   }
 
   .holiday-day-public {
-    background: rgba(220, 53, 69, .21) !important;
-    color: #ffd9de;
+    background: rgba(220, 53, 69, .24) !important;
+    color: #ffd9de !important;
   }
 
   .holiday-day-today {
-    box-shadow: inset 0 0 0 2px rgba(23, 162, 184, .75);
+    box-shadow: inset 0 0 0 2px rgba(23, 162, 184, .95);
   }
 
   .holiday-cell-own {
@@ -404,7 +431,7 @@ for ($i = 0; $i < 6; $i++) {
   }
 
   .holiday-cell-own:hover {
-    background: rgba(23, 162, 184, .18);
+    background: rgba(23, 162, 184, .22) !important;
   }
 
   .holiday-pill {
@@ -416,26 +443,26 @@ for ($i = 0; $i < 6; $i++) {
     justify-content: center;
     font-size: 11px;
     font-weight: 700;
-    border: 1px solid rgba(255, 255, 255, .24);
+    border: 1px solid rgba(255, 255, 255, .28);
   }
 
   .holiday-pill-pending {
-    background: rgba(255, 193, 7, .28);
+    background: rgba(255, 193, 7, .32);
     color: #ffe8a1;
   }
 
   .holiday-pill-approved {
-    background: rgba(40, 167, 69, .34);
+    background: rgba(40, 167, 69, .38);
     color: #dff7e6;
   }
 
   .holiday-pill-doctor {
-    background: rgba(23, 162, 184, .34);
+    background: rgba(23, 162, 184, .38);
     color: #e1f8ff;
   }
 
   .holiday-pill-sick {
-    background: rgba(220, 53, 69, .34);
+    background: rgba(220, 53, 69, .38);
     color: #ffe1e5;
   }
 
@@ -447,7 +474,8 @@ for ($i = 0; $i < 6; $i++) {
 <div class="container-fluid">
   <div class="d-flex justify-content-between align-items-center mb-3">
     <h4 class="mb-0" style="color:#e4e6eb;"><i class="far fa-calendar-check mr-2"></i>Holiday planner</h4>
-    <button type="button" class="btn btn-primary" data-toggle="modal" data-target="#holidayRequestModal" <?= $holidayHasTable ? '' : 'disabled' ?>>
+    <button type="button" class="btn btn-primary" data-toggle="modal" data-target="#holidayRequestModal"
+      <?= $holidayHasTable ? '' : 'disabled' ?>>
       <i class="fas fa-plus mr-1"></i> New request
     </button>
   </div>
@@ -455,7 +483,8 @@ for ($i = 0; $i < 6; $i++) {
   <?php if (!$holidayHasTable || !$holidayHasEmployeeFlag): ?>
     <div class="alert alert-warning">
       Holiday planner database schema is not fully installed yet.
-      Run <strong>db/holiday_planner.sql</strong> first. The page can render a preview, but requests need the database table.
+      Run <strong>db/holiday_planner.sql</strong> first. The page can render a preview, but requests need the database
+      table.
     </div>
   <?php endif; ?>
 
@@ -463,7 +492,8 @@ for ($i = 0; $i < 6; $i++) {
     <a class="btn btn-sm btn-outline-secondary" href="?page=holidays&start=<?= htmlspecialchars($prevStart) ?>">
       <i class="fas fa-chevron-left"></i> Previous 6 months
     </a>
-    <a class="btn btn-sm btn-outline-info" href="?page=holidays&start=<?= htmlspecialchars($currentStart) ?>">Current</a>
+    <a class="btn btn-sm btn-outline-info"
+      href="?page=holidays&start=<?= htmlspecialchars($currentStart) ?>">Current</a>
     <a class="btn btn-sm btn-outline-secondary" href="?page=holidays&start=<?= htmlspecialchars($nextStart) ?>">
       Next 6 months <i class="fas fa-chevron-right"></i>
     </a>
@@ -503,13 +533,15 @@ for ($i = 0; $i < 6; $i++) {
                 <tr>
                   <td><?= htmlspecialchars($request['employee_name'] ?? '') ?></td>
                   <td><?= htmlspecialchars(holidayTypeLabel($request['request_type'])) ?></td>
-                  <td><?= date('d.m.Y', strtotime($request['start_date'])) ?> - <?= date('d.m.Y', strtotime($request['end_date'])) ?></td>
+                  <td><?= date('d.m.Y', strtotime($request['start_date'])) ?> -
+                    <?= date('d.m.Y', strtotime($request['end_date'])) ?></td>
                   <td><?= htmlspecialchars($request['note'] ?? '') ?></td>
                   <td>
                     <form method="POST" class="d-flex" style="gap:4px;">
                       <input type="hidden" name="action" value="review_holiday_request">
                       <input type="hidden" name="request_id" value="<?= intval($request['id']) ?>">
-                      <input type="hidden" name="return_start" value="<?= htmlspecialchars($windowStart->format('Y-m-01')) ?>">
+                      <input type="hidden" name="return_start"
+                        value="<?= htmlspecialchars($windowStart->format('Y-m-01')) ?>">
                       <input type="text" name="admin_note" class="form-control form-control-sm" placeholder="Admin note">
                       <button type="submit" name="status" value="approved" class="btn btn-sm btn-success">Approve</button>
                       <button type="submit" name="status" value="rejected" class="btn btn-sm btn-danger">Reject</button>
@@ -552,7 +584,8 @@ for ($i = 0; $i < 6; $i++) {
                   $headerClasses[] = 'holiday-day-public';
                 }
                 ?>
-                <th class="<?= htmlspecialchars(implode(' ', $headerClasses)) ?>" <?= isset($holidayPublicHolidays[$day->format('d-m')]) ? 'title="Public holiday" data-toggle="tooltip"' : '' ?>>
+                <th class="<?= htmlspecialchars(implode(' ', $headerClasses)) ?>"
+                  <?= isset($holidayPublicHolidays[$day->format('d-m')]) ? 'title="Public holiday" data-toggle="tooltip"' : '' ?>>
                   <div><?= htmlspecialchars($day->format('D')) ?></div>
                   <strong><?= intval($day->format('j')) ?></strong>
                 </th>
@@ -612,7 +645,8 @@ for ($i = 0; $i < 6; $i++) {
                         }
                         $title = implode(' | ', $tooltipParts);
                         ?>
-                        <span class="holiday-pill <?= $pillClass ?>" title="<?= htmlspecialchars($title, ENT_QUOTES, 'UTF-8') ?>" data-toggle="tooltip">
+                        <span class="holiday-pill <?= $pillClass ?>" title="<?= htmlspecialchars($title, ENT_QUOTES, 'UTF-8') ?>"
+                          data-toggle="tooltip">
                           <?= htmlspecialchars(holidayCellCode($request['request_type'], $request['status'])) ?>
                         </span>
                       <?php endforeach; ?>
@@ -651,7 +685,8 @@ for ($i = 0; $i < 6; $i++) {
               <?php foreach ($myRequests as $request): ?>
                 <tr>
                   <td><?= htmlspecialchars(holidayTypeLabel($request['request_type'])) ?></td>
-                  <td><?= date('d.m.Y', strtotime($request['start_date'])) ?> - <?= date('d.m.Y', strtotime($request['end_date'])) ?></td>
+                  <td><?= date('d.m.Y', strtotime($request['start_date'])) ?> -
+                    <?= date('d.m.Y', strtotime($request['end_date'])) ?></td>
                   <td><?= holidayStatusBadge($request['status']) ?></td>
                   <td><?= htmlspecialchars($request['note'] ?? '') ?></td>
                   <td><?= htmlspecialchars($request['admin_note'] ?? '') ?></td>
@@ -660,7 +695,8 @@ for ($i = 0; $i < 6; $i++) {
                       <form method="POST" onsubmit="return confirm('Cancel this request?');">
                         <input type="hidden" name="action" value="cancel_holiday_request">
                         <input type="hidden" name="request_id" value="<?= intval($request['id']) ?>">
-                        <input type="hidden" name="return_start" value="<?= htmlspecialchars($windowStart->format('Y-m-01')) ?>">
+                        <input type="hidden" name="return_start"
+                          value="<?= htmlspecialchars($windowStart->format('Y-m-01')) ?>">
                         <button type="submit" class="btn btn-xs btn-outline-danger">Cancel</button>
                       </form>
                     <?php endif; ?>
@@ -720,7 +756,8 @@ for ($i = 0; $i < 6; $i++) {
           </div>
           <div class="form-group">
             <label>Note</label>
-            <textarea name="note" class="form-control" rows="3" placeholder="Optional note, time, context..."></textarea>
+            <textarea name="note" class="form-control" rows="3"
+              placeholder="Optional note, time, context..."></textarea>
           </div>
         </div>
         <div class="modal-footer">
