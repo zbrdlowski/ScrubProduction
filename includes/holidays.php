@@ -1,3 +1,4 @@
+<script src="plugins/bootstrap/js/bootstrap.bundle.min.js"></script>
 <?php
 // includes/holidays.php
 // Six-month holiday / time off planning grid.
@@ -401,12 +402,10 @@ for ($i = 0; $i < 6; $i++) {
 
   .holiday-dept-row td {
     padding-left: 8px !important;
-    background: linear-gradient(
-      90deg,
-      rgba(23, 162, 184, .28),
-      #2c3338 260px,
-      #2c3338
-    ) !important;
+    background: linear-gradient(90deg,
+        rgba(23, 162, 184, .28),
+        #2c3338 260px,
+        #2c3338) !important;
     color: #8fe6f7 !important;
     font-weight: 700;
     text-align: left;
@@ -534,7 +533,8 @@ for ($i = 0; $i < 6; $i++) {
                   <td><?= htmlspecialchars($request['employee_name'] ?? '') ?></td>
                   <td><?= htmlspecialchars(holidayTypeLabel($request['request_type'])) ?></td>
                   <td><?= date('d.m.Y', strtotime($request['start_date'])) ?> -
-                    <?= date('d.m.Y', strtotime($request['end_date'])) ?></td>
+                    <?= date('d.m.Y', strtotime($request['end_date'])) ?>
+                  </td>
                   <td><?= htmlspecialchars($request['note'] ?? '') ?></td>
                   <td>
                     <form method="POST" class="d-flex" style="gap:4px;">
@@ -634,16 +634,19 @@ for ($i = 0; $i < 6; $i++) {
                         } elseif ($request['request_type'] === 'sick') {
                           $pillClass = 'holiday-pill-sick';
                         }
-                        $tooltipParts = [
-                          holidayTypeLabel($request['request_type']) . ' - ' . $request['status'],
-                        ];
+                        $tooltipParts = [];
+
                         if (!empty($request['note'])) {
                           $tooltipParts[] = 'Note: ' . $request['note'];
                         }
-                        if (!empty($request['reviewed_name'])) {
-                          $tooltipParts[] = ($request['status'] === 'approved' ? 'Approved by: ' : 'Reviewed by: ') . $request['reviewed_name'];
+
+                        if ($request['status'] === 'approved' && !empty($request['reviewed_name'])) {
+                          $tooltipParts[] = 'Approved by: ' . $request['reviewed_name'];
                         }
-                        $title = implode(' | ', $tooltipParts);
+
+                        $title = !empty($tooltipParts)
+                          ? implode(' | ', $tooltipParts)
+                          : holidayTypeLabel($request['request_type']) . ' - ' . $request['status'];
                         ?>
                         <span class="holiday-pill <?= $pillClass ?>" title="<?= htmlspecialchars($title, ENT_QUOTES, 'UTF-8') ?>"
                           data-toggle="tooltip">
@@ -686,7 +689,8 @@ for ($i = 0; $i < 6; $i++) {
                 <tr>
                   <td><?= htmlspecialchars(holidayTypeLabel($request['request_type'])) ?></td>
                   <td><?= date('d.m.Y', strtotime($request['start_date'])) ?> -
-                    <?= date('d.m.Y', strtotime($request['end_date'])) ?></td>
+                    <?= date('d.m.Y', strtotime($request['end_date'])) ?>
+                  </td>
                   <td><?= holidayStatusBadge($request['status']) ?></td>
                   <td><?= htmlspecialchars($request['note'] ?? '') ?></td>
                   <td><?= htmlspecialchars($request['admin_note'] ?? '') ?></td>
@@ -770,8 +774,13 @@ for ($i = 0; $i < 6; $i++) {
 </div>
 
 <script>
-  $(function () {
-    $('[data-toggle="tooltip"]').tooltip({ container: 'body' });
+  document.addEventListener('DOMContentLoaded', function () {
+    document.querySelectorAll('[data-bs-toggle="tooltip"], [data-toggle="tooltip"]').forEach(function (el) {
+      new bootstrap.Tooltip(el, {
+        container: 'body',
+        trigger: 'hover'
+      });
+    });
 
     $('.holiday-cell-own').on('click', function () {
       var date = $(this).data('date');
