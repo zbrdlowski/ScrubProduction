@@ -145,6 +145,13 @@ function isMenuOpen($pages = []) {
     <p>Holidays</p>
   </a>
 </li>
+<li class="nav-item">
+  <a href="<?= basename($_SERVER['PHP_SELF']) ?>?page=projects"
+     class="nav-link <?= isActive('projects') ?>">
+    <i class="nav-icon fas fa-project-diagram" style="color:#ffc107;"></i>
+    <p>Projects</p>
+  </a>
+</li>
 <li class="nav-item <?= isMenuOpen([
       'modeldata',
       'product_chart'      
@@ -410,13 +417,6 @@ function isMenuOpen($pages = []) {
       </a>
     </li>
   </ul>
-</li>
-<li class="nav-item">
-  <a href="<?= basename($_SERVER['PHP_SELF']) ?>?page=projects"
-     class="nav-link <?= isActive('projects') ?>">
-    <i class="nav-icon fas fa-project-diagram" style="color:#ffc107;"></i>
-    <p>Projects</p>
-  </a>
 </li>
   </ul>
 <?php } ?>
