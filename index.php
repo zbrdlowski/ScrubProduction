@@ -57,6 +57,7 @@ $pageLabels = [
   'calendar' => 'Dochádzka',
   'orders_dashboard' => 'Orders Dashboard',
   'cleanup' => 'Cleanup',
+  'holidays' => 'Dovolenky',
   'chat' => 'Interný chat',
   'shoptet_order_download' => 'Shoptet Order Download'
 

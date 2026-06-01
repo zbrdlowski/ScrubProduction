@@ -1,3 +1,32 @@
+<?php
+$holidayNotifCount = 0;
+$holidayNotifText = 'Dovolenky';
+$holidayNotifFooter = 'Otvorit dovolenky';
+if (isset($conn) && $conn instanceof mysqli) {
+    $holidayTableCheck = $conn->query("SHOW TABLES LIKE 'holiday_requests'");
+    if ($holidayTableCheck && $holidayTableCheck->num_rows > 0) {
+        $holidayUserId = intval($_SESSION['user_id'] ?? 0);
+        $holidayIsAdmin = isset($_SESSION['permission']) && intval($_SESSION['permission']) >= 400;
+        if ($holidayIsAdmin) {
+            $holidayCountRes = $conn->query("SELECT COUNT(*) AS c FROM holiday_requests WHERE status='pending'");
+            if ($holidayCountRes && ($holidayCountRow = $holidayCountRes->fetch_assoc())) {
+                $holidayNotifCount = intval($holidayCountRow['c']);
+                $holidayNotifText = $holidayNotifCount === 1 ? '1 ziadost caka' : $holidayNotifCount . ' ziadosti cakaju';
+            }
+        } elseif ($holidayUserId > 0) {
+            $holidayStmt = $conn->prepare("SELECT COUNT(*) AS c FROM holiday_requests WHERE employee_id=? AND status IN ('approved','rejected') AND employee_seen_at IS NULL");
+            if ($holidayStmt) {
+                $holidayStmt->bind_param('i', $holidayUserId);
+                $holidayStmt->execute();
+                $holidayCountRow = $holidayStmt->get_result()->fetch_assoc();
+                $holidayNotifCount = intval($holidayCountRow['c'] ?? 0);
+                $holidayNotifText = $holidayNotifCount === 1 ? '1 odpoved' : $holidayNotifCount . ' odpovede';
+                $holidayStmt->close();
+            }
+        }
+    }
+}
+?>
 <nav class="main-header navbar navbar-expand navbar-dark">
     <!-- Left navbar links -->
     <ul class="navbar-nav">
@@ -26,6 +55,9 @@
       <li class="nav-item d-none d-sm-inline-block">
         <a href="?page=projects" class="nav-link">Projects</a>
       </li>
+      <li class="nav-item d-none d-sm-inline-block">
+        <a href="?page=holidays" class="nav-link">Holidays</a>
+      </li>
     </ul>
     <!-- Right navbar links -->
     <ul class="navbar-nav ml-auto">
@@ -44,6 +76,28 @@
 
           <div class="dropdown-divider"></div>
           <a href="?page=chat" class="dropdown-item dropdown-footer">Otvoriť chat</a>
+        </div>
+      </li>
+      <li class="nav-item dropdown">
+        <a class="nav-link" data-toggle="dropdown" href="#" id="holidayNotifToggle" title="Holiday requests">
+          <i class="far fa-calendar-check"></i>
+          <?php if ($holidayNotifCount > 0): ?>
+            <span class="badge badge-warning navbar-badge"><?= intval($holidayNotifCount) ?></span>
+          <?php endif; ?>
+        </a>
+        <div class="dropdown-menu dropdown-menu-lg dropdown-menu-right">
+          <span class="dropdown-item dropdown-header"><?= htmlspecialchars($holidayNotifText, ENT_QUOTES, 'UTF-8') ?></span>
+          <div class="dropdown-divider"></div>
+          <?php if ($holidayNotifCount > 0): ?>
+            <a href="?page=holidays" class="dropdown-item">
+              <i class="far fa-calendar-check mr-2"></i>
+              <?= htmlspecialchars($holidayNotifText, ENT_QUOTES, 'UTF-8') ?>
+            </a>
+          <?php else: ?>
+            <span class="dropdown-item text-muted">Ziadne nove ziadosti</span>
+          <?php endif; ?>
+          <div class="dropdown-divider"></div>
+          <a href="?page=holidays" class="dropdown-item dropdown-footer"><?= htmlspecialchars($holidayNotifFooter, ENT_QUOTES, 'UTF-8') ?></a>
         </div>
       </li>
       

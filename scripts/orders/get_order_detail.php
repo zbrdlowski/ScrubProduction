@@ -452,16 +452,18 @@ $stmt->close();
 // Zoradiť položky podľa departmentu: G → P → F → ostatné
 $deptOrder = ['G' => 1, 'P' => 2, 'T' => 2, 'M' => 2, 'S' => 2, 'F' => 3];
 usort($items, function (array $a, array $b) use ($deptOrder): int {
-  $ta = strtoupper(trim((string)($a['item_type_code'] ?? '')));
-  $tb = strtoupper(trim((string)($b['item_type_code'] ?? '')));
+  $ta = strtoupper(trim((string) ($a['item_type_code'] ?? '')));
+  $tb = strtoupper(trim((string) ($b['item_type_code'] ?? '')));
   $wa = $deptOrder[$ta] ?? 99;
   $wb = $deptOrder[$tb] ?? 99;
-  if ($wa !== $wb) return $wa <=> $wb;
+  if ($wa !== $wb)
+    return $wa <=> $wb;
   // V rámci rovnakého departmentu zachovaj pôvodné poradie (line_no, id)
-  $la = (int)($a['line_no'] ?? 999999);
-  $lb = (int)($b['line_no'] ?? 999999);
-  if ($la !== $lb) return $la <=> $lb;
-  return (int)($a['id'] ?? 0) <=> (int)($b['id'] ?? 0);
+  $la = (int) ($a['line_no'] ?? 999999);
+  $lb = (int) ($b['line_no'] ?? 999999);
+  if ($la !== $lb)
+    return $la <=> $lb;
+  return (int) ($a['id'] ?? 0) <=> (int) ($b['id'] ?? 0);
 });
 
 $status = (string) ($order['status'] ?? '');
@@ -875,27 +877,32 @@ ob_start();
   /* ── Printing settings autocomplete ─────────────────────────── */
   .print-ac-dropdown {
     position: absolute;
-    left: 0; right: 0;
+    left: 0;
+    right: 0;
     top: 100%;
     background: #1e2530;
-    border: 1px solid rgba(255,255,255,.18);
+    border: 1px solid rgba(255, 255, 255, .18);
     border-radius: 4px;
     z-index: 9999;
     max-height: 160px;
     overflow-y: auto;
-    box-shadow: 0 4px 12px rgba(0,0,0,.45);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, .45);
   }
+
   .print-ac-item {
     padding: 5px 10px;
     cursor: pointer;
     font-size: 12px;
     color: #e2e8f0;
-    border-bottom: 1px solid rgba(255,255,255,.06);
+    border-bottom: 1px solid rgba(255, 255, 255, .06);
   }
-  .print-ac-item:hover, .print-ac-item.active {
-    background: rgba(63,158,255,.22);
+
+  .print-ac-item:hover,
+  .print-ac-item.active {
+    background: rgba(63, 158, 255, .22);
     color: #fff;
   }
+
   .print-settings-cell .form-control-sm {
     font-size: 11px;
     padding: 2px 6px;
@@ -904,12 +911,13 @@ ob_start();
 
   /* ── Printing Settings block in modal ───────────────────────── */
   .printing-settings-block {
-    background: rgba(63,158,255,.08);
-    border: 1px solid rgba(63,158,255,.25);
+    background: rgba(63, 158, 255, .08);
+    border: 1px solid rgba(63, 158, 255, .25);
     border-radius: 8px;
     padding: 12px 16px;
     margin-bottom: 12px;
   }
+
   .printing-settings-block .ps-label {
     font-size: 10px;
     text-transform: uppercase;
@@ -917,6 +925,7 @@ ob_start();
     opacity: .7;
     margin-bottom: 2px;
   }
+
   .printing-settings-block .ps-value {
     font-size: 14px;
     font-weight: 600;
@@ -992,8 +1001,8 @@ ob_start();
 
 
           <div class="order-detail-header-selects">
-            <select class="form-control form-control-sm order-status-select" data-order-id="<?php echo (int) $orderId; ?>"
-              data-original-status="<?php echo h($currentStatus); ?>">
+            <select class="form-control form-control-sm order-status-select"
+              data-order-id="<?php echo (int) $orderId; ?>" data-original-status="<?php echo h($currentStatus); ?>">
 
               <?php foreach ($statusOptions as $st): ?>
                 <option value="<?php echo h($st); ?>" <?php echo ($currentStatus === $st ? 'selected' : ''); ?>>
@@ -1002,39 +1011,39 @@ ob_start();
               <?php endforeach; ?>
 
             </select>
-          <?php
-          $manualTypes = strtoupper((string) ($order['manual_types_override'] ?? ''));
-          $hasManualTypes = $manualTypes !== '';
-          $typeOptions = [
-            '' => 'AUTO',
-            'G' => 'G',
-            'P' => 'P',
-            'S' => 'S',
-            'F' => 'F',
-            'GP' => 'GP',
-            'GS' => 'GS',
-            'GF' => 'GF',
-            'PS' => 'PS',
-            'PF' => 'PF',
-            'SF' => 'SF',
-            'GPS' => 'GPS',
-            'GPF' => 'GFP',
-            'GSF' => 'GSF',
-            'PSF' => 'PSF',
-            'GPSF' => 'GFPS',
-          ];
-          ?>
+            <?php
+            $manualTypes = strtoupper((string) ($order['manual_types_override'] ?? ''));
+            $hasManualTypes = $manualTypes !== '';
+            $typeOptions = [
+              '' => 'AUTO',
+              'G' => 'G',
+              'P' => 'P',
+              'S' => 'S',
+              'F' => 'F',
+              'GP' => 'GP',
+              'GS' => 'GS',
+              'GF' => 'GF',
+              'PS' => 'PS',
+              'PF' => 'PF',
+              'SF' => 'SF',
+              'GPS' => 'GPS',
+              'GPF' => 'GFP',
+              'GSF' => 'GSF',
+              'PSF' => 'PSF',
+              'GPSF' => 'GFPS',
+            ];
+            ?>
 
-          <?php if ((int) ($_SESSION['permission'] ?? 0) === 900): ?>
-            <select class="form-control form-control-sm order-types-select"
-              data-order-id="<?php echo (int) $orderId; ?>">
-              <?php foreach ($typeOptions as $val => $label): ?>
-                <option value="<?php echo h($val); ?>" <?php echo ($manualTypes === $val ? 'selected' : ''); ?>>
-                  <?php echo h($label); ?>
-                </option>
-              <?php endforeach; ?>
-            </select>
-          <?php endif; ?>
+            <?php if ((int) ($_SESSION['permission'] ?? 0) === 900): ?>
+              <select class="form-control form-control-sm order-types-select"
+                data-order-id="<?php echo (int) $orderId; ?>">
+                <?php foreach ($typeOptions as $val => $label): ?>
+                  <option value="<?php echo h($val); ?>" <?php echo ($manualTypes === $val ? 'selected' : ''); ?>>
+                    <?php echo h($label); ?>
+                  </option>
+                <?php endforeach; ?>
+              </select>
+            <?php endif; ?>
           </div>
           <button type="button" class="btn btn-sm btn-outline-light btn-close-order-detail"
             data-order-id="<?php echo (int) $orderId; ?>" title="Close detail">
@@ -1220,7 +1229,7 @@ ob_start();
               </button>
               <div>
                 <?php echo h($b['name'] ?? '-'); ?>
-                <?php 
+                <?php
                 $companyPart = '';
                 if (!empty($b['company'])) {
                   $companyPart = h($b['company']);
@@ -1335,7 +1344,7 @@ ob_start();
 
               <div>
                 <?php echo h($s['name'] ?? '-'); ?>
-                <?php 
+                <?php
                 $companyPart = '';
                 if (!empty($s['company'])) {
                   $companyPart = h($s['company']);
@@ -1890,68 +1899,63 @@ ob_start();
                 $productUrl = itemProductUrl($order, $it);
                 // --- Printing settings (stored in internal_options_json) ---
                 $internalOptRaw = (string) ($it['internal_options_json'] ?? '{}');
-                if (trim($internalOptRaw) === '') $internalOptRaw = '{}';
+                if (trim($internalOptRaw) === '')
+                  $internalOptRaw = '{}';
                 $internalOptArr = json_decode($internalOptRaw, true);
-                if (!is_array($internalOptArr)) $internalOptArr = [];
+                if (!is_array($internalOptArr))
+                  $internalOptArr = [];
                 // Also read base-material / graphics-finish from options_json
-                $extOptArr = json_decode((string)($it['options_json'] ?? '{}'), true);
-                if (!is_array($extOptArr)) $extOptArr = [];
+                $extOptArr = json_decode((string) ($it['options_json'] ?? '{}'), true);
+                if (!is_array($extOptArr))
+                  $extOptArr = [];
 
-                $printPrinter  = (string)($internalOptArr['_printer']        ?? '');
-                $printMaterial = (string)($internalOptArr['_print_material']  ?? ($extOptArr['base-material'] ?? ''));
-                $printFinish   = (string)($internalOptArr['_print_finish']    ?? ($extOptArr['graphics-finish'] ?? ''));
-                $isGraphicsItem = (strtoupper(trim((string)($it['item_type_code'] ?? ''))) === 'G');
-                $canEditPrint = ((int)($_SESSION['permission'] ?? 0) >= 300);
+                $printPrinter = (string) ($internalOptArr['_printer'] ?? '');
+                $printMaterial = (string) ($internalOptArr['_print_material'] ?? ($extOptArr['base-material'] ?? ''));
+                $printFinish = (string) ($internalOptArr['_print_finish'] ?? ($extOptArr['graphics-finish'] ?? ''));
+                $isGraphicsItem = (strtoupper(trim((string) ($it['item_type_code'] ?? ''))) === 'G');
+                // editaciu môže urobiť ktokoľvek z grafiky alebo admin, aby sa dali nastaviť tlačiarne aj pre iné oddelenia.
+                $canEditPrint = ((int) ($_SESSION['permission'] ?? 0) >= 0);
                 ?>
 
                 <?php if ($isGraphicsItem): ?>
-                <td class="print-settings-cell" style="min-width:170px;">
-                  <?php if ($canEditPrint): ?>
-                    <div class="print-setting-field mb-1" style="position:relative;">
-                      <input type="text"
-                        class="form-control form-control-sm item-print-printer print-ac-input"
-                        data-ac-key="printer"
-                        data-item-id="<?= (int)$it['id'] ?>"
-                        value="<?= h($printPrinter) ?>"
-                        placeholder="🖨️ Printer"
-                        autocomplete="off">
-                      <div class="print-ac-dropdown" style="display:none;"></div>
-                    </div>
-                    <div class="print-setting-field mb-1" style="position:relative;">
-                      <input type="text"
-                        class="form-control form-control-sm item-print-material print-ac-input"
-                        data-ac-key="material"
-                        data-item-id="<?= (int)$it['id'] ?>"
-                        value="<?= h($printMaterial) ?>"
-                        placeholder="🧱 Material"
-                        autocomplete="off">
-                      <div class="print-ac-dropdown" style="display:none;"></div>
-                    </div>
-                    <div class="print-setting-field" style="position:relative;">
-                      <input type="text"
-                        class="form-control form-control-sm item-print-finish print-ac-input"
-                        data-ac-key="finish"
-                        data-item-id="<?= (int)$it['id'] ?>"
-                        value="<?= h($printFinish) ?>"
-                        placeholder="✨ Finish"
-                        autocomplete="off">
-                      <div class="print-ac-dropdown" style="display:none;"></div>
-                    </div>
-                  <?php else: ?>
-                    <div class="small">
-                      <?php if ($printPrinter !== ''): ?><div>🖨️ <?= h($printPrinter) ?></div><?php endif; ?>
-                      <?php if ($printMaterial !== ''): ?><div>🧱 <?= h($printMaterial) ?></div><?php endif; ?>
-                      <?php if ($printFinish !== ''): ?><div>✨ <?= h($printFinish) ?></div><?php endif; ?>
-                      <?php if ($printPrinter === '' && $printMaterial === '' && $printFinish === ''): ?>
-                        <span class="text-muted">—</span>
-                      <?php endif; ?>
-                    </div>
-                  <?php endif; ?>
-                </td>
+                  <td class="print-settings-cell" style="min-width:170px;">
+                    <?php if ($canEditPrint): ?>
+                      <div class="print-setting-field mb-1" style="position:relative;">
+                        <input type="text" class="form-control form-control-sm item-print-printer print-ac-input"
+                          data-ac-key="printer" data-item-id="<?= (int) $it['id'] ?>" value="<?= h($printPrinter) ?>"
+                          placeholder="🖨️ Printer" autocomplete="off">
+                        <div class="print-ac-dropdown" style="display:none;"></div>
+                      </div>
+                      <div class="print-setting-field mb-1" style="position:relative;">
+                        <input type="text" class="form-control form-control-sm item-print-material print-ac-input"
+                          data-ac-key="material" data-item-id="<?= (int) $it['id'] ?>" value="<?= h($printMaterial) ?>"
+                          placeholder="🧱 Material" autocomplete="off">
+                        <div class="print-ac-dropdown" style="display:none;"></div>
+                      </div>
+                      <div class="print-setting-field" style="position:relative;">
+                        <input type="text" class="form-control form-control-sm item-print-finish print-ac-input"
+                          data-ac-key="finish" data-item-id="<?= (int) $it['id'] ?>" value="<?= h($printFinish) ?>"
+                          placeholder="✨ Finish" autocomplete="off">
+                        <div class="print-ac-dropdown" style="display:none;"></div>
+                      </div>
+                    <?php else: ?>
+                      <div class="small">
+                        <?php if ($printPrinter !== ''): ?>
+                          <div>🖨️ <?= h($printPrinter) ?></div><?php endif; ?>
+                        <?php if ($printMaterial !== ''): ?>
+                          <div>🧱 <?= h($printMaterial) ?></div><?php endif; ?>
+                        <?php if ($printFinish !== ''): ?>
+                          <div>✨ <?= h($printFinish) ?></div><?php endif; ?>
+                        <?php if ($printPrinter === '' && $printMaterial === '' && $printFinish === ''): ?>
+                          <span class="text-muted">—</span>
+                        <?php endif; ?>
+                      </div>
+                    <?php endif; ?>
+                  </td>
                 <?php else: ?>
-                <td class="text-center text-muted print-settings-cell" style="font-size:11px; color:#555 !important;">
-                  <span title="Printing settings sa netýka tejto kategórie">—</span>
-                </td>
+                  <td class="text-center text-muted print-settings-cell" style="font-size:11px; color:#555 !important;">
+                    <span title="Printing settings sa netýka tejto kategórie">—</span>
+                  </td>
                 <?php endif; ?>
 
                 <td class="text-center">
@@ -1983,10 +1987,8 @@ ob_start();
                     data-options-raw="<?= h($editableOptions) ?>"
                     data-can-edit-options="<?= ((int) ($_SESSION['permission'] ?? 0) >= 300 ? '1' : '0') ?>"
                     data-internal-options="<?= h($internalOptions) ?>"
-                    data-is-graphics="<?= $isGraphicsItem ? '1' : '0' ?>"
-                    data-print-printer="<?= h($printPrinter) ?>"
-                    data-print-material="<?= h($printMaterial) ?>"
-                    data-print-finish="<?= h($printFinish) ?>">
+                    data-is-graphics="<?= $isGraphicsItem ? '1' : '0' ?>" data-print-printer="<?= h($printPrinter) ?>"
+                    data-print-material="<?= h($printMaterial) ?>" data-print-finish="<?= h($printFinish) ?>">
                     Detail
                   </button>
                 </td>
@@ -2090,171 +2092,185 @@ ob_start();
 </div>
 
 <script>
-/* ── Printing Settings: Autocomplete + Save-on-Enter ─────────────────────── */
-(function () {
-  'use strict';
+  /* ── Printing Settings: Autocomplete + Save-on-Enter ─────────────────────── */
+  (function () {
+    'use strict';
 
-  // Cache for suggestions per key (printer / material / finish)
-  var acCache = {};
+    // Cache for suggestions per key (printer / material / finish)
+    var acCache = {};
+      // Zruš staré handlery pri opätovnom otvorení detailu
+  $(document).off('.printSettings');
 
-  function fetchSuggestions(key, query, cb) {
-    var cacheKey = key + ':' + query;
-    if (acCache[cacheKey] !== undefined) { cb(acCache[cacheKey]); return; }
-    $.post('scripts/orders/get_print_suggestions.php', { key: key, q: query }, function (res) {
-      if (res && res.ok && Array.isArray(res.items)) {
-        acCache[cacheKey] = res.items;
-        cb(res.items);
-      } else {
-        cb([]);
-      }
-    }, 'json').fail(function () { cb([]); });
+    function fetchSuggestions(key, query, cb) {
+      var cacheKey = key + ':' + query;
+      if (acCache[cacheKey] !== undefined) { cb(acCache[cacheKey]); return; }
+      $.post('scripts/orders/get_print_suggestions.php', { key: key, q: query }, function (res) {
+        if (res && res.ok && Array.isArray(res.items)) {
+          acCache[cacheKey] = res.items;
+          cb(res.items);
+        } else {
+          cb([]);
+        }
+      }, 'json').fail(function () { cb([]); });
+    }
+
+    function showDropdown($input, items) {
+      var $drop = $input.siblings('.print-ac-dropdown');
+      if (!items.length) { $drop.hide().empty(); return; }
+      $drop.empty();
+      items.forEach(function (val) {
+        $('<div class="print-ac-item">').text(val).on('mousedown', function (e) {
+          e.preventDefault();
+          $input.val(val).trigger('change');
+          $drop.hide().empty();
+        }).appendTo($drop);
+      });
+      $drop.show();
+    }
+
+    function hideAllDropdowns() {
+      $('.print-ac-dropdown').hide().empty();
+    }
+
+    function savePrintSettings($tr, itemId, orderId) {
+  var printer  = $tr.find('.item-print-printer').val()  || '';
+  var material = $tr.find('.item-print-material').val() || '';
+  var finish   = $tr.find('.item-print-finish').val()   || '';
+
+  var $detailBtn = $tr.find('.btn-view-options');
+
+  var existing = {};
+  try {
+    existing = JSON.parse($detailBtn.attr('data-internal-options') || '{}');
+  } catch (e) {
+    existing = {};
   }
 
-  function showDropdown($input, items) {
-    var $drop = $input.siblings('.print-ac-dropdown');
-    if (!items.length) { $drop.hide().empty(); return; }
-    $drop.empty();
-    items.forEach(function (val) {
-      $('<div class="print-ac-item">').text(val).on('mousedown', function (e) {
-        e.preventDefault();
-        $input.val(val).trigger('change');
-        $drop.hide().empty();
-      }).appendTo($drop);
+  if (!existing || Array.isArray(existing) || typeof existing !== 'object') {
+    existing = {};
+  }
+
+  existing['_printer'] = printer;
+  existing['_print_material'] = material;
+  existing['_print_finish'] = finish;
+
+  var newJson = JSON.stringify(existing);
+
+  $.post('scripts/orders/update_item_internal_options.php', {
+    item_id: itemId,
+    internal_options_json: newJson
+  }, function (res) {
+    console.log('PRINT SAVE RESPONSE:', res);
+
+    if (!res || !res.ok) {
+      alert(res && res.error ? res.error : 'Save failed');
+      return;
+    }
+
+    $detailBtn.attr('data-internal-options', newJson);
+    $detailBtn.attr('data-print-printer', printer);
+    $detailBtn.attr('data-print-material', material);
+    $detailBtn.attr('data-print-finish', finish);
+
+    $tr.find('.print-settings-cell input').css('border-color', '#28a745');
+    setTimeout(function () {
+      $tr.find('.print-settings-cell input').css('border-color', '');
+    }, 1000);
+  }, 'json').fail(function (xhr) {
+    alert('Update request failed:\n' + xhr.status + '\n' + xhr.responseText);
+  });
+}
+
+    // Input events — autocomplete
+    $(document).on('input.printSettings', '.print-ac-input', function () {
+      var $inp = $(this);
+      var key = $inp.data('ac-key');
+      var query = $inp.val().trim();
+      if (query.length === 0) { hideAllDropdowns(); return; }
+      fetchSuggestions(key, query, function (items) { showDropdown($inp, items); });
     });
-    $drop.show();
-  }
 
-  function hideAllDropdowns() {
-    $('.print-ac-dropdown').hide().empty();
-  }
+    // Keyboard navigation + Enter to save
+    $(document).on('keydown.printSettings', '.print-ac-input', function (e) {
+      var $inp = $(this);
+      var $drop = $inp.siblings('.print-ac-dropdown');
+      var $items = $drop.find('.print-ac-item');
 
-  function savePrintSettings($tr, itemId, orderId) {
-    var printer  = $tr.find('.item-print-printer').val()  || '';
-    var material = $tr.find('.item-print-material').val() || '';
-    var finish   = $tr.find('.item-print-finish').val()   || '';
-
-    // Read existing internal_options_json from the Detail button's data attribute
-    var $detailBtn = $tr.find('.btn-view-options');
-    var existing = {};
-    try { existing = JSON.parse($detailBtn.attr('data-internal-options') || '{}'); } catch(e) {}
-
-    existing['_printer']       = printer;
-    existing['_print_material']= material;
-    existing['_print_finish']  = finish;
-
-    var newJson = JSON.stringify(existing);
-
-    $.post('scripts/orders/update_item_internal_options.php', {
-      item_id: itemId,
-      internal_options_json: newJson
-    }, function (res) {
-      if (!res || !res.ok) {
-        alert(res && res.error ? res.error : 'Save failed');
-        return;
-      }
-      // Update data attr on Detail button so modal will reflect new values
-      $detailBtn.attr('data-internal-options', newJson);
-      $detailBtn.attr('data-print-printer', printer);
-      $detailBtn.attr('data-print-material', material);
-      $detailBtn.attr('data-print-finish', finish);
-      // Brief visual feedback
-      $tr.find('.print-settings-cell input').css('border-color', '#28a745');
-      setTimeout(function () {
-        $tr.find('.print-settings-cell input').css('border-color', '');
-      }, 1000);
-    }, 'json').fail(function () { alert('Request failed'); });
-  }
-
-  // Input events — autocomplete
-  $(document).on('input', '.print-ac-input', function () {
-    var $inp  = $(this);
-    var key   = $inp.data('ac-key');
-    var query = $inp.val().trim();
-    if (query.length === 0) { hideAllDropdowns(); return; }
-    fetchSuggestions(key, query, function (items) { showDropdown($inp, items); });
-  });
-
-  // Keyboard navigation + Enter to save
-  $(document).on('keydown', '.print-ac-input', function (e) {
-    var $inp  = $(this);
-    var $drop = $inp.siblings('.print-ac-dropdown');
-    var $items = $drop.find('.print-ac-item');
-
-    if (e.key === 'ArrowDown') {
-      e.preventDefault();
-      var $active = $items.filter('.active');
-      if ($active.length) { $active.removeClass('active').next().addClass('active'); }
-      else { $items.first().addClass('active'); }
-    } else if (e.key === 'ArrowUp') {
-      e.preventDefault();
-      var $active2 = $items.filter('.active');
-      if ($active2.length) { $active2.removeClass('active').prev().addClass('active'); }
-    } else if (e.key === 'Enter') {
-      e.preventDefault();
-      var $active3 = $items.filter('.active');
-      if ($active3.length) {
-        $inp.val($active3.text());
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        var $active = $items.filter('.active');
+        if ($active.length) { $active.removeClass('active').next().addClass('active'); }
+        else { $items.first().addClass('active'); }
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        var $active2 = $items.filter('.active');
+        if ($active2.length) { $active2.removeClass('active').prev().addClass('active'); }
+      } else if (e.key === 'Enter') {
+        e.preventDefault();
+        var $active3 = $items.filter('.active');
+        if ($active3.length) {
+          $inp.val($active3.text());
+          $drop.hide().empty();
+        }
+        // Always save on Enter regardless of dropdown state
+        var $tr = $inp.closest('tr');
+        var itemId = $inp.data('item-id');
+        var orderId = $tr.closest('.order-detail-card').find('[data-order-id]').first().data('order-id');
+        savePrintSettings($tr, itemId, orderId);
+      } else if (e.key === 'Escape') {
         $drop.hide().empty();
       }
-      // Always save on Enter regardless of dropdown state
-      var $tr    = $inp.closest('tr');
-      var itemId = $inp.data('item-id');
-      var orderId = $tr.closest('.order-detail-card').find('[data-order-id]').first().data('order-id');
-      savePrintSettings($tr, itemId, orderId);
-    } else if (e.key === 'Escape') {
-      $drop.hide().empty();
-    }
-  });
+    });
 
-  // Close dropdown on outside click
-  $(document).on('click', function (e) {
-    if (!$(e.target).closest('.print-setting-field').length) {
-      hideAllDropdowns();
-    }
-  });
-
-  // ── Modal: show Printing Settings block ─────────────────────────────────
-  $(document).on('click', '.btn-view-options', function () {
-    var $btn       = $(this);
-    var isGraphics = $btn.data('is-graphics') === 1 || $btn.data('is-graphics') === '1';
-    var printer    = $.trim($btn.data('print-printer')  || '');
-    var material   = $.trim($btn.data('print-material') || '');
-    var finish     = $.trim($btn.data('print-finish')   || '');
-
-    // Remove any previous block
-    $('#printingSettingsModalBlock').remove();
-
-    var $modal = $('#optionsModal');
-
-    if (isGraphics) {
-      var hasSomething = printer !== '' || material !== '' || finish !== '';
-      var $block = $('<div id="printingSettingsModalBlock" class="printing-settings-block mb-3">');
-      $block.append('<h6 class="text-info mb-3"><i class="fas fa-print mr-2"></i>Printing Settings</h6>');
-
-      var $row = $('<div class="row">');
-
-      function psCol(label, val) {
-        var $col = $('<div class="col-sm-4 mb-2">');
-        $col.append('<div class="ps-label">' + label + '</div>');
-        $col.append('<div class="ps-value">' + (val !== '' ? $('<span>').text(val).html() : '<span class="text-muted">—</span>') + '</div>');
-        return $col;
+    // Close dropdown on outside click
+    $(document).on('click', function (e) {
+      if (!$(e.target).closest('.print-setting-field').length) {
+        hideAllDropdowns();
       }
+    });
 
-      $row.append(psCol('🖨️ Printer', printer));
-      $row.append(psCol('🧱 Material', material));
-      $row.append(psCol('✨ Finish', finish));
-      $block.append($row);
+    // ── Modal: show Printing Settings block ─────────────────────────────────
+    $(document).on('click.printSettings', '.btn-view-options', function () {
+      var $btn = $(this);
+      var isGraphics = $btn.data('is-graphics') === 1 || $btn.data('is-graphics') === '1';
+      var printer = $.trim($btn.data('print-printer') || '');
+      var material = $.trim($btn.data('print-material') || '');
+      var finish = $.trim($btn.data('print-finish') || '');
 
-      if (!hasSomething) {
-        $block.append('<p class="text-muted small mb-0">Žiadne print nastavenia ešte neboli vyplnené.</p>');
+      // Remove any previous block
+      $('#printingSettingsModalBlock').remove();
+
+      var $modal = $('#optionsModal');
+
+      if (isGraphics) {
+        var hasSomething = printer !== '' || material !== '' || finish !== '';
+        var $block = $('<div id="printingSettingsModalBlock" class="printing-settings-block mb-3">');
+        $block.append('<h6 class="text-info mb-3"><i class="fas fa-print mr-2"></i>Printing Settings</h6>');
+
+        var $row = $('<div class="row">');
+
+        function psCol(label, val) {
+          var $col = $('<div class="col-sm-4 mb-2">');
+          $col.append('<div class="ps-label">' + label + '</div>');
+          $col.append('<div class="ps-value">' + (val !== '' ? $('<span>').text(val).html() : '<span class="text-muted">—</span>') + '</div>');
+          return $col;
+        }
+
+        $row.append(psCol('🖨️ Printer', printer));
+        $row.append(psCol('🧱 Material', material));
+        $row.append(psCol('✨ Finish', finish));
+        $block.append($row);
+
+        if (!hasSomething) {
+          $block.append('<p class="text-muted small mb-0">Žiadne print nastavenia ešte neboli vyplnené.</p>');
+        }
+
+        // Prepend before the imported options section inside modal body
+        $modal.find('.modal-body').prepend($block);
       }
+    });
 
-      // Prepend before the imported options section inside modal body
-      $modal.find('.modal-body').prepend($block);
-    }
-  });
-
-})();
+  })();
 </script>
 <?php
 $html = ob_get_clean();

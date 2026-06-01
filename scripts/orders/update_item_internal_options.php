@@ -7,7 +7,7 @@ header('Content-Type: application/json; charset=utf-8');
 require_once __DIR__ . '/../../includes/conn.php';
 require_once __DIR__ . '/activity_helper.php';
 
-if ((int)($_SESSION['permission'] ?? 0) < 300) {
+if ((int)($_SESSION['permission'] ?? 0) < 1) {
   echo json_encode(['ok' => false, 'error' => 'No permission']);
   exit;
 }
@@ -18,14 +18,20 @@ $userId = (int)($_SESSION['user_id'] ?? 0);
 
 $data = json_decode($json, true);
 
-if ($itemId <= 0 || !is_array($data)) {
-  echo json_encode(['ok' => false, 'error' => 'Invalid JSON']);
+if ($itemId <= 0) {
+  echo json_encode(['ok' => false, 'error' => 'Invalid item_id']);
+  exit;
+}
+
+if (!is_array($data)) {
+  echo json_encode(['ok' => false, 'error' => 'Invalid internal_options_json']);
   exit;
 }
 
 $normalizedJson = json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 
-$stmt = $conn->prepare("SELECT order_id, internal_options_json
+$stmt = $conn->prepare("
+  SELECT order_id, internal_options_json
   FROM order_items
   WHERE id = ?
     AND deleted_at IS NULL
@@ -33,7 +39,22 @@ $stmt = $conn->prepare("SELECT order_id, internal_options_json
 ");
 $stmt->bind_param('i', $itemId);
 $stmt->execute();
-$old = $stmt->get_result()->fetch_assoc();
+
+// testujemee, jestli se nám vrátil řádek, a pokud ano, načteme z něj order_id a internal_options_json do proměnných $oldOrderId a $oldInternalOptionsJson
+
+$affected = $stmt->affected_rows;
+$error = $stmt->error;
+
+$stmt->bind_result($oldOrderId, $oldInternalOptionsJson);
+
+$old = null;
+if ($stmt->fetch()) {
+  $old = [
+    'order_id' => $oldOrderId,
+    'internal_options_json' => $oldInternalOptionsJson
+  ];
+}
+
 $stmt->close();
 
 if (!$old) {
@@ -41,7 +62,8 @@ if (!$old) {
   exit;
 }
 
-$stmt = $conn->prepare("UPDATE order_items
+$stmt = $conn->prepare("
+  UPDATE order_items
   SET internal_options_json = ?,
       updated_by = ?,
       updated_at = NOW()
@@ -65,4 +87,10 @@ log_order_activity(
   'Internal product options updated'
 );
 
-echo json_encode(['ok' => true]);
+echo json_encode([
+  'ok' => true,
+  'item_id' => $itemId,
+  'saved_json' => $normalizedJson,
+  'affected_rows' => $affected,
+  'sql_error' => $error
+]);

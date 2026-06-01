@@ -138,6 +138,13 @@ function isMenuOpen($pages = []) {
           //echo ' </ul>';      
         }
         ?>   
+<li class="nav-item">
+  <a href="<?= basename($_SERVER['PHP_SELF']) ?>?page=holidays"
+     class="nav-link <?= isActive('holidays') ?>">
+    <i class="nav-icon far fa-calendar-check" style="color:#17a2b8;"></i>
+    <p>Holidays</p>
+  </a>
+</li>
 <li class="nav-item <?= isMenuOpen([
       'modeldata',
       'product_chart'      

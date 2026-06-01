@@ -1492,11 +1492,11 @@ $deptOptions = [
                 <label class="small mb-1">🖨️ Printer</label>
                 <select class="form-control form-control-sm" name="print_printer">
                   <option value="">— All —</option>
-                    <?php foreach ($printPrinterOptions as $pv): ?>
+                  <?php foreach ($printPrinterOptions as $pv): ?>
                     <option value="<?= htmlspecialchars($pv) ?>" <?= ($fPrinter === $pv ? 'selected' : '') ?>>
-                        <?= htmlspecialchars($pv) ?>
+                      <?= htmlspecialchars($pv) ?>
                     </option>
-                    <?php endforeach; ?>
+                  <?php endforeach; ?>
                 </select>
               </div>
 
@@ -1505,11 +1505,11 @@ $deptOptions = [
                 <label class="small mb-1">🧱 Material</label>
                 <select class="form-control form-control-sm" name="print_material">
                   <option value="">— All —</option>
-                    <?php foreach ($printMaterialOptions as $pv): ?>
+                  <?php foreach ($printMaterialOptions as $pv): ?>
                     <option value="<?= htmlspecialchars($pv) ?>" <?= ($fPrintMat === $pv ? 'selected' : '') ?>>
-                        <?= htmlspecialchars($pv) ?>
+                      <?= htmlspecialchars($pv) ?>
                     </option>
-                    <?php endforeach; ?>
+                  <?php endforeach; ?>
                 </select>
               </div>
 
@@ -1518,11 +1518,11 @@ $deptOptions = [
                 <label class="small mb-1">✨ Finish</label>
                 <select class="form-control form-control-sm" name="print_finish">
                   <option value="">— All —</option>
-                    <?php foreach ($printFinishOptions as $pv): ?>
+                  <?php foreach ($printFinishOptions as $pv): ?>
                     <option value="<?= htmlspecialchars($pv) ?>" <?= ($fPrintFin === $pv ? 'selected' : '') ?>>
-                        <?= htmlspecialchars($pv) ?>
+                      <?= htmlspecialchars($pv) ?>
                     </option>
-                    <?php endforeach; ?>
+                  <?php endforeach; ?>
                 </select>
               </div>
 
@@ -1595,7 +1595,7 @@ $deptOptions = [
             $customer = trim((string) ($row['customer_name'] ?? ''));
             if ($customer === '')
               $customer = (string) ($row['customer_email'] ?? '-');
-            
+
             $billingCompany = trim((string) ($row['billing_company'] ?? ''));
             $billingCompanyId = trim((string) ($row['billing_company_id'] ?? ''));
             $hasCompanyInfo = ($billingCompany !== '' || $billingCompanyId !== '');
@@ -1629,10 +1629,13 @@ $deptOptions = [
 
               </td>
               <td>
-                <span style="display:flex; justify-content:space-between; align-items:center; gap:6px; white-space:nowrap;">
-                  <span><?= htmlspecialchars($customer) ?></span>
+                <span
+                  style="display:flex; justify-content:space-between; align-items:center; gap:6px; white-space:nowrap;">
+                  <span style="padding-left:5px;"><?= htmlspecialchars($customer) ?></span>
                   <?php if ($hasCompanyInfo): ?>
-                    <span title="<?= htmlspecialchars('Company: ' . ($billingCompany ?: '-') . ' | ID: ' . ($billingCompanyId ?: '-')) ?>" style="font-size:1.1em; flex-shrink:0;">🏢</span>
+                    <span
+                      title="<?= htmlspecialchars('Company: ' . ($billingCompany ?: '-') . ' | ID: ' . ($billingCompanyId ?: '-')) ?>"
+                      style="font-size:1.1em; flex-shrink:0;">🏢</span>
                   <?php else: ?>
                     <span title="Individual customer" style="font-size:1.1em; flex-shrink:0;">👤</span>
                   <?php endif; ?>
@@ -1945,10 +1948,12 @@ $deptOptions = [
               </td>
 
               <td class="text-nowrap">
+                <span style="padding-left:5px;"></span>
                 <button type="button" class="btn btn-sm btn-outline-light btn-toggle-detail mr-1"
                   data-order-id="<?= $orderId ?>">
                   <i class="fas fa-search"></i>
                 </button>
+                </span>
                 <?php if ($perm >= 400 && empty($uiDeptCode)): ?>
                   <span class="badge badge-info ml-2" title="Select department filter first">
                     Select dept
