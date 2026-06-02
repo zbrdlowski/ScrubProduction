@@ -267,21 +267,85 @@ function status_accent_color($status): string
   }
 }
 
-function item_type_category_badge(array $item): string
+// ── Label script path (relative to the web root, adjust if needed) ───────────
+define('LABEL_BASE_PATH', 'scripts/labels/');
+
+function item_type_category_badge(array $item, array $order, array $addr, string $orderCountry): string
 {
-  $map = [
-    'G' => ['Graphics', 'badge-info'],
-    'P' => ['Plastics', 'badge-primary'],
-    'S' => ['Seat Cover', 'badge-success'],
-    'F' => ['Fitting', 'badge-danger'],
-    'T' => ['Plastics', 'badge-primary'],
-    'M' => ['Plastics', 'badge-primary'],
+  static $labelMap = [
+    'G' => ['Graphics',   'badge-info',    'label_index.php'],
+    'P' => ['Plastics',   'badge-primary', 'label_index.php'],
+    'F' => ['Fitting',    'badge-danger',  'label_index.php'],
+    'T' => ['Plastics',   'badge-primary', 'label_index.php'],
+    'M' => ['Plastics',   'badge-primary', 'label_index.php'],
+    'S' => ['Seat Cover', 'badge-success', 'label_seat.php'],
   ];
 
   $type = strtoupper(trim((string) ($item['item_type_code'] ?? '')));
-  [$label, $class] = $map[$type] ?? ['Unknown', 'badge-secondary'];
+  [$label, $badgeClass, $script] = $labelMap[$type] ?? ['Unknown', 'badge-secondary', ''];
 
-  return '<span class="badge ' . h($class) . '">' . h($label) . '</span>';
+  if ($script === '') {
+    return '<span class="badge ' . h($badgeClass) . '">' . h($label) . '</span>';
+  }
+
+  // ── Zostavenie parametrov štítku ─────────────────────────────────────────
+  $orderNum = (string)($order['order_number'] ?? $order['external_order_id'] ?? '');
+  $customer = trim((string)($order['customer_name'] ?? $order['customer_email'] ?? ''));
+  $ship     = trim((string)($order['shipping_method'] ?? $order['shipping_code'] ?? ''));
+  $rawDate  = trim((string)($order['created_at'] ?? ''));
+  $date     = $rawDate !== '' ? date('d.m.Y', strtotime($rawDate)) : '';
+  $prodNote = trim((string)($order['production_note'] ?? ''));
+  $sourceCode = trim((string)($order['source_code'] ?? ''));
+
+  // options_json
+  $opts    = json_decode((string)($item['options_json'] ?? '{}'), true);
+  $intOpts = json_decode((string)($item['internal_options_json'] ?? '{}'), true);
+  if (!is_array($opts))    $opts    = [];
+  if (!is_array($intOpts)) $intOpts = [];
+
+  $basematerial = (string)($intOpts['_print_material'] ?? $opts['base-material'] ?? '');
+  $finish       = (string)($intOpts['_print_finish']   ?? $opts['graphics-finish'] ?? '');
+  $printer      = (string)($intOpts['_printer']        ?? '');
+  $itemTitle    = trim((string)($item['custom_label'] ?? $item['title'] ?? ''));
+
+  // Seat-specific
+  $seatMaterial = (string)($opts['material'] ?? $opts['seat-material'] ?? '');
+  $bike         = (string)($opts['bike'] ?? $opts['bike-brand'] ?? $opts['brand'] ?? '');
+  $version      = (string)($opts['version'] ?? $opts['seat-version'] ?? '');
+  $extra        = (string)($opts['extra'] ?? '');
+
+  // GFP — pre štítok chceme vedieť aké ďalšie depy sú v objednávke
+  // (v single-item view posielame len type tohto itemu)
+  $gfp = $type;
+
+  $params = [
+    'order'        => $orderNum,
+    'name'         => $customer,
+    'country'      => $orderCountry,
+    'gfp'          => $gfp,
+    'item'         => $itemTitle,
+    'ship'         => $ship,
+    'date'         => $date,
+    'note'         => $prodNote,
+    'extranote'    => '',
+    'extra'        => $extra,
+    'basematerial' => $basematerial,
+    'finish'       => $finish,
+    'printer'      => $printer,
+    // seat-only
+    'material'     => $seatMaterial,
+    'bike'         => $bike,
+    'version'      => $version,
+  ];
+
+  $url = LABEL_BASE_PATH . $script . '?' . http_build_query($params);
+
+  return '<a href="' . h($url) . '" target="_blank" rel="noopener"'
+       . ' class="badge ' . h($badgeClass) . '"'
+       . ' style="cursor:pointer; text-decoration:none;"'
+       . ' title="🖨 Vytlačiť štítok – ' . h($label) . '">'
+       . h($label) . ' <small>🖨</small>'
+       . '</a>';
 }
 
 // --- order header ---
@@ -1578,7 +1642,7 @@ ob_start();
               <th title="Printer / Material / Finish — iba pre grafiku">🖨️ Print</th>
               <th>Product</th>
               <th class="text-center">Detail</th>
-              <th class="text-center">Copy</th>
+              <th class="text-center">RTP</th>
               <?php if ((int) ($_SESSION['permission'] ?? 0) >= 300): ?>
                 <th class="text-center">Save</th>
                 <th class="text-center">Delete</th>
@@ -1853,7 +1917,7 @@ ob_start();
                 </td>
 
                 <td>
-                  <?php echo item_type_category_badge($it); ?>
+                  <?php echo item_type_category_badge($it, $order, $addr, $orderCountry); ?>
                 </td>
 
                 <td style="min-width:220px;">
@@ -1994,10 +2058,39 @@ ob_start();
                 </td>
 
                 <td class="text-center">
-                  <button type="button" class="btn btn-xs btn-outline-warning btn-copy-options"
-                    data-options="<?php echo h($formattedOptions); ?>">
-                    Copy
-                  </button>
+                  <?php
+                  $itTypeRtp = strtoupper(trim((string)($it['item_type_code'] ?? '')));
+                  if ($itTypeRtp === 'G'):
+                    $rtpOpts    = json_decode((string)($it['options_json'] ?? '{}'), true);
+                    $rtpIntOpts = json_decode((string)($it['internal_options_json'] ?? '{}'), true);
+                    if (!is_array($rtpOpts))    $rtpOpts    = [];
+                    if (!is_array($rtpIntOpts)) $rtpIntOpts = [];
+                    $rtpParams = [
+                      'type'         => trim((string)($order['source_code'] ?? 'SO')),
+                      'order'        => (string)($order['order_number'] ?? $order['external_order_id'] ?? ''),
+                      'name'         => trim((string)($order['customer_name'] ?? $order['customer_email'] ?? '')),
+                      'country'      => $orderCountry,
+                      'gfp'          => $itTypeRtp,
+                      'design'       => trim((string)($rtpOpts['design'] ?? $rtpOpts['design-name'] ?? '')),
+                      'ship'         => trim((string)($order['shipping_method'] ?? '')),
+                      'date'         => ($order['created_at'] ?? '') !== '' ? date('d.m.Y', strtotime((string)$order['created_at'])) : '',
+                      'note'         => trim((string)($order['production_note'] ?? '')),
+                      'extranote'    => '',
+                      'basematerial' => (string)($rtpIntOpts['_print_material'] ?? $rtpOpts['base-material'] ?? ''),
+                      'finish'       => (string)($rtpIntOpts['_print_finish']   ?? $rtpOpts['graphics-finish'] ?? ''),
+                      'printer'      => (string)($rtpIntOpts['_printer']        ?? ''),
+                      'extra'        => (string)($rtpOpts['extra'] ?? ''),
+                      'graphic'      => '',
+                      'grip'         => (string)($rtpOpts['grip'] ?? ''),
+                    ];
+                    $rtpUrl = LABEL_BASE_PATH . 'label_rtp.php?' . http_build_query($rtpParams);
+                  ?>
+                    <a href="<?= h($rtpUrl) ?>" target="_blank" rel="noopener"
+                       class="btn btn-xs btn-outline-secondary"
+                       title="RTP info prúžok pre grafika">RTP</a>
+                  <?php else: ?>
+                    <span class="text-muted" style="font-size:11px;">—</span>
+                  <?php endif; ?>
                 </td>
 
                 <?php if ((int) ($_SESSION['permission'] ?? 0) >= 300): ?>
