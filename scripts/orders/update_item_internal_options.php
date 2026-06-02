@@ -6,6 +6,7 @@ header('Content-Type: application/json; charset=utf-8');
 
 require_once __DIR__ . '/../../includes/conn.php';
 require_once __DIR__ . '/activity_helper.php';
+require_once __DIR__ . '/../../includes/orders_workflow_helpers.php';
 
 if ((int)($_SESSION['permission'] ?? 0) < 1) {
   echo json_encode(['ok' => false, 'error' => 'No permission']);
@@ -86,6 +87,8 @@ log_order_activity(
   ],
   'Internal product options updated'
 );
+
+recalculateOrderWorkflow($conn, (int)$old['order_id']);
 
 echo json_encode([
   'ok' => true,

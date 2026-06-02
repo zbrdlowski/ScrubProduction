@@ -237,6 +237,18 @@ function import_darkscrub_unified_csv(mysqli $conn, string $csvPath): array {
         $stats['items']++;
       }
 
+      if ($itemType === 'S' && oi_has_positive_option_value(oi_json_option_value($optionsJson, 'patch-style'))) {
+        $patchItemId = oi_insert_item_unified(
+          $conn, $orderId, $autoLineNo++,
+          $sku, 'Patch', $customLabel,
+          'G', $qty,
+          oi_auto_item_options_json($optionsJson, 'SEAT_PATCH_AUTO_GRAPHICS'),
+          null
+        );
+        oi_add_item_categories($conn, $patchItemId, [$catIds['GRAPHICS']]);
+        $stats['items']++;
+      }
+
       // --- Shoptet variant expansion ---
       $extraItems = oi_extract_shoptet_variant_items($r, $qty, $autoLineNo);
       foreach ($extraItems as $extra) {
@@ -437,6 +449,26 @@ function oi_merge_options_json(array $r): ?string {
   }
 
   return $opts ? json_encode($opts, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) : null;
+}
+
+function oi_json_option_value(?string $json, string $key): ?string {
+  if ($json === null || trim($json) === '') return null;
+
+  $decoded = json_decode($json, true);
+  if (!is_array($decoded)) return null;
+
+  $value = $decoded[$key] ?? null;
+  if (is_array($value)) return null;
+
+  return oi_trim((string)$value);
+}
+
+function oi_has_positive_option_value(?string $value): bool {
+  $value = oi_trim($value);
+  if ($value === null) return false;
+
+  $negativeValues = ['no', 'nie', 'nein', 'non', 'false', '0', 'n/a', '-', 'x'];
+  return !in_array(mb_strtolower($value), $negativeValues, true);
 }
 
 function oi_insert_item_unified(mysqli $conn, int $orderId, ?int $lineNo, ?string $sku, ?string $title, ?string $customLabel, ?string $itemTypeCode, int $qty, ?string $optionsJson, ?float $unitPrice = null): int {

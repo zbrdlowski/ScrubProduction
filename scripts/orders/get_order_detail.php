@@ -4,6 +4,50 @@ session_start();
 //out(200, ['ok'=>false,'error'=>'PHP '.PHP_VERSION]);
 header('Content-Type: application/json; charset=utf-8');
 
+function seatCoverOptionIsFilled($value): bool
+{
+  if (is_array($value) || is_object($value)) {
+    return false;
+  }
+
+  $value = trim((string) $value);
+  if ($value === '') {
+    return false;
+  }
+
+  $negativeValues = ['no', 'nie', 'nein', 'non', 'false', '0', 'n/a', '-', 'x'];
+  return !in_array(mb_strtolower($value), $negativeValues, true);
+}
+
+function patchOptionsForModal(array $options): array
+{
+  $allowed = [
+    'patch-style',
+    'name',
+    'name-color',
+    'name-font',
+    'number',
+    'number-color',
+    'number-font',
+  ];
+
+  $filtered = [];
+  foreach ($allowed as $key) {
+    if (!array_key_exists($key, $options)) {
+      continue;
+    }
+
+    $value = $options[$key];
+    if ($value === null || $value === '' || is_array($value) || is_object($value)) {
+      continue;
+    }
+
+    $filtered[$key] = $value;
+  }
+
+  return $filtered;
+}
+
 function out(int $code, array $payload): void
 {
   http_response_code($code);
@@ -348,6 +392,40 @@ function item_type_category_badge(array $item, array $order, array $addr, string
        . '</a>';
 }
 
+function trafficTypesStringFromOrder(array $order, array $items = []): string
+{
+    $summary = json_decode((string)($order['traffic_summary_json'] ?? ''), true);
+
+    $orderTypes = ['G', 'F', 'P', 'S'];
+    $out = '';
+
+    if (is_array($summary)) {
+        foreach ($orderTypes as $type) {
+            if (array_key_exists($type, $summary)) {
+                $out .= $type;
+            }
+        }
+    }
+
+    if ($out !== '') {
+        return $out;
+    }
+
+    foreach ($items as $item) {
+        $type = strtoupper(trim((string)($item['item_type_code'] ?? '')));
+
+        if ($type === 'T' || $type === 'M') {
+            $type = 'P';
+        }
+
+        if (in_array($type, $orderTypes, true) && strpos($out, $type) === false) {
+            $out .= $type;
+        }
+    }
+
+    return $out;
+}
+
 // --- order header ---
 $stmt = $conn->prepare(" SELECT 
     o.*,
@@ -529,6 +607,8 @@ usort($items, function (array $a, array $b) use ($deptOrder): int {
     return $la <=> $lb;
   return (int) ($a['id'] ?? 0) <=> (int) ($b['id'] ?? 0);
 });
+
+$orderTrafficTypes = trafficTypesStringFromOrder($order, $items);
 
 $status = (string) ($order['status'] ?? '');
 $badgeClass = status_badge_class($status);
@@ -973,6 +1053,59 @@ ob_start();
     height: auto;
   }
 
+
+  .seat-op-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .seat-op-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin: 0;
+    padding: 6px 10px;
+    min-height: 34px;
+    border-radius: 999px;
+    border: 1px solid rgba(255, 255, 255, .18);
+    background: linear-gradient(180deg, rgba(255, 255, 255, .08), rgba(255, 255, 255, .03));
+    color: #d7dee7;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: .04em;
+    cursor: pointer;
+    transition: background .18s ease, border-color .18s ease, color .18s ease, box-shadow .18s ease, transform .18s ease;
+    user-select: none;
+  }
+
+  .seat-op-toggle:hover {
+    border-color: rgba(63, 158, 255, .45);
+    background: linear-gradient(180deg, rgba(63, 158, 255, .16), rgba(63, 158, 255, .08));
+    color: #f8fbff;
+    box-shadow: 0 0 0 1px rgba(63, 158, 255, .14);
+    transform: translateY(-1px);
+  }
+
+  .seat-op-checkbox {
+    width: 16px;
+    height: 16px;
+    margin: 0;
+    accent-color: #26c281;
+    cursor: pointer;
+    flex: 0 0 auto;
+  }
+
+  .seat-op-toggle.is-checked {
+    border-color: rgba(38, 194, 129, .55);
+    background: linear-gradient(180deg, rgba(38, 194, 129, .26), rgba(38, 194, 129, .12));
+    color: #effff7;
+    box-shadow: 0 0 0 1px rgba(38, 194, 129, .14);
+  }
+
+  .seat-op-code {
+    line-height: 1;
+  }
   /* ── Printing Settings block in modal ───────────────────────── */
   .printing-settings-block {
     background: rgba(63, 158, 255, .08);
@@ -1977,10 +2110,30 @@ ob_start();
                 $printMaterial = (string) ($internalOptArr['_print_material'] ?? ($extOptArr['base-material'] ?? ''));
                 $printFinish = (string) ($internalOptArr['_print_finish'] ?? ($extOptArr['graphics-finish'] ?? ''));
                 $isGraphicsItem = (strtoupper(trim((string) ($it['item_type_code'] ?? ''))) === 'G');
+                $isSeatCoverItem = (strtoupper(trim((string) ($it['item_type_code'] ?? ''))) === 'S');
+                $isPatchItem = (($extOptArr['_auto_generated'] ?? '') === 'SEAT_PATCH_AUTO_GRAPHICS');
+                $seatCoverOpsMeta = [
+                  'waterproof-seams' => ['code' => 'WS', 'tooltip' => 'Waterproof Seams / Vodotesne svy'],
+                  'enduro-pocket' => ['code' => 'EP', 'tooltip' => 'Enduro pocket / Enduro vrecko'],
+                  'side-brand-patches' => ['code' => 'SP', 'tooltip' => 'Sidebrand Patches / Bocne nasivky'],
+                ];
+                $seatCoverOpsConfirmed = $internalOptArr['_seat_cover_ops_confirmed'] ?? [];
+                if (!is_array($seatCoverOpsConfirmed)) {
+                  $seatCoverOpsConfirmed = [];
+                }
+                $seatCoverOpsRequired = [];
+                foreach ($seatCoverOpsMeta as $optionKey => $meta) {
+                  if (seatCoverOptionIsFilled($extOptArr[$optionKey] ?? null)) {
+                    $seatCoverOpsRequired[$optionKey] = [
+                      'code' => $meta['code'],
+                      'tooltip' => $meta['tooltip'],
+                      'confirmed' => !empty($seatCoverOpsConfirmed[$optionKey]),
+                    ];
+                  }
+                }
                 // editaciu môže urobiť ktokoľvek z grafiky alebo admin, aby sa dali nastaviť tlačiarne aj pre iné oddelenia.
                 $canEditPrint = ((int) ($_SESSION['permission'] ?? 0) >= 0);
                 ?>
-
                 <?php if ($isGraphicsItem): ?>
                   <td class="print-settings-cell" style="min-width:170px;">
                     <?php if ($canEditPrint): ?>
@@ -2017,8 +2170,24 @@ ob_start();
                     <?php endif; ?>
                   </td>
                 <?php else: ?>
-                  <td class="text-center text-muted print-settings-cell" style="font-size:11px; color:#555 !important;">
-                    <span title="Printing settings sa netýka tejto kategórie">—</span>
+                  <td class="<?= $isSeatCoverItem ? 'print-settings-cell' : 'text-center text-muted print-settings-cell' ?>" style="font-size:11px; color:#555 !important; min-width:170px;">
+                    <?php if ($isSeatCoverItem && $seatCoverOpsRequired): ?>
+                      <div class="seat-op-list">
+                        <?php foreach ($seatCoverOpsRequired as $optionKey => $opData): ?>
+                          <label class="seat-op-toggle <?= !empty($opData['confirmed']) ? 'is-checked' : '' ?>"
+                            title="<?= h($opData['tooltip']) ?>">
+                            <input type="checkbox"
+                              class="seat-op-checkbox"
+                              data-item-id="<?= (int) $it['id'] ?>"
+                              data-op-key="<?= h($optionKey) ?>"
+                              <?= !empty($opData['confirmed']) ? 'checked' : '' ?>>
+                            <span class="seat-op-code"><?= h($opData['code']) ?></span>
+                          </label>
+                        <?php endforeach; ?>
+                      </div>
+                    <?php else: ?>
+                      <span title="Printing settings sa netýka tejto kategórie">—</span>
+                    <?php endif; ?>
                   </td>
                 <?php endif; ?>
 
@@ -2038,11 +2207,16 @@ ob_start();
 
                 <?php
                 $rawOptions = (string) ($it['options_json'] ?? '{}');
-                $formattedOptions = prepareOptionsJsonForModal($conn, $rawOptions);
-                $editableOptions = prepareEditableOptionsJsonForModal($rawOptions);
+                $modalOptionsRaw = $extOptArr;
+                if ($isPatchItem) {
+                  $modalOptionsRaw = patchOptionsForModal($extOptArr);
+                }
+                $formattedOptions = json_encode($modalOptionsRaw, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?: '{}';
+                $formattedOptions = prepareOptionsJsonForModal($conn, $formattedOptions);
+                $editableOptions = json_encode($modalOptionsRaw, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?: '{}';
                 // Strip _printer/_print_material/_print_finish from modal display — they are shown separately
                 $internalOptForModal = $internalOptArr;
-                unset($internalOptForModal['_printer'], $internalOptForModal['_print_material'], $internalOptForModal['_print_finish']);
+                unset($internalOptForModal['_printer'], $internalOptForModal['_print_material'], $internalOptForModal['_print_finish'], $internalOptForModal['_seat_cover_ops_confirmed']);
                 $internalOptions = json_encode($internalOptForModal, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?: '{}';
                 ?>
                 <td class="text-center">
@@ -2051,6 +2225,7 @@ ob_start();
                     data-options-raw="<?= h($editableOptions) ?>"
                     data-can-edit-options="<?= ((int) ($_SESSION['permission'] ?? 0) >= 300 ? '1' : '0') ?>"
                     data-internal-options="<?= h($internalOptions) ?>"
+                    data-detail-title="<?= h($isPatchItem ? 'Patch Detail' : 'Product Detail') ?>"
                     data-is-graphics="<?= $isGraphicsItem ? '1' : '0' ?>" data-print-printer="<?= h($printPrinter) ?>"
                     data-print-material="<?= h($printMaterial) ?>" data-print-finish="<?= h($printFinish) ?>">
                     Detail
@@ -2070,7 +2245,7 @@ ob_start();
                       'order'        => (string)($order['order_number'] ?? $order['external_order_id'] ?? ''),
                       'name'         => trim((string)($order['customer_name'] ?? $order['customer_email'] ?? '')),
                       'country'      => $orderCountry,
-                      'gfp'          => $itTypeRtp,
+                      'gfp'          => $orderTrafficTypes ?: $itTypeRtp,
                       'design'       => trim((string)($rtpOpts['design'] ?? $rtpOpts['design-name'] ?? '')),
                       'ship'         => trim((string)($order['shipping_method'] ?? '')),
                       'date'         => ($order['created_at'] ?? '') !== '' ? date('d.m.Y', strtotime((string)$order['created_at'])) : '',
@@ -2086,7 +2261,7 @@ ob_start();
                     $rtpUrl = LABEL_BASE_PATH . 'label_rtp.php?' . http_build_query($rtpParams);
                   ?>
                     <a href="<?= h($rtpUrl) ?>" target="_blank" rel="noopener"
-                       class="btn btn-xs btn-outline-secondary"
+                       class="btn btn-xs btn-outline-warning"
                        title="RTP info prúžok pre grafika">RTP</a>
                   <?php else: ?>
                     <span class="text-muted" style="font-size:11px;">—</span>
@@ -2274,6 +2449,58 @@ ob_start();
   });
 }
 
+function saveSeatCoverOps($checkbox) {
+  var $tr = $checkbox.closest('tr');
+  var itemId = parseInt($checkbox.data('item-id'), 10) || 0;
+  var opKey = String($checkbox.data('op-key') || '');
+  var isChecked = $checkbox.is(':checked');
+  var $detailBtn = $tr.find('.btn-view-options');
+
+  if (!itemId || !opKey || !$detailBtn.length) {
+    return;
+  }
+
+  var existing = {};
+  try {
+    existing = JSON.parse($detailBtn.attr('data-internal-options') || '{}');
+  } catch (e) {
+    existing = {};
+  }
+
+  if (!existing || Array.isArray(existing) || typeof existing !== 'object') {
+    existing = {};
+  }
+
+  if (!existing._seat_cover_ops_confirmed || Array.isArray(existing._seat_cover_ops_confirmed) || typeof existing._seat_cover_ops_confirmed !== 'object') {
+    existing._seat_cover_ops_confirmed = {};
+  }
+
+  existing._seat_cover_ops_confirmed[opKey] = isChecked;
+
+  var newJson = JSON.stringify(existing);
+
+  $.post('scripts/orders/update_item_internal_options.php', {
+    item_id: itemId,
+    internal_options_json: newJson
+  }, function (res) {
+    if (!res || !res.ok) {
+      $checkbox.prop('checked', !isChecked);
+      alert(res && res.error ? res.error : 'Save failed');
+      return;
+    }
+
+    $detailBtn.attr('data-internal-options', newJson);
+    $checkbox.closest('.seat-op-toggle').toggleClass('is-checked', isChecked).css('color', '#28a745');
+    setTimeout(function () {
+      $checkbox.closest('.seat-op-toggle').css('color', '');
+    }, 800);
+  }, 'json').fail(function (xhr) {
+    $checkbox.prop('checked', !isChecked);
+    alert('Update request failed:\n' + xhr.status + '\n' + xhr.responseText);
+  });
+}
+
+
     // Input events — autocomplete
     $(document).on('input.printSettings', '.print-ac-input', function () {
       var $inp = $(this);
@@ -2320,6 +2547,10 @@ ob_start();
       if (!$(e.target).closest('.print-setting-field').length) {
         hideAllDropdowns();
       }
+    });
+
+    $(document).on('change.printSettings', '.seat-op-checkbox', function () {
+      saveSeatCoverOps($(this));
     });
 
     // ── Modal: show Printing Settings block ─────────────────────────────────
@@ -2369,3 +2600,6 @@ ob_start();
 $html = ob_get_clean();
 out(200, ['ok' => true, 'html' => $html]);
 ?>
+
+
+

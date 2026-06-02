@@ -1,6 +1,66 @@
 <?php
 
-function isOrderItemReady(string $type, string $status): bool {
+function seatCoverOptionIsPositive($value): bool {
+    if (is_array($value)) {
+        return false;
+    }
+
+    $value = trim((string)$value);
+    if ($value === '') {
+        return false;
+    }
+
+    $negativeValues = ['no', 'nie', 'nein', 'non', 'false', '0', 'n/a', '-', 'x'];
+    return !in_array(mb_strtolower($value), $negativeValues, true);
+}
+
+function seatCoverOperationsStateFromJsonStrings(?string $optionsJson, ?string $internalOptionsJson): array {
+    $requiredMap = [
+        'waterproof-seams' => 'WS',
+        'enduro-pocket' => 'EP',
+        'side-brand-patches' => 'SP',
+    ];
+
+    $options = json_decode((string)$optionsJson, true);
+    $internal = json_decode((string)$internalOptionsJson, true);
+
+    if (!is_array($options)) {
+        $options = [];
+    }
+    if (!is_array($internal)) {
+        $internal = [];
+    }
+
+    $confirmed = $internal['_seat_cover_ops_confirmed'] ?? [];
+    if (!is_array($confirmed)) {
+        $confirmed = [];
+    }
+
+    $required = [];
+    foreach ($requiredMap as $optionKey => $shortCode) {
+        if (seatCoverOptionIsPositive($options[$optionKey] ?? null)) {
+            $required[$optionKey] = [
+                'code' => $shortCode,
+                'confirmed' => !empty($confirmed[$optionKey]),
+            ];
+        }
+    }
+
+    $allConfirmed = true;
+    foreach ($required as $data) {
+        if (empty($data['confirmed'])) {
+            $allConfirmed = false;
+            break;
+        }
+    }
+
+    return [
+        'required' => $required,
+        'all_confirmed' => $allConfirmed,
+    ];
+}
+
+function isOrderItemReady(string $type, string $status, ?string $optionsJson = null, ?string $internalOptionsJson = null): bool {
     $type = strtoupper($type);
     $status = strtoupper($status);
 
@@ -12,29 +72,40 @@ function isOrderItemReady(string $type, string $status): bool {
         return in_array($status, ['DONE', 'READY'], true);
     }
 
+    if ($type === 'S') {
+        if ($status !== 'READY') {
+            return false;
+        }
+
+        $seatCoverState = seatCoverOperationsStateFromJsonStrings($optionsJson, $internalOptionsJson);
+        return $seatCoverState['all_confirmed'];
+    }
+
     return $status === 'READY';
 }
 
-function itemTrafficState(string $type, array $statuses): string {
-    $total = count($statuses);
+function itemTrafficState(string $type, array $items): string {
+    $total = count($items);
     $ready = 0;
     $started = 0;
     $waiting = 0;
 
-    foreach ($statuses as $status) {
-        $status = strtoupper((string)$status);
+    foreach ($items as $item) {
+        $status = strtoupper((string)($item['status'] ?? ''));
+        $optionsJson = (string)($item['options_json'] ?? '');
+        $internalOptionsJson = (string)($item['internal_options_json'] ?? '');
 
         if ($status === 'WAITING') {
             $waiting++;
             $started++;
         }
 
-        if (isOrderItemReady($type, $status)) {
+        if (isOrderItemReady($type, $status, $optionsJson, $internalOptionsJson)) {
             $ready++;
             $started++;
         }
 
-        if (in_array($status, ['PROCESSING', 'RTP', 'PRINT_QUEUE', 'PRINTED'], true)) {
+        if (in_array($status, ['PROCESSING', 'RTP', 'PRINT_QUEUE', 'PRINTED', 'CUT', 'DONE', 'READY'], true)) {
             $started++;
         }
     }
@@ -52,7 +123,7 @@ function itemTrafficState(string $type, array $statuses): string {
 
 function recalculateOrderWorkflow(mysqli $conn, int $orderId): void {
     $stmt = $conn->prepare("
-        SELECT item_type_code, status
+        SELECT item_type_code, status, options_json, internal_options_json
         FROM order_items
         WHERE order_id = ?
           AND deleted_at IS NULL
@@ -74,7 +145,11 @@ function recalculateOrderWorkflow(mysqli $conn, int $orderId): void {
             $groups[$type] = [];
         }
 
-        $groups[$type][] = $status;
+        $groups[$type][] = [
+            'status' => $status,
+            'options_json' => $item['options_json'] ?? null,
+            'internal_options_json' => $item['internal_options_json'] ?? null,
+        ];
     }
 
     $stmt->close();

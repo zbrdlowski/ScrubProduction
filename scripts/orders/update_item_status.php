@@ -38,7 +38,7 @@ if (!$itemId || !in_array($newStatus, $allowed)) {
 }
 
 $stmt = $pdo->prepare("
-    SELECT id, order_id, status
+    SELECT id, order_id, status, item_type_code, options_json, internal_options_json
     FROM order_items
     WHERE id = ?
 ");
@@ -53,6 +53,29 @@ if (!$item) {
 $oldStatus = $item['status'];
 $orderId = (int)$item['order_id'];
 $userId = (int)$_SESSION['user_id'];
+$itemType = strtoupper(trim((string)($item['item_type_code'] ?? '')));
+
+if ($newStatus === 'READY' && $itemType === 'S') {
+    $seatCoverState = seatCoverOperationsStateFromJsonStrings(
+        (string)($item['options_json'] ?? ''),
+        (string)($item['internal_options_json'] ?? '')
+    );
+
+    if (!$seatCoverState['all_confirmed']) {
+        $missingCodes = [];
+        foreach ($seatCoverState['required'] as $requiredItem) {
+            if (empty($requiredItem['confirmed'])) {
+                $missingCodes[] = $requiredItem['code'];
+            }
+        }
+
+        echo json_encode([
+            'success' => false,
+            'message' => 'Seat Cover requires confirmation for: ' . implode(', ', $missingCodes)
+        ]);
+        exit;
+    }
+}
 
 $update = $pdo->prepare("
     UPDATE order_items

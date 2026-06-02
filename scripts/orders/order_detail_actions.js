@@ -123,6 +123,11 @@ $(document)
       return '<div class="text-muted">No options</div>';
     }
 
+    const isPatchDetail = Object.prototype.hasOwnProperty.call(
+      data,
+      "patch-style",
+    );
+
     function section(title, obj) {
       if (!obj || Object.keys(obj).length === 0) return "";
 
@@ -212,8 +217,14 @@ $(document)
 
     let warnings = [];
 
-    if (!data.name && !data.Name) warnings.push("Missing rider name");
-    if (!data.file && !data.logo && !data.uploaded_file)
+    if (!isPatchDetail && !data.name && !data.Name)
+      warnings.push("Missing rider name");
+    if (
+      !isPatchDetail &&
+      !data.file &&
+      !data.logo &&
+      !data.uploaded_file
+    )
       warnings.push("Missing uploaded file / logo");
 
     let html = "";
@@ -411,13 +422,17 @@ $(document)
   }
 
   function renderInternalOptions(data) {
-    if (!data || Object.keys(data).length === 0) {
+    const visibleKeys = Object.keys(data || {}).filter(function (key) {
+      return !String(key).startsWith("_");
+    });
+
+    if (!data || visibleKeys.length === 0) {
       return '<div class="text-muted">No internal production blocks yet.</div>';
     }
 
     let html = "";
 
-    Object.keys(data).forEach(function (blockName) {
+    visibleKeys.forEach(function (blockName) {
       html += `
         <div class="card bg-secondary mb-2">
           <div class="card-header py-2">
@@ -449,17 +464,23 @@ $(document)
 
   function renderInternalEditor(data) {
     let html = "";
+    const visibleData = {};
 
-    if (!data || Object.keys(data).length === 0) {
-      data = {
+    Object.keys(data || {}).forEach(function (blockName) {
+      if (String(blockName).startsWith("_")) return;
+      visibleData[blockName] = data[blockName];
+    });
+
+    if (Object.keys(visibleData).length === 0) {
+      Object.assign(visibleData, {
         "Production Info": {
           Note: "",
         },
-      };
+      });
     }
 
-    Object.keys(data).forEach(function (blockName) {
-      const fields = data[blockName] || {};
+    Object.keys(visibleData).forEach(function (blockName) {
+      const fields = visibleData[blockName] || {};
 
       html += `
         <div class="card bg-secondary mb-2 internal-block">
@@ -926,10 +947,15 @@ $(document)
       resetOptionsModalShell();
 
       const $btn = $(this);
+      const detailTitle = String($btn.attr("data-detail-title") || "Product Detail");
       const data = getOptionsData($btn);
       currentCustomerOptions = stripProtectedOptions(getRawOptionsData($btn));
       currentCanEditOptions =
         String($btn.attr("data-can-edit-options") || "0") === "1";
+
+      $("#optionsModal .modal-title").html(
+        '<i class="fas fa-list-alt mr-1"></i> ' + escapeHtml(detailTitle),
+      );
 
       $("#customerOptionsView").html(renderOptionsPretty(data));
       $("#customerOptionsEditBox").hide();

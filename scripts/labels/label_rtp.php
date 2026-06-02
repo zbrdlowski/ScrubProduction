@@ -1,165 +1,150 @@
+<?php
+declare(strict_types=1);
+
+function g(string $k, string $d = ''): string {
+  return isset($_GET[$k]) ? trim((string)$_GET[$k]) : $d;
+}
+
+$order        = g('order');
+$name         = g('name');
+$graphic      = g('graphic');
+$type         = g('type') ?: $order;
+$country      = g('country');
+$gfp          = g('gfp');
+$design       = g('design');
+$basematerial = g('basematerial');
+$finish       = g('finish');
+$printer      = g('printer');
+$grip         = g('grip');
+$extra        = g('extra');
+$hasFitting   = strpos($gfp, 'F') !== false;
+
+$fields = array_values(array_filter([
+  $order,
+  $name,
+  $graphic,
+  $type,
+  $order,
+  $name,
+  $country,
+  $gfp,
+  $design,
+  $basematerial,
+  $finish,
+  $printer,
+  $grip !== '' ? 'Grip' : '',
+  $extra,
+  $hasFitting ? 'Fitting!!!' : '',
+], fn($v) => $v !== ''));
+
+// ── GD path (Synology / server) ───────────────────────────────────────────
+if (function_exists('imagecreatetruecolor')) {
+
+  $w = 1800;
+  $h = 45;
+  $img = imagecreatetruecolor($w, $h);
+
+  $white = imagecolorallocate($img, 255, 255, 255);
+  $black = imagecolorallocate($img, 0,   0,   0);
+  $red   = imagecolorallocate($img, 200, 0,   0);
+  $blue  = imagecolorallocate($img, 200, 220, 255);
+
+  imagefilledrectangle($img, 0, 0, $w, $h, $white);
+
+  $font = 5;
+  $x    = 0;
+  $gap  = 3;
+  $last = count($fields) - 1;
+
+  foreach ($fields as $i => $text) {
+    $text  = mb_substr($text, 0, 40);
+    $tw    = imagefontwidth($font) * strlen($text);
+    $cellW = max(58, $tw + 34);
+    if ($i === $last) $cellW = max($cellW, $w - $x);
+
+    $bg = $white;
+    $fg = $black;
+    if ($graphic !== '' && $text === $graphic)            { $bg = $black; $fg = $white; }
+    if ($text === 'Fitting!!!' || ($hasFitting && $text === $gfp)) { $bg = $red;   $fg = $white; }
+    if ($text === 'Grip')                                 { $bg = $blue;  $fg = $black; }
+
+    imagefilledrectangle($img, $x,     0,     $x + $cellW - 1, $h - 1, $bg);
+    imagerectangle      ($img, $x,     0,     $x + $cellW - 1, $h - 1, $black);
+    $tx = $x + (int)(($cellW - $tw) / 2);
+    $ty = (int)(($h - imagefontheight($font)) / 2);
+    imagestring($img, $font, $tx, $ty, $text, $fg);
+
+    $x += $cellW + $gap;
+    if ($x >= $w) break;
+  }
+
+  header('Content-Type: image/png');
+  header('Content-Disposition: inline; filename="' . preg_replace('/[^A-Za-z0-9_-]+/', '_', $order ?: 'rtp') . '_rtp.png"');
+  imagepng($img);
+  imagedestroy($img);
+  exit;
+}
+
+// ── HTML/CSS fallback (XAMPP / GD nedostupné) ─────────────────────────────
+// Renderuje rovnakú vizuálnu štruktúru cez HTML tabuľku + html2canvas → PNG
+?>
 <!DOCTYPE html>
 <html lang="sk">
 <head>
   <meta charset="UTF-8">
-  <title>RTP Strip</title>
+  <title>RTP – <?= htmlspecialchars($order) ?></title>
   <style>
-    body {
-      background: white;
-      margin: 0;
-      padding: 8px;
-      font-family: Arial, sans-serif;
+    body { margin: 0; padding: 10px; background: #fff; font-family: Arial, sans-serif; }
+    #rtp-strip {
+      display: inline-flex;
+      height: 45px;
+      width: 1800px;
+      overflow: hidden;
+      border-left: 1px solid #000;
     }
-    .div {
-      border: 1px solid black;
-      padding: 0 8px;
-      background-color: white;
-      color: black;
-      height: 19px;
-      font-size: 18px;
-      font-family: Arial;
-      text-align: center;
+    .rc {
       display: flex;
       align-items: center;
       justify-content: center;
+      height: 45px;
+      min-width: 58px;
+      padding: 0 12px;
+      border-top: 1px solid #000;
+      border-right: 1px solid #000;
+      border-bottom: 1px solid #000;
+      font-size: 16px;
+      font-family: Arial, sans-serif;
       white-space: nowrap;
+      box-sizing: border-box;
+      background: #fff;
+      color: #000;
     }
-    #capture {
-      width: 1800px;
-      height: 45px;
-      overflow: hidden;
-      display: flex;
-    }
-    #capture table {
-      width: 1800px;
-      border-collapse: collapse;
-    }
-    #capture td {
-      height: 45px;
-      vertical-align: middle;
-    }
-    .hint {
-      margin-top: 12px;
-      font-size: 12px;
-      color: #777;
-    }
-    @media print {
-      .hint { display: none; }
-    }
+    .rc.dark    { background: #000; color: #fff; font-weight: bold; }
+    .rc.red     { background: #c80000; color: #fff; font-weight: bold; }
+    .rc.blue    { background: #c8dcff; color: #000; font-weight: bold; }
+    .hint { margin-top: 10px; font-size: 12px; color: #888; }
   </style>
 </head>
 <body>
-<?php
-function g(string $k, string $d = ''): string {
-  return isset($_GET[$k]) ? trim((string)$_GET[$k]) : $d;
-}
-function e(string $v): string {
-  return htmlspecialchars($v, ENT_QUOTES, 'UTF-8');
-}
 
-$type         = g('type');
-$order        = g('order');
-$name         = g('name');
-$country      = g('country');
-$gfp          = g('gfp');
-$design       = g('design');
-$ship         = g('ship');
-$date         = g('date');
-$note         = g('note');
-$extranote    = g('extranote');
-$basematerial = g('basematerial');
-$finish       = g('finish');
-$extra        = g('extra');
-$graphic      = g('graphic');   // grafik / číslo
-$grip         = g('grip');
-$printer      = g('printer');   // nový parameter (nie je v pôv. scripte)
-
-$hasFitting = strpos($gfp, 'F') !== false;
+<div id="rtp-strip">
+<?php foreach ($fields as $text):
+  $cls = 'rc';
+  if ($graphic !== '' && $text === $graphic)                         $cls .= ' dark';
+  elseif ($text === 'Fitting!!!' || ($hasFitting && $text === $gfp)) $cls .= ' red';
+  elseif ($text === 'Grip')                                          $cls .= ' blue';
 ?>
-
-<div id="capture">
-<table cellpadding="1" cellspacing="0" style="width:1800px;" border="0">
-  <tr>
-    <td style="height:45px;"><div class="div"><?= e($order) ?></div></td>
-    <td style="height:45px;"><div class="div"><?= e($name) ?></div></td>
-
-    <?php if ($graphic !== ''): ?>
-    <td width="1%" style="height:45px;">
-      <div class="div" style="background-color:black; color:white; font-weight:bold;">
-        <?= e($graphic) ?>
-      </div>
-    </td>
-    <?php endif; ?>
-
-    <td width="1%" style="height:45px;"><div class="div"><?= e($type ?: $order) ?></div></td>
-    <td style="height:45px;"><div class="div"><?= e($order) ?></div></td>
-    <td style="height:45px;"><div class="div"><?= e($name) ?></div></td>
-    <td style="height:45px;"><div class="div" width="1%"><?= e($country) ?></div></td>
-
-    <?php if ($hasFitting): ?>
-    <td width="1%" style="height:45px;">
-      <div class="div" style="background-color:#c00; color:white; font-weight:bold;">
-        <?= e($gfp) ?>
-      </div>
-    </td>
-    <?php else: ?>
-    <td width="1%" style="height:45px;"><div class="div"><?= e($gfp) ?></div></td>
-    <?php endif; ?>
-
-    <?php if ($design !== ''): ?>
-    <td style="height:45px;"><div class="div"><?= e($design) ?></div></td>
-    <?php else: ?>
-    <td style="height:45px;"><div class="div">&nbsp;&nbsp;&nbsp;&nbsp;</div></td>
-    <?php endif; ?>
-
-    <td style="height:45px;"><div class="div"><?= e($basematerial) ?></div></td>
-    <td style="height:45px;"><div class="div"><?= e($finish) ?></div></td>
-
-    <?php if ($printer !== ''): ?>
-    <td style="height:45px;">
-      <div class="div" style="background:#e8f0fe; font-weight:bold;">
-        <?= e($printer) ?>
-      </div>
-    </td>
-    <?php endif; ?>
-
-    <?php if ($grip !== ''): ?>
-    <td width="1%" style="height:45px;">
-      <div class="div" style="background:#d4f0d4; font-weight:bold;">Grip</div>
-    </td>
-    <?php else: ?>
-    <td width="1%" style="height:45px;"><div class="div">&nbsp;&nbsp;&nbsp;&nbsp;</div></td>
-    <?php endif; ?>
-
-    <?php if ($extra !== ''): ?>
-    <td width="3%" style="height:45px;"><div class="div"><?= e($extra) ?></div></td>
-    <?php else: ?>
-    <td width="1%" style="height:45px;"><div class="div">&nbsp;&nbsp;&nbsp;&nbsp;</div></td>
-    <?php endif; ?>
-
-    <?php if ($hasFitting): ?>
-    <td width="1%" style="height:45px;">
-      <div class="div" style="background-color:red; color:white; font-weight:bold;">
-        Fitting!!!
-      </div>
-    </td>
-    <?php else: ?>
-    <td width="1%" style="height:45px;">
-      <div class="div">&nbsp;</div>
-    </td>
-    <?php endif; ?>
-
-  </tr>
-</table>
+  <div class="<?= $cls ?>"><?= htmlspecialchars($text) ?></div>
+<?php endforeach; ?>
 </div>
 
-<p class="hint">Prúžok sa renderuje… klikni "Stiahnuť PNG" pre uloženie do tlačového súboru.</p>
+<p class="hint" id="hint">Renderujem PNG…</p>
 
 <script src="js/html2canvas.min.js"></script>
 <script>
 window.onload = function () {
-  var target = document.getElementById('capture');
-  html2canvas(target, {
+  var strip = document.getElementById('rtp-strip');
+  html2canvas(strip, {
     backgroundColor: '#ffffff',
     scale: 1,
     width: 1800,
@@ -167,22 +152,21 @@ window.onload = function () {
     windowWidth: 1840,
     windowHeight: 120,
     scrollX: 0,
-    scrollY: 0
+    scrollY: 0,
+    useCORS: true
   }).then(function (canvas) {
-    // Nahradiť obsah canvasom (ako pôvodný script)
     document.body.innerHTML = '';
     document.body.style.cssText = 'margin:0;padding:0;background:#fff;';
     canvas.style.display = 'block';
     document.body.appendChild(canvas);
 
-    // Tlačidlo na stiahnutie PNG
     var btn = document.createElement('a');
-    btn.download = '<?= e($order) ?>_rtp.png';
+    btn.download = '<?= preg_replace('/[^A-Za-z0-9_-]+/', '_', htmlspecialchars($order ?: 'rtp')) ?>_rtp.png';
     btn.href = canvas.toDataURL('image/png');
     btn.style.cssText = 'position:fixed;bottom:10px;right:10px;padding:8px 18px;'
       + 'background:#1a6fb5;color:#fff;font:bold 14px Arial;border-radius:4px;'
       + 'text-decoration:none;box-shadow:0 2px 8px rgba(0,0,0,.3);';
-    btn.textContent = '⬇ Stiahnuť PNG';
+    btn.textContent = '\u2B07 Stiahnuť PNG';
     document.body.appendChild(btn);
   });
 };
