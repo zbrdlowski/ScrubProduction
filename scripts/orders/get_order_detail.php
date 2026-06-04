@@ -1,9 +1,23 @@
 <?php
 declare(strict_types=1);
+ob_start();
+register_shutdown_function(function () {
+  $err = error_get_last();
+  if ($err && in_array($err['type'], [E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR], true)) {
+    while (ob_get_level() > 0) ob_end_clean();
+    http_response_code(500);
+    echo json_encode(['ok' => false, 'error' => 'PHP Fatal: ' . $err['message'] . ' in ' . $err['file'] . ':' . $err['line']]);
+  }
+});
+// DOČASNE — zmaž po diagnostike
+file_put_contents(__DIR__ . '/debug.txt',
+  '__DIR__=' . __DIR__ . "\n" .
+  'base=' . dirname(__DIR__, 2) . "\n" .
+  'connFile=' . dirname(__DIR__, 2) . '/includes/conn.php' . "\n" .
+  'exists=' . (is_file(dirname(__DIR__, 2) . '/includes/conn.php') ? 'YES' : 'NO') . "\n"
+);
 session_start();
-//out(200, ['ok'=>false,'error'=>'PHP '.PHP_VERSION]);
 header('Content-Type: application/json; charset=utf-8');
-
 function seatCoverOptionIsFilled($value): bool
 {
   if (is_array($value) || is_object($value)) {
@@ -50,6 +64,7 @@ function patchOptionsForModal(array $options): array
 
 function out(int $code, array $payload): void
 {
+  while (ob_get_level() > 0) ob_end_clean();  // ← zmaž oba buffery
   http_response_code($code);
   $json = json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_PARTIAL_OUTPUT_ON_ERROR);
   echo $json !== false ? $json : '{"ok":false,"error":"JSON encode failed"}';
@@ -2287,9 +2302,9 @@ ob_start();
                 $isSeatCoverItem = (strtoupper(trim((string) ($it['item_type_code'] ?? ''))) === 'S');
                 $isPatchItem = (($extOptArr['_auto_generated'] ?? '') === 'SEAT_PATCH_AUTO_GRAPHICS');
                 $seatCoverOpsMeta = [
-                  'waterproof-seams' => ['code' => 'WS', 'tooltip' => 'Waterproof Seams / Vodotesne svy'],
-                  'enduro-pocket' => ['code' => 'EP', 'tooltip' => 'Enduro pocket / Enduro vrecko'],
-                  'side-brand-patches' => ['code' => 'SP', 'tooltip' => 'Sidebrand Patches / Bocne nasivky'],
+                  'waterproof-seams' => ['code' => 'Waterproof Seams', 'tooltip' => 'Waterproof Seams / Vodotesné švy'],
+                  'enduro-pocket' => ['code' => 'Enduro pocket', 'tooltip' => 'Enduro pocket / Enduro vrecko'],
+                  'side-brand-patches' => ['code' => 'Sidebrand Patches', 'tooltip' => 'Sidebrand Patches / Bočné nášivky'],
                 ];
                 $seatCoverOpsConfirmed = $internalOptArr['_seat_cover_ops_confirmed'] ?? [];
                 if (!is_array($seatCoverOpsConfirmed)) {
