@@ -169,6 +169,9 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == '1') {
     default:
       include __DIR__ . '/personal_attendance.php';
       break;
+    case 'projects':
+      include __DIR__ . '/profile_projects.php';
+      break;
   }
   exit;
 }
@@ -188,6 +191,29 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == '1') {
     // ktorý panel je predvolene aktívny
     $activeTab = ($_GET['tab'] ?? 'attendance'); // možné hodnoty: attendance | orders | online
     $showPersonalOrders = !empty($_SESSION['personal_orders']);
+    $profileProjectCount = 0;
+    $profileUserId = intval($_SESSION['user_id'] ?? 0);
+
+    if ($profileUserId > 0) {
+      $stmt = $conn->prepare("
+    SELECT COUNT(DISTINCT p.id) AS cnt
+    FROM projects p
+    LEFT JOIN project_tasks pt ON pt.project_id = p.id
+    WHERE p.status NOT IN ('done','cancelled')
+      AND (p.assigned_to = ? OR pt.assigned_to = ?)
+  ");
+      if ($stmt) {
+        $stmt->bind_param('ii', $profileUserId, $profileUserId);
+        $stmt->execute();
+        $row = $stmt->get_result()->fetch_assoc();
+        $profileProjectCount = intval($row['cnt'] ?? 0);
+        $stmt->close();
+      }
+    }
+
+    if ($activeTab === 'projects' && $profileProjectCount <= 0) {
+      $activeTab = 'attendance';
+    }
     ?>
 
     <!-- ZÁLOŽKY + OBSAH (celá šírka pod bannerom) -->
@@ -208,6 +234,17 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == '1') {
                   <a class="nav-link <?php echo ($activeTab === 'orders') ? 'active' : ''; ?>"
                     href="?page=profile&tab=orders">
                     Orders
+                  </a>
+                </li>
+              <?php endif; ?>
+              <?php if ($profileProjectCount > 0): ?>
+                <li class="nav-item">
+                  <a class="nav-link <?php echo ($activeTab === 'projects') ? 'active' : ''; ?>"
+                    href="?page=profile&tab=projects">
+                    Projects
+                    <span class="badge badge-warning ml-1">
+                      <?php echo $profileProjectCount; ?>
+                    </span>
                   </a>
                 </li>
               <?php endif; ?>
@@ -382,11 +419,15 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == '1') {
               <div id="profileOrdersContainer" class="detail-wrap">
                 <?php include 'includes/profile_orders.php'; ?>
               </div>
+            <?php elseif ($activeTab === 'projects'): ?>
+              <div id="profileProjectsContainer" class="detail-wrap">
+                <?php include 'includes/profile_projects.php'; ?>
+              </div>
 
             <?php else: ?>
 
               <!-- ONLINE STAV (mriežka) -->
-              <div id="onlineGridContainer" class="detail-wrap">
+              <div id="onlineGridContainer">
                 <?php include 'includes/profile_online_grid.php'; ?>
               </div>
 

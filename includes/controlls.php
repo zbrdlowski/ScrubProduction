@@ -225,3 +225,259 @@ $('table').on('click', '.confirm-schedule-add', function () {
 
     
 
+
+<?php
+$productSpecTypes = [
+  'graphics_material' => 'G - Material',
+  'graphics_finish' => 'G - Finish',
+  'graphics_grip' => 'G - Grip',
+  'graphics_tr_swingarms' => 'G - Tr. Swingarms',
+  'graphics_printer' => 'G - Printer',
+  'seat_waterproof_seams' => 'S - Waterproof Seams',
+  'seat_enduro_pocket' => 'S - Enduro Pocket',
+  'seat_side_brand_patches' => 'S - Side Brand Patches',
+];
+$currentSpecKey = isset($_GET['spec_key']) ? (string) $_GET['spec_key'] : 'graphics_material';
+if (!isset($productSpecTypes[$currentSpecKey])) {
+  $currentSpecKey = 'graphics_material';
+}
+?>
+
+<hr class="my-4">
+
+<div class="row">
+  <div class="col-md-12">
+    <div class="card card-dark border-info">
+      <div class="card-header d-flex justify-content-between align-items-center flex-wrap">
+        <h3 class="card-title mb-0">Product Specification Dropdowns</h3>
+        <div class="d-flex align-items-center flex-nowrap" style="gap:8px;">
+          <select class="form-control form-control-sm product-spec-key-filter" style="min-width:260px;">
+            <?php foreach ($productSpecTypes as $key => $label): ?>
+              <option value="<?= htmlspecialchars($key, ENT_QUOTES, 'UTF-8'); ?>" <?= $currentSpecKey === $key ? 'selected' : ''; ?>>
+                <?= htmlspecialchars($label, ENT_QUOTES, 'UTF-8'); ?>
+              </option>
+            <?php endforeach; ?>
+          </select>
+          <button class="btn bg-gradient-success btn-xs add-product-spec-option"
+        style="white-space: nowrap; min-width: 110px;">
+    <i class="fa fa-plus"></i> Add Option
+</button>
+        </div>
+      </div>
+      <div class="card-body p-0">
+        <table class="table table-bordered table-striped mb-0 product-spec-options-table" data-spec-key="<?= htmlspecialchars($currentSpecKey, ENT_QUOTES, 'UTF-8'); ?>">
+          <thead>
+            <tr>
+              <th style="background-color:gray; width:70px;">ID</th>
+              <th style="background-color:gray; width:220px;">Dropdown</th>
+              <th style="background-color:gray;">Label</th>
+              <th style="background-color:gray;">Value</th>
+              <th style="background-color:gray; width:110px;">Order</th>
+              <th style="background-color:gray; width:90px;">Active</th>
+              <th style="background-color:gray; width:210px;">Tools</th>
+            </tr>
+          </thead>
+          <tbody>
+            <?php
+            $stmt = $conn->prepare("SELECT id, spec_key, label, value, sort_order, active FROM product_spec_options WHERE spec_key = ? ORDER BY sort_order ASC, id ASC");
+            if ($stmt) {
+              $stmt->bind_param('s', $currentSpecKey);
+              $stmt->execute();
+              $result = $stmt->get_result();
+              while ($row = $result->fetch_assoc()):
+            ?>
+              <tr data-id="<?= (int) $row['id']; ?>" data-spec-key="<?= htmlspecialchars($row['spec_key'], ENT_QUOTES, 'UTF-8'); ?>">
+                <td><?= (int) $row['id']; ?></td>
+                <td class="spec-name-cell"><?= htmlspecialchars($productSpecTypes[$row['spec_key']] ?? $row['spec_key'], ENT_QUOTES, 'UTF-8'); ?></td>
+                <td class="spec-label-cell"><?= htmlspecialchars($row['label'], ENT_QUOTES, 'UTF-8'); ?></td>
+                <td class="spec-value-cell"><?= htmlspecialchars($row['value'], ENT_QUOTES, 'UTF-8'); ?></td>
+                <td class="spec-sort-cell"><?= (int) $row['sort_order']; ?></td>
+                <td class="spec-active-cell"><?= ((int) $row['active'] === 1 ? 'Yes' : 'No'); ?></td>
+                <td>
+                  <button class="btn bg-gradient-primary btn-sm edit-product-spec-option"><i class="fa fa-edit"></i> Edit</button>
+                  <button class="btn bg-gradient-success btn-sm save-product-spec-option" style="display:none;"><i class="fa fa-save"></i> Save</button>
+                  <button class="btn bg-gradient-danger btn-sm delete-product-spec-option"><i class="fa fa-trash"></i></button>
+                </td>
+              </tr>
+            <?php
+              endwhile;
+              $stmt->close();
+            }
+            ?>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  const specLabels = <?= json_encode($productSpecTypes, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES); ?>;
+
+  function escapeHtml(value) {
+    return String(value || '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
+  }
+
+  $('.product-spec-key-filter').on('change', function () {
+    const key = $(this).val();
+    const url = new URL(window.location.href);
+    url.searchParams.set('spec_key', key);
+    window.location.href = url.toString();
+  });
+
+  $('.add-product-spec-option').on('click', function () {
+    const specKey = $('.product-spec-options-table').data('spec-key');
+    const specName = specLabels[specKey] || specKey;
+
+    const newRow = `
+      <tr class="new-product-spec-row" data-spec-key="${escapeHtml(specKey)}">
+        <td>—</td>
+        <td>${escapeHtml(specName)}</td>
+        <td><input type="text" class="form-control form-control-sm new-spec-label" placeholder="Option label"></td>
+        <td><input type="text" class="form-control form-control-sm new-spec-value" placeholder="Saved value"></td>
+        <td><input type="number" class="form-control form-control-sm new-spec-sort" value="0" step="1"></td>
+        <td>
+          <select class="form-control form-control-sm new-spec-active">
+            <option value="1" selected>Yes</option>
+            <option value="0">No</option>
+          </select>
+        </td>
+        <td>
+          <button class="btn bg-gradient-success btn-sm confirm-product-spec-add"><i class="fa fa-check"></i> Confirm</button>
+          <button class="btn bg-gradient-secondary btn-sm cancel-product-spec-add"><i class="fa fa-times"></i> Cancel</button>
+        </td>
+      </tr>`;
+
+    $('.product-spec-options-table tbody').prepend(newRow);
+  });
+
+  $('.product-spec-options-table').on('click', '.cancel-product-spec-add', function () {
+    $(this).closest('tr').remove();
+  });
+
+  $('.product-spec-options-table').on('click', '.confirm-product-spec-add', function () {
+    const $row = $(this).closest('tr');
+    const specKey = $row.data('spec-key');
+    const label = $row.find('.new-spec-label').val().trim();
+    const value = $row.find('.new-spec-value').val().trim();
+    const sortOrder = parseInt($row.find('.new-spec-sort').val(), 10) || 0;
+    const active = parseInt($row.find('.new-spec-active').val(), 10) || 0;
+
+    if (label === '' || value === '') {
+      alert('Label and value are required.');
+      return;
+    }
+
+    $.ajax({
+      url: 'scripts/settings/insert_product_spec_option.php',
+      method: 'POST',
+      dataType: 'json',
+      data: { spec_key: specKey, label: label, value: value, sort_order: sortOrder, active: active },
+      success: function (data) {
+        if (!data || !data.ok) {
+          alert(data && data.error ? data.error : 'Insert failed.');
+          return;
+        }
+        const specName = specLabels[specKey] || specKey;
+        $row.replaceWith(`
+          <tr data-id="${data.id}" data-spec-key="${escapeHtml(specKey)}">
+            <td>${data.id}</td>
+            <td class="spec-name-cell">${escapeHtml(specName)}</td>
+            <td class="spec-label-cell">${escapeHtml(label)}</td>
+            <td class="spec-value-cell">${escapeHtml(value)}</td>
+            <td class="spec-sort-cell">${sortOrder}</td>
+            <td class="spec-active-cell">${active === 1 ? 'Yes' : 'No'}</td>
+            <td>
+              <button class="btn bg-gradient-primary btn-sm edit-product-spec-option"><i class="fa fa-edit"></i> Edit</button>
+              <button class="btn bg-gradient-success btn-sm save-product-spec-option" style="display:none;"><i class="fa fa-save"></i> Save</button>
+              <button class="btn bg-gradient-danger btn-sm delete-product-spec-option"><i class="fa fa-trash"></i></button>
+            </td>
+          </tr>`);
+      }
+    });
+  });
+
+  $('.product-spec-options-table').on('click', '.edit-product-spec-option', function () {
+    const $row = $(this).closest('tr');
+    const label = $row.find('.spec-label-cell').text().trim();
+    const value = $row.find('.spec-value-cell').text().trim();
+    const sortOrder = $row.find('.spec-sort-cell').text().trim();
+    const active = $row.find('.spec-active-cell').text().trim() === 'Yes' ? '1' : '0';
+
+    $row.find('.spec-label-cell').html(`<input type="text" class="form-control form-control-sm spec-label-input" value="${escapeHtml(label)}">`);
+    $row.find('.spec-value-cell').html(`<input type="text" class="form-control form-control-sm spec-value-input" value="${escapeHtml(value)}">`);
+    $row.find('.spec-sort-cell').html(`<input type="number" class="form-control form-control-sm spec-sort-input" value="${escapeHtml(sortOrder)}" step="1">`);
+    $row.find('.spec-active-cell').html(`
+      <select class="form-control form-control-sm spec-active-input">
+        <option value="1" ${active === '1' ? 'selected' : ''}>Yes</option>
+        <option value="0" ${active === '0' ? 'selected' : ''}>No</option>
+      </select>`);
+
+    $(this).hide();
+    $row.find('.save-product-spec-option').show();
+  });
+
+  $('.product-spec-options-table').on('click', '.save-product-spec-option', function () {
+    const $row = $(this).closest('tr');
+    const id = parseInt($row.data('id'), 10) || 0;
+    const label = $row.find('.spec-label-input').val().trim();
+    const value = $row.find('.spec-value-input').val().trim();
+    const sortOrder = parseInt($row.find('.spec-sort-input').val(), 10) || 0;
+    const active = parseInt($row.find('.spec-active-input').val(), 10) || 0;
+
+    if (!id || label === '' || value === '') {
+      alert('Label and value are required.');
+      return;
+    }
+
+    $.ajax({
+      url: 'scripts/settings/update_product_spec_option.php',
+      method: 'POST',
+      dataType: 'json',
+      data: { id: id, label: label, value: value, sort_order: sortOrder, active: active },
+      success: function (data) {
+        if (!data || !data.ok) {
+          alert(data && data.error ? data.error : 'Save failed.');
+          return;
+        }
+        $row.find('.spec-label-cell').text(label);
+        $row.find('.spec-value-cell').text(value);
+        $row.find('.spec-sort-cell').text(sortOrder);
+        $row.find('.spec-active-cell').text(active === 1 ? 'Yes' : 'No');
+        $row.find('.save-product-spec-option').hide();
+        $row.find('.edit-product-spec-option').show();
+      }
+    });
+  });
+
+  $('.product-spec-options-table').on('click', '.delete-product-spec-option', function () {
+    if (!confirm('Delete this dropdown option?')) return;
+
+    const $row = $(this).closest('tr');
+    const id = parseInt($row.data('id'), 10) || 0;
+    if (!id) return;
+
+    $.ajax({
+      url: 'scripts/settings/delete_product_spec_option.php',
+      method: 'POST',
+      dataType: 'json',
+      data: { id: id },
+      success: function (data) {
+        if (!data || !data.ok) {
+          alert(data && data.error ? data.error : 'Delete failed.');
+          return;
+        }
+        $row.remove();
+      }
+    });
+  });
+})();
+</script>

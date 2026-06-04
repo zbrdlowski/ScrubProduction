@@ -1060,7 +1060,7 @@ $(document)
         },
       });
     });
-    $(document)
+  $(document)
 
     .off("click.removeAssignment", ".btn-remove-assignment")
     .on("click.removeAssignment", ".btn-remove-assignment", function (e) {
@@ -1096,14 +1096,6 @@ $(document)
           }
 
           const orderId = findOpenOrderIdFromElement($btn);
-
-          if (
-            typeof window.refreshProfileOrdersList === "function" &&
-            orderId
-          ) {
-            window.refreshProfileOrdersList(orderId);
-            return;
-          }
 
           if (orderId) {
             refreshOrderDetail(orderId);

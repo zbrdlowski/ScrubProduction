@@ -145,17 +145,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $holidayHasTable) {
     $end = trim($_POST['end_date'] ?? '');
     $note = trim($_POST['note'] ?? '');
 
-    if ($employeeId > 0 && holidayValidDate($start) && holidayValidDate($end)) {
-      if (strtotime($end) < strtotime($start)) {
-        [$start, $end] = [$end, $start];
-      }
-      $stmt = $conn->prepare("INSERT INTO holiday_requests
-          (employee_id, request_type, status, start_date, end_date, note, requested_by)
-          VALUES (?, ?, 'pending', ?, ?, ?, ?)");
-      $stmt->bind_param('issssi', $employeeId, $type, $start, $end, $note, $holidayEmpId);
-      $stmt->execute();
-      $stmt->close();
+if ($employeeId > 0 && holidayValidDate($start) && holidayValidDate($end)) {
+  if (strtotime($end) < strtotime($start)) {
+    [$start, $end] = [$end, $start];
+  }
+
+  $validDates = [];
+
+  foreach (holidayRangeDates($start, $end) as $date) {
+    $dt = new DateTime($date);
+
+    $isWeekend = intval($dt->format('N')) >= 6;
+    $isPublicHoliday = isset($holidayPublicHolidays[$dt->format('d-m')]);
+
+    if (!$isWeekend && !$isPublicHoliday) {
+      $validDates[] = $date;
     }
+  }
+
+  foreach ($validDates as $validDate) {
+    $stmt = $conn->prepare("INSERT INTO holiday_requests
+        (employee_id, request_type, status, start_date, end_date, note, requested_by)
+        VALUES (?, ?, 'pending', ?, ?, ?, ?)");
+    $stmt->bind_param('issssi', $employeeId, $type, $validDate, $validDate, $note, $holidayEmpId);
+    $stmt->execute();
+    $stmt->close();
+  }
+}
     holidayRedirect($returnUrl);
   }
 
@@ -344,13 +360,13 @@ for ($i = 0; $i < 6; $i++) {
     position: sticky;
     top: 0;
     z-index: 4;
-    background: #263f4d;
+    background: #017da3;
     border-bottom: 1px solid rgba(23, 162, 184, .65);
     color: #f8f9fa;
   }
 
   .holiday-month-card .card-title {
-    color: #f8f9fa;
+    color: #ffffff;
     font-weight: 700;
   }
 
@@ -642,6 +658,10 @@ for ($i = 0; $i < 6; $i++) {
 
                         if ($request['status'] === 'approved' && !empty($request['reviewed_name'])) {
                           $tooltipParts[] = 'Approved by: ' . $request['reviewed_name'];
+                        }
+
+                        if ($request['status'] === 'approved' && !empty($request['admin_note'])) {
+                          $tooltipParts[] = 'Admin note: ' . $request['admin_note'];
                         }
 
                         $title = !empty($tooltipParts)

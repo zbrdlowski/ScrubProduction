@@ -598,93 +598,6 @@ while ($it = $r->fetch_assoc())
   $items[] = $it;
 $stmt->close();
 
-// Doplní avatar človeka, ktorý prevzal objednávku cez TAKE.
-// TAKE zapisuje department-level assignment do order_assignments,
-// zatiaľ čo pôvodná bunka Assigned čítala iba order_item_assignments.
-$deptAssignmentRows = [];
-$deptAssignmentStmt = $conn->prepare("
-  SELECT
-    oa.id AS assignment_id,
-    oa.employee_id,
-    oa.role,
-    TRIM(CONCAT(e.firstname, ' ', e.lastname)) AS employee_name,
-    COALESCE(e.photo, '') AS photo
-  FROM order_assignments oa
-  JOIN employees e ON e.id = oa.employee_id
-  WHERE oa.order_id = ?
-    AND oa.removed_at IS NULL
-    AND oa.role IN (
-      'PRIMARY_GRAPHICS',
-      'PRIMARY_PLASTICS',
-      'PRIMARY_SEATCOVER',
-      'PRIMARY_FITTING'
-    )
-  ORDER BY e.firstname, e.lastname
-");
-
-if ($deptAssignmentStmt) {
-  $deptAssignmentStmt->bind_param('i', $orderId);
-  $deptAssignmentStmt->execute();
-  $deptAssignmentResult = $deptAssignmentStmt->get_result();
-  while ($deptAssignment = $deptAssignmentResult->fetch_assoc()) {
-    $deptAssignmentRows[] = $deptAssignment;
-  }
-  $deptAssignmentStmt->close();
-}
-
-if ($deptAssignmentRows) {
-  $roleTypeMap = [
-    'PRIMARY_GRAPHICS' => ['G'],
-    'PRIMARY_PLASTICS' => ['P', 'T', 'M'],
-    'PRIMARY_SEATCOVER' => ['S'],
-    'PRIMARY_FITTING' => ['F'],
-  ];
-
-  foreach ($items as &$itemForDeptAssignment) {
-    $itemTypeForDeptAssignment = strtoupper(trim((string) ($itemForDeptAssignment['item_type_code'] ?? '')));
-    $existingAssignedRaw = trim((string) ($itemForDeptAssignment['item_assigned_users'] ?? ''));
-    $existingEmployeeIds = [];
-
-    if ($existingAssignedRaw !== '') {
-      foreach (explode(';;', $existingAssignedRaw) as $existingAssignmentPart) {
-        $existingAssignmentBits = explode('|', $existingAssignmentPart);
-        if (!empty($existingAssignmentBits[0])) {
-          $existingEmployeeIds[(int) $existingAssignmentBits[0]] = true;
-        }
-      }
-    }
-
-    $assignmentPartsToAdd = [];
-    foreach ($deptAssignmentRows as $deptAssignment) {
-      $role = (string) ($deptAssignment['role'] ?? '');
-      if (!in_array($itemTypeForDeptAssignment, $roleTypeMap[$role] ?? [], true)) {
-        continue;
-      }
-
-      $employeeId = (int) ($deptAssignment['employee_id'] ?? 0);
-      if ($employeeId <= 0 || isset($existingEmployeeIds[$employeeId])) {
-        continue;
-      }
-
-      $assignmentPartsToAdd[] = implode('|', [
-        $employeeId,
-        (string) ($deptAssignment['employee_name'] ?? ''),
-        (string) ($deptAssignment['photo'] ?? ''),
-        (int) ($deptAssignment['assignment_id'] ?? 0),
-      ]);
-      $existingEmployeeIds[$employeeId] = true;
-    }
-
-    if ($assignmentPartsToAdd) {
-      $itemForDeptAssignment['item_assigned_users'] = trim(
-        $existingAssignedRaw . ($existingAssignedRaw !== '' ? ';;' : '') . implode(';;', $assignmentPartsToAdd),
-        ';'
-      );
-    }
-  }
-  unset($itemForDeptAssignment);
-}
-
 // Zoradiť položky podľa departmentu: G → P → F → ostatné
 $deptOrder = ['G' => 1, 'P' => 2, 'T' => 2, 'M' => 2, 'S' => 2, 'F' => 3];
 usort($items, function (array $a, array $b) use ($deptOrder): int {
@@ -1945,7 +1858,7 @@ ob_start();
               <?php endif; ?>
               <th class="text-center">Product Type</th>
               <th title="Product specification">📋 Product Specification</th>
-              <th>Link</th>
+              <th>Product</th>
               <th class="text-center">Detail</th>
               <th>Action</th>
               <th>Waiting</th>
@@ -2153,7 +2066,7 @@ ob_start();
                         <?php endif; ?>
 
                         <?php if ($canRemoveThisAssignment): ?>
-                          <button type="button" class="btn-remove-assignment btn-remove-item-assignment"
+                          <button type="button" class="btn-remove-assignment"
                             data-assignment-id="<?= (int) $a['assignment_id'] ?>"
                             title="<?= ((int) $a['id'] === $currentUserId ? 'Remove my assignment' : 'Remove assignment') ?>">
                             ×
@@ -2396,7 +2309,7 @@ ob_start();
                   <?php if ($productUrl !== ''): ?>
                     <a href="<?= h($productUrl) ?>" target="_blank" rel="noopener" class="btn btn-sm btn-outline-info"
                       title="<?= h($productUrl) ?>">
-                      <i class="fas fa-external-link-alt mr-1"></i>
+                      <i class="fas fa-external-link-alt mr-1"></i> Product
                     </a>
                   <?php else: ?>
                     <button type="button" class="btn btn-sm btn-outline-warning btn-set-product-url"
@@ -2863,3 +2776,6 @@ function saveSeatCoverOps($select) {
 $html = ob_get_clean();
 out(200, ['ok' => true, 'html' => $html]);
 ?>
+
+
+
