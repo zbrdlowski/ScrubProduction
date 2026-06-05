@@ -20,19 +20,7 @@ $newStatus = trim($_POST['status'] ?? '');
 $note = trim($_POST['note'] ?? '');
 $expectedDate = trim($_POST['expected_date'] ?? '');
 
-$allowed = [
-    'NEW',
-    'PROCESSING',
-    'RTP',
-    'PRINT_QUEUE',
-    'PRINTED',
-    'CUT',
-    'READY',
-    'WAITING',
-    'DONE'
-];
-
-if (!$itemId || !in_array($newStatus, $allowed)) {
+if (!$itemId || $newStatus === '') {
     echo json_encode(['success' => false, 'message' => 'Invalid request']);
     exit;
 }
@@ -54,6 +42,12 @@ $oldStatus = $item['status'];
 $orderId = (int)$item['order_id'];
 $userId = (int)$_SESSION['user_id'];
 $itemType = strtoupper(trim((string)($item['item_type_code'] ?? '')));
+$allowed = ordersGetItemStatusCodes($conn, $itemType, true);
+
+if (!in_array($newStatus, $allowed, true)) {
+    echo json_encode(['success' => false, 'message' => 'Status is not allowed for this department']);
+    exit;
+}
 
 if ($newStatus === 'READY' && $itemType === 'S') {
     $seatCoverState = seatCoverOperationsStateFromJsonStrings(

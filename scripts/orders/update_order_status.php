@@ -4,6 +4,7 @@ session_start();
 header('Content-Type: application/json; charset=utf-8');
 
 require_once dirname(__DIR__, 2) . '/includes/conn.php';
+require_once dirname(__DIR__, 2) . '/includes/orders_status_helpers.php';
 require_once __DIR__ . '/activity_helper.php';
 
 function out(array $payload): void {
@@ -19,22 +20,7 @@ $orderId = (int)($_POST['order_id'] ?? 0);
 $newStatus = strtoupper(trim((string)($_POST['status'] ?? '')));
 $userId = (int)($_SESSION['user_id'] ?? 0);
 
-// toto treba upraviť ak budeme pridávať nové statusy, ale zatiaľ nechcem aby sa to dalo nastaviť na čokoľvek
-$allowed = [
-  'NEW',
-  'PENDING',
-  'IN_PROGRESS',
-  'NEED_INFO',
-  'DRAFT_REQUESTED',
-  'DRAFT_READY',
-  'RIPPED',
-  'PRINT_QUEUE',
-  'PRODUCTION',
-  'READY_TO_SHIP',
-  'SHIPPED',
-  'HOLD',
-  'CANCELLED',
-];
+$allowed = ordersGetOrderStatusCodes($conn, true);
 
 if ($orderId <= 0 || !in_array($newStatus, $allowed, true)) {
   out(['ok' => false, 'error' => 'Invalid status']);
@@ -89,23 +75,8 @@ log_order_activity(
 );
 
 // Button HTML pre JS in-place update status bunky v riadku tabuľky (bez reloadu)
-$btnClassMap = [
-  'NEW'              => 'btn-outline-danger',
-  'PENDING'          => 'btn-outline-pending',
-  'IN_PROGRESS'      => 'btn-outline-warning',
-  'NEED_INFO'        => 'btn-outline-danger',
-  'DRAFT_REQUESTED'  => 'btn-outline-info',
-  'DRAFT_READY'      => 'btn-outline-info',
-  'RIPPED'           => 'btn-outline-primary',
-  'PRINT_QUEUE'      => 'btn-outline-primary',
-  'PRODUCTION'       => 'btn-outline-warning',
-  'READY_TO_SHIP'    => 'btn-outline-success',
-  'SHIPPED'          => 'btn-outline-success',
-  'HOLD'             => 'btn-outline-secondary',
-  'CANCELLED'        => 'btn-outline-secondary',
-];
-$btnClass    = $btnClassMap[$newStatus] ?? 'btn-outline-secondary';
-$statusLabel = str_replace('_', ' ', $newStatus);
+$btnClass = ordersGetOrderStatusButtonClass($newStatus);
+$statusLabel = ordersGetStatusLabel($conn, 'order', $newStatus);
 
 out([
   'ok'          => true,

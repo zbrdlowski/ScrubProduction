@@ -1,4 +1,4 @@
-﻿<!-- pracovne departmenty -->
+<!-- pracovne departmenty -->
 <div class="container-fluid">
   <div class="row">
     <div class="col-md-6">
@@ -65,7 +65,7 @@
       $('.position-table .add-btn').on('click', function () {
         const newRow = `
     <tr class="new-row">
-      <td style='width:0.1em;'>â€”</td>
+      <td style='width:0.1em;'>—</td>
       <td class="desc-cell">
         <input type='text' class='form-control new-desc' placeholder='Enter new position'>
       </td>
@@ -181,7 +181,7 @@
       $('.schedule-table .add-schedule-btn').on('click', function () {
         const newRow = `
     <tr class="new-schedule-row">
-      <td style='width:0.1em;'>â€”</td>
+      <td style='width:0.1em;'>—</td>
       <td class="schedule-cell">
         <input type='time' class='form-control new-time-in' placeholder='Start'>
         <input type='time' class='form-control new-time-out' placeholder='End'>
@@ -245,59 +245,13 @@
   if (!isset($productSpecTypes[$currentSpecKey])) {
     $currentSpecKey = 'graphics_material';
   }
-  $statusDropdownGroups = [
-    'order|' => 'Order - Overall',
-    'item|G' => 'Item - Graphics (G)',
-    'item|S' => 'Item - Seat Cover (S)',
-    'item|P' => 'Item - Plastics (P)',
-    'item|F' => 'Item - Fitting (F)',
-  ];
-  $currentStatusGroup = isset($_GET['status_group']) ? (string) $_GET['status_group'] : 'order|';
-  if (!isset($statusDropdownGroups[$currentStatusGroup])) {
-    $currentStatusGroup = 'order|';
-  }
-  [$currentStatusScope, $currentStatusDepartment] = array_pad(explode('|', $currentStatusGroup, 2), 2, '');
-  $currentStatusDepartmentOrNull = $currentStatusDepartment !== '' ? $currentStatusDepartment : null;
   ?>
 
   <hr class="my-4">
 
-  <style>
-    .settings-compact-card .card-header {
-      padding: .55rem .75rem;
-    }
-
-    .settings-compact-card .card-title {
-      font-size: 1rem;
-    }
-
-    .settings-compact-card .table th,
-    .settings-compact-card .table td {
-      padding: .4rem .45rem;
-      vertical-align: middle;
-      font-size: .875rem;
-    }
-
-    .settings-compact-card .card-body-scroll {
-      max-height: 560px;
-      overflow: auto;
-    }
-
-    .status-color-preview {
-      display: inline-block;
-      width: 18px;
-      height: 18px;
-      border-radius: 50%;
-      border: 1px solid rgba(0, 0, 0, .25);
-      vertical-align: middle;
-      margin-right: 6px;
-      background: transparent;
-    }
-  </style>
-
   <div class="row">
-    <div class="col-lg-6">
-      <div class="card card-dark border-info settings-compact-card">
+    <div class="col-md-12">
+      <div class="card card-dark border-info">
         <div class="card-header d-flex justify-content-between align-items-center flex-wrap">
           <h3 class="card-title mb-0">Product Specification Dropdowns</h3>
           <div class="d-flex align-items-center flex-nowrap" style="gap:8px;">
@@ -314,7 +268,7 @@
             </button>
           </div>
         </div>
-        <div class="card-body p-0 card-body-scroll">
+        <div class="card-body p-0">
           <table class="table table-bordered table-striped mb-0 product-spec-options-table"
             data-spec-key="<?= htmlspecialchars($currentSpecKey, ENT_QUOTES, 'UTF-8'); ?>">
             <thead>
@@ -366,80 +320,6 @@
         </div>
       </div>
     </div>
-    <div class="col-lg-6">
-      <div class="card card-dark border-warning settings-compact-card">
-        <div class="card-header d-flex justify-content-between align-items-center flex-wrap">
-          <h3 class="card-title mb-0">Status Dropdowns</h3>
-          <div class="d-flex align-items-center flex-nowrap" style="gap:8px;">
-            <select class="form-control form-control-sm status-definition-group-filter" style="min-width:240px;">
-              <?php foreach ($statusDropdownGroups as $key => $label): ?>
-                <option value="<?= htmlspecialchars($key, ENT_QUOTES, 'UTF-8'); ?>" <?= $currentStatusGroup === $key ? 'selected' : ''; ?>>
-                  <?= htmlspecialchars($label, ENT_QUOTES, 'UTF-8'); ?>
-                </option>
-              <?php endforeach; ?>
-            </select>
-            <button class="btn bg-gradient-success btn-xs add-status-definition" style="white-space: nowrap; min-width: 110px;">
-              <i class="fa fa-plus"></i> Add Status
-            </button>
-          </div>
-        </div>
-        <div class="card-body p-0 card-body-scroll">
-          <table class="table table-bordered table-striped mb-0 status-definitions-table" data-group-key="<?= htmlspecialchars($currentStatusGroup, ENT_QUOTES, 'UTF-8'); ?>">
-            <thead>
-              <tr>
-                <th style="background-color:gray; width:60px;">ID</th>
-                <th style="background-color:gray; width:150px;">Dropdown</th>
-                <th style="background-color:gray; width:120px;">Code</th>
-                <th style="background-color:gray;">Label</th>
-                <th style="background-color:gray; width:110px;">Color</th>
-                <th style="background-color:gray; width:85px;">Order</th>
-                <th style="background-color:gray; width:75px;">Active</th>
-                <th style="background-color:gray; width:180px;">Tools</th>
-              </tr>
-            </thead>
-            <tbody>
-              <?php
-              $stmt = $conn->prepare("
-                SELECT id, scope, department, code, label, color, sort_order, active
-                FROM status_definitions
-                WHERE scope = ?
-                  AND ((? IS NULL AND department IS NULL) OR department = ?)
-                ORDER BY sort_order ASC, id ASC
-              ");
-              if ($stmt) {
-                $stmt->bind_param('sss', $currentStatusScope, $currentStatusDepartmentOrNull, $currentStatusDepartmentOrNull);
-                $stmt->execute();
-                $result = $stmt->get_result();
-                while ($row = $result->fetch_assoc()):
-                  $color = trim((string) ($row['color'] ?? ''));
-                  ?>
-                  <tr data-id="<?= (int) $row['id']; ?>" data-group-key="<?= htmlspecialchars($currentStatusGroup, ENT_QUOTES, 'UTF-8'); ?>">
-                    <td><?= (int) $row['id']; ?></td>
-                    <td class="status-group-cell"><?= htmlspecialchars($statusDropdownGroups[$currentStatusGroup] ?? $currentStatusGroup, ENT_QUOTES, 'UTF-8'); ?></td>
-                    <td class="status-code-cell"><?= htmlspecialchars($row['code'], ENT_QUOTES, 'UTF-8'); ?></td>
-                    <td class="status-label-cell"><?= htmlspecialchars($row['label'], ENT_QUOTES, 'UTF-8'); ?></td>
-                    <td class="status-color-cell">
-                      <span class="status-color-preview" style="background-color: <?= htmlspecialchars($color !== '' ? $color : 'transparent', ENT_QUOTES, 'UTF-8'); ?>;"></span>
-                      <span class="status-color-text"><?= htmlspecialchars($color, ENT_QUOTES, 'UTF-8'); ?></span>
-                    </td>
-                    <td class="status-sort-cell"><?= (int) $row['sort_order']; ?></td>
-                    <td class="status-active-cell"><?= ((int) $row['active'] === 1 ? 'Yes' : 'No'); ?></td>
-                    <td>
-                      <button class="btn bg-gradient-primary btn-sm edit-status-definition"><i class="fa fa-edit"></i> Edit</button>
-                      <button class="btn bg-gradient-success btn-sm save-status-definition" style="display:none;"><i class="fa fa-save"></i> Save</button>
-                      <button class="btn bg-gradient-danger btn-sm delete-status-definition"><i class="fa fa-trash"></i></button>
-                    </td>
-                  </tr>
-                  <?php
-                endwhile;
-                $stmt->close();
-              }
-              ?>
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </div>
   </div>
 
   <script>
@@ -470,7 +350,7 @@
 
         const newRow = `
       <tr class="new-product-spec-row" data-spec-key="${escapeHtml(specKey)}">
-        <td>&mdash;</td>
+        <td>—</td>
         <td>${escapeHtml(specName)}</td>
         <td><input type="text" class="form-control form-control-sm new-spec-label" placeholder="Option label"></td>
         <td><input type="text" class="form-control form-control-sm new-spec-value" placeholder="Saved value"></td>
@@ -598,189 +478,6 @@
 
         $.ajax({
           url: 'scripts/settings/delete_product_spec_option.php',
-          method: 'POST',
-          dataType: 'json',
-          data: { id: id },
-          success: function (data) {
-            if (!data || !data.ok) {
-              alert(data && data.error ? data.error : 'Delete failed.');
-              return;
-            }
-            $row.remove();
-          }
-        });
-      });
-    })();
-  </script>
-
-  <script>
-    (function () {
-      'use strict';
-
-      const statusGroupLabels = <?= json_encode($statusDropdownGroups, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES); ?>;
-
-      function escapeHtml(value) {
-        return String(value || '')
-          .replace(/&/g, '&amp;')
-          .replace(/</g, '&lt;')
-          .replace(/>/g, '&gt;')
-          .replace(/"/g, '&quot;')
-          .replace(/'/g, '&#039;');
-      }
-
-      function renderStatusColorCell(color) {
-        const safeColor = String(color || '').trim();
-        const bgColor = safeColor !== '' ? safeColor : 'transparent';
-        return `<span class="status-color-preview" style="background-color:${escapeHtml(bgColor)};"></span><span class="status-color-text">${escapeHtml(safeColor)}</span>`;
-      }
-
-      $('.status-definition-group-filter').on('change', function () {
-        const url = new URL(window.location.href);
-        url.searchParams.set('status_group', $(this).val());
-        window.location.href = url.toString();
-      });
-
-      $('.add-status-definition').on('click', function () {
-        const groupKey = $('.status-definitions-table').data('group-key');
-        const groupName = statusGroupLabels[groupKey] || groupKey;
-
-        const newRow = `
-          <tr class="new-status-definition-row" data-group-key="${escapeHtml(groupKey)}">
-            <td>&mdash;</td>
-            <td>${escapeHtml(groupName)}</td>
-            <td><input type="text" class="form-control form-control-sm new-status-code" placeholder="READY_TO_SHIP"></td>
-            <td><input type="text" class="form-control form-control-sm new-status-label" placeholder="Ready to Ship"></td>
-            <td><input type="text" class="form-control form-control-sm new-status-color" placeholder="#28a745"></td>
-            <td><input type="number" class="form-control form-control-sm new-status-sort" value="0" step="1"></td>
-            <td>
-              <select class="form-control form-control-sm new-status-active">
-                <option value="1" selected>Yes</option>
-                <option value="0">No</option>
-              </select>
-            </td>
-            <td>
-              <button class="btn bg-gradient-success btn-sm confirm-status-definition-add"><i class="fa fa-check"></i> Confirm</button>
-              <button class="btn bg-gradient-secondary btn-sm cancel-status-definition-add"><i class="fa fa-times"></i> Cancel</button>
-            </td>
-          </tr>`;
-
-        $('.status-definitions-table tbody').prepend(newRow);
-      });
-
-      $('.status-definitions-table').on('click', '.cancel-status-definition-add', function () {
-        $(this).closest('tr').remove();
-      });
-
-      $('.status-definitions-table').on('click', '.confirm-status-definition-add', function () {
-        const $row = $(this).closest('tr');
-        const groupKey = $row.data('group-key');
-        const code = $row.find('.new-status-code').val().trim().toUpperCase();
-        const label = $row.find('.new-status-label').val().trim();
-        const color = $row.find('.new-status-color').val().trim();
-        const sortOrder = parseInt($row.find('.new-status-sort').val(), 10) || 0;
-        const active = parseInt($row.find('.new-status-active').val(), 10) || 0;
-
-        if (code === '' || label === '') {
-          alert('Code and label are required.');
-          return;
-        }
-
-        $.ajax({
-          url: 'scripts/settings/insert_status_definition.php',
-          method: 'POST',
-          dataType: 'json',
-          data: { group_key: groupKey, code: code, label: label, color: color, sort_order: sortOrder, active: active },
-          success: function (data) {
-            if (!data || !data.ok) {
-              alert(data && data.error ? data.error : 'Insert failed.');
-              return;
-            }
-            const groupName = statusGroupLabels[groupKey] || groupKey;
-            $row.replaceWith(`
-              <tr data-id="${data.id}" data-group-key="${escapeHtml(groupKey)}">
-                <td>${data.id}</td>
-                <td class="status-group-cell">${escapeHtml(groupName)}</td>
-                <td class="status-code-cell">${escapeHtml(code)}</td>
-                <td class="status-label-cell">${escapeHtml(label)}</td>
-                <td class="status-color-cell">${renderStatusColorCell(color)}</td>
-                <td class="status-sort-cell">${sortOrder}</td>
-                <td class="status-active-cell">${active === 1 ? 'Yes' : 'No'}</td>
-                <td>
-                  <button class="btn bg-gradient-primary btn-sm edit-status-definition"><i class="fa fa-edit"></i> Edit</button>
-                  <button class="btn bg-gradient-success btn-sm save-status-definition" style="display:none;"><i class="fa fa-save"></i> Save</button>
-                  <button class="btn bg-gradient-danger btn-sm delete-status-definition"><i class="fa fa-trash"></i></button>
-                </td>
-              </tr>`);
-          }
-        });
-      });
-
-      $('.status-definitions-table').on('click', '.edit-status-definition', function () {
-        const $row = $(this).closest('tr');
-        const code = $row.find('.status-code-cell').text().trim();
-        const label = $row.find('.status-label-cell').text().trim();
-        const color = $row.find('.status-color-text').text().trim();
-        const sortOrder = $row.find('.status-sort-cell').text().trim();
-        const active = $row.find('.status-active-cell').text().trim() === 'Yes' ? '1' : '0';
-
-        $row.find('.status-code-cell').html(`<input type="text" class="form-control form-control-sm status-code-input" value="${escapeHtml(code)}">`);
-        $row.find('.status-label-cell').html(`<input type="text" class="form-control form-control-sm status-label-input" value="${escapeHtml(label)}">`);
-        $row.find('.status-color-cell').html(`<input type="text" class="form-control form-control-sm status-color-input" value="${escapeHtml(color)}" placeholder="#28a745">`);
-        $row.find('.status-sort-cell').html(`<input type="number" class="form-control form-control-sm status-sort-input" value="${escapeHtml(sortOrder)}" step="1">`);
-        $row.find('.status-active-cell').html(`
-          <select class="form-control form-control-sm status-active-input">
-            <option value="1" ${active === '1' ? 'selected' : ''}>Yes</option>
-            <option value="0" ${active === '0' ? 'selected' : ''}>No</option>
-          </select>`);
-
-        $(this).hide();
-        $row.find('.save-status-definition').show();
-      });
-
-      $('.status-definitions-table').on('click', '.save-status-definition', function () {
-        const $row = $(this).closest('tr');
-        const id = parseInt($row.data('id'), 10) || 0;
-        const code = $row.find('.status-code-input').val().trim().toUpperCase();
-        const label = $row.find('.status-label-input').val().trim();
-        const color = $row.find('.status-color-input').val().trim();
-        const sortOrder = parseInt($row.find('.status-sort-input').val(), 10) || 0;
-        const active = parseInt($row.find('.status-active-input').val(), 10) || 0;
-
-        if (!id || code === '' || label === '') {
-          alert('Code and label are required.');
-          return;
-        }
-
-        $.ajax({
-          url: 'scripts/settings/update_status_definition.php',
-          method: 'POST',
-          dataType: 'json',
-          data: { id: id, code: code, label: label, color: color, sort_order: sortOrder, active: active },
-          success: function (data) {
-            if (!data || !data.ok) {
-              alert(data && data.error ? data.error : 'Save failed.');
-              return;
-            }
-            $row.find('.status-code-cell').text(code);
-            $row.find('.status-label-cell').text(label);
-            $row.find('.status-color-cell').html(renderStatusColorCell(color));
-            $row.find('.status-sort-cell').text(sortOrder);
-            $row.find('.status-active-cell').text(active === 1 ? 'Yes' : 'No');
-            $row.find('.save-status-definition').hide();
-            $row.find('.edit-status-definition').show();
-          }
-        });
-      });
-
-      $('.status-definitions-table').on('click', '.delete-status-definition', function () {
-        if (!confirm('Delete this status option?')) return;
-
-        const $row = $(this).closest('tr');
-        const id = parseInt($row.data('id'), 10) || 0;
-        if (!id) return;
-
-        $.ajax({
-          url: 'scripts/settings/delete_status_definition.php',
           method: 'POST',
           dataType: 'json',
           data: { id: id },

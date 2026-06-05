@@ -2,7 +2,6 @@
 declare(strict_types=1);
 /** @var mysqli $conn */
 require_once __DIR__ . '/conn.php';
-require_once __DIR__ . '/orders_status_helpers.php';
 
 if (!isset($conn) || !$conn instanceof mysqli) {
   echo '<div class="alert alert-danger">Database connection error.</div>';
@@ -169,8 +168,7 @@ if ($fWorker <= 0 || !isset($workerOptions[$fWorker])) {
   $fWorker = 0;
 }
 
-$orderStatusLabels = ordersGetOrderStatusLabels($conn, true);
-$allowedStatuses = array_keys($orderStatusLabels);
+$allowedStatuses = ['NEW', 'IN_PROGRESS', 'NEED_INFO', 'DRAFT_READY', 'READY_TO_INVOICE', 'READY_TO_SHIP', 'SHIPPED', 'DONE', 'HOLD', 'CANCELLED', 'PENDING'];
 if ($fStatus !== '' && !in_array($fStatus, $allowedStatuses, true))
   $fStatus = '';
 
@@ -1410,7 +1408,20 @@ $deptOptions = [
               <label class="small mb-1">Order Status</label>
               <select class="form-control form-control-sm" name="status">
                 <option value="">— All —</option>
-                <?php foreach ($orderStatusLabels as $val => $lbl): ?>
+                <?php foreach ([
+                  'NEW' => 'New',
+                  'PENDING' => '⏳ Pending payment',
+                  'IN_PROGRESS' => 'In Progress',
+                  'NEED_INFO' => 'Need Info',
+                  'DRAFT_READY' => 'Draft Ready',
+                  'READY_TO_INVOICE' => 'Ready to Invoice',
+                  'READY_TO_SHIP' => 'Ready to Ship',
+                  'SHIPPED' => 'Shipped',
+                  'DONE' => 'Done',
+                  'HOLD' => 'Hold',
+                  'CANCELLED' => 'Cancelled',
+                  // ── sem pridaj ──
+                ] as $val => $lbl): ?>
                   <?= fOpt($val, $lbl, $fStatus) ?>
                 <?php endforeach; ?>
               </select>
@@ -1859,11 +1870,53 @@ $deptOptions = [
                 <?php
                 $status = strtoupper((string) ($row['status'] ?? ''));
 
-                $btnClass = ordersGetOrderStatusButtonClass($status);
-                $statusLabel = ordersGetStatusLabel($conn, 'order', $status);
+                switch ($status) {
+                  case 'NEW':
+                    $btnClass = 'btn-outline-danger';
+                    break;
+                  case 'PENDING':
+                    $btnClass = 'btn-outline-pending';
+                    break;
+                  case 'READY_TO_INVOICE':
+                    $btnClass = 'btn-outline-warning';
+                    break;
+
+                  case 'IN_PROGRESS':
+                    $btnClass = 'btn-outline-warning';
+                    break;
+
+                  case 'DRAFT_READY':
+                    $btnClass = 'btn-outline-info';
+                    break;
+
+                  case 'WAITING_PARTS':
+                    $btnClass = 'btn-outline-warning';
+                    break;
+
+                  case 'HOLD':
+                  case 'CANCELLED':
+                    $btnClass = 'btn-outline-secondary';
+                    break;
+
+                  case 'DONE':
+                  case 'COMPLETED':
+                  case 'SHIPPED':
+                  case 'READY':
+                  case 'READY_TO_SHIP':
+                    $btnClass = 'btn-outline-success';
+                    break;
+
+                  case 'NEED_INFO':
+                    $btnClass = 'btn-outline-danger';
+                    break;
+
+                  default:
+                    $btnClass = 'btn-outline-secondary';
+                    break;
+                }
                 ?>
                 <button class="btn btn-xs <?= $btnClass ?>" style="pointer-events:none;">
-                  <?= htmlspecialchars($statusLabel ?: '-') ?>
+                  <?= htmlspecialchars(str_replace('_', ' ', $status) ?: '-') ?>
                 </button>
               </td>
               <td>

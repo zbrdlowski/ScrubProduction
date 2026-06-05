@@ -1,6 +1,9 @@
 <?php
 
-function seatCoverOptionIsPositive($value): bool {
+require_once __DIR__ . '/orders_status_helpers.php';
+
+function seatCoverOptionIsPositive($value): bool
+{
     if (is_array($value)) {
         return false;
     }
@@ -14,7 +17,8 @@ function seatCoverOptionIsPositive($value): bool {
     return !in_array(mb_strtolower($value), $negativeValues, true);
 }
 
-function seatCoverOperationsStateFromJsonStrings(?string $optionsJson, ?string $internalOptionsJson): array {
+function seatCoverOperationsStateFromJsonStrings(?string $optionsJson, ?string $internalOptionsJson): array
+{
     $requiredMap = [
         'waterproof-seams' => 'WS',
         'enduro-pocket' => 'EP',
@@ -60,7 +64,8 @@ function seatCoverOperationsStateFromJsonStrings(?string $optionsJson, ?string $
     ];
 }
 
-function isOrderItemReady(string $type, string $status, ?string $optionsJson = null, ?string $internalOptionsJson = null): bool {
+function isOrderItemReady(string $type, string $status, ?string $optionsJson = null, ?string $internalOptionsJson = null): bool
+{
     $type = strtoupper($type);
     $status = strtoupper($status);
 
@@ -84,7 +89,8 @@ function isOrderItemReady(string $type, string $status, ?string $optionsJson = n
     return $status === 'READY';
 }
 
-function itemTrafficState(string $type, array $items): string {
+function itemTrafficState(string $type, array $items): string
+{
     $total = count($items);
     $ready = 0;
     $started = 0;
@@ -121,7 +127,194 @@ function itemTrafficState(string $type, array $items): string {
     return 'RED';
 }
 
-function recalculateOrderWorkflow(mysqli $conn, int $orderId): void {
+function ordersWorkflowTableAvailable(mysqli $conn, string $tableName): bool
+{
+    return ordersStatusTableExists($conn, $tableName);
+}
+
+function ordersDepartmentWorkflowStatus(mysqli $conn, string $department, array $items): string
+{
+    $department = ordersNormalizeDepartmentCode($department);
+    if (!$items) {
+        return 'NEW';
+    }
+
+    $allReady = true;
+    $hasWaiting = false;
+    $hasStarted = false;
+    $matchedActiveStatuses = [];
+    $definitions = ordersGetItemStatusDefinitions($conn, $department, true);
+
+    foreach ($items as $item) {
+        $status = strtoupper((string)($item['status'] ?? 'NEW'));
+        $optionsJson = (string)($item['options_json'] ?? '');
+        $internalOptionsJson = (string)($item['internal_options_json'] ?? '');
+
+        if ($status === 'WAITING') {
+            $hasWaiting = true;
+        }
+
+        if (!isOrderItemReady($department, $status, $optionsJson, $internalOptionsJson)) {
+            $allReady = false;
+        }
+
+        if (!in_array($status, ['NEW', 'WAITING'], true)) {
+            $hasStarted = true;
+        }
+
+        if (isset($definitions[$status])) {
+            $matchedActiveStatuses[$status] = (int)($definitions[$status]['sort_order'] ?? 0);
+        }
+    }
+
+    if ($hasWaiting) {
+        return 'WAITING';
+    }
+
+    if ($allReady) {
+        return 'READY';
+    }
+
+    if ($matchedActiveStatuses) {
+        arsort($matchedActiveStatuses, SORT_NUMERIC);
+        return (string)array_key_first($matchedActiveStatuses);
+    }
+
+    if ($hasStarted) {
+        return 'PROCESSING';
+    }
+
+    return 'NEW';
+}
+
+function ordersWorkflowConditionMatches(string $actualStatus, string $operator, string $expectedStatus): bool
+{
+    $actualStatus = strtoupper(trim($actualStatus));
+    $operator = strtoupper(trim($operator));
+    $expectedStatus = strtoupper(trim($expectedStatus));
+
+    $expectedList = array_values(array_filter(array_map('trim', preg_split('/[,\|]+/', $expectedStatus))));
+    if (!$expectedList) {
+        $expectedList = [$expectedStatus];
+    }
+
+    switch ($operator) {
+        case '=':
+            return $actualStatus === $expectedList[0];
+        case '!=':
+            return $actualStatus !== $expectedList[0];
+        case 'IN':
+            return in_array($actualStatus, $expectedList, true);
+        case 'NOT IN':
+            return !in_array($actualStatus, $expectedList, true);
+        default:
+            return false;
+    }
+}
+
+function ordersResolveStatusFromRules(mysqli $conn, array $departmentStatuses): ?string
+{
+    if (
+        !ordersWorkflowTableAvailable($conn, 'status_workflow_rules')
+        || !ordersWorkflowTableAvailable($conn, 'status_workflow_rule_conditions')
+    ) {
+        return null;
+    }
+
+    $sql = "
+        SELECT
+            r.id,
+            r.result_order_status_code,
+            r.stop_on_match,
+            c.department,
+            c.operator,
+            c.status_code
+        FROM status_workflow_rules r
+        LEFT JOIN status_workflow_rule_conditions c
+            ON c.rule_id = r.id
+        WHERE r.active = 1
+        ORDER BY r.priority ASC, r.id ASC, c.sort_order ASC, c.id ASC
+    ";
+    $result = $conn->query($sql);
+
+    if (!$result instanceof mysqli_result) {
+        return null;
+    }
+
+    $rules = [];
+    while ($row = $result->fetch_assoc()) {
+        $ruleId = (int)($row['id'] ?? 0);
+        if ($ruleId <= 0) {
+            continue;
+        }
+
+        if (!isset($rules[$ruleId])) {
+            $rules[$ruleId] = [
+                'result_order_status_code' => strtoupper(trim((string)($row['result_order_status_code'] ?? ''))),
+                'stop_on_match' => (int)($row['stop_on_match'] ?? 1) === 1,
+                'conditions' => [],
+            ];
+        }
+
+        $department = ordersNormalizeDepartmentCode($row['department'] ?? null);
+        $operator = trim((string)($row['operator'] ?? ''));
+        $statusCode = trim((string)($row['status_code'] ?? ''));
+
+        if ($department !== '' && $operator !== '' && $statusCode !== '') {
+            $rules[$ruleId]['conditions'][] = [
+                'department' => $department,
+                'operator' => $operator,
+                'status_code' => $statusCode,
+            ];
+        }
+    }
+
+    $result->free();
+
+    foreach ($rules as $rule) {
+        if (empty($rule['result_order_status_code']) || empty($rule['conditions'])) {
+            continue;
+        }
+
+        $matched = true;
+
+        foreach ($rule['conditions'] as $condition) {
+            $department = $condition['department'];
+            $actualStatus = strtoupper((string)($departmentStatuses[$department] ?? 'NEW'));
+
+            if (!ordersWorkflowConditionMatches($actualStatus, $condition['operator'], $condition['status_code'])) {
+                $matched = false;
+                break;
+            }
+        }
+
+        if ($matched) {
+            return $rule['result_order_status_code'];
+        }
+    }
+
+    return null;
+}
+
+function ordersResolveFallbackOrderStatus(array $groups, bool $allGreen, bool $hasOrange, bool $hasGreen): array
+{
+    if (!$groups) {
+        return ['NEW', 'RED'];
+    }
+
+    if ($allGreen) {
+        return ['READY_TO_INVOICE', 'GREEN'];
+    }
+
+    if ($hasOrange || $hasGreen) {
+        return ['IN_PROGRESS', 'ORANGE'];
+    }
+
+    return ['NEW', 'RED'];
+}
+
+function recalculateOrderWorkflow(mysqli $conn, int $orderId): void
+{
     $stmt = $conn->prepare("
         SELECT item_type_code, status, options_json, internal_options_json
         FROM order_items
@@ -138,8 +331,12 @@ function recalculateOrderWorkflow(mysqli $conn, int $orderId): void {
     $groups = [];
 
     while ($item = $res->fetch_assoc()) {
-        $type = strtoupper((string)$item['item_type_code']);
+        $type = ordersNormalizeDepartmentCode((string)$item['item_type_code']);
         $status = strtoupper((string)($item['status'] ?? 'NEW'));
+
+        if ($type === '') {
+            continue;
+        }
 
         if (!isset($groups[$type])) {
             $groups[$type] = [];
@@ -155,44 +352,36 @@ function recalculateOrderWorkflow(mysqli $conn, int $orderId): void {
     $stmt->close();
 
     $summary = [];
+    $departmentStatuses = [];
     $allGreen = true;
     $hasOrange = false;
     $hasGreen = false;
     $firstBlocker = '';
 
-            foreach ($groups as $type => $statuses) {
-                $state = itemTrafficState($type, $statuses);
-                $summary[$type] = $state;
+    foreach ($groups as $type => $statuses) {
+        $state = itemTrafficState($type, $statuses);
+        $summary[$type] = $state;
+        $departmentStatuses[$type] = ordersDepartmentWorkflowStatus($conn, $type, $statuses);
 
-                if ($state === 'GREEN') {
-                    $hasGreen = true;
-                }
+        if ($state === 'GREEN') {
+            $hasGreen = true;
+        }
 
-                if ($state !== 'GREEN') {
-                    $allGreen = false;
-                    if ($firstBlocker === '') {
-                        $firstBlocker = $type;
-                    }
-                }
-
-                if ($state === 'ORANGE') {
-                    $hasOrange = true;
-                }
+        if ($state !== 'GREEN') {
+            $allGreen = false;
+            if ($firstBlocker === '') {
+                $firstBlocker = $type;
             }
+        }
 
-            if (!$groups) {
-                $orderStatus = 'NEW';
-                $traffic = 'RED';
-            } elseif ($allGreen) {
-                $orderStatus = 'READY_TO_INVOICE';
-                $traffic = 'GREEN';
-            } elseif ($hasOrange || $hasGreen) {
-                $orderStatus = 'IN_PROGRESS';
-                $traffic = 'ORANGE';
-            } else {
-                $orderStatus = 'NEW';
-                $traffic = 'RED';
-            }
+        if ($state === 'ORANGE') {
+            $hasOrange = true;
+        }
+    }
+
+    [$fallbackOrderStatus, $traffic] = ordersResolveFallbackOrderStatus($groups, $allGreen, $hasOrange, $hasGreen);
+    $ruleBasedOrderStatus = ordersResolveStatusFromRules($conn, $departmentStatuses);
+    $orderStatus = $ruleBasedOrderStatus ?: $fallbackOrderStatus;
 
     $summaryJson = json_encode($summary, JSON_UNESCAPED_UNICODE);
 
@@ -208,6 +397,7 @@ function recalculateOrderWorkflow(mysqli $conn, int $orderId): void {
     $stmt->execute();
     $stmt->close();
 }
+
 function addOrderActivity(
     mysqli $conn,
     int $orderId,
