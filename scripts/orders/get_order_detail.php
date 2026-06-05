@@ -1292,6 +1292,134 @@ ob_start();
     min-width: 100%;
   }
 
+  .seat-op-field.seat-op-state-yes {
+    border-color: rgba(40, 167, 69, .42);
+    background: linear-gradient(180deg, rgba(40, 167, 69, .18) 0%, rgba(40, 167, 69, .08) 100%);
+    box-shadow: inset 0 0 0 1px rgba(40, 167, 69, .08);
+  }
+
+  .seat-op-field.seat-op-state-yes .seat-op-label,
+  .seat-op-field.seat-op-state-yes .product-spec-label-title {
+    color: #7ee2a8;
+  }
+
+  .seat-op-field.seat-op-state-yes .seat-op-select {
+    border-color: rgba(40, 167, 69, .55);
+    background-color: rgba(33, 37, 41, .92);
+    color: #dff7e8;
+  }
+
+  .seat-op-field.seat-op-state-yes .seat-op-select:focus {
+    border-color: #4fd38a;
+    box-shadow: 0 0 0 .2rem rgba(40, 167, 69, .18);
+  }
+
+  .seat-op-field.seat-op-state-no {
+    border-color: rgba(220, 53, 69, .4);
+    background: linear-gradient(180deg, rgba(220, 53, 69, .16) 0%, rgba(220, 53, 69, .07) 100%);
+    box-shadow: inset 0 0 0 1px rgba(220, 53, 69, .08);
+  }
+
+  .seat-op-field.seat-op-state-no .seat-op-label,
+  .seat-op-field.seat-op-state-no .product-spec-label-title {
+    color: #ff9aa5;
+  }
+
+  .seat-op-field.seat-op-state-no .seat-op-select {
+    border-color: rgba(220, 53, 69, .5);
+    background-color: rgba(33, 37, 41, .92);
+    color: #ffe3e6;
+  }
+
+  .seat-op-field.seat-op-state-no .seat-op-select:focus {
+    border-color: #ff7b88;
+    box-shadow: 0 0 0 .2rem rgba(220, 53, 69, .16);
+  }
+
+  .print-setting-field-grip.product-spec-state-yes {
+    border-color: rgba(40, 167, 69, .42);
+    background: linear-gradient(180deg, rgba(40, 167, 69, .18) 0%, rgba(40, 167, 69, .08) 100%);
+    box-shadow: inset 0 0 0 1px rgba(40, 167, 69, .08);
+  }
+
+  .print-setting-field-grip.product-spec-state-yes .product-spec-label-title {
+    color: #7ee2a8;
+  }
+
+  .print-setting-field-grip.product-spec-state-yes .item-print-grip {
+    border-color: rgba(40, 167, 69, .55);
+    background-color: rgba(33, 37, 41, .92);
+    color: #dff7e8;
+  }
+
+  .print-setting-field-grip.product-spec-state-yes .item-print-grip:focus {
+    border-color: #4fd38a;
+    box-shadow: 0 0 0 .2rem rgba(40, 167, 69, .18);
+  }
+
+  .print-setting-field-grip.product-spec-state-no {
+    border-color: rgba(220, 53, 69, .4);
+    background: linear-gradient(180deg, rgba(220, 53, 69, .16) 0%, rgba(220, 53, 69, .07) 100%);
+    box-shadow: inset 0 0 0 1px rgba(220, 53, 69, .08);
+  }
+
+  .print-setting-field-grip.product-spec-state-no .product-spec-label-title {
+    color: #ff9aa5;
+  }
+
+  .print-setting-field-grip.product-spec-state-no .item-print-grip {
+    border-color: rgba(220, 53, 69, .5);
+    background-color: rgba(33, 37, 41, .92);
+    color: #ffe3e6;
+  }
+
+  .print-setting-field-grip.product-spec-state-no .item-print-grip:focus {
+    border-color: #ff7b88;
+    box-shadow: 0 0 0 .2rem rgba(220, 53, 69, .16);
+  }
+
+  .print-setting-field-swingarms.product-spec-state-yes {
+    border-color: rgba(40, 167, 69, .42);
+    background: linear-gradient(180deg, rgba(40, 167, 69, .18) 0%, rgba(40, 167, 69, .08) 100%);
+    box-shadow: inset 0 0 0 1px rgba(40, 167, 69, .08);
+  }
+
+  .print-setting-field-swingarms.product-spec-state-yes .product-spec-label-title {
+    color: #7ee2a8;
+  }
+
+  .print-setting-field-swingarms.product-spec-state-yes .item-print-tr-swingarms {
+    border-color: rgba(40, 167, 69, .55);
+    background-color: rgba(33, 37, 41, .92);
+    color: #dff7e8;
+  }
+
+  .print-setting-field-swingarms.product-spec-state-yes .item-print-tr-swingarms:focus {
+    border-color: #4fd38a;
+    box-shadow: 0 0 0 .2rem rgba(40, 167, 69, .18);
+  }
+
+  .print-setting-field-swingarms.product-spec-state-no {
+    border-color: rgba(220, 53, 69, .4);
+    background: linear-gradient(180deg, rgba(220, 53, 69, .16) 0%, rgba(220, 53, 69, .07) 100%);
+    box-shadow: inset 0 0 0 1px rgba(220, 53, 69, .08);
+  }
+
+  .print-setting-field-swingarms.product-spec-state-no .product-spec-label-title {
+    color: #ff9aa5;
+  }
+
+  .print-setting-field-swingarms.product-spec-state-no .item-print-tr-swingarms {
+    border-color: rgba(220, 53, 69, .5);
+    background-color: rgba(33, 37, 41, .92);
+    color: #ffe3e6;
+  }
+
+  .print-setting-field-swingarms.product-spec-state-no .item-print-tr-swingarms:focus {
+    border-color: #ff7b88;
+    box-shadow: 0 0 0 .2rem rgba(220, 53, 69, .16);
+  }
+
   .seat-op-code {
     line-height: 1;
   }
@@ -2191,7 +2319,7 @@ ob_start();
                 </td>
 
 
-                <td>
+                <td style="min-width:280px;">
                   <?php if ((int) ($_SESSION['permission'] ?? 0) >= 300): ?>
                     <input class="form-control form-control-sm item-title mb-1" value="<?php echo h($it['title'] ?? ''); ?>">
                   <?php else: ?>
@@ -2213,7 +2341,7 @@ ob_start();
                 </td>
 
 
-                <td>
+                <td style="width:80px;">
                   <?php if ((int) ($_SESSION['permission'] ?? 0) >= 300): ?>
                     <input type="number" class="form-control form-control-sm item-qty"
                       value="<?php echo (int) $it['qty']; ?>" min="1">
@@ -2223,7 +2351,7 @@ ob_start();
                 </td>
 
                 <?php if ((int) ($_SESSION['permission'] ?? 0) >= 300): ?>
-                  <td style="min-width:90px;<?= ((int) ($_SESSION['permission'] ?? 0) >= 300) ? '' : ' display:none;' ?>">
+                  <td style="width:90px;<?= ((int) ($_SESSION['permission'] ?? 0) >= 300) ? '' : ' display:none;' ?>">
                   <?php if ((int) ($_SESSION['permission'] ?? 0) >= 300): ?>
                     <div class="input-group input-group-sm">
                       <input type="number" class="form-control form-control-sm item-unit-price"
@@ -2748,23 +2876,92 @@ function saveSeatCoverOps($select) {
   }, function (res) {
     if (!res || !res.ok) {
       $select.val(isChecked ? '0' : '1');
+      applySeatOpState($select);
       alert(res && res.error ? res.error : 'Save failed');
       return;
     }
 
     $detailBtn.attr('data-internal-options', newJson);
+    applySeatOpState($select);
     $select.css('border-color', '#28a745');
     setTimeout(function () {
       $select.css('border-color', '');
     }, 800);
   }, 'json').fail(function (xhr) {
     $select.val(isChecked ? '0' : '1');
+    applySeatOpState($select);
     alert('Update request failed:\n' + xhr.status + '\n' + xhr.responseText);
   });
 }
 
 
     // Input events — autocomplete
+function applySeatOpState($select) {
+  var value = String($select.val() || '');
+  var $label = $select.closest('.seat-op-field');
+
+  if (!$label.length) {
+    return;
+  }
+
+  $label.removeClass('seat-op-state-yes seat-op-state-no');
+
+  if (value === '1') {
+    $label.addClass('seat-op-state-yes');
+  } else if (value === '0') {
+    $label.addClass('seat-op-state-no');
+  }
+}
+
+function getBinaryProductSpecState($select) {
+  var value = $.trim(String($select.val() || '')).toLowerCase();
+  var text = $.trim(String($select.find('option:selected').text() || '')).toLowerCase();
+
+  if (text.indexOf('✓') !== -1 || value === '1' || value === 'yes' || value === 'true') {
+    return 'yes';
+  }
+
+  if (text.indexOf('✗') !== -1 || value === '0' || value === 'no' || value === 'false') {
+    return 'no';
+  }
+
+  return '';
+}
+
+function applyGripState($select) {
+  var $label = $select.closest('.print-setting-field-grip');
+  var state = getBinaryProductSpecState($select);
+
+  if (!$label.length) {
+    return;
+  }
+
+  $label.removeClass('product-spec-state-yes product-spec-state-no');
+
+  if (state === 'yes') {
+    $label.addClass('product-spec-state-yes');
+  } else if (state === 'no') {
+    $label.addClass('product-spec-state-no');
+  }
+}
+
+function applySwingarmsState($select) {
+  var $label = $select.closest('.print-setting-field-swingarms');
+  var state = getBinaryProductSpecState($select);
+
+  if (!$label.length) {
+    return;
+  }
+
+  $label.removeClass('product-spec-state-yes product-spec-state-no');
+
+  if (state === 'yes') {
+    $label.addClass('product-spec-state-yes');
+  } else if (state === 'no') {
+    $label.addClass('product-spec-state-no');
+  }
+}
+
     $(document).on('input.printSettings', '.print-ac-input', function () {
       var $inp = $(this);
       var key = $inp.data('ac-key');
@@ -2813,6 +3010,12 @@ function saveSeatCoverOps($select) {
       if (!itemId) {
         return;
       }
+      if ($field.is('.item-print-grip')) {
+        applyGripState($field);
+      }
+      if ($field.is('.item-print-tr-swingarms')) {
+        applySwingarmsState($field);
+      }
       savePrintSettings($tr, itemId, orderId);
     });
 
@@ -2824,7 +3027,21 @@ function saveSeatCoverOps($select) {
     });
 
     $(document).on('change.printSettings', '.seat-op-select', function () {
-      saveSeatCoverOps($(this));
+      var $select = $(this);
+      applySeatOpState($select);
+      saveSeatCoverOps($select);
+    });
+
+    $('.seat-op-select').each(function () {
+      applySeatOpState($(this));
+    });
+
+    $('.item-print-grip').each(function () {
+      applyGripState($(this));
+    });
+
+    $('.item-print-tr-swingarms').each(function () {
+      applySwingarmsState($(this));
     });
 
     // ── Modal: show Printing Settings block ─────────────────────────────────
