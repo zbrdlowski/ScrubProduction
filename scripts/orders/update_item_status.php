@@ -50,22 +50,38 @@ if (!in_array($newStatus, $allowed, true)) {
 }
 
 if ($newStatus === 'READY' && $itemType === 'S') {
-    $seatCoverState = seatCoverOperationsStateFromJsonStrings(
-        (string)($item['options_json'] ?? ''),
-        (string)($item['internal_options_json'] ?? '')
-    );
+    $extOptArr      = json_decode((string)($item['options_json'] ?? ''), true) ?: [];
+    $internalOptArr = json_decode((string)($item['internal_options_json'] ?? ''), true) ?: [];
+    $confirmed      = $internalOptArr['_seat_cover_ops_confirmed'] ?? [];
+    if (!is_array($confirmed)) $confirmed = [];
 
-    if (!$seatCoverState['all_confirmed']) {
-        $missingCodes = [];
-        foreach ($seatCoverState['required'] as $requiredItem) {
-            if (empty($requiredItem['confirmed'])) {
-                $missingCodes[] = $requiredItem['code'];
-            }
+    // Rovnaká definícia ako v get_order_detail.php
+    $seatOpsMeta = [
+        'waterproof-seams'   => ['code' => 'Waterproof Seams',  'required_when' => 'exists_in_json', 'json_key' => 'waterproof-seams'],
+        'enduro-pocket'      => ['code' => 'Enduro Pocket',     'required_when' => 'filled',         'json_key' => 'enduro-pocket'],
+        'side-brand-patches' => ['code' => 'Sidebrand Patches', 'required_when' => 'exists_in_json', 'json_key' => 'side-brand-patches'],
+        'patch-applied'      => ['code' => 'Patch Applied',     'required_when' => 'exists_in_json', 'json_key' => 'patch-style'],
+    ];
+
+    $missing = [];
+    foreach ($seatOpsMeta as $opKey => $meta) {
+        $jsonKey  = $meta['json_key'];
+        $required = false;
+        if ($meta['required_when'] === 'exists_in_json') {
+            $required = array_key_exists($jsonKey, $extOptArr);
+        } elseif ($meta['required_when'] === 'filled') {
+            $val = $extOptArr[$jsonKey] ?? null;
+            $required = ($val !== null && $val !== '' && $val !== [] && $val !== 'none');
         }
+        if ($required && empty($confirmed[$opKey])) {
+            $missing[] = $meta['code'];
+        }
+    }
 
+    if (!empty($missing)) {
         echo json_encode([
             'success' => false,
-            'message' => 'Seat Cover requires confirmation for: ' . implode(', ', $missingCodes)
+            'message' => '⚠️ Položku nemožno označiť ako Ready. Najskôr potvrď: ' . implode(', ', $missing)
         ]);
         exit;
     }

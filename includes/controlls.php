@@ -231,20 +231,153 @@
 
 
   <?php
-  $productSpecTypes = [
-    'graphics_material' => 'G - Material',
-    'graphics_finish' => 'G - Finish',
-    'graphics_grip' => 'G - Grip',
-    'graphics_tr_swingarms' => 'G - Tr. Swingarms',
-    'graphics_printer' => 'G - Printer',
-    'seat_waterproof_seams' => 'S - Waterproof Seams',
-    'seat_enduro_pocket' => 'S - Enduro Pocket',
-    'seat_side_brand_patches' => 'S - Side Brand Patches',
+  $departmentNames = [
+    'G' => 'Graphics',
+    'S' => 'Seat Cover',
+    'P' => 'Plastics',
+    'F' => 'Fitting',
   ];
-  $currentSpecKey = isset($_GET['spec_key']) ? (string) $_GET['spec_key'] : 'graphics_material';
-  if (!isset($productSpecTypes[$currentSpecKey])) {
-    $currentSpecKey = 'graphics_material';
+  $productSpecDefaults = [
+    'graphics_material' => ['department' => 'G', 'label' => 'Material'],
+    'graphics_finish' => ['department' => 'G', 'label' => 'Finish'],
+    'graphics_grip' => ['department' => 'G', 'label' => 'Grip'],
+    'graphics_tr_swingarms' => ['department' => 'G', 'label' => 'Tr. Swingarms'],
+    'graphics_printer' => ['department' => 'G', 'label' => 'Printer'],
+    'seat_waterproof_seams' => ['department' => 'S', 'label' => 'Waterproof Seams'],
+    'seat_enduro_pocket' => ['department' => 'S', 'label' => 'Enduro Pocket'],
+    'seat_side_brand_patches' => ['department' => 'S', 'label' => 'Side Brand Patches'],
+  ];
+  $departmentPrefixes = [
+    'G' => 'graphics',
+    'S' => 'seat',
+    'P' => 'plastics',
+    'F' => 'fitting',
+  ];
+  $normalizeProductSpecDepartment = static function (?string $code) use ($productSpecDefaults): string {
+    $code = strtoupper(trim((string) $code));
+    if (isset(['G' => true, 'S' => true, 'P' => true, 'F' => true][$code])) {
+      return $code;
+    }
+
+    return '';
+  };
+  $humanizeProductSpecKey = static function (string $value): string {
+    $value = str_replace(['_', '-'], ' ', trim($value));
+    $value = preg_replace('/\s+/', ' ', $value);
+    return $value !== '' ? mb_convert_case($value, MB_CASE_TITLE, 'UTF-8') : 'Custom Dropdown';
+  };
+  $buildProductSpecGroupLabel = static function (string $specKey, string $department) use ($departmentNames, $departmentPrefixes, $productSpecDefaults, $humanizeProductSpecKey): string {
+    if (isset($productSpecDefaults[$specKey])) {
+      $label = (string) ($productSpecDefaults[$specKey]['label'] ?? $specKey);
+    } else {
+      $label = $specKey;
+      if ($department !== '' && isset($departmentPrefixes[$department])) {
+        $prefix = $departmentPrefixes[$department] . '_';
+        if (strpos($label, $prefix) === 0) {
+          $label = substr($label, strlen($prefix));
+        }
+      }
+      $label = $humanizeProductSpecKey($label);
+    }
+
+    $deptLabel = $departmentNames[$department] ?? $department;
+    return ($deptLabel !== '' ? $department . ' - ' . $label : $label);
+  };
+
+  $productSpecGroups = [];
+  foreach ($productSpecDefaults as $specKey => $meta) {
+    $department = $normalizeProductSpecDepartment($meta['department'] ?? '');
+    $groupKey = $specKey . '|' . $department;
+    $productSpecGroups[$groupKey] = $buildProductSpecGroupLabel($specKey, $department);
   }
+
+  $productSpecGroupStmt = $conn->prepare("
+    SELECT DISTINCT spec_key, department
+    FROM product_spec_options
+    ORDER BY spec_key ASC, department ASC
+  ");
+  if ($productSpecGroupStmt && $productSpecGroupStmt->execute()) {
+    $productSpecGroupResult = $productSpecGroupStmt->get_result();
+    while ($groupRow = $productSpecGroupResult->fetch_assoc()) {
+      $specKey = trim((string) ($groupRow['spec_key'] ?? ''));
+      if ($specKey === '') {
+        continue;
+      }
+      $department = $normalizeProductSpecDepartment($groupRow['department'] ?? ($productSpecDefaults[$specKey]['department'] ?? ''));
+      $groupKey = $specKey . '|' . $department;
+      $productSpecGroups[$groupKey] = $buildProductSpecGroupLabel($specKey, $department);
+    }
+    $productSpecGroupStmt->close();
+  }
+  asort($productSpecGroups, SORT_NATURAL | SORT_FLAG_CASE);
+
+  $requestedSpecGroup = isset($_GET['spec_group']) ? trim((string) $_GET['spec_group']) : '';
+  if ($requestedSpecGroup === '' && isset($_GET['spec_key'])) {
+    $legacySpecKey = trim((string) $_GET['spec_key']);
+    foreach ($productSpecGroups as $groupKey => $_groupLabel) {
+      if (strpos($groupKey, $legacySpecKey . '|') === 0) {
+        $requestedSpecGroup = $groupKey;
+        break;
+      }
+    }
+  }
+  if ($requestedSpecGroup === '' || !isset($productSpecGroups[$requestedSpecGroup])) {
+    $requestedSpecGroup = (string) array_key_first($productSpecGroups);
+  }
+  [$currentSpecKey, $currentSpecDepartment] = array_pad(explode('|', $requestedSpecGroup, 2), 2, '');
+  $currentSpecDepartment = $normalizeProductSpecDepartment($currentSpecDepartment);
+
+  $productSpecSourceKeys = [];
+  $productSpecSourceStmt = $conn->prepare("
+    SELECT item_type_code, options_json
+    FROM order_items
+    WHERE deleted_at IS NULL
+      AND options_json IS NOT NULL
+      AND options_json <> ''
+      AND options_json <> '{}'
+    ORDER BY id DESC
+    LIMIT 1500
+  ");
+  if ($productSpecSourceStmt && $productSpecSourceStmt->execute()) {
+    $productSpecSourceResult = $productSpecSourceStmt->get_result();
+    while ($sourceRow = $productSpecSourceResult->fetch_assoc()) {
+      $itemType = strtoupper(trim((string) ($sourceRow['item_type_code'] ?? '')));
+      if ($itemType === 'T' || $itemType === 'M') {
+        $itemType = 'P';
+      }
+      $itemType = $normalizeProductSpecDepartment($itemType);
+      if ($itemType === '') {
+        continue;
+      }
+
+      $decoded = json_decode((string) ($sourceRow['options_json'] ?? ''), true);
+      if (!is_array($decoded)) {
+        continue;
+      }
+
+      foreach ($decoded as $rawKey => $rawValue) {
+        $sourceKey = trim((string) $rawKey);
+        if ($sourceKey === '' || $sourceKey[0] === '_') {
+          continue;
+        }
+        if (!is_scalar($rawValue) && $rawValue !== null) {
+          continue;
+        }
+
+        if (!isset($productSpecSourceKeys[$sourceKey])) {
+          $productSpecSourceKeys[$sourceKey] = [
+            'label' => $humanizeProductSpecKey($sourceKey),
+            'departments' => [],
+          ];
+        }
+
+        $productSpecSourceKeys[$sourceKey]['departments'][$itemType] = true;
+      }
+    }
+    $productSpecSourceStmt->close();
+  }
+  ksort($productSpecSourceKeys, SORT_NATURAL | SORT_FLAG_CASE);
+
   $statusDropdownGroups = [
     'order|' => 'Order - Overall',
     'item|G' => 'Item - Graphics (G)',
@@ -279,8 +412,8 @@
     }
 
     .settings-compact-card .card-body-scroll {
-      max-height: 560px;
-      overflow: auto;
+      max-height: none;
+      overflow: visible;
     }
 
     .status-color-preview {
@@ -293,6 +426,24 @@
       margin-right: 6px;
       background: transparent;
     }
+
+    .product-spec-create-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: .75rem;
+      align-items: end;
+    }
+
+    .product-spec-create-grid .form-group {
+      margin-bottom: 0;
+    }
+
+    .product-spec-create-panel {
+      background: rgba(255, 255, 255, .04);
+      border: 1px solid rgba(255, 255, 255, .08);
+      border-radius: .35rem;
+      padding: .85rem;
+    }
   </style>
 
   <div class="row">
@@ -302,12 +453,16 @@
           <h3 class="card-title mb-0">Product Specification Dropdowns</h3>
           <div class="d-flex align-items-center flex-nowrap" style="gap:8px;">
             <select class="form-control form-control-sm product-spec-key-filter" style="min-width:260px;">
-              <?php foreach ($productSpecTypes as $key => $label): ?>
-                <option value="<?= htmlspecialchars($key, ENT_QUOTES, 'UTF-8'); ?>" <?= $currentSpecKey === $key ? 'selected' : ''; ?>>
+              <?php foreach ($productSpecGroups as $key => $label): ?>
+                <option value="<?= htmlspecialchars($key, ENT_QUOTES, 'UTF-8'); ?>" <?= $requestedSpecGroup === $key ? 'selected' : ''; ?>>
                   <?= htmlspecialchars($label, ENT_QUOTES, 'UTF-8'); ?>
                 </option>
               <?php endforeach; ?>
             </select>
+            <button class="btn bg-gradient-info btn-xs add-product-spec-dropdown"
+              style="white-space: nowrap; min-width: 122px;">
+              <i class="fa fa-plus"></i> New Dropdown
+            </button>
             <button class="btn bg-gradient-success btn-xs add-product-spec-option"
               style="white-space: nowrap; min-width: 110px;">
               <i class="fa fa-plus"></i> Add Option
@@ -316,10 +471,13 @@
         </div>
         <div class="card-body p-0 card-body-scroll">
           <table class="table table-bordered table-striped mb-0 product-spec-options-table"
-            data-spec-key="<?= htmlspecialchars($currentSpecKey, ENT_QUOTES, 'UTF-8'); ?>">
+            data-spec-key="<?= htmlspecialchars($currentSpecKey, ENT_QUOTES, 'UTF-8'); ?>"
+            data-spec-group="<?= htmlspecialchars($requestedSpecGroup, ENT_QUOTES, 'UTF-8'); ?>"
+            data-department="<?= htmlspecialchars($currentSpecDepartment, ENT_QUOTES, 'UTF-8'); ?>">
             <thead>
               <tr>
                 <th style="background-color:gray; width:70px;">ID</th>
+                <th style="background-color:gray; width:90px;">Dept</th>
                 <th style="background-color:gray; width:220px;">Dropdown</th>
                 <th style="background-color:gray;">Label</th>
                 <th style="background-color:gray;">Value</th>
@@ -330,18 +488,29 @@
             </thead>
             <tbody>
               <?php
-              $stmt = $conn->prepare("SELECT id, spec_key, label, value, sort_order, active FROM product_spec_options WHERE spec_key = ? ORDER BY sort_order ASC, id ASC");
+              $stmt = $conn->prepare("
+                SELECT id, spec_key, department, label, value, sort_order, active
+                FROM product_spec_options
+                WHERE spec_key = ?
+                  AND (? = '' OR department = ? OR department IS NULL)
+                ORDER BY sort_order ASC, id ASC
+              ");
               if ($stmt) {
-                $stmt->bind_param('s', $currentSpecKey);
+                $stmt->bind_param('sss', $currentSpecKey, $currentSpecDepartment, $currentSpecDepartment);
                 $stmt->execute();
                 $result = $stmt->get_result();
                 while ($row = $result->fetch_assoc()):
+                  $rowDepartment = $normalizeProductSpecDepartment($row['department'] ?? ($productSpecDefaults[$row['spec_key']]['department'] ?? ''));
+                  $rowGroupKey = (string) ($row['spec_key'] ?? '') . '|' . $rowDepartment;
                   ?>
                   <tr data-id="<?= (int) $row['id']; ?>"
-                    data-spec-key="<?= htmlspecialchars($row['spec_key'], ENT_QUOTES, 'UTF-8'); ?>">
+                    data-spec-key="<?= htmlspecialchars($row['spec_key'], ENT_QUOTES, 'UTF-8'); ?>"
+                    data-department="<?= htmlspecialchars($rowDepartment, ENT_QUOTES, 'UTF-8'); ?>"
+                    data-spec-group="<?= htmlspecialchars($rowGroupKey, ENT_QUOTES, 'UTF-8'); ?>">
                     <td><?= (int) $row['id']; ?></td>
+                    <td class="spec-department-cell"><?= htmlspecialchars($rowDepartment, ENT_QUOTES, 'UTF-8'); ?></td>
                     <td class="spec-name-cell">
-                      <?= htmlspecialchars($productSpecTypes[$row['spec_key']] ?? $row['spec_key'], ENT_QUOTES, 'UTF-8'); ?>
+                      <?= htmlspecialchars($productSpecGroups[$rowGroupKey] ?? $buildProductSpecGroupLabel((string) $row['spec_key'], $rowDepartment), ENT_QUOTES, 'UTF-8'); ?>
                     </td>
                     <td class="spec-label-cell"><?= htmlspecialchars($row['label'], ENT_QUOTES, 'UTF-8'); ?></td>
                     <td class="spec-value-cell"><?= htmlspecialchars($row['value'], ENT_QUOTES, 'UTF-8'); ?></td>
@@ -446,7 +615,10 @@
     (function () {
       'use strict';
 
-      const specLabels = <?= json_encode($productSpecTypes, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES); ?>;
+      const specGroupLabels = <?= json_encode($productSpecGroups, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES); ?>;
+      const productSpecSourceKeys = <?= json_encode($productSpecSourceKeys, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES); ?>;
+      const departmentLabels = <?= json_encode($departmentNames, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES); ?>;
+      const departmentPrefixes = <?= json_encode($departmentPrefixes, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES); ?>;
 
       function escapeHtml(value) {
         return String(value || '')
@@ -457,20 +629,77 @@
           .replace(/'/g, '&#039;');
       }
 
+      function humanizeSpecToken(value) {
+        return String(value || '')
+          .replace(/[_-]+/g, ' ')
+          .replace(/\s+/g, ' ')
+          .trim()
+          .replace(/\b\w/g, function (match) { return match.toUpperCase(); });
+      }
+
+      function normalizeDepartment(value) {
+        const dept = String(value || '').trim().toUpperCase();
+        return departmentLabels[dept] ? dept : '';
+      }
+
+      function buildSpecKeyFromSourceKey(department, sourceKey) {
+        const prefix = departmentPrefixes[department] || 'custom';
+        const slug = String(sourceKey || '')
+          .trim()
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, '_')
+          .replace(/^_+|_+$/g, '')
+          .replace(/_+/g, '_');
+
+        return slug ? (prefix + '_' + slug) : prefix;
+      }
+
+      function buildProductSpecGroupKey(specKey, department) {
+        return String(specKey || '').trim() + '|' + normalizeDepartment(department);
+      }
+
+      function buildProductSpecGroupLabel(specKey, department) {
+        const normalizedDept = normalizeDepartment(department);
+        const deptLabel = normalizedDept ? (normalizedDept + ' - ') : '';
+        let labelSource = String(specKey || '').trim();
+        const prefix = departmentPrefixes[normalizedDept] ? (departmentPrefixes[normalizedDept] + '_') : '';
+
+        if (prefix && labelSource.indexOf(prefix) === 0) {
+          labelSource = labelSource.substring(prefix.length);
+        }
+
+        return deptLabel + (humanizeSpecToken(labelSource) || 'Custom Dropdown');
+      }
+
+      function sourceKeyDepartmentHint(sourceKey) {
+        const meta = productSpecSourceKeys[String(sourceKey || '').trim()] || null;
+        if (!meta || !meta.departments) {
+          return '';
+        }
+
+        const departments = Object.keys(meta.departments);
+        return departments.length === 1 ? departments[0] : '';
+      }
+
       $('.product-spec-key-filter').on('change', function () {
         const key = $(this).val();
         const url = new URL(window.location.href);
-        url.searchParams.set('spec_key', key);
+        url.searchParams.set('spec_group', key);
+        url.searchParams.delete('spec_key');
         window.location.href = url.toString();
       });
 
       $('.add-product-spec-option').on('click', function () {
-        const specKey = $('.product-spec-options-table').data('spec-key');
-        const specName = specLabels[specKey] || specKey;
+        const $table = $('.product-spec-options-table');
+        const specKey = $table.data('spec-key');
+        const department = normalizeDepartment($table.data('department'));
+        const specGroup = $table.data('spec-group');
+        const specName = specGroupLabels[specGroup] || buildProductSpecGroupLabel(specKey, department);
 
         const newRow = `
-      <tr class="new-product-spec-row" data-spec-key="${escapeHtml(specKey)}">
+      <tr class="new-product-spec-row" data-spec-key="${escapeHtml(specKey)}" data-department="${escapeHtml(department)}" data-spec-group="${escapeHtml(specGroup)}">
         <td>&mdash;</td>
+        <td>${escapeHtml(department)}</td>
         <td>${escapeHtml(specName)}</td>
         <td><input type="text" class="form-control form-control-sm new-spec-label" placeholder="Option label"></td>
         <td><input type="text" class="form-control form-control-sm new-spec-value" placeholder="Saved value"></td>
@@ -490,13 +719,120 @@
         $('.product-spec-options-table tbody').prepend(newRow);
       });
 
+      $('.add-product-spec-dropdown').on('click', function () {
+        if ($('.new-product-spec-dropdown-row').length) {
+          return;
+        }
+
+        const sourceOptions = Object.keys(productSpecSourceKeys).map(function (key) {
+          const meta = productSpecSourceKeys[key] || {};
+          const depts = Object.keys(meta.departments || {});
+          const deptHint = depts.length ? ' [' + depts.join(', ') + ']' : '';
+          return `<option value="${escapeHtml(key)}" label="${escapeHtml((meta.label || humanizeSpecToken(key)) + deptHint)}"></option>`;
+        }).join('');
+
+        const newRow = `
+          <tr class="new-product-spec-dropdown-row">
+            <td>&mdash;</td>
+            <td colspan="7">
+              <div class="product-spec-create-panel">
+                <div class="product-spec-create-grid">
+                  <div class="form-group">
+                    <label class="small text-muted mb-1">Department</label>
+                    <select class="form-control form-control-sm new-dropdown-department">
+                      <option value="G">G - Graphics</option>
+                      <option value="S">S - Seat Cover</option>
+                      <option value="P">P - Plastics</option>
+                      <option value="F">F - Fitting</option>
+                    </select>
+                  </div>
+                  <div class="form-group">
+                    <label class="small text-muted mb-1">Source key from options_json</label>
+                    <input type="text" class="form-control form-control-sm new-dropdown-source-key" list="productSpecSourceKeyList" placeholder="mid-forks">
+                  </div>
+                  <div class="form-group">
+                    <label class="small text-muted mb-1">Dropdown key</label>
+                    <input type="text" class="form-control form-control-sm new-dropdown-spec-key" placeholder="graphics_mid_forks">
+                  </div>
+                  <div class="form-group">
+                    <label class="small text-muted mb-1">First option label</label>
+                    <input type="text" class="form-control form-control-sm new-spec-label" placeholder="Yes">
+                  </div>
+                  <div class="form-group">
+                    <label class="small text-muted mb-1">First option value</label>
+                    <input type="text" class="form-control form-control-sm new-spec-value" placeholder="Yes">
+                  </div>
+                  <div class="form-group">
+                    <label class="small text-muted mb-1">Order</label>
+                    <input type="number" class="form-control form-control-sm new-spec-sort" value="0" step="1">
+                  </div>
+                  <div class="form-group">
+                    <label class="small text-muted mb-1">Active</label>
+                    <select class="form-control form-control-sm new-spec-active">
+                      <option value="1" selected>Yes</option>
+                      <option value="0">No</option>
+                    </select>
+                  </div>
+                  <div class="form-group">
+                    <label class="small text-muted mb-1">Preview</label>
+                    <div class="small text-info new-dropdown-preview">G - Custom Dropdown</div>
+                  </div>
+                </div>
+                <datalist id="productSpecSourceKeyList">${sourceOptions}</datalist>
+                <div class="d-flex justify-content-end mt-3" style="gap:8px;">
+                  <button class="btn bg-gradient-success btn-sm confirm-product-spec-dropdown-add"><i class="fa fa-check"></i> Create Dropdown</button>
+                  <button class="btn bg-gradient-secondary btn-sm cancel-product-spec-dropdown-add"><i class="fa fa-times"></i> Cancel</button>
+                </div>
+              </div>
+            </td>
+          </tr>`;
+
+        $('.product-spec-options-table tbody').prepend(newRow);
+      });
+
       $('.product-spec-options-table').on('click', '.cancel-product-spec-add', function () {
         $(this).closest('tr').remove();
+      });
+
+      $('.product-spec-options-table').on('click', '.cancel-product-spec-dropdown-add', function () {
+        $(this).closest('tr').remove();
+      });
+
+      function refreshNewDropdownPreview($row, shouldAutofillKey) {
+        const department = normalizeDepartment($row.find('.new-dropdown-department').val());
+        const sourceKey = $row.find('.new-dropdown-source-key').val().trim();
+        const currentSpecKey = $row.find('.new-dropdown-spec-key').val().trim();
+        const specKey = shouldAutofillKey || currentSpecKey === '' ? buildSpecKeyFromSourceKey(department, sourceKey) : currentSpecKey;
+
+        if (shouldAutofillKey || currentSpecKey === '') {
+          $row.find('.new-dropdown-spec-key').val(specKey);
+        }
+
+        $row.find('.new-dropdown-preview').text(buildProductSpecGroupLabel(specKey, department));
+      }
+
+      $('.product-spec-options-table').on('change input', '.new-dropdown-department, .new-dropdown-source-key', function () {
+        const $row = $(this).closest('.new-product-spec-dropdown-row');
+        const sourceKey = $row.find('.new-dropdown-source-key').val().trim();
+        const hintedDept = sourceKeyDepartmentHint(sourceKey);
+
+        if ($(this).hasClass('new-dropdown-source-key') && hintedDept) {
+          $row.find('.new-dropdown-department').val(hintedDept);
+        }
+
+        refreshNewDropdownPreview($row, true);
+      });
+
+      $('.product-spec-options-table').on('input', '.new-dropdown-spec-key', function () {
+        const $row = $(this).closest('.new-product-spec-dropdown-row');
+        refreshNewDropdownPreview($row, false);
       });
 
       $('.product-spec-options-table').on('click', '.confirm-product-spec-add', function () {
         const $row = $(this).closest('tr');
         const specKey = $row.data('spec-key');
+        const department = normalizeDepartment($row.data('department'));
+        const specGroup = $row.data('spec-group');
         const label = $row.find('.new-spec-label').val().trim();
         const value = $row.find('.new-spec-value').val().trim();
         const sortOrder = parseInt($row.find('.new-spec-sort').val(), 10) || 0;
@@ -511,16 +847,17 @@
           url: 'scripts/settings/insert_product_spec_option.php',
           method: 'POST',
           dataType: 'json',
-          data: { spec_key: specKey, label: label, value: value, sort_order: sortOrder, active: active },
+          data: { spec_key: specKey, department: department, label: label, value: value, sort_order: sortOrder, active: active },
           success: function (data) {
             if (!data || !data.ok) {
               alert(data && data.error ? data.error : 'Insert failed.');
               return;
             }
-            const specName = specLabels[specKey] || specKey;
+            const specName = specGroupLabels[specGroup] || buildProductSpecGroupLabel(specKey, department);
             $row.replaceWith(`
-          <tr data-id="${data.id}" data-spec-key="${escapeHtml(specKey)}">
+          <tr data-id="${data.id}" data-spec-key="${escapeHtml(specKey)}" data-department="${escapeHtml(department)}" data-spec-group="${escapeHtml(specGroup)}">
             <td>${data.id}</td>
+            <td class="spec-department-cell">${escapeHtml(department)}</td>
             <td class="spec-name-cell">${escapeHtml(specName)}</td>
             <td class="spec-label-cell">${escapeHtml(label)}</td>
             <td class="spec-value-cell">${escapeHtml(value)}</td>
@@ -532,6 +869,49 @@
               <button class="btn bg-gradient-danger btn-sm delete-product-spec-option"><i class="fa fa-trash"></i></button>
             </td>
           </tr>`);
+          }
+        });
+      });
+
+      $('.product-spec-options-table').on('click', '.confirm-product-spec-dropdown-add', function () {
+        const $row = $(this).closest('.new-product-spec-dropdown-row');
+        const department = normalizeDepartment($row.find('.new-dropdown-department').val());
+        const sourceKey = $row.find('.new-dropdown-source-key').val().trim();
+        const specKey = $row.find('.new-dropdown-spec-key').val().trim().toLowerCase();
+        const label = $row.find('.new-spec-label').val().trim();
+        const value = $row.find('.new-spec-value').val().trim();
+        const sortOrder = parseInt($row.find('.new-spec-sort').val(), 10) || 0;
+        const active = parseInt($row.find('.new-spec-active').val(), 10) || 0;
+
+        if (department === '' || sourceKey === '' || specKey === '' || label === '' || value === '') {
+          alert('Department, source key, dropdown key, label and value are required.');
+          return;
+        }
+
+        const groupKey = buildProductSpecGroupKey(specKey, department);
+
+        $.ajax({
+          url: 'scripts/settings/insert_product_spec_option.php',
+          method: 'POST',
+          dataType: 'json',
+          data: {
+            spec_key: specKey,
+            department: department,
+            label: label,
+            value: value,
+            sort_order: sortOrder,
+            active: active
+          },
+          success: function (data) {
+            if (!data || !data.ok) {
+              alert(data && data.error ? data.error : 'Create failed.');
+              return;
+            }
+
+            const url = new URL(window.location.href);
+            url.searchParams.set('spec_group', groupKey);
+            url.searchParams.delete('spec_key');
+            window.location.href = url.toString();
           }
         });
       });

@@ -219,7 +219,12 @@ $(document)
 
     if (!isPatchDetail && !data.name && !data.Name)
       warnings.push("Missing rider name");
-    if (!isPatchDetail && !data.file && !data.logo && !data.uploaded_file)
+    if (
+      !isPatchDetail &&
+      !data.file &&
+      !data.logo &&
+      !data.uploaded_file
+    )
       warnings.push("Missing uploaded file / logo");
 
     let html = "";
@@ -678,10 +683,6 @@ $(document)
     const $itemRow = $field.closest("tr");
     if ($itemRow.length) {
       if ($field.is(".item-waiting-note, .item-expected-date")) {
-        if (clickButton($itemRow.find(".btn-save-waiting"), true)) {
-          return true;
-        }
-
         const $statusSelect = $itemRow.find(".item-status-select").first();
         if ($statusSelect.length && !$statusSelect.prop("disabled")) {
           $statusSelect.trigger("change");
@@ -713,91 +714,6 @@ $(document)
   }
 
   $(document)
-    .off("click.saveWaiting", ".btn-save-waiting")
-    .on("click.saveWaiting", ".btn-save-waiting", function (e) {
-      e.preventDefault();
-      e.stopPropagation();
-
-      const $btn = $(this);
-      const $row = $btn.closest("tr");
-      const itemId =
-        parseInt($btn.data("item-id"), 10) ||
-        parseInt($row.find(".item-waiting-note").data("item-id"), 10) ||
-        parseInt($row.find(".item-expected-date").data("item-id"), 10) ||
-        0;
-      const orderId = findOpenOrderIdFromElement($btn);
-
-      if (!itemId) {
-        alert("Missing item ID");
-        return;
-      }
-
-      const $noteInput = $('.item-waiting-note[data-item-id="' + itemId + '"]')
-        .filter(":visible")
-        .last();
-
-      const $dateInput = $('.item-expected-date[data-item-id="' + itemId + '"]')
-        .filter(":visible")
-        .last();
-
-      const note = $noteInput.val() || "";
-      const expectedDate = $dateInput.val() || "";
-
-      $btn.prop("disabled", true);
-
-      $.ajax({
-        url: "scripts/orders/update_item_waiting.php",
-        method: "POST",
-        dataType: "json",
-        data: {
-          item_id: itemId,
-          note: note,
-          expected_date: expectedDate,
-        },
-        success: function (resp) {
-          if (!resp || (!resp.success && !resp.ok)) {
-            alert(
-              resp && (resp.message || resp.error)
-                ? resp.message || resp.error
-                : "Waiting save failed",
-            );
-            $btn.prop("disabled", false);
-            return;
-          }
-
-          $row
-            .find(".item-waiting-note, .item-expected-date")
-            .css("border-color", "#28a745");
-
-          setTimeout(function () {
-            $row
-              .find(".item-waiting-note, .item-expected-date")
-              .css("border-color", "");
-          }, 800);
-
-          $btn.prop("disabled", false);
-
-          if (resp.traffic_summary || resp.order_status) {
-            applyTrafficSummaryToRow(
-              orderId,
-              resp.traffic_summary,
-              resp.order_status,
-            );
-          }
-        },
-        error: function (xhr) {
-          console.log("WAITING SAVE ERROR", xhr.status, xhr.responseText);
-          alert(
-            "Waiting save request failed\nHTTP: " +
-              xhr.status +
-              "\n\n" +
-              (xhr.responseText || ""),
-          );
-          $btn.prop("disabled", false);
-        },
-      });
-    });
-  $(document)
     .off("keydown.orderDetailEnterSave")
     .on(
       "keydown.orderDetailEnterSave",
@@ -826,11 +742,11 @@ $(document)
 
     const $row = $(
       '.profile-order-row[data-order-id="' +
-        orderId +
-        '"], ' +
-        '.order-row[data-order-id="' +
-        orderId +
-        '"]',
+      orderId +
+      '"], ' +
+      '.order-row[data-order-id="' +
+      orderId +
+      '"]',
     );
     if (!$row.length) return;
 
@@ -905,10 +821,10 @@ $(document)
 
         $statusCell.html(
           '<button class="btn btn-xs ' +
-            btnClass +
-            '" style="pointer-events:none;">' +
-            label +
-            "</button>",
+          btnClass +
+          '" style="pointer-events:none;">' +
+          label +
+          "</button>",
         );
       }
     }
@@ -1031,9 +947,7 @@ $(document)
       resetOptionsModalShell();
 
       const $btn = $(this);
-      const detailTitle = String(
-        $btn.attr("data-detail-title") || "Product Detail",
-      );
+      const detailTitle = String($btn.attr("data-detail-title") || "Product Detail");
       const data = getOptionsData($btn);
       currentCustomerOptions = stripProtectedOptions(getRawOptionsData($btn));
       currentCanEditOptions =
@@ -1147,6 +1061,7 @@ $(document)
       });
     });
   $(document)
+
     .off("click.removeAssignment", ".btn-remove-assignment")
     .on("click.removeAssignment", ".btn-remove-assignment", function (e) {
       e.preventDefault();
@@ -1204,10 +1119,6 @@ $(document)
       e.stopPropagation();
 
       const $select = $(this);
-
-      // Preskočiť skrytý duplikát select (v td so display:none)
-      if ($select.closest("td").css("display") === "none") return;
-
       const itemId = parseInt($select.data("item-id"), 10) || 0;
       const status = $select.val();
       const orderId = findOpenOrderIdFromElement($select);
@@ -1244,7 +1155,7 @@ $(document)
             alert(
               resp && (resp.message || resp.error)
                 ? resp.message || resp.error
-                : "Waiting save failed",
+                : "Status update failed",
             );
             $select.prop("disabled", false);
             return;
@@ -1370,9 +1281,7 @@ $(document)
       e.preventDefault();
       e.stopPropagation();
 
-      let $otherGroup = $(
-        '#customerOptionsEditor .customer-option-group[data-option-group="Other"]',
-      );
+      let $otherGroup = $('#customerOptionsEditor .customer-option-group[data-option-group="Other"]');
       if (!$otherGroup.length) {
         $("#customerOptionsEditor").append(`
           <div class="card bg-secondary mb-3 customer-option-group" data-option-group="Other">
@@ -1382,14 +1291,10 @@ $(document)
             <div class="card-body py-0 customer-option-group-body"></div>
           </div>
         `);
-        $otherGroup = $(
-          '#customerOptionsEditor .customer-option-group[data-option-group="Other"]',
-        );
+        $otherGroup = $('#customerOptionsEditor .customer-option-group[data-option-group="Other"]');
       }
 
-      $otherGroup
-        .find(".customer-option-group-body")
-        .append(optionEditorRow("", ""));
+      $otherGroup.find(".customer-option-group-body").append(optionEditorRow("", ""));
       $(
         "#customerOptionsEditor .customer-option-row:last .customer-option-key",
       ).focus();
@@ -1458,8 +1363,8 @@ $(document)
             findOpenOrderIdFromElement(
               $(
                 '.btn-view-options[data-item-id="' +
-                  currentOptionsItemId +
-                  '"]',
+                currentOptionsItemId +
+                '"]',
               ),
             ),
           );
@@ -1578,8 +1483,8 @@ $(document)
             findOpenOrderIdFromElement(
               $(
                 '.btn-view-options[data-item-id="' +
-                  currentOptionsItemId +
-                  '"]',
+                currentOptionsItemId +
+                '"]',
               ),
             ),
           );
@@ -1662,10 +1567,10 @@ $(document)
       if (wasPending && status !== "PENDING") {
         const ok = confirm(
           "⚠️ Táto objednávka je PENDING (nezaplatená).\n\n" +
-            'Zmenou statusu na "' +
-            status.replace(/_/g, " ") +
-            '" potvrzuješ, že platba bola prijatá.\n\n' +
-            "Pokračovať?",
+          'Zmenou statusu na "' +
+          status.replace(/_/g, " ") +
+          '" potvrzuješ, že platba bola prijatá.\n\n' +
+          "Pokračovať?",
         );
         if (!ok) {
           $select.val("PENDING");
