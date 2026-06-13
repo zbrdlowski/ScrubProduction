@@ -6,18 +6,234 @@ if (!function_exists('str_contains')) {
   }
 }
 
+require_once __DIR__ . '/orders/department_config.php';
+
 /**
  * Unified DarkScrub CSV importer.
  * Input: DARKSCRUB_IMPORT.csv generated from Google Sheets / Apps Script.
  * One row = one order line. Rows are grouped by source + external_order_id.
  */
 
+function oi_json_decode_assoc_safe(?string $json): array {
+  $json = $json !== null ? trim($json) : '';
+  if ($json === '') {
+    return [];
+  }
+
+  $decoded = json_decode($json, true, 512, JSON_INVALID_UTF8_SUBSTITUTE);
+  return is_array($decoded) ? $decoded : [];
+}
+
+function oi_detect_import_source_from_row(array $r): string {
+  $source = strtoupper((string) oi_trim($r['source'] ?? null));
+  if ($source !== '') {
+    return $source;
+  }
+
+  if (
+    array_key_exists('code', $r)
+    && array_key_exists('date', $r)
+    && array_key_exists('itemCode', $r)
+  ) {
+    return 'SHOPTET';
+  }
+
+  if (
+    array_key_exists('Sale Date', $r)
+    && array_key_exists('Order Number', $r)
+  ) {
+    return 'MX_LOCKER';
+  }
+
+  if (
+    array_key_exists('Order number', $r)
+    && array_key_exists('Sale date', $r)
+  ) {
+    return 'EBAY';
+  }
+
+  return '';
+}
+
+function oi_country_to_iso2(?string $value): ?string {
+  $value = oi_trim($value);
+  if ($value === null) {
+    return null;
+  }
+
+  $upper = strtoupper($value);
+  if (preg_match('/^[A-Z]{2}$/', $upper)) {
+    return $upper;
+  }
+
+  static $map = [
+    'UNITED STATES' => 'US',
+    'UNITED STATES OF AMERICA' => 'US',
+    'USA' => 'US',
+    'GREAT BRITAIN' => 'GB',
+    'UNITED KINGDOM' => 'GB',
+    'ENGLAND' => 'GB',
+    'SCOTLAND' => 'GB',
+    'WALES' => 'GB',
+    'NORTHERN IRELAND' => 'GB',
+    'SLOVAKIA' => 'SK',
+    'SLOVAK REPUBLIC' => 'SK',
+    'CZECH REPUBLIC' => 'CZ',
+    'CZECHIA' => 'CZ',
+    'GERMANY' => 'DE',
+    'AUSTRIA' => 'AT',
+    'ITALY' => 'IT',
+    'FRANCE' => 'FR',
+    'SPAIN' => 'ES',
+    'PORTUGAL' => 'PT',
+    'NETHERLANDS' => 'NL',
+    'BELGIUM' => 'BE',
+    'LUXEMBOURG' => 'LU',
+    'POLAND' => 'PL',
+    'HUNGARY' => 'HU',
+    'SLOVENIA' => 'SI',
+    'CROATIA' => 'HR',
+    'ROMANIA' => 'RO',
+    'BULGARIA' => 'BG',
+    'LATVIA' => 'LV',
+    'LITHUANIA' => 'LT',
+    'ESTONIA' => 'EE',
+    'FINLAND' => 'FI',
+    'SWEDEN' => 'SE',
+    'NORWAY' => 'NO',
+    'DENMARK' => 'DK',
+    'IRELAND' => 'IE',
+    'SWITZERLAND' => 'CH',
+    'GREECE' => 'GR',
+    'CANADA' => 'CA',
+    'AUSTRALIA' => 'AU',
+    'NEW ZEALAND' => 'NZ',
+  ];
+
+  return $map[$upper] ?? $upper;
+}
+
+function oi_normalize_unified_import_row(array $r): array {
+  $normalized = $r;
+  $detectedSource = oi_detect_import_source_from_row($r);
+
+  $aliases = [
+    'external_order_id' => ['code', 'externalOrderId', 'Order Number', 'Order number'],
+    'order_date' => ['date', 'orderDate', 'Sale Date', 'Sale date'],
+    'status' => ['statusName', 'Item State'],
+    'exchange_rate' => ['exchangeRate'],
+    'bill_name' => ['billFullName', 'Buyer Name', 'Buyer name'],
+    'bill_company' => ['billCompany'],
+    'bill_street' => ['billStreet', 'Address Line One', 'Post to address 1'],
+    'bill_house_number' => ['billHouseNumber'],
+    'bill_city' => ['billCity', 'City'],
+    'bill_zip' => ['billZip', 'Postal Code'],
+    'bill_country' => ['billCountryName', 'Country', 'Post to country'],
+    'bill_company_id' => ['companyId'],
+    'delivery_name' => ['deliveryFullName', 'Buyer Name', 'Post to name', 'Buyer name'],
+    'delivery_company' => ['deliveryCompany'],
+    'delivery_company_id' => ['deliveryCompanyId'],
+    'delivery_street' => ['deliveryStreet', 'Address Line One', 'Post to address 1'],
+    'delivery_house_number' => ['deliveryHouseNumber'],
+    'delivery_city' => ['deliveryCity', 'City', 'Post to city'],
+    'delivery_zip' => ['deliveryZip', 'Postal Code', 'Post to postcode'],
+    'delivery_country' => ['deliveryCountryName', 'Country', 'Post to country'],
+    'customer_ip' => ['customerIpAddress'],
+    'customer_note' => ['remark', 'Buyer note'],
+    'internal_note' => ['shopRemark'],
+    'package_number' => ['packageNumber'],
+    'total_weight' => ['weight'],
+    'total_price_with_vat' => ['totalPriceWithVat', 'Gross Selling Price'],
+    'total_price_without_vat' => ['totalPriceWithoutVat'],
+    'total_vat' => ['totalPriceVat'],
+    'price_to_pay' => ['priceToPay'],
+    'amount_paid' => ['amountPaid'],
+    'source_name' => ['sourceName'],
+    'sales_channel' => ['salesChannelName'],
+    'item_name' => ['itemName', 'Item title', 'Item Title'],
+    'item_qty' => ['itemAmount', 'Quantity', 'Item Qty'],
+    'item_sku' => ['itemCode', 'Sku', 'Item number'],
+    'custom_label' => ['Custom label'],
+    'item_variant' => ['itemVariantName', 'Variation details'],
+    'item_manufacturer' => ['itemManufacturer'],
+    'item_unit' => ['itemUnit'],
+    'item_weight' => ['itemWeight'],
+    'item_status' => ['itemStatusName', 'Item State'],
+    'item_unit_price_with_vat' => ['itemUnitPriceWithVat', 'Sold for', 'Gross Selling Price'],
+    'item_unit_price_without_vat' => ['itemUnitPriceWithoutVat'],
+    'item_unit_price_vat' => ['itemUnitPriceVat'],
+    'item_vat_rate' => ['itemVatRate'],
+    'item_total_price_with_vat' => ['itemTotalPriceWithVat'],
+    'item_total_price_without_vat' => ['itemTotalPriceWithoutVat'],
+    'item_total_price_vat' => ['itemTotalPriceVat'],
+    'item_ean' => ['itemEan'],
+    'item_plu' => ['itemPlu'],
+    'item_supplier' => ['itemSupplier'],
+    'shipping_method' => ['shippingMethod', 'Delivery service'],
+    'shipping_price' => ['shippingPrice', 'Shipping Price', 'Postage and packaging'],
+    'tracking_number' => ['trackingNumber', 'Tracking number'],
+    'category_info' => ['Category Info'],
+  ];
+
+  foreach ($aliases as $targetKey => $sourceKeys) {
+    $current = oi_trim($normalized[$targetKey] ?? null);
+    if ($current !== null) {
+      continue;
+    }
+
+    foreach ($sourceKeys as $sourceKey) {
+      $candidate = $r[$sourceKey] ?? null;
+      if ($candidate !== null && $candidate !== '') {
+        $normalized[$targetKey] = $candidate;
+        break;
+      }
+    }
+  }
+
+  if (($normalized['source'] ?? null) === null || trim((string) $normalized['source']) === '') {
+    $normalized['source'] = $detectedSource;
+  }
+
+  if (($normalized['source_raw_json'] ?? null) === null || trim((string) $normalized['source_raw_json']) === '') {
+    $normalized['source_raw_json'] = json_encode($r, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+  }
+
+  if (isset($normalized['bill_country'])) {
+    $normalized['bill_country'] = oi_country_to_iso2((string) $normalized['bill_country']);
+  }
+  if (isset($normalized['delivery_country'])) {
+    $normalized['delivery_country'] = oi_country_to_iso2((string) $normalized['delivery_country']);
+  }
+
+  if (!isset($normalized['phone']) || oi_trim($normalized['phone']) === null) {
+    $normalized['phone'] = $r['Customer Phone Number'] ?? ($r['Post to phone'] ?? ($r['phone'] ?? null));
+  }
+  if (!isset($normalized['email']) || oi_trim($normalized['email']) === null) {
+    $normalized['email'] = $r['Buyer Email'] ?? ($r['Buyer email'] ?? ($r['email'] ?? null));
+  }
+
+  if ($detectedSource === 'EBAY') {
+    $sourceMeta = [
+      'sales_record_number' => $r['Sales record number'] ?? null,
+      'transaction_id' => $r['Transaction ID'] ?? null,
+      'paypal_tx' => $r['PayPal transaction ID'] ?? null,
+      'my_item_note' => $r['My item note'] ?? null,
+    ];
+    $sourceMeta = array_filter($sourceMeta, static fn($v) => $v !== null && $v !== '');
+    if ($sourceMeta) {
+      $normalized['source_raw_json'] = json_encode(array_merge($r, $sourceMeta), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    }
+  }
+
+  return $normalized;
+}
+
 function import_darkscrub_unified_csv(mysqli $conn, string $csvPath): array {
   if (!function_exists('oi_csv_read_assoc')) {
     throw new RuntimeException('Missing order import library. Require order_import_lib.php first.');
   }
 
-  $rows = oi_csv_read_assoc($csvPath);
+  $rows = array_map('oi_normalize_unified_import_row', oi_csv_read_assoc($csvPath));
   if (!$rows) {
     return ['orders' => 0, 'items' => 0, 'note' => 'Empty CSV'];
   }
@@ -92,7 +308,7 @@ function import_darkscrub_unified_csv(mysqli $conn, string $csvPath): array {
     if ($sourceCode === 'SHOPTET') {
       $rawJson = oi_trim($first['source_raw_json'] ?? null);
       if ($rawJson !== null) {
-        $rawDecoded = json_decode($rawJson, true);
+        $rawDecoded = oi_json_decode_assoc_safe($rawJson);
         if (is_array($rawDecoded)) {
           $paidVal = trim((string)($rawDecoded['paid'] ?? ''));
           if ($paidVal === '' || $paidVal === '0') {
@@ -172,8 +388,6 @@ function import_darkscrub_unified_csv(mysqli $conn, string $csvPath): array {
       $variant = oi_trim($r['item_variant'] ?? null);
       if ($variant) $title = trim((string)$title . ' / ' . $variant);
 
-      $itemType = oi_detect_item_type($sku, $customLabel, $title, $r['item_type_code'] ?? null);
-
       $optionsJson = oi_merge_options_json($r);
 
       // --- Cena položky podľa zdroja ---
@@ -191,21 +405,40 @@ function import_darkscrub_unified_csv(mysqli $conn, string $csvPath): array {
         $rawUnitPrice = oi_parse_money($r['item_unit_price_with_vat'] ?? null);
       }
 
-      // --- GFP expansion ---
-      // If the SKU prefix is GFP, the item is imported as G (graphics) and we
-      // automatically generate a companion PLASTICS item and a FITTING item.
-      $isGfp = preg_match('/^GFP[_\-]/i', (string)$sku)
-             || preg_match('/^GFP[_\-]/i', (string)$customLabel);
+      // --- Department + subcategory detekcia cez department_config.php ---
+      $departments = dept_get_departments($customLabel, $sku);
 
-      // Force the primary item type to G when it is a GFP product.
-      if ($isGfp) $itemType = 'G';
+      // Fallback na starú heuristiku ak config prefix nenašiel zhodu
+      if (empty($departments)) {
+        $legacyType = oi_detect_item_type($sku, $customLabel, $title, $r['item_type_code'] ?? null);
+        if ($legacyType !== null) {
+          $departments = [$legacyType];
+        }
+      }
 
-      $itemId = oi_insert_item_unified(
+      // Primárny department = prvý v poli (napr. GFP → G)
+      $primaryDept = $departments[0] ?? 'G';
+
+      // Subcategory pre Graphics položky
+      $graphicsSubcat = null;
+      if (in_array('G', $departments, true)) {
+        $graphicsSubcat = dept_get_graphics_subcat($customLabel, $sku);
+      }
+
+      // Zostavíme internal_options pre subcategory
+      $internalOptions = [];
+      if ($graphicsSubcat !== null) {
+        $internalOptions['_subcat'] = $graphicsSubcat;
+      }
+      $internalOptionsJson = $internalOptions ? json_encode($internalOptions, JSON_UNESCAPED_UNICODE) : null;
+
+      // --- Primárna položka (vždy jeden riadok pre primárny department) ---
+      $itemId = oi_insert_item_unified_with_internal(
         $conn, $orderId, $lineNo ?: null,
-        $sku, $title, $customLabel, $itemType, $qty, $optionsJson, $rawUnitPrice
+        $sku, $title, $customLabel, $primaryDept, $qty, $optionsJson, $rawUnitPrice, $internalOptionsJson
       );
 
-      $categoryCodes = oi_item_type_to_category_codes($itemType, $sku, $customLabel, $title);
+      $categoryCodes = dept_to_category_codes($departments);
       $categoryIds = [];
       foreach ($categoryCodes as $code) {
         if (isset($catIds[$code])) $categoryIds[] = $catIds[$code];
@@ -213,36 +446,43 @@ function import_darkscrub_unified_csv(mysqli $conn, string $csvPath): array {
       if ($categoryIds) oi_add_item_categories($conn, $itemId, array_values(array_unique($categoryIds)));
       $stats['items']++;
 
-      if ($isGfp) {
-        // Auto-create PLASTICS item
-        $plasticId = oi_insert_item_unified(
+      // --- Multi-department expansion ---
+      // Pre každý ďalší department (okrem primárneho) vytvoríme samostatnú
+      // sub-položku. Toto nahradzuje pôvodnú hardcoded GFP logiku.
+      $secondaryDepts = array_slice($departments, 1); // všetky okrem prvého
+      foreach ($secondaryDepts as $secDept) {
+        $autoTag = 'AUTO_' . implode('', $departments) . '_' . $secDept;
+        // Mapuj na pôvodné auto-tagy pre spätnú kompatibilitu
+        if ($departments === ['G', 'P', 'F'] || $departments === ['G', 'P', 'F', 'S']) {
+          if ($secDept === 'P') $autoTag = 'GFP_AUTO_PLASTICS';
+          if ($secDept === 'F') $autoTag = 'GFP_AUTO_FITTING';
+          if ($secDept === 'S') $autoTag = 'GFP_AUTO_SEATCOVER';
+        }
+        $secItemId = oi_insert_item_unified_with_internal(
           $conn, $orderId, $autoLineNo++,
           $sku, $title, $customLabel,
-          'P', $qty,
-          oi_auto_item_options_json($optionsJson, 'GFP_AUTO_PLASTICS'),
-          null  // cena len na G položke
-        );
-        oi_add_item_categories($conn, $plasticId, [$catIds['PLASTICS']]);
-        $stats['items']++;
-
-        // Auto-create FITTING item
-        $fittingId = oi_insert_item_unified(
-          $conn, $orderId, $autoLineNo++,
-          $sku, $title, $customLabel,
-          'F', $qty,
-          oi_auto_item_options_json($optionsJson, 'GFP_AUTO_FITTING'),
+          $secDept, $qty,
+          oi_auto_item_options_json($optionsJson, $autoTag),
+          null,  // cena len na primárnej položke
           null
         );
-        oi_add_item_categories($conn, $fittingId, [$catIds['FITTING']]);
+        $secCatCode = dept_to_category_codes([$secDept]);
+        $secCatIds = [];
+        foreach ($secCatCode as $code) {
+          if (isset($catIds[$code])) $secCatIds[] = $catIds[$code];
+        }
+        if ($secCatIds) oi_add_item_categories($conn, $secItemId, array_values(array_unique($secCatIds)));
         $stats['items']++;
       }
 
-      if ($itemType === 'S' && oi_has_positive_option_value(oi_json_option_value($optionsJson, 'patch-style'))) {
-        $patchItemId = oi_insert_item_unified(
+      // --- Seat Cover patch auto-item (zachovaná pôvodná logika) ---
+      if ($primaryDept === 'S' && oi_has_positive_option_value(oi_json_option_value($optionsJson, 'patch-style'))) {
+        $patchItemId = oi_insert_item_unified_with_internal(
           $conn, $orderId, $autoLineNo++,
           $sku, 'Patch', $customLabel,
           'G', $qty,
           oi_auto_item_options_json($optionsJson, 'SEAT_PATCH_AUTO_GRAPHICS'),
+          null,
           null
         );
         oi_add_item_categories($conn, $patchItemId, [$catIds['GRAPHICS']]);
@@ -253,15 +493,16 @@ function import_darkscrub_unified_csv(mysqli $conn, string $csvPath): array {
       $extraItems = oi_extract_shoptet_variant_items($r, $qty, $autoLineNo);
       foreach ($extraItems as $extra) {
         $autoLineNo++;
-        $extraItemId = oi_insert_item_unified(
+        $extraItemId = oi_insert_item_unified_with_internal(
           $conn, $orderId,
           $extra['line_no'],
           $sku, $extra['title'], $customLabel,
           $extra['item_type'], $extra['qty'],
           oi_auto_item_options_json($optionsJson, $extra['auto_tag']),
-          null  // extra varianty nemajú vlastnú cenu
+          null,  // extra varianty nemajú vlastnú cenu
+          null
         );
-        $extraCatCode = oi_item_type_to_category_codes($extra['item_type']);
+        $extraCatCode = dept_to_category_codes([$extra['item_type']]);
         $extraCatIds = [];
         foreach ($extraCatCode as $code) {
           if (isset($catIds[$code])) $extraCatIds[] = $catIds[$code];
@@ -302,7 +543,7 @@ function oi_json_clean(array $data): ?string {
   $clean = [];
   foreach ($data as $k => $v) {
     if (is_array($v)) {
-      $nested = json_decode((string)oi_json_clean($v), true) ?: [];
+      $nested = oi_json_decode_assoc_safe((string)oi_json_clean($v));
       if ($nested) $clean[$k] = $nested;
       continue;
     }
@@ -415,7 +656,7 @@ function oi_merge_options_json(array $r): ?string {
 
   $optionsRaw = oi_trim($r['options_json'] ?? null);
   if ($optionsRaw) {
-    $decoded = json_decode($optionsRaw, true);
+    $decoded = oi_json_decode_assoc_safe($optionsRaw);
     if (is_array($decoded)) $opts = $decoded;
     else $opts['_options_raw'] = $optionsRaw;
   }
@@ -442,10 +683,77 @@ function oi_merge_options_json(array $r): ?string {
     if ($v !== null && $v !== '') $opts['_item'][$k] = $v;
   }
 
+  // -----------------------------------------------------------------------
+  // Merge source_raw_json variant fields to the top level of options_json.
+  //
+  // This makes all Shoptet/MxLocker variant keys (e.g. "rim-tapes-color",
+  // "rim-tapes-size-2", "spoke-coats-color" …) visible to controlls.php
+  // so they can be mapped to product spec dropdowns.
+  //
+  // Rules:
+  //   1. Only scalar values are merged (no nested objects).
+  //   2. Keys starting with "_" are skipped (internal tags).
+  //   3. Order-level metadata keys are skipped (they belong to the order
+  //      header, not to the product options form).
+  //   4. Already-set keys in $opts (from the CSV options_json column, i.e.
+  //      what the customer explicitly chose in the Shoptet form) take
+  //      priority — raw values only FILL IN missing keys.
+  // -----------------------------------------------------------------------
   $raw = oi_trim($r['source_raw_json'] ?? null);
   if ($raw) {
-    $decodedRaw = json_decode($raw, true);
-    $opts['_source_raw'] = is_array($decodedRaw) ? $decodedRaw : $raw;
+    $decodedRaw = oi_json_decode_assoc_safe($raw);
+    if (is_array($decodedRaw)) {
+      // Keys that carry order-level metadata, not product option values.
+      static $orderMetaKeys = [
+        'code', 'date', 'statusName', 'currency', 'exchangeRate',
+        'email', 'phone', 'billFullName', 'billCompany', 'billStreet',
+        'billHouseNumber', 'billCity', 'billZip', 'billCountryName',
+        'companyId', 'vatId', 'customerIdentificationNumber',
+        'deliveryFullName', 'deliveryCompany', 'deliveryVatId',
+        'deliveryStreet', 'deliveryHouseNumber', 'deliveryCity',
+        'deliveryZip', 'deliveryCountryName', 'customerIpAddress',
+        'remark', 'shopRemark', 'packageNumber',
+        'varchar1', 'varchar2', 'varchar3', 'text1', 'text2', 'text3',
+        'weight', 'totalPriceWithVat', 'totalPriceWithoutVat',
+        'totalPriceVat', 'rounding', 'priceToPay', 'amountPaid', 'paid',
+        'itemName', 'itemAmount', 'itemCode', 'itemVariantName',
+        'itemManufacturer', 'itemUnit', 'itemWeight', 'itemStatusName',
+        'itemUnitPriceWithVat', 'itemUnitPriceWithoutVat', 'itemUnitPriceVat',
+        'itemVatRate', 'itemTotalPriceWithVat', 'itemTotalPriceWithoutVat',
+        'itemTotalPriceVat', 'itemEan', 'itemPlu', 'itemSupplier',
+        'itemUnitDiscountPriceWithVat', 'itemUnitDiscountPriceWithoutVat',
+        'sourceName', 'salesChannelName', 'billVatIdValidationStatus',
+        // MxLocker order-level keys
+        'Sale Date', 'Order Number', 'Item Title', 'Item Qty', 'Item State',
+        'Buyer Name', 'Buyer Email', 'Gross Selling Price', 'Processing',
+        'Tax', 'Tax Remitted', 'Mx Locker Fee', 'Customer Phone Number',
+        'Sku', 'Shipping Price', 'Expedited Shipping',
+        'Address Line One', 'Address Line Two', 'City', 'State Province',
+        'Postal Code', 'Country',
+      ];
+      static $orderMetaIndex = null;
+      if ($orderMetaIndex === null) {
+        $orderMetaIndex = array_flip($orderMetaKeys);
+      }
+
+      foreach ($decodedRaw as $rawKey => $rawValue) {
+        // Skip internal keys and non-scalar values.
+        if (!is_string($rawKey) || $rawKey === '' || $rawKey[0] === '_') continue;
+        if (!is_scalar($rawValue)) continue;
+        // Skip order-level metadata.
+        if (isset($orderMetaIndex[$rawKey])) continue;
+        // Only fill in keys not already set by the explicit options_json.
+        if (!array_key_exists($rawKey, $opts)) {
+          $opts[$rawKey] = $rawValue;
+        }
+      }
+
+      // Keep the full raw blob accessible for debugging / future use.
+      $opts['_source_raw'] = $decodedRaw;
+    } else {
+      // Fallback: store as string if JSON was malformed.
+      $opts['_source_raw'] = $raw;
+    }
   }
 
   return $opts ? json_encode($opts, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) : null;
@@ -454,7 +762,7 @@ function oi_merge_options_json(array $r): ?string {
 function oi_json_option_value(?string $json, string $key): ?string {
   if ($json === null || trim($json) === '') return null;
 
-  $decoded = json_decode($json, true);
+  $decoded = oi_json_decode_assoc_safe($json);
   if (!is_array($decoded)) return null;
 
   $value = $decoded[$key] ?? null;
@@ -472,16 +780,20 @@ function oi_has_positive_option_value(?string $value): bool {
 }
 
 function oi_insert_item_unified(mysqli $conn, int $orderId, ?int $lineNo, ?string $sku, ?string $title, ?string $customLabel, ?string $itemTypeCode, int $qty, ?string $optionsJson, ?float $unitPrice = null): int {
+  return oi_insert_item_unified_with_internal($conn, $orderId, $lineNo, $sku, $title, $customLabel, $itemTypeCode, $qty, $optionsJson, $unitPrice, null);
+}
+
+function oi_insert_item_unified_with_internal(mysqli $conn, int $orderId, ?int $lineNo, ?string $sku, ?string $title, ?string $customLabel, ?string $itemTypeCode, int $qty, ?string $optionsJson, ?float $unitPrice = null, ?string $internalOptionsJson = null): int {
   $sku = oi_trim($sku);
   $title = oi_trim($title);
   $customLabel = oi_trim($customLabel);
   $itemTypeCode = oi_trim($itemTypeCode);
 
   $stmt = $conn->prepare('
-    INSERT INTO order_items (order_id, line_no, sku, title, custom_label, item_type_code, qty, unit_price, options_json)
-    VALUES (?,?,?,?,?,?,?,?,?)
+    INSERT INTO order_items (order_id, line_no, sku, title, custom_label, item_type_code, qty, unit_price, options_json, internal_options_json)
+    VALUES (?,?,?,?,?,?,?,?,?,?)
   ');
-  $stmt->bind_param('iissssids', $orderId, $lineNo, $sku, $title, $customLabel, $itemTypeCode, $qty, $unitPrice, $optionsJson);
+  $stmt->bind_param('iissssidss', $orderId, $lineNo, $sku, $title, $customLabel, $itemTypeCode, $qty, $unitPrice, $optionsJson, $internalOptionsJson);
   $stmt->execute();
   $id = (int)$stmt->insert_id;
   $stmt->close();
@@ -543,7 +855,7 @@ function oi_extract_payment_method_from_rows(array $rows): ?string {
 function oi_auto_item_options_json(?string $baseOptionsJson, string $autoTag): ?string {
   $opts = [];
   if ($baseOptionsJson !== null) {
-    $decoded = json_decode($baseOptionsJson, true);
+    $decoded = oi_json_decode_assoc_safe($baseOptionsJson);
     if (is_array($decoded)) $opts = $decoded;
   }
   $opts['_auto_generated'] = $autoTag;
@@ -579,7 +891,7 @@ function oi_extract_shoptet_variant_items(array $r, int $qty, int &$startLineNo)
   $rawJson = oi_trim($r['source_raw_json'] ?? null);
   if ($rawJson === null) return [];
 
-  $raw = json_decode($rawJson, true);
+  $raw = oi_json_decode_assoc_safe($rawJson);
   if (!is_array($raw)) return [];
 
   /**

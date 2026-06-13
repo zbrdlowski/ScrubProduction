@@ -174,6 +174,19 @@ $allowedStatuses = array_keys($orderStatusLabels);
 if ($fStatus !== '' && !in_array($fStatus, $allowedStatuses, true))
   $fStatus = '';
 
+// Ak je zvolený konkrétny status tabom alebo filtrom, má mať prednosť
+// pred "open orders" exclude_status logikou.
+if ($fStatus !== '') {
+  $fExcludeStatuses = '';
+}
+
+// Horné fulltext vyhľadávanie má hľadať naprieč všetkými objednávkami,
+// nie len v aktuálne aktívnom quick tabe.
+if ($fQ !== '') {
+  $fStatus = '';
+  $fExcludeStatuses = '';
+}
+
 // ── Počty objednávok pre jednotlivé taby ──────────────────────────────────────────────────────────
 $quickTabCounts = [];
 $qtRes = $conn->query("SELECT
@@ -1126,7 +1139,7 @@ $deptOptions = [
   function qtabUrl(array $tabParams): string
   {
     $current = $_GET;
-    foreach (['status', 'exclude_status', 'source', 'country', 'payment', 'shipping', 'priority', 'date_from', 'date_to', 'worker', 'dept', 'cat', 'type', 'q'] as $k) {
+    foreach (['status', 'exclude_status', 'source', 'country', 'payment', 'shipping', 'priority', 'date_from', 'date_to', 'worker', 'dept', 'cat', 'type', 'q', 'print_printer', 'print_material', 'print_finish'] as $k) {
       unset($current[$k]);
     }
     $qs = http_build_query(array_merge($current, $tabParams));

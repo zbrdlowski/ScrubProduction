@@ -50,10 +50,60 @@ function post_string(string $key, int $max = 120): string
   return $value;
 }
 
+/**
+ * Rovnaké ako post_string, ale nevyžaduje hodnotu — vracia '' ak chýba.
+ */
+function post_string_optional(string $key, int $max = 120): string
+{
+  $value = trim((string) ($_POST[$key] ?? ''));
+  if ($value !== '' && mb_strlen($value) > $max) {
+    out_json(400, ['ok' => false, 'error' => $key . ' is too long']);
+  }
+  return $value;
+}
+
 function post_int(string $key, int $default = 0): int
 {
   if (!isset($_POST[$key]) || $_POST[$key] === '') {
     return $default;
   }
   return (int) $_POST[$key];
+}
+
+function product_spec_column_exists(mysqli $conn, string $column): bool
+{
+  static $cache = [];
+
+  $column = trim($column);
+  if ($column === '') {
+    return false;
+  }
+
+  if (array_key_exists($column, $cache)) {
+    return $cache[$column];
+  }
+
+  $stmt = $conn->prepare("
+    SELECT 1
+    FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE()
+      AND TABLE_NAME = 'product_spec_options'
+      AND COLUMN_NAME = ?
+    LIMIT 1
+  ");
+  if (!$stmt) {
+    $cache[$column] = false;
+    return false;
+  }
+
+  $stmt->bind_param('s', $column);
+  $exists = false;
+  if ($stmt->execute()) {
+    $res = $stmt->get_result();
+    $exists = $res && $res->fetch_assoc() !== null;
+  }
+  $stmt->close();
+
+  $cache[$column] = $exists;
+  return $exists;
 }

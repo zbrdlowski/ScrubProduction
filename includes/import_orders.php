@@ -90,7 +90,10 @@
       try { data = JSON.parse(txt); } catch (e) { data = null; }
 
       if (!res.ok || !data || !data.ok) {
-        const msg = data && data.error ? data.error : txt;
+        const rawMsg = data && data.error ? data.error : txt;
+        const msg = rawMsg && String(rawMsg).trim() !== ''
+          ? rawMsg
+          : `HTTP ${res.status} ${res.statusText || ''}`.trim();
         result.innerHTML = `<div class="alert alert-danger"><b>Import zlyhal</b><br>${escapeHtml(msg)}</div>`;
       } else {
         result.innerHTML = `
@@ -106,7 +109,11 @@
           </div>`;
       }
     } catch (err) {
-      result.innerHTML = `<div class="alert alert-danger">Chyba: ${escapeHtml(err)}</div>`;
+      const details = [
+        err && err.name ? `${err.name}: ${err.message || ''}`.trim() : String(err || 'Unknown error'),
+        'Skús hard refresh a pozri v DevTools > Network odpoveď pre scripts/upload_import_orders.php.'
+      ];
+      result.innerHTML = `<div class="alert alert-danger"><b>Chyba uploadu</b><br>${escapeHtml(details.join(' '))}</div>`;
     } finally {
       spinner.style.display = 'none';
       btnUpload.disabled = !file;

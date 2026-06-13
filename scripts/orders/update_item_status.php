@@ -57,10 +57,10 @@ if ($newStatus === 'READY' && $itemType === 'S') {
 
     // Rovnaká definícia ako v get_order_detail.php
     $seatOpsMeta = [
-        'waterproof-seams'   => ['code' => 'Waterproof Seams',  'required_when' => 'exists_in_json', 'json_key' => 'waterproof-seams'],
-        'enduro-pocket'      => ['code' => 'Enduro Pocket',     'required_when' => 'filled',         'json_key' => 'enduro-pocket'],
-        'side-brand-patches' => ['code' => 'Sidebrand Patches', 'required_when' => 'exists_in_json', 'json_key' => 'side-brand-patches'],
-        'patch-applied'      => ['code' => 'Patch Applied',     'required_when' => 'exists_in_json', 'json_key' => 'patch-style'],
+        'waterproof-seams'   => ['code' => 'Waterproof Seams',  'required_when' => 'exists_in_json', 'json_key' => 'waterproof-seams',   'internal_key' => '_seat_waterproof_seams'],
+        'enduro-pocket'      => ['code' => 'Enduro Pocket',     'required_when' => 'filled',         'json_key' => 'enduro-pocket',      'internal_key' => '_seat_enduro_pocket'],
+        'side-brand-patches' => ['code' => 'Sidebrand Patches', 'required_when' => 'exists_in_json', 'json_key' => 'side-brand-patches', 'internal_key' => '_seat_side_brand_patches'],
+        'patch-applied'      => ['code' => 'Patch Applied',     'required_when' => 'exists_in_json', 'json_key' => 'patch-style',        'internal_key' => '_seat_patch_applied'],
     ];
 
     $missing = [];
@@ -73,7 +73,12 @@ if ($newStatus === 'READY' && $itemType === 'S') {
             $val = $extOptArr[$jsonKey] ?? null;
             $required = ($val !== null && $val !== '' && $val !== [] && $val !== 'none');
         }
-        if ($required && empty($confirmed[$opKey])) {
+        $confirmedValue = $internalOptArr[$meta['internal_key']] ?? ($confirmed[$opKey] ?? ($extOptArr[$jsonKey] ?? null));
+        $normalizedConfirmedValue = trim(mb_strtolower((string)$confirmedValue, 'UTF-8'));
+        $isConfirmed = $confirmedValue === true
+            || in_array($normalizedConfirmedValue, ['1', 'true', 'yes'], true);
+
+        if ($required && !$isConfirmed) {
             $missing[] = $meta['code'];
         }
     }

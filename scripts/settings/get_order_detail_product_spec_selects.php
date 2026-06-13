@@ -797,7 +797,14 @@ function productSpecOptions(mysqli $conn, string $specKey, array $fallbackOption
   }
 
   $items = [];
-  $stmt = $conn->prepare("SELECT label, value FROM product_spec_options WHERE spec_key = ? AND active = 1 ORDER BY sort_order ASC, id ASC");
+  $fieldType = 'dropdown';
+
+  $stmt = $conn->prepare("
+    SELECT label, value, field_type
+    FROM product_spec_options
+    WHERE spec_key = ? AND active = 1
+    ORDER BY sort_order ASC, id ASC
+  ");
   if ($stmt) {
     $stmt->bind_param('s', $specKey);
     if ($stmt->execute()) {
@@ -805,10 +812,10 @@ function productSpecOptions(mysqli $conn, string $specKey, array $fallbackOption
       while ($row = $res->fetch_assoc()) {
         $value = trim((string) ($row['value'] ?? ''));
         $label = trim((string) ($row['label'] ?? ''));
-        if ($value === '' || $label === '') {
-          continue;
-        }
-        $items[] = ['value' => $value, 'label' => $label];
+        $ft    = trim((string) ($row['field_type'] ?? 'dropdown'));
+        if ($value === '' || $label === '') continue;
+        if ($ft !== 'dropdown') $fieldType = $ft;
+        $items[] = ['value' => $value, 'label' => $label, 'field_type' => $ft];
       }
     }
     $stmt->close();
@@ -816,25 +823,74 @@ function productSpecOptions(mysqli $conn, string $specKey, array $fallbackOption
 
   if (!$items) {
     foreach ($fallbackOptions as $value => $label) {
-      $items[] = ['value' => (string) $value, 'label' => (string) $label];
+      $items[] = ['value' => (string) $value, 'label' => (string) $label, 'field_type' => 'dropdown'];
     }
   }
 
-  $cache[$specKey] = $items;
-  return $items;
+  $cache[$specKey] = ['items' => $items, 'field_type' => $fieldType];
+  return $cache[$specKey];
+}
+
+/**
+ * Renderuje správny HTML formulárový prvok podľa field_type.
+ *
+ * dropdown / radio / checkbox → <select>
+ * text                        → <input type="text">
+ */
+function renderProductSpecField(
+  mysqli $conn,
+  string $specKey,
+  string $currentValue,
+  array  $fallbackOptions,
+  string $cssClass,
+  string $dataAttr,
+  string $emptyLabel = 'Select...'
+): string {
+  $spec      = productSpecOptions($conn, $specKey, $fallbackOptions);
+  $items     = $spec['items'];
+  $fieldType = $spec['field_type'];
+
+  if ($fieldType === 'text') {
+    return '<input type="text"'
+      . ' class="form-control form-control-sm ' . h($cssClass) . '"'
+      . ' ' . $dataAttr
+      . ' value="' . h($currentValue) . '"'
+      . ' placeholder="">';
+  }
+
+  $extra = ($fieldType === 'radio') ? ' data-field-type="radio"' : '';
+  $html  = '<select class="form-control form-control-sm ' . h($cssClass) . '" ' . $dataAttr . $extra . '>';
+  $html .= '<option value=""' . ($currentValue === '' ? ' selected' : '') . '>' . h($emptyLabel) . '</option>';
+
+  $hasCurrent = ($currentValue === '');
+  foreach ($items as $option) {
+    $val   = (string) $option['value'];
+    $label = (string) $option['label'];
+    if ($val === $currentValue) $hasCurrent = true;
+    $html .= '<option value="' . h($val) . '"' . ($val === $currentValue ? ' selected' : '') . '>' . h($label) . '</option>';
+  }
+
+  if (!$hasCurrent && $currentValue !== '') {
+    $html .= '<option value="' . h($currentValue) . '" selected>' . h($currentValue) . '</option>';
+  }
+
+  $html .= '</select>';
+  return $html;
 }
 
 function renderProductSpecOptions(mysqli $conn, string $specKey, string $currentValue, array $fallbackOptions, string $emptyLabel = 'Select...'): string
 {
+  // Zachovaná pre spätnú kompatibilitu — vždy renderuje <option> tagy (volajúci obalí <select>)
+  $spec  = productSpecOptions($conn, $specKey, $fallbackOptions);
+  $items = $spec['items'];
+
   $html = '<option value=""' . ($currentValue === '' ? ' selected' : '') . '>' . h($emptyLabel) . '</option>';
   $hasCurrent = ($currentValue === '');
 
-  foreach (productSpecOptions($conn, $specKey, $fallbackOptions) as $option) {
+  foreach ($items as $option) {
     $value = (string) $option['value'];
     $label = (string) $option['label'];
-    if ($value === $currentValue) {
-      $hasCurrent = true;
-    }
+    if ($value === $currentValue) $hasCurrent = true;
     $html .= '<option value="' . h($value) . '"' . ($value === $currentValue ? ' selected' : '') . '>' . h($label) . '</option>';
   }
 
@@ -844,6 +900,7 @@ function renderProductSpecOptions(mysqli $conn, string $specKey, string $current
 
   return $html;
 }
+
 
 // Generuje URL produktu podľa zdroja objednávky (SHOPTET, EBAY, atď.)
 function itemProductUrl(array $order, array $item): string

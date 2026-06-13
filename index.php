@@ -59,7 +59,8 @@ $pageLabels = [
   'cleanup' => 'Cleanup',
   'holidays' => 'Dovolenky',
   'chat' => 'Interný chat',
-  'shoptet_order_download' => 'Shoptet Order Download'
+  'shoptet_order_download' => 'Shoptet Order Download',
+  'status_policies' => 'Status Policies'
 
   // Add more as needed
 ];

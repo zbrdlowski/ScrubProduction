@@ -17,12 +17,40 @@ function seatCoverOptionIsPositive($value): bool
     return !in_array(mb_strtolower($value), $negativeValues, true);
 }
 
+function seatCoverOperationIsConfirmed($value): bool
+{
+    if ($value === true) {
+        return true;
+    }
+
+    if (is_array($value) || is_object($value) || $value === null) {
+        return false;
+    }
+
+    $normalized = trim(mb_strtolower((string)$value, 'UTF-8'));
+    return in_array($normalized, ['1', 'true', 'yes'], true);
+}
+
+function seatCoverResolvedConfirmationValue(array $options, array $internal, array $confirmed, string $optionKey, string $jsonKey, string $internalKey)
+{
+    if (array_key_exists($internalKey, $internal)) {
+        return $internal[$internalKey];
+    }
+
+    if (array_key_exists($optionKey, $confirmed)) {
+        return $confirmed[$optionKey];
+    }
+
+    return $options[$jsonKey] ?? null;
+}
+
 function seatCoverOperationsStateFromJsonStrings(?string $optionsJson, ?string $internalOptionsJson): array
 {
     $requiredMap = [
-        'waterproof-seams' => 'WS',
-        'enduro-pocket' => 'EP',
-        'side-brand-patches' => 'SP',
+        'waterproof-seams' => ['code' => 'WS', 'json_key' => 'waterproof-seams', 'internal_key' => '_seat_waterproof_seams'],
+        'enduro-pocket' => ['code' => 'EP', 'json_key' => 'enduro-pocket', 'internal_key' => '_seat_enduro_pocket'],
+        'side-brand-patches' => ['code' => 'SP', 'json_key' => 'side-brand-patches', 'internal_key' => '_seat_side_brand_patches'],
+        'patch-applied' => ['code' => 'PA', 'json_key' => 'patch-style', 'internal_key' => '_seat_patch_applied'],
     ];
 
     $options = json_decode((string)$optionsJson, true);
@@ -41,11 +69,14 @@ function seatCoverOperationsStateFromJsonStrings(?string $optionsJson, ?string $
     }
 
     $required = [];
-    foreach ($requiredMap as $optionKey => $shortCode) {
-        if (seatCoverOptionIsPositive($options[$optionKey] ?? null)) {
+    foreach ($requiredMap as $optionKey => $meta) {
+        $jsonKey = $meta['json_key'];
+        if (seatCoverOptionIsPositive($options[$jsonKey] ?? null)) {
             $required[$optionKey] = [
-                'code' => $shortCode,
-                'confirmed' => !empty($confirmed[$optionKey]),
+                'code' => $meta['code'],
+                'confirmed' => seatCoverOperationIsConfirmed(
+                    seatCoverResolvedConfirmationValue($options, $internal, $confirmed, $optionKey, $jsonKey, $meta['internal_key'])
+                ),
             ];
         }
     }
@@ -212,6 +243,33 @@ function ordersWorkflowConditionMatches(string $actualStatus, string $operator, 
     }
 }
 
+function ordersWorkflowRuleConditionMatches(array $condition, array $departmentStatuses): bool
+{
+    $department = ordersNormalizeDepartmentCode($condition['department'] ?? null);
+    if ($department === '') {
+        return false;
+    }
+
+    $conditionType = strtolower(trim((string)($condition['condition_type'] ?? 'status')));
+    $operator = strtoupper(trim((string)($condition['operator'] ?? '')));
+    $departmentPresent = array_key_exists($department, $departmentStatuses);
+
+    if ($conditionType === 'presence') {
+        if ($operator === 'PRESENT') {
+            return $departmentPresent;
+        }
+
+        if ($operator === 'ABSENT') {
+            return !$departmentPresent;
+        }
+
+        return false;
+    }
+
+    $actualStatus = strtoupper((string)($departmentStatuses[$department] ?? 'NEW'));
+    return ordersWorkflowConditionMatches($actualStatus, $operator, (string)($condition['status_code'] ?? ''));
+}
+
 function ordersResolveStatusFromRules(mysqli $conn, array $departmentStatuses): ?string
 {
     if (
@@ -227,6 +285,7 @@ function ordersResolveStatusFromRules(mysqli $conn, array $departmentStatuses): 
             r.result_order_status_code,
             r.stop_on_match,
             c.department,
+            c.condition_type,
             c.operator,
             c.status_code
         FROM status_workflow_rules r
@@ -257,12 +316,14 @@ function ordersResolveStatusFromRules(mysqli $conn, array $departmentStatuses): 
         }
 
         $department = ordersNormalizeDepartmentCode($row['department'] ?? null);
+        $conditionType = trim((string)($row['condition_type'] ?? 'status'));
         $operator = trim((string)($row['operator'] ?? ''));
         $statusCode = trim((string)($row['status_code'] ?? ''));
 
-        if ($department !== '' && $operator !== '' && $statusCode !== '') {
+        if ($department !== '' && $operator !== '') {
             $rules[$ruleId]['conditions'][] = [
                 'department' => $department,
+                'condition_type' => $conditionType,
                 'operator' => $operator,
                 'status_code' => $statusCode,
             ];
@@ -279,10 +340,7 @@ function ordersResolveStatusFromRules(mysqli $conn, array $departmentStatuses): 
         $matched = true;
 
         foreach ($rule['conditions'] as $condition) {
-            $department = $condition['department'];
-            $actualStatus = strtoupper((string)($departmentStatuses[$department] ?? 'NEW'));
-
-            if (!ordersWorkflowConditionMatches($actualStatus, $condition['operator'], $condition['status_code'])) {
+            if (!ordersWorkflowRuleConditionMatches($condition, $departmentStatuses)) {
                 $matched = false;
                 break;
             }

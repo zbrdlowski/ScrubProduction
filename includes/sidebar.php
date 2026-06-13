@@ -88,7 +88,8 @@ function isMenuOpen($pages = []) {
             'employee',
             'controlls',
             'calendar',
-            'import_orders'
+            'import_orders',
+            'status_policies'
           ]) ? 'menu-open' : '' ?>">    
           <?
            echo ' <a href="#" class="nav-link"style="background-color:#2a3036;">';
@@ -130,6 +131,14 @@ function isMenuOpen($pages = []) {
               //echo '<i class="nav-icon fas fa-cogs"></i>';
               echo '<p>';
                 echo 'Import Orders';                
+              echo '</p>';
+            echo '</a>';
+          echo '</li>'; 
+          echo '<li class="nav-item active">';
+            echo '<a href="'.basename($_SERVER['PHP_SELF']).'?page=status_policies" class="nav-link  '.isActive('status_policies').'">';
+            echo '<i class="fas fa-project-diagram nav-icon"></i>';
+              echo '<p>';
+                echo 'Status Policies';
               echo '</p>';
             echo '</a>';
           echo '</li>'; 

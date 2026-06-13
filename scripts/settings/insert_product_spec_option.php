@@ -1,31 +1,69 @@
 <?php
 require_once __DIR__ . '/product_spec_ajax_bootstrap.php';
 
-$specKey = strtolower(post_string('spec_key', 64));
-if (!preg_match('/^[a-z0-9]+(?:_[a-z0-9]+)*$/', $specKey)) {
-  out_json(400, ['ok' => false, 'error' => 'Invalid dropdown key']);
-}
+$specKey    = post_string('spec_key', 120);
+$department = strtoupper(post_string_optional('department', 1));
+$fieldType  = post_string_optional('field_type', 20);
+$sourceKey  = post_string_optional('source_key', 120);
+$label      = post_string('label', 120);
+$value      = post_string('value', 120);
+$sortOrder  = post_int('sort_order', 0);
+$active     = post_int('active', 1) === 1 ? 1 : 0;
+$autoCheckbox = ($_POST['auto_checkbox'] ?? '0') === '1';
+$applyToSubcategories = post_int('apply_to_subcategories', 0) === 1 ? 1 : 0;
 
-$department = strtoupper(trim((string) ($_POST['department'] ?? '')));
-if ($department !== '' && !in_array($department, ['G', 'S', 'P', 'F'], true)) {
+$allowedDepts      = ['G', 'S', 'P', 'F', ''];
+$allowedFieldTypes = ['dropdown', 'text', 'checkbox', 'radio'];
+
+$fieldType  = $fieldType  !== '' ? $fieldType  : 'dropdown';
+$department = $department !== '' ? $department : null;
+$sourceKey  = $sourceKey  !== '' ? $sourceKey  : null;
+
+if (!in_array($department ?? '', $allowedDepts, true)) {
   out_json(400, ['ok' => false, 'error' => 'Invalid department']);
 }
-$departmentOrNull = $department !== '' ? $department : null;
-
-$label = post_string('label', 120);
-$value = post_string('value', 120);
-$sortOrder = post_int('sort_order', 0);
-$active = post_int('active', 1) === 1 ? 1 : 0;
-
-$stmt = $conn->prepare("INSERT INTO product_spec_options (spec_key, label, value, sort_order, active, department) VALUES (?, ?, ?, ?, ?, ?)");
-if (!$stmt) {
-  out_json(500, ['ok' => false, 'error' => mysqli_error($conn)]);
+if (!in_array($fieldType, $allowedFieldTypes, true)) {
+  out_json(400, ['ok' => false, 'error' => 'Invalid field_type']);
 }
-$stmt->bind_param('sssiis', $specKey, $label, $value, $sortOrder, $active, $departmentOrNull);
-if (!$stmt->execute()) {
-  out_json(500, ['ok' => false, 'error' => $stmt->error]);
+
+$hasApplyToSubcategories = product_spec_column_exists($conn, 'apply_to_subcategories');
+$insertSql = $hasApplyToSubcategories
+  ? "INSERT INTO product_spec_options (spec_key, department, field_type, label, value, sort_order, active, color, apply_to_subcategories)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+  : "INSERT INTO product_spec_options (spec_key, department, field_type, label, value, sort_order, active, color)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
+
+$stmt = $conn->prepare($insertSql);
+if (!$stmt) out_json(500, ['ok' => false, 'error' => mysqli_error($conn)]);
+if ($hasApplyToSubcategories) {
+  $stmt->bind_param('sssssiisi', $specKey, $department, $fieldType, $label, $value, $sortOrder, $active, $sourceKey, $applyToSubcategories);
+} else {
+  $stmt->bind_param('sssssiis', $specKey, $department, $fieldType, $label, $value, $sortOrder, $active, $sourceKey);
 }
-$id = (int) $stmt->insert_id;
+if (!$stmt->execute()) out_json(500, ['ok' => false, 'error' => $stmt->error]);
+$insertedId = (int) $stmt->insert_id;
 $stmt->close();
 
-out_json(200, ['ok' => true, 'id' => $id]);
+// Checkbox — automaticky pridaj No (0) ako druhú option
+if ($autoCheckbox) {
+  $labelNo  = 'No';
+  $valueNo  = '0';
+  $sortNo   = $sortOrder + 10;
+  $insertSql2 = $hasApplyToSubcategories
+    ? "INSERT INTO product_spec_options (spec_key, department, field_type, label, value, sort_order, active, color, apply_to_subcategories)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+    : "INSERT INTO product_spec_options (spec_key, department, field_type, label, value, sort_order, active, color)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
+  $stmt2 = $conn->prepare($insertSql2);
+  if ($stmt2) {
+    if ($hasApplyToSubcategories) {
+      $stmt2->bind_param('sssssiisi', $specKey, $department, $fieldType, $labelNo, $valueNo, $sortNo, $active, $sourceKey, $applyToSubcategories);
+    } else {
+      $stmt2->bind_param('sssssiis', $specKey, $department, $fieldType, $labelNo, $valueNo, $sortNo, $active, $sourceKey);
+    }
+    $stmt2->execute();
+    $stmt2->close();
+  }
+}
+
+out_json(200, ['ok' => true, 'id' => $insertedId]);

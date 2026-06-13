@@ -231,6 +231,8 @@
 
 
   <?php
+  require_once __DIR__ . '/../scripts/orders/department_config.php';
+
   $departmentNames = [
     'G' => 'Graphics',
     'S' => 'Seat Cover',
@@ -238,14 +240,20 @@
     'F' => 'Fitting',
   ];
   $productSpecDefaults = [
-    'graphics_material' => ['department' => 'G', 'label' => 'Material'],
-    'graphics_finish' => ['department' => 'G', 'label' => 'Finish'],
-    'graphics_grip' => ['department' => 'G', 'label' => 'Grip'],
-    'graphics_tr_swingarms' => ['department' => 'G', 'label' => 'Tr. Swingarms'],
-    'graphics_printer' => ['department' => 'G', 'label' => 'Printer'],
-    'seat_waterproof_seams' => ['department' => 'S', 'label' => 'Waterproof Seams'],
-    'seat_enduro_pocket' => ['department' => 'S', 'label' => 'Enduro Pocket'],
-    'seat_side_brand_patches' => ['department' => 'S', 'label' => 'Side Brand Patches'],
+    'graphics_material'      => ['department' => 'G', 'label' => 'Material',           'field_type' => 'dropdown'],
+    'graphics_finish'        => ['department' => 'G', 'label' => 'Finish',             'field_type' => 'dropdown'],
+    'graphics_grip'          => ['department' => 'G', 'label' => 'Grip',               'field_type' => 'dropdown'],
+    'graphics_tr_swingarms'  => ['department' => 'G', 'label' => 'Tr. Swingarms',      'field_type' => 'dropdown'],
+    'graphics_printer'       => ['department' => 'G', 'label' => 'Printer',            'field_type' => 'dropdown'],
+    'seat_waterproof_seams'  => ['department' => 'S', 'label' => 'Waterproof Seams',   'field_type' => 'dropdown'],
+    'seat_enduro_pocket'     => ['department' => 'S', 'label' => 'Enduro Pocket',      'field_type' => 'dropdown'],
+    'seat_side_brand_patches'=> ['department' => 'S', 'label' => 'Side Brand Patches', 'field_type' => 'dropdown'],
+  ];
+  $fieldTypeLabels = [
+    'dropdown' => 'Dropdown',
+    'text'     => 'Text',
+    'checkbox' => 'Checkbox',
+    'radio'    => 'Radio',
   ];
   $departmentPrefixes = [
     'G' => 'graphics',
@@ -253,7 +261,18 @@
     'P' => 'plastics',
     'F' => 'fitting',
   ];
-  $normalizeProductSpecDepartment = static function (?string $code) use ($productSpecDefaults): string {
+  $graphicsSubcategoryLabels = defined('GRAPHICS_SUBCAT_LABELS') ? GRAPHICS_SUBCAT_LABELS : [];
+  $graphicsSubcategorySlugs = [];
+  foreach ($graphicsSubcategoryLabels as $subCategoryCode => $_subCategoryLabel) {
+    $graphicsSubcategorySlugs[$subCategoryCode] = strtolower((string) preg_replace('/[^a-z0-9]+/i', '_', (string) $subCategoryCode));
+  }
+  $normalizeProductSpecSourceKey = static function (string $value): string {
+    $value = trim(mb_strtolower($value, 'UTF-8'));
+    $value = preg_replace('/[^a-z0-9]+/u', '-', $value) ?? $value;
+    $value = trim($value, '-');
+    return preg_replace('/-+/', '-', $value) ?? $value;
+  };
+  $normalizeProductSpecDepartment = static function (?string $code): string {
     $code = strtoupper(trim((string) $code));
     if (isset(['G' => true, 'S' => true, 'P' => true, 'F' => true][$code])) {
       return $code;
@@ -261,17 +280,45 @@
 
     return '';
   };
+  $normalizeProductSpecSubcategory = static function (?string $code) use ($graphicsSubcategoryLabels): string {
+    $code = strtoupper(trim((string) $code));
+    return isset($graphicsSubcategoryLabels[$code]) ? $code : '';
+  };
   $humanizeProductSpecKey = static function (string $value): string {
     $value = str_replace(['_', '-'], ' ', trim($value));
     $value = preg_replace('/\s+/', ' ', $value);
     return $value !== '' ? mb_convert_case($value, MB_CASE_TITLE, 'UTF-8') : 'Custom Dropdown';
   };
-  $buildProductSpecGroupLabel = static function (string $specKey, string $department) use ($departmentNames, $departmentPrefixes, $productSpecDefaults, $humanizeProductSpecKey): string {
+  $detectProductSpecSubcategory = static function (string $specKey, string $department) use ($graphicsSubcategorySlugs, $normalizeProductSpecSubcategory): string {
+    if ($department !== 'G') {
+      return '';
+    }
+
+    $normalizedSpecKey = strtolower(trim($specKey));
+    foreach ($graphicsSubcategorySlugs as $subCategoryCode => $subCategorySlug) {
+      $prefix = 'graphics_' . $subCategorySlug . '_';
+      if (strpos($normalizedSpecKey, $prefix) === 0) {
+        return $normalizeProductSpecSubcategory($subCategoryCode);
+      }
+    }
+
+    return '';
+  };
+  $buildProductSpecGroupKey = static function (string $specKey, string $department, string $subCategory = '') use ($normalizeProductSpecDepartment, $normalizeProductSpecSubcategory): string {
+    return trim($specKey) . '|' . $normalizeProductSpecDepartment($department) . '|' . $normalizeProductSpecSubcategory($subCategory);
+  };
+  $buildProductSpecGroupLabel = static function (string $specKey, string $department, string $subCategory = '') use ($departmentNames, $departmentPrefixes, $productSpecDefaults, $humanizeProductSpecKey, $graphicsSubcategoryLabels, $graphicsSubcategorySlugs, $normalizeProductSpecSubcategory): string {
+    $subCategory = $normalizeProductSpecSubcategory($subCategory);
     if (isset($productSpecDefaults[$specKey])) {
       $label = (string) ($productSpecDefaults[$specKey]['label'] ?? $specKey);
     } else {
       $label = $specKey;
-      if ($department !== '' && isset($departmentPrefixes[$department])) {
+      if ($department === 'G' && $subCategory !== '' && isset($graphicsSubcategorySlugs[$subCategory])) {
+        $prefix = 'graphics_' . $graphicsSubcategorySlugs[$subCategory] . '_';
+        if (strpos($label, $prefix) === 0) {
+          $label = substr($label, strlen($prefix));
+        }
+      } elseif ($department !== '' && isset($departmentPrefixes[$department])) {
         $prefix = $departmentPrefixes[$department] . '_';
         if (strpos($label, $prefix) === 0) {
           $label = substr($label, strlen($prefix));
@@ -281,14 +328,62 @@
     }
 
     $deptLabel = $departmentNames[$department] ?? $department;
-    return ($deptLabel !== '' ? $department . ' - ' . $label : $label);
+    $groupLabel = $deptLabel !== '' ? $department . ' - ' . $deptLabel : $label;
+    if ($subCategory !== '' && isset($graphicsSubcategoryLabels[$subCategory])) {
+      $groupLabel .= ' - ' . $graphicsSubcategoryLabels[$subCategory];
+    }
+
+    return $groupLabel . ' - ' . $label;
   };
+  $deriveProductSpecSourceKey = static function (string $specKey, string $department) use ($departmentPrefixes): string {
+    $specKey = trim($specKey);
+    if ($specKey === '') {
+      return '';
+    }
+
+    if ($department !== '' && isset($departmentPrefixes[$department])) {
+      $prefix = $departmentPrefixes[$department] . '_';
+      if (strpos($specKey, $prefix) === 0) {
+        $specKey = substr($specKey, strlen($prefix));
+      }
+    }
+
+    return str_replace('_', '-', strtolower($specKey));
+  };
+  $productSpecCategoryOptions = [];
+  $registerProductSpecCategory = static function (string $department, string $subCategory = '') use (&$productSpecCategoryOptions, $departmentNames, $graphicsSubcategoryLabels, $normalizeProductSpecDepartment, $normalizeProductSpecSubcategory): void {
+    $department = $normalizeProductSpecDepartment($department);
+    $subCategory = $department === 'G' ? $normalizeProductSpecSubcategory($subCategory) : '';
+    if ($department === '') {
+      return;
+    }
+
+    $categoryKey = $department . '|' . $subCategory;
+    $label = $department . ' - ' . ($departmentNames[$department] ?? $department);
+    if ($subCategory !== '' && isset($graphicsSubcategoryLabels[$subCategory])) {
+      $label .= ' - ' . $graphicsSubcategoryLabels[$subCategory];
+    }
+
+    $productSpecCategoryOptions[$categoryKey] = [
+      'department' => $department,
+      'subcategory' => $subCategory,
+      'label' => $label,
+    ];
+  };
+  $registerProductSpecCategory('G');
+  foreach ($graphicsSubcategoryLabels as $subCategoryCode => $_subCategoryLabel) {
+    $registerProductSpecCategory('G', (string) $subCategoryCode);
+  }
+  $registerProductSpecCategory('P');
+  $registerProductSpecCategory('S');
+  $registerProductSpecCategory('F');
 
   $productSpecGroups = [];
   foreach ($productSpecDefaults as $specKey => $meta) {
     $department = $normalizeProductSpecDepartment($meta['department'] ?? '');
-    $groupKey = $specKey . '|' . $department;
-    $productSpecGroups[$groupKey] = $buildProductSpecGroupLabel($specKey, $department);
+    $subCategory = $detectProductSpecSubcategory($specKey, $department);
+    $groupKey = $buildProductSpecGroupKey($specKey, $department, $subCategory);
+    $productSpecGroups[$groupKey] = $buildProductSpecGroupLabel($specKey, $department, $subCategory);
   }
 
   $productSpecGroupStmt = $conn->prepare("
@@ -304,8 +399,9 @@
         continue;
       }
       $department = $normalizeProductSpecDepartment($groupRow['department'] ?? ($productSpecDefaults[$specKey]['department'] ?? ''));
-      $groupKey = $specKey . '|' . $department;
-      $productSpecGroups[$groupKey] = $buildProductSpecGroupLabel($specKey, $department);
+      $subCategory = $detectProductSpecSubcategory($specKey, $department);
+      $groupKey = $buildProductSpecGroupKey($specKey, $department, $subCategory);
+      $productSpecGroups[$groupKey] = $buildProductSpecGroupLabel($specKey, $department, $subCategory);
     }
     $productSpecGroupStmt->close();
   }
@@ -324,10 +420,39 @@
   if ($requestedSpecGroup === '' || !isset($productSpecGroups[$requestedSpecGroup])) {
     $requestedSpecGroup = (string) array_key_first($productSpecGroups);
   }
-  [$currentSpecKey, $currentSpecDepartment] = array_pad(explode('|', $requestedSpecGroup, 2), 2, '');
+  [$currentSpecKey, $currentSpecDepartment, $currentSpecSubcategory] = array_pad(explode('|', $requestedSpecGroup, 3), 3, '');
   $currentSpecDepartment = $normalizeProductSpecDepartment($currentSpecDepartment);
+  $currentSpecSubcategory = $currentSpecDepartment === 'G' ? $normalizeProductSpecSubcategory($currentSpecSubcategory) : '';
+  $currentProductSpecCategoryKey = $currentSpecDepartment . '|' . $currentSpecSubcategory;
 
   $productSpecSourceKeys = [];
+  $registerProductSpecSourceKey = static function (string $sourceKey, string $department) use (&$productSpecSourceKeys, $humanizeProductSpecKey, $normalizeProductSpecSourceKey): void {
+    $canonicalKey = $normalizeProductSpecSourceKey($sourceKey);
+    if ($canonicalKey === '') {
+      return;
+    }
+
+    if (!isset($productSpecSourceKeys[$canonicalKey])) {
+      $productSpecSourceKeys[$canonicalKey] = [
+        'label' => $humanizeProductSpecKey($canonicalKey),
+        'display_key' => $canonicalKey,
+        'aliases' => [],
+        'departments' => [],
+      ];
+    }
+
+    $trimmedSourceKey = trim($sourceKey);
+    if ($trimmedSourceKey !== '') {
+      $productSpecSourceKeys[$canonicalKey]['aliases'][$trimmedSourceKey] = true;
+      if ($productSpecSourceKeys[$canonicalKey]['display_key'] === $canonicalKey && strpos($trimmedSourceKey, ' ') === false) {
+        $productSpecSourceKeys[$canonicalKey]['display_key'] = $trimmedSourceKey;
+      }
+    }
+
+    if ($department !== '') {
+      $productSpecSourceKeys[$canonicalKey]['departments'][$department] = true;
+    }
+  };
   $productSpecSourceStmt = $conn->prepare("
     SELECT item_type_code, options_json
     FROM order_items
@@ -364,17 +489,22 @@
           continue;
         }
 
-        if (!isset($productSpecSourceKeys[$sourceKey])) {
-          $productSpecSourceKeys[$sourceKey] = [
-            'label' => $humanizeProductSpecKey($sourceKey),
-            'departments' => [],
-          ];
-        }
-
-        $productSpecSourceKeys[$sourceKey]['departments'][$itemType] = true;
+        $registerProductSpecSourceKey($sourceKey, $itemType);
       }
     }
     $productSpecSourceStmt->close();
+  }
+
+  $defaultProductSpecSourceKeys = [
+    'G' => ['base-material', 'graphics-finish', 'grip', 'tr-swingarms', 'name', 'number', 'name-font', 'number-font', 'number-color', 'number-plate-color', 'note'],
+    'S' => ['waterproof-seams', 'enduro-pocket', 'side-brand-patches', 'patch-style', 'note'],
+    'P' => ['my-item-note', 'note'],
+    'F' => ['note'],
+  ];
+  foreach ($defaultProductSpecSourceKeys as $department => $sourceKeys) {
+    foreach ($sourceKeys as $sourceKey) {
+      $registerProductSpecSourceKey($sourceKey, $department);
+    }
   }
   ksort($productSpecSourceKeys, SORT_NATURAL | SORT_FLAG_CASE);
 
@@ -461,7 +591,7 @@
             </select>
             <button class="btn bg-gradient-info btn-xs add-product-spec-dropdown"
               style="white-space: nowrap; min-width: 122px;">
-              <i class="fa fa-plus"></i> New Dropdown
+              <i class="fa fa-plus"></i> New Field
             </button>
             <button class="btn bg-gradient-success btn-xs add-product-spec-option"
               style="white-space: nowrap; min-width: 110px;">
@@ -473,12 +603,18 @@
           <table class="table table-bordered table-striped mb-0 product-spec-options-table"
             data-spec-key="<?= htmlspecialchars($currentSpecKey, ENT_QUOTES, 'UTF-8'); ?>"
             data-spec-group="<?= htmlspecialchars($requestedSpecGroup, ENT_QUOTES, 'UTF-8'); ?>"
-            data-department="<?= htmlspecialchars($currentSpecDepartment, ENT_QUOTES, 'UTF-8'); ?>">
+            data-department="<?= htmlspecialchars($currentSpecDepartment, ENT_QUOTES, 'UTF-8'); ?>"
+            data-subcategory="<?= htmlspecialchars($currentSpecSubcategory, ENT_QUOTES, 'UTF-8'); ?>"
+            data-category-key="<?= htmlspecialchars($currentProductSpecCategoryKey, ENT_QUOTES, 'UTF-8'); ?>"
+            data-source-key="<?= htmlspecialchars($deriveProductSpecSourceKey($currentSpecKey, $currentSpecDepartment), ENT_QUOTES, 'UTF-8'); ?>">
             <thead>
               <tr>
                 <th style="background-color:gray; width:70px;">ID</th>
                 <th style="background-color:gray; width:90px;">Dept</th>
-                <th style="background-color:gray; width:220px;">Dropdown</th>
+                <th style="background-color:gray; width:100px;">Type</th>
+                <th style="background-color:gray; width:200px;">Field</th>
+                <th style="background-color:gray; width:180px;">Source Key</th>
+                <th style="background-color:gray; width:110px;">Subcats</th>
                 <th style="background-color:gray;">Label</th>
                 <th style="background-color:gray;">Value</th>
                 <th style="background-color:gray; width:110px;">Order</th>
@@ -489,7 +625,7 @@
             <tbody>
               <?php
               $stmt = $conn->prepare("
-                SELECT id, spec_key, department, label, value, sort_order, active
+                SELECT id, spec_key, department, field_type, label, value, sort_order, active, color, apply_to_subcategories
                 FROM product_spec_options
                 WHERE spec_key = ?
                   AND (? = '' OR department = ? OR department IS NULL)
@@ -501,17 +637,30 @@
                 $result = $stmt->get_result();
                 while ($row = $result->fetch_assoc()):
                   $rowDepartment = $normalizeProductSpecDepartment($row['department'] ?? ($productSpecDefaults[$row['spec_key']]['department'] ?? ''));
-                  $rowGroupKey = (string) ($row['spec_key'] ?? '') . '|' . $rowDepartment;
+                  $rowSubcategory = $detectProductSpecSubcategory((string) ($row['spec_key'] ?? ''), $rowDepartment);
+                  $rowGroupKey = $buildProductSpecGroupKey((string) ($row['spec_key'] ?? ''), $rowDepartment, $rowSubcategory);
+                  $rowSourceKey = trim((string) ($row['color'] ?? ''));
+                  if ($rowSourceKey === '') {
+                    $rowSourceKey = $deriveProductSpecSourceKey((string) ($row['spec_key'] ?? ''), $rowDepartment);
+                  }
+                  $rowApplyToSubcategories = (int) ($row['apply_to_subcategories'] ?? 0) === 1 ? 1 : 0;
+                  $rowCanApplyToSubcategories = ($rowDepartment === 'G' && $rowSubcategory === '');
                   ?>
                   <tr data-id="<?= (int) $row['id']; ?>"
                     data-spec-key="<?= htmlspecialchars($row['spec_key'], ENT_QUOTES, 'UTF-8'); ?>"
                     data-department="<?= htmlspecialchars($rowDepartment, ENT_QUOTES, 'UTF-8'); ?>"
-                    data-spec-group="<?= htmlspecialchars($rowGroupKey, ENT_QUOTES, 'UTF-8'); ?>">
+                    data-subcategory="<?= htmlspecialchars($rowSubcategory, ENT_QUOTES, 'UTF-8'); ?>"
+                    data-spec-group="<?= htmlspecialchars($rowGroupKey, ENT_QUOTES, 'UTF-8'); ?>"
+                    data-source-key="<?= htmlspecialchars($rowSourceKey, ENT_QUOTES, 'UTF-8'); ?>"
+                    data-apply-to-subcategories="<?= $rowApplyToSubcategories; ?>">
                     <td><?= (int) $row['id']; ?></td>
                     <td class="spec-department-cell"><?= htmlspecialchars($rowDepartment, ENT_QUOTES, 'UTF-8'); ?></td>
+                    <td class="spec-fieldtype-cell"><?= htmlspecialchars($fieldTypeLabels[$row['field_type'] ?? 'dropdown'] ?? 'Dropdown', ENT_QUOTES, 'UTF-8'); ?></td>
                     <td class="spec-name-cell">
-                      <?= htmlspecialchars($productSpecGroups[$rowGroupKey] ?? $buildProductSpecGroupLabel((string) $row['spec_key'], $rowDepartment), ENT_QUOTES, 'UTF-8'); ?>
+                      <?= htmlspecialchars($productSpecGroups[$rowGroupKey] ?? $buildProductSpecGroupLabel((string) $row['spec_key'], $rowDepartment, $rowSubcategory), ENT_QUOTES, 'UTF-8'); ?>
                     </td>
+                    <td class="spec-sourcekey-cell"><?= htmlspecialchars($rowSourceKey, ENT_QUOTES, 'UTF-8'); ?></td>
+                    <td class="spec-subcats-cell"><?= $rowCanApplyToSubcategories ? ($rowApplyToSubcategories === 1 ? 'Yes' : 'No') : '&mdash;'; ?></td>
                     <td class="spec-label-cell"><?= htmlspecialchars($row['label'], ENT_QUOTES, 'UTF-8'); ?></td>
                     <td class="spec-value-cell"><?= htmlspecialchars($row['value'], ENT_QUOTES, 'UTF-8'); ?></td>
                     <td class="spec-sort-cell"><?= (int) $row['sort_order']; ?></td>
@@ -619,6 +768,9 @@
       const productSpecSourceKeys = <?= json_encode($productSpecSourceKeys, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES); ?>;
       const departmentLabels = <?= json_encode($departmentNames, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES); ?>;
       const departmentPrefixes = <?= json_encode($departmentPrefixes, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES); ?>;
+      const graphicsSubcategoryLabels = <?= json_encode($graphicsSubcategoryLabels, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES); ?>;
+      const graphicsSubcategorySlugs = <?= json_encode($graphicsSubcategorySlugs, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES); ?>;
+      const productSpecCategories = <?= json_encode($productSpecCategoryOptions, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES); ?>;
 
       function escapeHtml(value) {
         return String(value || '')
@@ -642,8 +794,85 @@
         return departmentLabels[dept] ? dept : '';
       }
 
-      function buildSpecKeyFromSourceKey(department, sourceKey) {
-        const prefix = departmentPrefixes[department] || 'custom';
+      function normalizeSubcategory(value) {
+        const subcategory = String(value || '').trim().toUpperCase();
+        return graphicsSubcategoryLabels[subcategory] ? subcategory : '';
+      }
+
+      function buildCategoryKey(department, subcategory) {
+        const normalizedDepartment = normalizeDepartment(department);
+        const normalizedSubcategory = normalizedDepartment === 'G' ? normalizeSubcategory(subcategory) : '';
+        return normalizedDepartment + '|' + normalizedSubcategory;
+      }
+
+      function parseCategoryKey(categoryKey) {
+        const parts = String(categoryKey || '').split('|');
+        const department = normalizeDepartment(parts[0] || '');
+        const subcategory = department === 'G' ? normalizeSubcategory(parts[1] || '') : '';
+        return { department, subcategory, categoryKey: buildCategoryKey(department, subcategory) };
+      }
+
+      function isRootGraphicsCategory(categoryKey) {
+        const parsed = parseCategoryKey(categoryKey);
+        return parsed.department === 'G' && parsed.subcategory === '';
+      }
+
+      function syncApplyToSubcategoriesVisibility($row) {
+        const categoryKey = $row.find('.new-dropdown-category').val() || '';
+        const isRootGraphics = isRootGraphicsCategory(categoryKey);
+        const $group = $row.find('.new-dropdown-subcats-group');
+        const $input = $row.find('.new-dropdown-apply-subcategories');
+
+        if (!$group.length || !$input.length) {
+          return;
+        }
+
+        if (isRootGraphics) {
+          $group.show();
+        } else {
+          $group.hide();
+          $input.val('0');
+        }
+      }
+
+      function normalizeSourceKey(value) {
+        return String(value || '')
+          .trim()
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, '-')
+          .replace(/^-+|-+$/g, '')
+          .replace(/-+/g, '-');
+      }
+
+      function inferGraphicsSubcategoryFromSpecKey(specKey, department) {
+        if (normalizeDepartment(department) !== 'G') {
+          return '';
+        }
+
+        const normalizedSpecKey = String(specKey || '').trim().toLowerCase();
+        for (const [subcategory, slug] of Object.entries(graphicsSubcategorySlugs)) {
+          if (normalizedSpecKey.indexOf('graphics_' + slug + '_') === 0) {
+            return normalizeSubcategory(subcategory);
+          }
+        }
+
+        return '';
+      }
+
+      function buildSpecKeyPrefix(categoryKey) {
+        const parsed = parseCategoryKey(categoryKey);
+        if (!parsed.department) {
+          return 'custom_';
+        }
+        if (parsed.department === 'G' && parsed.subcategory) {
+          return 'graphics_' + graphicsSubcategorySlugs[parsed.subcategory];
+        }
+
+        return departmentPrefixes[parsed.department] || 'custom';
+      }
+
+      function buildSpecKeyFromSourceKey(categoryKey, sourceKey) {
+        const prefix = buildSpecKeyPrefix(categoryKey);
         const slug = String(sourceKey || '')
           .trim()
           .toLowerCase()
@@ -654,25 +883,56 @@
         return slug ? (prefix + '_' + slug) : prefix;
       }
 
-      function buildProductSpecGroupKey(specKey, department) {
-        return String(specKey || '').trim() + '|' + normalizeDepartment(department);
+      function ensureSpecKeyMatchesCategory(categoryKey, specKey, sourceKey) {
+        const prefix = buildSpecKeyPrefix(categoryKey);
+        const cleanSpecKey = String(specKey || '')
+          .trim()
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, '_')
+          .replace(/^_+|_+$/g, '')
+          .replace(/_+/g, '_');
+
+        if (!cleanSpecKey) {
+          return buildSpecKeyFromSourceKey(categoryKey, sourceKey);
+        }
+
+        return cleanSpecKey.indexOf(prefix + '_') === 0 || cleanSpecKey === prefix
+          ? cleanSpecKey
+          : (prefix + '_' + cleanSpecKey);
       }
 
-      function buildProductSpecGroupLabel(specKey, department) {
-        const normalizedDept = normalizeDepartment(department);
-        const deptLabel = normalizedDept ? (normalizedDept + ' - ') : '';
+      function buildProductSpecGroupKey(specKey, department, subcategory) {
+        return String(specKey || '').trim() + '|' + normalizeDepartment(department) + '|' + normalizeSubcategory(subcategory);
+      }
+
+      function buildProductSpecGroupLabel(specKey, department, subcategory) {
+        const parsedCategory = parseCategoryKey(buildCategoryKey(department, subcategory));
+        const normalizedDept = parsedCategory.department;
+        const normalizedSubcategory = parsedCategory.subcategory;
+        const labelParts = [];
+        if (normalizedDept) {
+          labelParts.push(normalizedDept, departmentLabels[normalizedDept] || normalizedDept);
+        }
+        if (normalizedSubcategory) {
+          labelParts.push(graphicsSubcategoryLabels[normalizedSubcategory] || normalizedSubcategory);
+        }
         let labelSource = String(specKey || '').trim();
-        const prefix = departmentPrefixes[normalizedDept] ? (departmentPrefixes[normalizedDept] + '_') : '';
+        let prefix = departmentPrefixes[normalizedDept] ? (departmentPrefixes[normalizedDept] + '_') : '';
+
+        if (normalizedDept === 'G' && normalizedSubcategory) {
+          prefix = 'graphics_' + graphicsSubcategorySlugs[normalizedSubcategory] + '_';
+        }
 
         if (prefix && labelSource.indexOf(prefix) === 0) {
           labelSource = labelSource.substring(prefix.length);
         }
 
-        return deptLabel + (humanizeSpecToken(labelSource) || 'Custom Dropdown');
+        const fieldLabel = humanizeSpecToken(labelSource) || 'Custom Dropdown';
+        return labelParts.length ? (labelParts.join(' - ') + ' - ' + fieldLabel) : fieldLabel;
       }
 
       function sourceKeyDepartmentHint(sourceKey) {
-        const meta = productSpecSourceKeys[String(sourceKey || '').trim()] || null;
+        const meta = productSpecSourceKeys[normalizeSourceKey(sourceKey)] || null;
         if (!meta || !meta.departments) {
           return '';
         }
@@ -693,14 +953,21 @@
         const $table = $('.product-spec-options-table');
         const specKey = $table.data('spec-key');
         const department = normalizeDepartment($table.data('department'));
+        const subcategory = normalizeSubcategory($table.data('subcategory'));
         const specGroup = $table.data('spec-group');
-        const specName = specGroupLabels[specGroup] || buildProductSpecGroupLabel(specKey, department);
+        const specName = specGroupLabels[specGroup] || buildProductSpecGroupLabel(specKey, department, subcategory);
+        const sourceKey = String($table.find('tbody tr[data-source-key]').first().data('source-key') || $table.data('source-key') || '');
+        const applyToSubcategories = parseInt($table.find('tbody tr[data-apply-to-subcategories]').first().data('apply-to-subcategories'), 10) === 1 ? 1 : 0;
+        const canApplyToSubcategories = department === 'G' && !subcategory;
 
         const newRow = `
-      <tr class="new-product-spec-row" data-spec-key="${escapeHtml(specKey)}" data-department="${escapeHtml(department)}" data-spec-group="${escapeHtml(specGroup)}">
+      <tr class="new-product-spec-row" data-spec-key="${escapeHtml(specKey)}" data-department="${escapeHtml(department)}" data-subcategory="${escapeHtml(subcategory)}" data-spec-group="${escapeHtml(specGroup)}" data-apply-to-subcategories="${applyToSubcategories}">
         <td>&mdash;</td>
         <td>${escapeHtml(department)}</td>
+        <td class="spec-fieldtype-cell">Option</td>
         <td>${escapeHtml(specName)}</td>
+        <td class="spec-sourcekey-cell">${escapeHtml(sourceKey)}</td>
+        <td class="spec-subcats-cell">${canApplyToSubcategories ? (applyToSubcategories === 1 ? 'Yes' : 'No') : '&mdash;'}</td>
         <td><input type="text" class="form-control form-control-sm new-spec-label" placeholder="Option label"></td>
         <td><input type="text" class="form-control form-control-sm new-spec-value" placeholder="Saved value"></td>
         <td><input type="number" class="form-control form-control-sm new-spec-sort" value="0" step="1"></td>
@@ -724,26 +991,38 @@
           return;
         }
 
+        const currentCategoryKey = String($('.product-spec-options-table').data('category-key') || 'G|');
         const sourceOptions = Object.keys(productSpecSourceKeys).map(function (key) {
           const meta = productSpecSourceKeys[key] || {};
           const depts = Object.keys(meta.departments || {});
           const deptHint = depts.length ? ' [' + depts.join(', ') + ']' : '';
-          return `<option value="${escapeHtml(key)}" label="${escapeHtml((meta.label || humanizeSpecToken(key)) + deptHint)}"></option>`;
+          const displayKey = meta.display_key || key;
+          return `<option value="${escapeHtml(displayKey)}" label="${escapeHtml((meta.label || humanizeSpecToken(displayKey)) + deptHint)}"></option>`;
+        }).join('');
+        const categoryOptions = Object.entries(productSpecCategories).map(function ([key, meta]) {
+          const selected = key === currentCategoryKey ? ' selected' : '';
+          return `<option value="${escapeHtml(key)}"${selected}>${escapeHtml(meta.label || key)}</option>`;
         }).join('');
 
         const newRow = `
           <tr class="new-product-spec-dropdown-row">
             <td>&mdash;</td>
-            <td colspan="7">
+            <td colspan="10">
               <div class="product-spec-create-panel">
                 <div class="product-spec-create-grid">
                   <div class="form-group">
-                    <label class="small text-muted mb-1">Department</label>
-                    <select class="form-control form-control-sm new-dropdown-department">
-                      <option value="G">G - Graphics</option>
-                      <option value="S">S - Seat Cover</option>
-                      <option value="P">P - Plastics</option>
-                      <option value="F">F - Fitting</option>
+                    <label class="small text-muted mb-1">Category</label>
+                    <select class="form-control form-control-sm new-dropdown-category">
+                      ${categoryOptions}
+                    </select>
+                  </div>
+                  <div class="form-group">
+                    <label class="small text-muted mb-1">Field type</label>
+                    <select class="form-control form-control-sm new-dropdown-field-type">
+                      <option value="dropdown">Dropdown</option>
+                      <option value="text">Text</option>
+                      <option value="checkbox">Checkbox</option>
+                      <option value="radio">Radio</option>
                     </select>
                   </div>
                   <div class="form-group">
@@ -751,14 +1030,21 @@
                     <input type="text" class="form-control form-control-sm new-dropdown-source-key" list="productSpecSourceKeyList" placeholder="mid-forks">
                   </div>
                   <div class="form-group">
-                    <label class="small text-muted mb-1">Dropdown key</label>
+                    <label class="small text-muted mb-1">Field key</label>
                     <input type="text" class="form-control form-control-sm new-dropdown-spec-key" placeholder="graphics_mid_forks">
                   </div>
-                  <div class="form-group">
+                  <div class="form-group new-dropdown-subcats-group" style="display:none;">
+                    <label class="small text-muted mb-1">Show in subcategories</label>
+                    <select class="form-control form-control-sm new-dropdown-apply-subcategories">
+                      <option value="0" selected>No</option>
+                      <option value="1">Yes</option>
+                    </select>
+                  </div>
+                  <div class="form-group new-field-first-option-group">
                     <label class="small text-muted mb-1">First option label</label>
                     <input type="text" class="form-control form-control-sm new-spec-label" placeholder="Yes">
                   </div>
-                  <div class="form-group">
+                  <div class="form-group new-field-first-option-group">
                     <label class="small text-muted mb-1">First option value</label>
                     <input type="text" class="form-control form-control-sm new-spec-value" placeholder="Yes">
                   </div>
@@ -775,12 +1061,13 @@
                   </div>
                   <div class="form-group">
                     <label class="small text-muted mb-1">Preview</label>
-                    <div class="small text-info new-dropdown-preview">G - Custom Dropdown</div>
+                    <div class="small text-info new-dropdown-preview">G - Graphics - Custom Dropdown</div>
                   </div>
                 </div>
+                <div class="new-field-type-hint small text-muted mt-2" style="display:none;"></div>
                 <datalist id="productSpecSourceKeyList">${sourceOptions}</datalist>
                 <div class="d-flex justify-content-end mt-3" style="gap:8px;">
-                  <button class="btn bg-gradient-success btn-sm confirm-product-spec-dropdown-add"><i class="fa fa-check"></i> Create Dropdown</button>
+                  <button class="btn bg-gradient-success btn-sm confirm-product-spec-dropdown-add"><i class="fa fa-check"></i> Create Field</button>
                   <button class="btn bg-gradient-secondary btn-sm cancel-product-spec-dropdown-add"><i class="fa fa-times"></i> Cancel</button>
                 </div>
               </div>
@@ -788,6 +1075,7 @@
           </tr>`;
 
         $('.product-spec-options-table tbody').prepend(newRow);
+        refreshNewDropdownPreview($('.product-spec-options-table tbody .new-product-spec-dropdown-row').first(), true);
       });
 
       $('.product-spec-options-table').on('click', '.cancel-product-spec-add', function () {
@@ -799,25 +1087,29 @@
       });
 
       function refreshNewDropdownPreview($row, shouldAutofillKey) {
-        const department = normalizeDepartment($row.find('.new-dropdown-department').val());
+        const parsedCategory = parseCategoryKey($row.find('.new-dropdown-category').val());
+        const categoryKey = parsedCategory.categoryKey;
         const sourceKey = $row.find('.new-dropdown-source-key').val().trim();
         const currentSpecKey = $row.find('.new-dropdown-spec-key').val().trim();
-        const specKey = shouldAutofillKey || currentSpecKey === '' ? buildSpecKeyFromSourceKey(department, sourceKey) : currentSpecKey;
+        const specKey = shouldAutofillKey || currentSpecKey === ''
+          ? buildSpecKeyFromSourceKey(categoryKey, sourceKey)
+          : ensureSpecKeyMatchesCategory(categoryKey, currentSpecKey, sourceKey);
 
         if (shouldAutofillKey || currentSpecKey === '') {
           $row.find('.new-dropdown-spec-key').val(specKey);
         }
 
-        $row.find('.new-dropdown-preview').text(buildProductSpecGroupLabel(specKey, department));
+        syncApplyToSubcategoriesVisibility($row);
+        $row.find('.new-dropdown-preview').text(buildProductSpecGroupLabel(specKey, parsedCategory.department, parsedCategory.subcategory));
       }
 
-      $('.product-spec-options-table').on('change input', '.new-dropdown-department, .new-dropdown-source-key', function () {
+      $('.product-spec-options-table').on('change input', '.new-dropdown-category, .new-dropdown-source-key', function () {
         const $row = $(this).closest('.new-product-spec-dropdown-row');
         const sourceKey = $row.find('.new-dropdown-source-key').val().trim();
         const hintedDept = sourceKeyDepartmentHint(sourceKey);
 
         if ($(this).hasClass('new-dropdown-source-key') && hintedDept) {
-          $row.find('.new-dropdown-department').val(hintedDept);
+          $row.find('.new-dropdown-category').val(buildCategoryKey(hintedDept, ''));
         }
 
         refreshNewDropdownPreview($row, true);
@@ -832,11 +1124,13 @@
         const $row = $(this).closest('tr');
         const specKey = $row.data('spec-key');
         const department = normalizeDepartment($row.data('department'));
+        const subcategory = normalizeSubcategory($row.data('subcategory'));
         const specGroup = $row.data('spec-group');
         const label = $row.find('.new-spec-label').val().trim();
         const value = $row.find('.new-spec-value').val().trim();
         const sortOrder = parseInt($row.find('.new-spec-sort').val(), 10) || 0;
         const active = parseInt($row.find('.new-spec-active').val(), 10) || 0;
+        const applyToSubcategories = parseInt($row.closest('tr').data('apply-to-subcategories'), 10) === 1 ? 1 : 0;
 
         if (label === '' || value === '') {
           alert('Label and value are required.');
@@ -847,18 +1141,23 @@
           url: 'scripts/settings/insert_product_spec_option.php',
           method: 'POST',
           dataType: 'json',
-          data: { spec_key: specKey, department: department, label: label, value: value, sort_order: sortOrder, active: active },
+          data: { spec_key: specKey, department: department, source_key: String($row.closest('tr').data('source-key') || $('.product-spec-options-table tbody tr[data-source-key]').first().data('source-key') || $('.product-spec-options-table').data('source-key') || ''), label: label, value: value, sort_order: sortOrder, active: active, apply_to_subcategories: applyToSubcategories },
           success: function (data) {
             if (!data || !data.ok) {
               alert(data && data.error ? data.error : 'Insert failed.');
               return;
             }
-            const specName = specGroupLabels[specGroup] || buildProductSpecGroupLabel(specKey, department);
+            const specName = specGroupLabels[specGroup] || buildProductSpecGroupLabel(specKey, department, subcategory);
+            const sourceKey = String($row.closest('tr').data('source-key') || $('.product-spec-options-table tbody tr[data-source-key]').first().data('source-key') || $('.product-spec-options-table').data('source-key') || '');
+            const canApplyToSubcategories = department === 'G' && !subcategory;
             $row.replaceWith(`
-          <tr data-id="${data.id}" data-spec-key="${escapeHtml(specKey)}" data-department="${escapeHtml(department)}" data-spec-group="${escapeHtml(specGroup)}">
+          <tr data-id="${data.id}" data-spec-key="${escapeHtml(specKey)}" data-department="${escapeHtml(department)}" data-subcategory="${escapeHtml(subcategory)}" data-spec-group="${escapeHtml(specGroup)}" data-source-key="${escapeHtml(sourceKey)}" data-apply-to-subcategories="${applyToSubcategories}">
             <td>${data.id}</td>
             <td class="spec-department-cell">${escapeHtml(department)}</td>
+            <td class="spec-fieldtype-cell">Option</td>
             <td class="spec-name-cell">${escapeHtml(specName)}</td>
+            <td class="spec-sourcekey-cell">${escapeHtml(sourceKey)}</td>
+            <td class="spec-subcats-cell">${canApplyToSubcategories ? (applyToSubcategories === 1 ? 'Yes' : 'No') : '&mdash;'}</td>
             <td class="spec-label-cell">${escapeHtml(label)}</td>
             <td class="spec-value-cell">${escapeHtml(value)}</td>
             <td class="spec-sort-cell">${sortOrder}</td>
@@ -869,26 +1168,86 @@
               <button class="btn bg-gradient-danger btn-sm delete-product-spec-option"><i class="fa fa-trash"></i></button>
             </td>
           </tr>`);
+          },
+          error: function (xhr) {
+            alert('Insert request failed: ' + xhr.status + '\n' + (xhr.responseText || ''));
           }
         });
       });
 
+      // --- Field type change: skryj/zobraz option polia, nastav hint ---
+      const fieldTypeHints = {
+        dropdown: '',
+        text:     'Text field — žiadne options. Zákazník píše voľný text. Label/value polia nie sú potrebné.',
+        checkbox: 'Checkbox — automaticky sa vytvoria dve options: Yes (1) a No (0).',
+        radio:    'Radio — pridaj options rovnako ako pri Dropdown. Render bude ako tlačidlá.',
+      };
+
+      $('.product-spec-options-table').on('change', '.new-dropdown-field-type', function () {
+        const $row = $(this).closest('.new-product-spec-dropdown-row');
+        const ft = $(this).val();
+        const $optionGroups = $row.find('.new-field-first-option-group');
+        const $hint = $row.find('.new-field-type-hint');
+
+        if (ft === 'text') {
+          $optionGroups.hide();
+          $row.find('.new-spec-label').val('');
+          $row.find('.new-spec-value').val('');
+        } else if (ft === 'checkbox') {
+          $optionGroups.hide();
+          // Checkbox — options sa generujú automaticky na serveri
+        } else {
+          $optionGroups.show();
+        }
+
+        if (fieldTypeHints[ft]) {
+          $hint.text(fieldTypeHints[ft]).show();
+        } else {
+          $hint.hide();
+        }
+
+        refreshNewDropdownPreview($row, false);
+      });
+
       $('.product-spec-options-table').on('click', '.confirm-product-spec-dropdown-add', function () {
         const $row = $(this).closest('.new-product-spec-dropdown-row');
-        const department = normalizeDepartment($row.find('.new-dropdown-department').val());
+        const parsedCategory = parseCategoryKey($row.find('.new-dropdown-category').val());
+        const department = parsedCategory.department;
+        const subcategory = parsedCategory.subcategory;
+        const categoryKey = parsedCategory.categoryKey;
+        const fieldType = $row.find('.new-dropdown-field-type').val() || 'dropdown';
         const sourceKey = $row.find('.new-dropdown-source-key').val().trim();
-        const specKey = $row.find('.new-dropdown-spec-key').val().trim().toLowerCase();
-        const label = $row.find('.new-spec-label').val().trim();
-        const value = $row.find('.new-spec-value').val().trim();
+        const specKey = ensureSpecKeyMatchesCategory(categoryKey, $row.find('.new-dropdown-spec-key').val().trim(), sourceKey);
         const sortOrder = parseInt($row.find('.new-spec-sort').val(), 10) || 0;
         const active = parseInt($row.find('.new-spec-active').val(), 10) || 0;
+        const applyToSubcategories = parseInt($row.find('.new-dropdown-apply-subcategories').val(), 10) === 1 ? 1 : 0;
 
-        if (department === '' || sourceKey === '' || specKey === '' || label === '' || value === '') {
-          alert('Department, source key, dropdown key, label and value are required.');
+        // Label/value závisí od field_type
+        let label = $row.find('.new-spec-label').val().trim();
+        let value = $row.find('.new-spec-value').val().trim();
+
+        if (fieldType === 'text') {
+          // Text field — uložíme jeden placeholder záznam
+          label = label || 'Text';
+          value = value || '_text_';
+        } else if (fieldType === 'checkbox') {
+          // Checkbox — server vytvorí Yes/No automaticky; pošleme prázdne
+          label = 'Yes';
+          value = '1';
+        } else {
+          // dropdown / radio — vyžadujú vyplnenie
+          if (label === '' || value === '') {
+            alert('First option label and value are required.');
+            return;
+          }
+        }
+
+        if (department === '' || specKey === '') {
+          alert('Category and field key are required.');
           return;
         }
 
-        const groupKey = buildProductSpecGroupKey(specKey, department);
+        const groupKey = buildProductSpecGroupKey(specKey, department, subcategory);
 
         $.ajax({
           url: 'scripts/settings/insert_product_spec_option.php',
@@ -897,10 +1256,15 @@
           data: {
             spec_key: specKey,
             department: department,
+            source_key: sourceKey,
+            field_type: fieldType,
             label: label,
             value: value,
             sort_order: sortOrder,
-            active: active
+            active: active,
+            apply_to_subcategories: applyToSubcategories,
+            // Pre checkbox — server vie že má pridať aj No (0)
+            auto_checkbox: fieldType === 'checkbox' ? '1' : '0',
           },
           success: function (data) {
             if (!data || !data.ok) {
@@ -912,17 +1276,31 @@
             url.searchParams.set('spec_group', groupKey);
             url.searchParams.delete('spec_key');
             window.location.href = url.toString();
+          },
+          error: function (xhr) {
+            alert('Create request failed: ' + xhr.status + '\n' + (xhr.responseText || ''));
           }
         });
       });
 
-      $('.product-spec-options-table').on('click', '.edit-product-spec-option', function () {
+      $('.product-spec-options-table').on('click', '.edit-product-spec-option', function (e) {
+        e.preventDefault();
         const $row = $(this).closest('tr');
+        const sourceKey = $row.find('.spec-sourcekey-cell').text().trim();
         const label = $row.find('.spec-label-cell').text().trim();
         const value = $row.find('.spec-value-cell').text().trim();
         const sortOrder = $row.find('.spec-sort-cell').text().trim();
         const active = $row.find('.spec-active-cell').text().trim() === 'Yes' ? '1' : '0';
+        const applyToSubcategories = String($row.data('apply-to-subcategories') || '0') === '1' ? '1' : '0';
+        const canApplyToSubcategories = String($row.data('department') || '') === 'G' && String($row.data('subcategory') || '') === '';
 
+        $row.find('.spec-sourcekey-cell').html(`<input type="text" class="form-control form-control-sm spec-sourcekey-input" value="${escapeHtml(sourceKey)}">`);
+        $row.find('.spec-subcats-cell').html(canApplyToSubcategories
+          ? `<select class="form-control form-control-sm spec-subcats-input">
+              <option value="0" ${applyToSubcategories === '0' ? 'selected' : ''}>No</option>
+              <option value="1" ${applyToSubcategories === '1' ? 'selected' : ''}>Yes</option>
+            </select>`
+          : '&mdash;');
         $row.find('.spec-label-cell').html(`<input type="text" class="form-control form-control-sm spec-label-input" value="${escapeHtml(label)}">`);
         $row.find('.spec-value-cell').html(`<input type="text" class="form-control form-control-sm spec-value-input" value="${escapeHtml(value)}">`);
         $row.find('.spec-sort-cell').html(`<input type="number" class="form-control form-control-sm spec-sort-input" value="${escapeHtml(sortOrder)}" step="1">`);
@@ -936,13 +1314,19 @@
         $row.find('.save-product-spec-option').show();
       });
 
-      $('.product-spec-options-table').on('click', '.save-product-spec-option', function () {
+      $('.product-spec-options-table').on('click', '.save-product-spec-option', function (e) {
+        e.preventDefault();
         const $row = $(this).closest('tr');
         const id = parseInt($row.data('id'), 10) || 0;
+        const sourceKey = $row.find('.spec-sourcekey-input').val().trim();
         const label = $row.find('.spec-label-input').val().trim();
         const value = $row.find('.spec-value-input').val().trim();
         const sortOrder = parseInt($row.find('.spec-sort-input').val(), 10) || 0;
         const active = parseInt($row.find('.spec-active-input').val(), 10) || 0;
+        const canApplyToSubcategories = String($row.data('department') || '') === 'G' && String($row.data('subcategory') || '') === '';
+        const applyToSubcategories = canApplyToSubcategories
+          ? (parseInt($row.find('.spec-subcats-input').val(), 10) === 1 ? 1 : 0)
+          : 0;
 
         if (!id || label === '' || value === '') {
           alert('Label and value are required.');
@@ -953,23 +1337,31 @@
           url: 'scripts/settings/update_product_spec_option.php',
           method: 'POST',
           dataType: 'json',
-          data: { id: id, label: label, value: value, sort_order: sortOrder, active: active },
+          data: { id: id, source_key: sourceKey, label: label, value: value, sort_order: sortOrder, active: active, apply_to_subcategories: applyToSubcategories },
           success: function (data) {
             if (!data || !data.ok) {
               alert(data && data.error ? data.error : 'Save failed.');
               return;
             }
+            $row.attr('data-source-key', sourceKey);
+            $row.attr('data-apply-to-subcategories', applyToSubcategories);
+            $row.find('.spec-sourcekey-cell').text(sourceKey);
+            $row.find('.spec-subcats-cell').html(canApplyToSubcategories ? (applyToSubcategories === 1 ? 'Yes' : 'No') : '&mdash;');
             $row.find('.spec-label-cell').text(label);
             $row.find('.spec-value-cell').text(value);
             $row.find('.spec-sort-cell').text(sortOrder);
             $row.find('.spec-active-cell').text(active === 1 ? 'Yes' : 'No');
             $row.find('.save-product-spec-option').hide();
             $row.find('.edit-product-spec-option').show();
+          },
+          error: function (xhr) {
+            alert('Save request failed: ' + xhr.status + '\n' + (xhr.responseText || ''));
           }
         });
       });
 
-      $('.product-spec-options-table').on('click', '.delete-product-spec-option', function () {
+      $('.product-spec-options-table').on('click', '.delete-product-spec-option', function (e) {
+        e.preventDefault();
         if (!confirm('Delete this dropdown option?')) return;
 
         const $row = $(this).closest('tr');
@@ -1014,6 +1406,11 @@
         return `<span class="status-color-preview" style="background-color:${escapeHtml(bgColor)};"></span><span class="status-color-text">${escapeHtml(safeColor)}</span>`;
       }
 
+      function normalizeStatusColorValue(color) {
+        const safeColor = String(color || '').trim();
+        return /^#[0-9a-f]{6}$/i.test(safeColor) ? safeColor : '#28a745';
+      }
+
       $('.status-definition-group-filter').on('change', function () {
         const url = new URL(window.location.href);
         url.searchParams.set('status_group', $(this).val());
@@ -1030,7 +1427,7 @@
             <td>${escapeHtml(groupName)}</td>
             <td><input type="text" class="form-control form-control-sm new-status-code" placeholder="READY_TO_SHIP"></td>
             <td><input type="text" class="form-control form-control-sm new-status-label" placeholder="Ready to Ship"></td>
-            <td><input type="text" class="form-control form-control-sm new-status-color" placeholder="#28a745"></td>
+            <td><input type="color" class="form-control form-control-sm new-status-color" value="#28a745" title="Choose color"></td>
             <td><input type="number" class="form-control form-control-sm new-status-sort" value="0" step="1"></td>
             <td>
               <select class="form-control form-control-sm new-status-active">
@@ -1100,12 +1497,13 @@
         const code = $row.find('.status-code-cell').text().trim();
         const label = $row.find('.status-label-cell').text().trim();
         const color = $row.find('.status-color-text').text().trim();
+        const pickerColor = normalizeStatusColorValue(color);
         const sortOrder = $row.find('.status-sort-cell').text().trim();
         const active = $row.find('.status-active-cell').text().trim() === 'Yes' ? '1' : '0';
 
         $row.find('.status-code-cell').html(`<input type="text" class="form-control form-control-sm status-code-input" value="${escapeHtml(code)}">`);
         $row.find('.status-label-cell').html(`<input type="text" class="form-control form-control-sm status-label-input" value="${escapeHtml(label)}">`);
-        $row.find('.status-color-cell').html(`<input type="text" class="form-control form-control-sm status-color-input" value="${escapeHtml(color)}" placeholder="#28a745">`);
+        $row.find('.status-color-cell').html(`<input type="color" class="form-control form-control-sm status-color-input" value="${escapeHtml(pickerColor)}" title="Choose color">`);
         $row.find('.status-sort-cell').html(`<input type="number" class="form-control form-control-sm status-sort-input" value="${escapeHtml(sortOrder)}" step="1">`);
         $row.find('.status-active-cell').html(`
           <select class="form-control form-control-sm status-active-input">

@@ -35,6 +35,292 @@ function seatCoverOptionIsFilled($value): bool
   return !in_array(mb_strtolower($value), $negativeValues, true);
 }
 
+function productSpecDepartmentForItemType(string $itemTypeCode): string
+{
+  $itemTypeCode = strtoupper(trim($itemTypeCode));
+  if ($itemTypeCode === 'T' || $itemTypeCode === 'M') {
+    $itemTypeCode = 'P';
+  }
+
+  return in_array($itemTypeCode, ['G', 'S', 'P', 'F'], true) ? $itemTypeCode : '';
+}
+
+function productSpecValueIsFilled($value): bool
+{
+  if (is_array($value) || is_object($value) || $value === null) {
+    return false;
+  }
+
+  return trim((string) $value) !== '';
+}
+
+function productSpecNormalizeKey(string $key): string
+{
+  $key = trim(mb_strtolower($key, 'UTF-8'));
+  $key = preg_replace('/[^a-z0-9]+/u', '-', $key) ?? $key;
+  $key = trim($key, '-');
+  return preg_replace('/-+/', '-', $key) ?? $key;
+}
+
+function productSpecNormalizedValueMap(array $data): array
+{
+  $normalized = [];
+  foreach ($data as $rawKey => $rawValue) {
+    if (!is_scalar($rawValue) && $rawValue !== null) {
+      continue;
+    }
+
+    $normalizedKey = productSpecNormalizeKey((string) $rawKey);
+    if ($normalizedKey === '') {
+      continue;
+    }
+
+    $normalized[$normalizedKey] = $rawValue;
+  }
+
+  return $normalized;
+}
+
+function productSpecValueFromKeys(array $data, array $keys): string
+{
+  $normalizedMap = productSpecNormalizedValueMap($data);
+  foreach ($keys as $key) {
+    if (!array_key_exists($key, $data)) {
+      $normalizedKey = productSpecNormalizeKey((string) $key);
+      if ($normalizedKey === '' || !array_key_exists($normalizedKey, $normalizedMap)) {
+        continue;
+      }
+      $value = $normalizedMap[$normalizedKey];
+      if (is_array($value) || is_object($value) || $value === null) {
+        continue;
+      }
+
+      return trim((string) $value);
+    }
+
+    $value = $data[$key];
+    if (is_array($value) || is_object($value) || $value === null) {
+      continue;
+    }
+
+    return trim((string) $value);
+  }
+
+  return '';
+}
+
+function productSpecFieldMeta(array $definition): array
+{
+  $specKey = (string) ($definition['spec_key'] ?? '');
+  $department = (string) ($definition['department'] ?? '');
+  $sourceKey = (string) ($definition['source_key'] ?? '');
+  $fieldType = (string) ($definition['field_type'] ?? 'dropdown');
+  $label = (string) ($definition['label'] ?? $specKey);
+
+  $meta = [
+    'spec_key' => $specKey,
+    'department' => $department,
+    'field_type' => $fieldType,
+    'label' => $label,
+    'apply_to_subcategories' => (int) (($definition['apply_to_subcategories'] ?? 0) ? 1 : 0),
+    'source_key' => $sourceKey,
+    'source_keys' => array_values(array_unique(array_filter([
+      $sourceKey,
+      str_replace('-', '_', $sourceKey),
+    ]))),
+    'internal_key' => '_' . $specKey,
+    'render' => $fieldType === 'text' ? 'input' : 'select',
+    'wrapper_class' => 'print-setting-field product-spec-label',
+    'control_class' => 'item-print-generic item-product-spec-field',
+    'placeholder' => '',
+    'empty_label' => 'Select...',
+    'fallback_options' => [],
+    'autocomplete_key' => '',
+  ];
+  $isNoteLikeField = (
+    $specKey === 'graphics_note'
+    || preg_match('/(?:^|_)note$/i', $specKey)
+    || trim(mb_strtolower($sourceKey, 'UTF-8')) === 'note'
+    || trim(mb_strtolower($label, 'UTF-8')) === 'note'
+  );
+
+  switch ($specKey) {
+    case 'graphics_material':
+      $meta['internal_key'] = '_print_material';
+      $meta['source_keys'] = ['base-material', 'base_material'];
+      $meta['control_class'] = 'item-print-material item-product-spec-field';
+      break;
+    case 'graphics_finish':
+      $meta['internal_key'] = '_print_finish';
+      $meta['source_keys'] = ['graphics-finish', 'graphics_finish'];
+      $meta['control_class'] = 'item-print-finish item-product-spec-field';
+      break;
+    case 'graphics_grip':
+      $meta['internal_key'] = '_print_grip';
+      $meta['source_keys'] = ['grip'];
+      $meta['control_class'] = 'item-print-grip item-product-spec-field';
+      $meta['wrapper_class'] .= ' print-setting-field-grip';
+      break;
+    case 'graphics_tr_swingarms':
+      $meta['internal_key'] = '_print_tr_swingarms';
+      $meta['source_keys'] = ['tr-swingarms', 'tr_swingarms'];
+      $meta['control_class'] = 'item-print-tr-swingarms item-product-spec-field';
+      $meta['wrapper_class'] .= ' print-setting-field-swingarms';
+      break;
+    case 'graphics_printer':
+      $meta['internal_key'] = '_printer';
+      $meta['source_keys'] = [];
+      $meta['control_class'] = 'item-print-printer item-product-spec-field';
+      break;
+    case 'graphics_name':
+      $meta['internal_key'] = '_graphics_name';
+      $meta['source_keys'] = ['name', 'rider-name', 'rider_name', 'custom-name'];
+      $meta['render'] = 'autocomplete';
+      break;
+    case 'graphics_number':
+      $meta['internal_key'] = '_graphics_number';
+      $meta['source_keys'] = ['number', 'race-number', 'race_number', 'rider-number'];
+      $meta['render'] = 'autocomplete';
+      break;
+    case 'graphics_note':
+      $meta['internal_key'] = '_graphics_note';
+      $meta['source_keys'] = ['note'];
+      $meta['render'] = 'textarea';
+      $meta['control_class'] = 'item-print-generic item-product-spec-field g-opt-note-textarea';
+      $meta['placeholder'] = 'Poznámka...';
+      break;
+  }
+
+  if ($isNoteLikeField) {
+    $meta['render'] = 'textarea';
+    $meta['control_class'] = 'item-print-generic item-product-spec-field g-opt-note-textarea';
+    $meta['placeholder'] = 'Poznámka...';
+    $meta['wrapper_class'] = 'product-spec-label g-opt-note-field';
+  }
+
+  if ($specKey === 'graphics_name') {
+    $meta['wrapper_class'] = 'print-setting-field product-spec-label';
+    $meta['autocomplete_key'] = 'graphics_name';
+    $meta['placeholder'] = 'Rider name';
+  } elseif ($specKey === 'graphics_number') {
+    $meta['wrapper_class'] = 'print-setting-field product-spec-label';
+    $meta['autocomplete_key'] = 'graphics_number';
+    $meta['placeholder'] = 'Race #';
+  }
+
+  if ($meta['source_key'] === '' && !empty($meta['source_keys'][0])) {
+    $meta['source_key'] = (string) $meta['source_keys'][0];
+  }
+
+  return $meta;
+}
+
+function productSpecFieldCurrentValue(array $meta, array $extOptArr, array $internalOptArr): string
+{
+  $internalKey = (string) ($meta['internal_key'] ?? '');
+  if ($internalKey !== '' && array_key_exists($internalKey, $internalOptArr)) {
+    $internalValue = $internalOptArr[$internalKey];
+    if (!is_array($internalValue) && !is_object($internalValue) && $internalValue !== null) {
+      return trim((string) $internalValue);
+    }
+
+    return '';
+  }
+
+  return productSpecValueFromKeys($extOptArr, (array) ($meta['source_keys'] ?? []));
+}
+
+function productSpecFieldHasAnyValue(array $meta, array $extOptArr, array $internalOptArr): bool
+{
+  $internalKey = (string) ($meta['internal_key'] ?? '');
+  if ($internalKey !== '' && array_key_exists($internalKey, $internalOptArr) && productSpecValueIsFilled($internalOptArr[$internalKey])) {
+    return true;
+  }
+
+  $normalizedMap = productSpecNormalizedValueMap($extOptArr);
+  foreach ((array) ($meta['source_keys'] ?? []) as $key) {
+    if (array_key_exists($key, $extOptArr) && productSpecValueIsFilled($extOptArr[$key])) {
+      return true;
+    }
+
+    $normalizedKey = productSpecNormalizeKey((string) $key);
+    if ($normalizedKey !== '' && array_key_exists($normalizedKey, $normalizedMap) && productSpecValueIsFilled($normalizedMap[$normalizedKey])) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function productSpecNormalizeGraphicsSubcategory(?string $subcat): string
+{
+  $subcat = strtoupper(trim((string) $subcat));
+  return defined('GRAPHICS_SUBCAT_LABELS') && isset(GRAPHICS_SUBCAT_LABELS[$subcat]) ? $subcat : '';
+}
+
+function productSpecGraphicsSubcategoryFromSpecKey(string $specKey, string $department): string
+{
+  if (strtoupper(trim($department)) !== 'G') {
+    return '';
+  }
+
+  static $slugMap = null;
+  if ($slugMap === null) {
+    $slugMap = [];
+    if (defined('GRAPHICS_SUBCAT_LABELS')) {
+      foreach (GRAPHICS_SUBCAT_LABELS as $subCategoryCode => $_label) {
+        $slugMap[(string) $subCategoryCode] = strtolower((string) preg_replace('/[^a-z0-9]+/i', '_', (string) $subCategoryCode));
+      }
+    }
+  }
+
+  $normalizedSpecKey = strtolower(trim($specKey));
+  foreach ($slugMap as $subCategoryCode => $subCategorySlug) {
+    $prefix = 'graphics_' . $subCategorySlug . '_';
+    if (strpos($normalizedSpecKey, $prefix) === 0) {
+      return productSpecNormalizeGraphicsSubcategory((string) $subCategoryCode);
+    }
+  }
+
+  return '';
+}
+
+function productSpecGraphicsSubcategoryFromItemData(?string $storedSubcat, ?string $customLabel, ?string $sku): string
+{
+  $storedSubcat = productSpecNormalizeGraphicsSubcategory($storedSubcat);
+  if ($storedSubcat !== '') {
+    return $storedSubcat;
+  }
+
+  if (!defined('GRAPHICS_SUBCAT_PREFIX_MAP')) {
+    return '';
+  }
+
+  foreach ([$customLabel, $sku] as $candidate) {
+    $candidate = strtoupper(trim((string) $candidate));
+    if ($candidate === '') {
+      continue;
+    }
+
+    $candidate = explode('|', $candidate)[0];
+    foreach (GRAPHICS_SUBCAT_PREFIX_MAP as $prefix => $subCategoryCode) {
+      $prefix = strtoupper((string) $prefix);
+      if ($prefix === '') {
+        continue;
+      }
+
+      // Prefixy ako G_RT, G_MF, G_MC... sú pevné a za nimi môže nasledovať
+      // čokoľvek: čísla, pomlčky, lomítka, písmená atď.
+      // Preto tu používame čistý startsWith match namiesto očakávania '_'.
+      if (strpos($candidate, $prefix) === 0) {
+        return productSpecNormalizeGraphicsSubcategory((string) $subCategoryCode);
+      }
+    }
+  }
+
+  return '';
+}
+
 function patchOptionsForModal(array $options): array
 {
   $allowed = [
@@ -74,6 +360,26 @@ function out(int $code, array $payload): void
   exit;
 }
 
+function jsonEncodeForModal($data): string
+{
+  $json = json_encode(
+    $data,
+    JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE | JSON_PARTIAL_OUTPUT_ON_ERROR
+  );
+
+  return $json !== false ? $json : '{}';
+}
+
+function jsonDecodeAssocSafe(string $json): array
+{
+  if ($json === '') {
+    return [];
+  }
+
+  $data = json_decode($json, true, 512, JSON_INVALID_UTF8_SUBSTITUTE);
+  return is_array($data) ? $data : [];
+}
+
 if (!isset($_SESSION['permission'])) {
   out(403, ['ok' => false, 'error' => 'Not logged in']);
 }
@@ -86,6 +392,8 @@ if (!is_file($connFile)) {
 }
 require_once $connFile;
 require_once $base . '/includes/orders_status_helpers.php';
+require_once $base . '/includes/get_order_detail_product_spec_selects.php';
+require_once __DIR__ . '/department_config.php';
 
 $orderId = (int) ($_POST['order_id'] ?? 0);
 if ($orderId <= 0)
@@ -361,12 +669,8 @@ function item_type_category_badge(array $item, array $order, array $addr, string
   $sourceCode = trim((string) ($order['source_code'] ?? ''));
 
   // options_json
-  $opts = json_decode((string) ($item['options_json'] ?? '{}'), true);
-  $intOpts = json_decode((string) ($item['internal_options_json'] ?? '{}'), true);
-  if (!is_array($opts))
-    $opts = [];
-  if (!is_array($intOpts))
-    $intOpts = [];
+  $opts = jsonDecodeAssocSafe((string) ($item['options_json'] ?? '{}'));
+  $intOpts = jsonDecodeAssocSafe((string) ($item['internal_options_json'] ?? '{}'));
 
   $basematerial = (string) ($intOpts['_print_material'] ?? $opts['base-material'] ?? '');
   $finish = (string) ($intOpts['_print_finish'] ?? $opts['graphics-finish'] ?? '');
@@ -616,7 +920,10 @@ $stmt->execute();
 $r = $stmt->get_result();
 $items = [];
 while ($it = $r->fetch_assoc())
+{
+  $it['item_assigned_users_raw'] = (string) ($it['item_assigned_users'] ?? '');
   $items[] = $it;
+}
 $stmt->close();
 
 // Doplní avatar človeka, ktorý prevzal objednávku cez TAKE.
@@ -819,7 +1126,7 @@ function employeeNameById(mysqli $conn, int $id): string
 function prepareOptionsJsonForModal(mysqli $conn, string $json): string
 {
   // Dekódovanie JSON na asociatívne pole
-  $data = json_decode($json ?: '{}', true);
+  $data = jsonDecodeAssocSafe($json ?: '{}');
 
   // Ak nie je pole, vráti pôvodný JSON
   if (!is_array($data)) {
@@ -836,12 +1143,12 @@ function prepareOptionsJsonForModal(mysqli $conn, string $json): string
     }
   }
 
-  return json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?: '{}';
+  return jsonEncodeForModal($data);
 }
 
 function prepareEditableOptionsJsonForModal(string $json): string
 {
-  $data = json_decode($json ?: '{}', true);
+  $data = jsonDecodeAssocSafe($json ?: '{}');
   if (!is_array($data)) {
     return '{}';
   }
@@ -858,7 +1165,7 @@ function prepareEditableOptionsJsonForModal(string $json): string
     $editable[$key] = $value;
   }
 
-  return json_encode($editable, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?: '{}';
+  return jsonEncodeForModal($editable);
 }
 
 // Hľadá prvú existujúcu a neprázdnu hodnotu z poľa kľúčov
@@ -873,63 +1180,6 @@ function optionValue(array $data, array $keys): string
   return '';
 }
 
-
-function productSpecOptions(mysqli $conn, string $specKey, array $fallbackOptions): array
-{
-  static $cache = [];
-
-  if (isset($cache[$specKey])) {
-    return $cache[$specKey];
-  }
-
-  $items = [];
-  $stmt = $conn->prepare("SELECT label, value FROM product_spec_options WHERE spec_key = ? AND active = 1 ORDER BY sort_order ASC, id ASC");
-  if ($stmt) {
-    $stmt->bind_param('s', $specKey);
-    if ($stmt->execute()) {
-      $res = $stmt->get_result();
-      while ($row = $res->fetch_assoc()) {
-        $value = trim((string) ($row['value'] ?? ''));
-        $label = trim((string) ($row['label'] ?? ''));
-        if ($value === '' || $label === '') {
-          continue;
-        }
-        $items[] = ['value' => $value, 'label' => $label];
-      }
-    }
-    $stmt->close();
-  }
-
-  if (!$items) {
-    foreach ($fallbackOptions as $value => $label) {
-      $items[] = ['value' => (string) $value, 'label' => (string) $label];
-    }
-  }
-
-  $cache[$specKey] = $items;
-  return $items;
-}
-
-function renderProductSpecOptions(mysqli $conn, string $specKey, string $currentValue, array $fallbackOptions, string $emptyLabel = 'Select...'): string
-{
-  $html = '<option value=""' . ($currentValue === '' ? ' selected' : '') . '>' . h($emptyLabel) . '</option>';
-  $hasCurrent = ($currentValue === '');
-
-  foreach (productSpecOptions($conn, $specKey, $fallbackOptions) as $option) {
-    $value = (string) $option['value'];
-    $label = (string) $option['label'];
-    if ($value === $currentValue) {
-      $hasCurrent = true;
-    }
-    $html .= '<option value="' . h($value) . '"' . ($value === $currentValue ? ' selected' : '') . '>' . h($label) . '</option>';
-  }
-
-  if (!$hasCurrent && $currentValue !== '') {
-    $html .= '<option value="' . h($currentValue) . '" selected>' . h($currentValue) . '</option>';
-  }
-
-  return $html;
-}
 
 // Generuje URL produktu podľa zdroja objednávky (SHOPTET, EBAY, atď.)
 function itemProductUrl(array $order, array $item): string
@@ -952,10 +1202,7 @@ function itemProductUrl(array $order, array $item): string
   // Pre EBAY objednávky vytvorí link na základe čísla položky
   if (strpos($source, 'EBAY') !== false) {
     // Dekódovanie voliteľných parametrov z JSON
-    $data = json_decode((string) ($item['options_json'] ?? ''), true);
-    if (!is_array($data)) {
-      $data = [];
-    }
+    $data = jsonDecodeAssocSafe((string) ($item['options_json'] ?? ''));
 
     // Hľadá číslo položky v rôznych možných kľúčoch
     $itemNumber = optionValue($data, [
@@ -1037,12 +1284,10 @@ ob_start();
     border-bottom: none !important;
     border-left: none !important;
     border-right: none !important;
-    /* top + right shadow */
+    /* bez pravých vertikálnych borders — len top + accent vľavo */
     box-shadow:
       0 -2px 0 0 rgba(255, 255, 255, .15),
       /* top border */
-      2px 0 0 0 rgba(255, 255, 255, .10),
-      /* right border */
       inset 3px 0 0 0 var(--item-accent, #555);
     /* accent prúžok vľavo */
   }
@@ -1058,15 +1303,15 @@ ob_start();
   tr.item-info-row>td:last-child {
     box-shadow:
       0 -2px 0 0 rgba(255, 255, 255, .15),
-      2px 0 0 0 rgba(255, 255, 255, .15);
-    /* pravý border */
+      inset 3px 0 0 0 var(--item-accent, #555),
+      -2px 0 0 0 var(--item-accent, #555);
+    /* ľavý border = accent farba */
   }
 
   /* Spodný riadok bloku — item bez options (P, S, F...) */
   tr.item-info-row.item-no-options>td {
     box-shadow:
       0 -2px 0 0 rgba(255, 255, 255, .15),
-      2px 0 0 0 rgba(255, 255, 255, .10),
       0 3px 0 0 rgba(255, 255, 255, .15),
       /* bottom border */
       inset 3px 0 0 0 var(--item-accent, #555);
@@ -1083,13 +1328,11 @@ ob_start();
   tr.item-info-row.item-no-options>td:last-child {
     box-shadow:
       0 -2px 0 0 rgba(255, 255, 255, .15),
-      2px 0 0 0 rgba(255, 255, 255, .15),
       0 3px 0 0 rgba(255, 255, 255, .15);
   }
 
   /* Options row (G-item) — spodná časť bloku */
   tr.g-item-options-row>td {
-    background: rgba(23, 162, 184, .03) !important;
     border-top: none !important;
     border-bottom: none !important;
     border-left: none !important;
@@ -1097,15 +1340,26 @@ ob_start();
     box-shadow:
       -2px 0 0 0 var(--item-accent, #555),
       /* ľavý border = accent */
-      2px 0 0 0 rgba(255, 255, 255, .15),
-      /* pravý border */
       0 3px 0 0 rgba(255, 255, 255, .15),
       /* bottom border */
       inset 3px 0 0 0 var(--item-accent, #555);
-    /* accent prúžok vľavo */
+    /* accent prúžok vľavo — žiadny pravý border */
   }
 
-  /* Medzera medzi blokmi */
+  /* Opakujúca sa hlavička pred každou položkou */
+  tr.item-group-header>th {
+    background-color: #343a40 !important;
+    font-weight: 600;
+    font-size: 0.78rem;
+    color: #adb5bd;
+    padding: 0.35rem 0.75rem !important;
+    border-top: 2px solid rgba(255,255,255,0.15) !important;
+    border-bottom: 1px solid rgba(255,255,255,0.1) !important;
+    border-left: none !important;
+    border-right: none !important;
+  }
+
+
   tr.item-spacer-row>td {
     height: 8px !important;
     padding: 0 !important;
@@ -1139,20 +1393,24 @@ ob_start();
     --item-accent: #ffc107;
   }
 
-  /* Jemný tónovaný background podľa typu */
-  tr.item-type-G.item-info-row>td {
+  /* Jemný tónovaný background podľa typu — info riadok aj options riadok rovnaká farba */
+  tr.item-type-G.item-info-row>td,
+  tr.item-type-G.g-item-options-row>td {
     background: rgba(23, 163, 184, 0.2) !important;
   }
 
-  tr.item-type-P.item-info-row>td {
+  tr.item-type-P.item-info-row>td,
+  tr.item-type-P.g-item-options-row>td {
     background: rgba(76, 142, 247, .05) !important;
   }
 
-  tr.item-type-S.item-info-row>td {
+  tr.item-type-S.item-info-row>td,
+  tr.item-type-S.g-item-options-row>td {
     background: rgba(40, 167, 69, .05) !important;
   }
 
-  tr.item-type-F.item-info-row>td {
+  tr.item-type-F.item-info-row>td,
+  tr.item-type-F.g-item-options-row>td {
     background: rgba(253, 126, 20, .05) !important;
   }
 
@@ -1445,54 +1703,6 @@ ob_start();
     line-height: 1.1;
   }
 
-  .seat-op-select {
-    min-width: 100%;
-  }
-
-  .seat-op-field.seat-op-state-yes {
-    border-color: rgba(40, 167, 69, .42);
-    background: linear-gradient(180deg, rgba(40, 167, 69, .18) 0%, rgba(40, 167, 69, .08) 100%);
-    box-shadow: inset 0 0 0 1px rgba(40, 167, 69, .08);
-  }
-
-  .seat-op-field.seat-op-state-yes .seat-op-label,
-  .seat-op-field.seat-op-state-yes .product-spec-label-title {
-    color: #7ee2a8;
-  }
-
-  .seat-op-field.seat-op-state-yes .seat-op-select {
-    border-color: rgba(40, 167, 69, .55);
-    background-color: rgba(33, 37, 41, .92);
-    color: #dff7e8;
-  }
-
-  .seat-op-field.seat-op-state-yes .seat-op-select:focus {
-    border-color: #4fd38a;
-    box-shadow: 0 0 0 .2rem rgba(40, 167, 69, .18);
-  }
-
-  .seat-op-field.seat-op-state-no {
-    border-color: rgba(220, 53, 69, .4);
-    background: linear-gradient(180deg, rgba(220, 53, 69, .16) 0%, rgba(220, 53, 69, .07) 100%);
-    box-shadow: inset 0 0 0 1px rgba(220, 53, 69, .08);
-  }
-
-  .seat-op-field.seat-op-state-no .seat-op-label,
-  .seat-op-field.seat-op-state-no .product-spec-label-title {
-    color: #ff9aa5;
-  }
-
-  .seat-op-field.seat-op-state-no .seat-op-select {
-    border-color: rgba(220, 53, 69, .5);
-    background-color: rgba(33, 37, 41, .92);
-    color: #ffe3e6;
-  }
-
-  .seat-op-field.seat-op-state-no .seat-op-select:focus {
-    border-color: #ff7b88;
-    box-shadow: 0 0 0 .2rem rgba(220, 53, 69, .16);
-  }
-
   .print-setting-field-grip.product-spec-state-yes {
     border-color: rgba(40, 167, 69, .42);
     background: linear-gradient(180deg, rgba(40, 167, 69, .18) 0%, rgba(40, 167, 69, .08) 100%);
@@ -1687,6 +1897,70 @@ ob_start();
   }
   .seat-op-inactive { opacity: 0.38; }
   .seat-op-inactive select { pointer-events: none; }
+
+  /* ── FINAL OVERRIDE: jednotné farbenie dvojriadkovej položky + iba jeden ľavý accent ── */
+  .order-detail-table {
+    border-collapse: separate !important;
+    border-spacing: 0 !important;
+  }
+
+  .order-detail-table tbody tr.item-info-row > td,
+  .order-detail-table tbody tr.g-item-options-row > td {
+    box-shadow: none !important;
+    border-top: 1px solid rgba(255,255,255,.18) !important;
+    border-bottom: 1px solid rgba(255,255,255,.18) !important;
+    border-left: 1px solid rgba(255,255,255,.18) !important;
+    border-right: 0 !important;
+    background: var(--item-bg, rgba(255,255,255,.035)) !important;
+    background-clip: padding-box !important;
+  }
+
+  .order-detail-table tbody tr.item-info-row > td:last-child,
+  .order-detail-table tbody tr.g-item-options-row > td:last-child,
+  .order-detail-table tbody tr.g-item-options-row > td[colspan] {
+    border-right: 1px solid rgba(255,255,255,.18) !important;
+  }
+
+  /* Jediný department pásik: iba úplne prvá bunka prvého riadku položky */
+  .order-detail-table tbody tr.item-info-row > td:first-child {
+    border-left: 10px solid var(--item-accent, #8a8f98) !important;
+  }
+
+  /* Druhý/dropdown riadok už nemá farebný pásik, iba sivé orámovanie */
+  .order-detail-table tbody tr.g-item-options-row > td:first-child,
+  .order-detail-table tbody tr.g-item-options-row > td[colspan] {
+    border-left: 10px solid var(--item-accent, #555) !important;
+}
+
+  /* Jemný predel medzi horným a spodným riadkom toho istého itemu */
+  .order-detail-table tbody tr.g-item-options-row > td {
+    border-top: 1px solid rgba(255,255,255,.26) !important;
+  }
+
+  /* Rovnaká farba horného aj spodného riadku podľa typu/depu */
+  tr.item-type-G { --item-accent: #28a745; --item-bg: rgba(40,167,69,.16); }
+  tr.item-type-P { --item-accent: #17a2b8; --item-bg: rgba(23,162,184,.14); }
+  tr.item-type-S { --item-accent: #ebd618; --item-bg: rgba(235,214,24,.12); }
+  tr.item-type-F { --item-accent: #fd7e14; --item-bg: rgba(253,126,20,.13); }
+  tr.item-type-T,
+  tr.item-type-M { --item-accent: #ffc107; --item-bg: rgba(255,193,7,.13); }
+
+  /* Ak je qty warning, nech nezabije ľavý department pásik a nech nerobí ďalšie pásiky */
+  .order-detail-table tbody tr.qty-warning-row > td {
+    background: var(--item-bg, rgba(255,193,7,.16)) !important;
+    box-shadow: none !important;
+  }
+
+  .order-detail-table tbody tr.qty-warning-row > td:first-child {
+    border-left: 6px solid var(--item-accent, #ffc107) !important;
+  }
+
+  .order-detail-table tbody tr.item-spacer-row > td {
+    border: none !important;
+    background: transparent !important;
+    box-shadow: none !important;
+  }
+
 </style>
 <div class="p-3">
   <div class="card card-dark order-detail-card mb-0"
@@ -2373,13 +2647,29 @@ ob_start();
                 <td class="text-center" style="min-width:50px;">
                   <?php
                   $assignedRaw = trim((string) ($it['item_assigned_users'] ?? ''));
+                  $itemAssignedRaw = trim((string) ($it['item_assigned_users_raw'] ?? ''));
                   $itemAssigned = [];
+                  $realItemAssigned = [];
 
                   if ($assignedRaw !== '') {
                     foreach (explode(';;', $assignedRaw) as $part) {
                       $bits = explode('|', $part);
                       if (count($bits) >= 3) {
                         $itemAssigned[] = [
+                          'id' => (int) $bits[0],
+                          'name' => $bits[1],
+                          'photo' => $bits[2],
+                          'assignment_id' => (int) ($bits[3] ?? 0),
+                        ];
+                      }
+                    }
+                  }
+
+                  if ($itemAssignedRaw !== '') {
+                    foreach (explode(';;', $itemAssignedRaw) as $part) {
+                      $bits = explode('|', $part);
+                      if (count($bits) >= 3) {
+                        $realItemAssigned[] = [
                           'id' => (int) $bits[0],
                           'name' => $bits[1],
                           'photo' => $bits[2],
@@ -2442,26 +2732,25 @@ ob_start();
                       }
                     }
                   }
-                  $deptPrimaryRoleMap = [
-                    2 => 'PRIMARY_GRAPHICS',
-                    6 => 'PRIMARY_PLASTICS',
-                    8 => 'PRIMARY_SEATCOVER',
-                    9 => 'PRIMARY_FITTING',
+                  $itemTypePrimaryRoleMap = [
+                    'G' => 'PRIMARY_GRAPHICS',
+                    'P' => 'PRIMARY_PLASTICS',
+                    'T' => 'PRIMARY_PLASTICS',
+                    'M' => 'PRIMARY_PLASTICS',
+                    'S' => 'PRIMARY_SEATCOVER',
+                    'F' => 'PRIMARY_FITTING',
                   ];
-                  $deptCodeMap = [
-                    2 => 'GRAPHICS',
-                    6 => 'PLASTICS',
-                    8 => 'SEATCOVER',
-                    9 => 'FITTING',
+                  $itemTypeDeptCodeMap = [
+                    'G' => 'GRAPHICS',
+                    'P' => 'PLASTICS',
+                    'T' => 'PLASTICS',
+                    'M' => 'PLASTICS',
+                    'S' => 'SEATCOVER',
+                    'F' => 'FITTING',
                   ];
 
-                  $isFittingItem = ($itemType === 'F');
-                  $currentDeptPrimaryRole = $isFittingItem
-                    ? 'PRIMARY_FITTING'
-                    : ($deptPrimaryRoleMap[$userDpt] ?? '');
-                  $currentDeptCode = $isFittingItem
-                    ? 'FITTING'
-                    : ($deptCodeMap[$userDpt] ?? '');
+                  $currentDeptPrimaryRole = $itemTypePrimaryRoleMap[$itemType] ?? '';
+                  $currentDeptCode = $itemTypeDeptCodeMap[$itemType] ?? '';
                   $currentUserCanPersonalOrders = $currentUserHasPersonalOrders;
 
                   $orderTakenForMyDept = false;
@@ -2485,7 +2774,8 @@ ob_start();
                     $currentDeptPrimaryRole !== ''
                     && !$orderTakenForMyDept
                     && (
-                      ($isFittingItem && $currentUserCanPersonalOrders)
+                      ((int) ($_SESSION['permission'] ?? 0) >= 400)
+                      || ($itemType === 'F' && $currentUserCanPersonalOrders)
                       || (isset($dptItemMap[$userDpt]) && $dptItemMap[$userDpt] === $itemType)
                     )
                   );
@@ -2537,7 +2827,7 @@ ob_start();
                       </span>
                     <?php endforeach; ?>
 
-                    <?php if ($canTakeOrderFromDetail && empty($itemAssigned)): ?>
+                    <?php if ($canTakeOrderFromDetail && empty($realItemAssigned)): ?>
                       <button type="button" class="btn btn-sm btn-warning btn-take-order px-2 py-1"
                         style="font-size:11px; font-weight:700; border-radius:8px; letter-spacing:.3px;"
                         data-order-id="<?= (int) $orderId ?>" data-dept-code="<?= h($currentDeptCode) ?>"
@@ -2645,9 +2935,7 @@ ob_start();
                 if (!is_array($internalOptArr))
                   $internalOptArr = [];
                 // Also read base-material / graphics-finish from options_json
-                $extOptArr = json_decode((string) ($it['options_json'] ?? '{}'), true);
-                if (!is_array($extOptArr))
-                  $extOptArr = [];
+                $extOptArr = jsonDecodeAssocSafe((string) ($it['options_json'] ?? '{}'));
 
                 $printPrinter = (string) ($internalOptArr['_printer'] ?? '');
                 $printMaterial = (string) ($internalOptArr['_print_material'] ?? ($extOptArr['base-material'] ?? ''));
@@ -2657,37 +2945,66 @@ ob_start();
                 $isGraphicsItem = (strtoupper(trim((string) ($it['item_type_code'] ?? ''))) === 'G');
                 $isSeatCoverItem = (strtoupper(trim((string) ($it['item_type_code'] ?? ''))) === 'S');
                 $isPatchItem = (($extOptArr['_auto_generated'] ?? '') === 'SEAT_PATCH_AUTO_GRAPHICS');
-                // Všetky 4 úkony — vždy zobrazené, required=true len keď sú objednané
-                $seatCoverOpsMeta = [
-                  'waterproof-seams'   => ['code' => 'Waterproof Seams',  'tooltip' => 'Waterproof Seams / Vodotesné švy',  'required_when' => 'exists_in_json'],
-                  'enduro-pocket'      => ['code' => 'Enduro Pocket',     'tooltip' => 'Enduro pocket / Enduro vrecko',       'required_when' => 'filled'],
-                  'side-brand-patches' => ['code' => 'Sidebrand Patches', 'tooltip' => 'Sidebrand Patches / Bočné nášivky',  'required_when' => 'exists_in_json'],
-                  'patch-applied'      => ['code' => 'Patch Applied',     'tooltip' => 'Patch Applied / Nášivka našitá',      'required_when' => 'exists_in_json', 'json_key' => 'patch-style'],
-                ];
-                $seatCoverOpsConfirmed = $internalOptArr['_seat_cover_ops_confirmed'] ?? [];
-                if (!is_array($seatCoverOpsConfirmed)) {
-                  $seatCoverOpsConfirmed = [];
-                }
-                // Zostavíme zoznam úkonov — každý má flag required + confirmed
-                $seatCoverOpsRequired = [];
-                foreach ($seatCoverOpsMeta as $optionKey => $meta) {
-                  $required = false;
-                  $jsonKey = $meta['json_key'] ?? $optionKey;
-                  if ($meta['required_when'] === 'exists_in_json') {
-                    $required = array_key_exists($jsonKey, $extOptArr);
-                  } elseif ($meta['required_when'] === 'filled') {
-                    $required = seatCoverOptionIsFilled($extOptArr[$jsonKey] ?? null);
-                  }
-                  $seatCoverOpsRequired[$optionKey] = [
-                    'code'      => $meta['code'],
-                    'tooltip'   => $meta['tooltip'],
-                    'required'  => $required,
-                    'confirmed' => !empty($seatCoverOpsConfirmed[$optionKey]),
-                  ];
-                }
-                $seatPatchNote = trim((string) ($internalOptArr['_seat_patch_note'] ?? ''));
+                // Upsellové auto-generated položky nemajú options formulár
+                $hasOptionsForm = dept_has_options_form($it['options_json'] ?? null);
+                // Subcategory z internal_options_json (nastavená pri importe)
+                $itemSubcat = productSpecGraphicsSubcategoryFromItemData(
+                  (string) ($internalOptArr['_subcat'] ?? ''),
+                  (string) ($it['custom_label'] ?? ''),
+                  (string) ($it['sku'] ?? '')
+                );
                 // editaciu môže urobiť ktokoľvek z grafiky alebo admin, aby sa dali nastaviť tlačiarne aj pre iné oddelenia.
                 $canEditPrint = ((int) ($_SESSION['permission'] ?? 0) >= 0);
+                $itemSpecDepartment = productSpecDepartmentForItemType((string) ($it['item_type_code'] ?? ''));
+                $itemProductSpecFields = [];
+                $showItemProductSpecRow = false;
+                if ($hasOptionsForm && $itemSpecDepartment !== '') {
+                  foreach (productSpecFieldDefinitions($conn, $itemSpecDepartment) as $productSpecDefinition) {
+                    $fieldMeta = productSpecFieldMeta($productSpecDefinition);
+                    $fieldSubcategory = productSpecGraphicsSubcategoryFromSpecKey(
+                      (string) ($fieldMeta['spec_key'] ?? ''),
+                      (string) ($fieldMeta['department'] ?? $itemSpecDepartment)
+                    );
+                    $fieldAppliesToSubcategories = (int) ($fieldMeta['apply_to_subcategories'] ?? 0) === 1;
+
+                    if ($itemSpecDepartment === 'G' && $itemSubcat !== '') {
+                      if ($fieldSubcategory === '' && !$fieldAppliesToSubcategories) {
+                        continue;
+                      }
+                    }
+
+                    if ($fieldSubcategory !== '' && $fieldSubcategory !== $itemSubcat) {
+                      continue;
+                    }
+
+                    $fieldMeta['current_value'] = productSpecFieldCurrentValue($fieldMeta, $extOptArr, $internalOptArr);
+                    $fieldMeta['has_any_value'] = productSpecFieldHasAnyValue($fieldMeta, $extOptArr, $internalOptArr);
+
+                    if ($fieldMeta['spec_key'] === 'graphics_material') {
+                      $printMaterial = $fieldMeta['current_value'];
+                    } elseif ($fieldMeta['spec_key'] === 'graphics_finish') {
+                      $printFinish = $fieldMeta['current_value'];
+                    } elseif ($fieldMeta['spec_key'] === 'graphics_grip') {
+                      $printGrip = $fieldMeta['current_value'];
+                    } elseif ($fieldMeta['spec_key'] === 'graphics_tr_swingarms') {
+                      $printTrSwingarms = $fieldMeta['current_value'];
+                    } elseif ($fieldMeta['spec_key'] === 'graphics_printer') {
+                      $printPrinter = $fieldMeta['current_value'];
+                    }
+
+                    if ($fieldMeta['has_any_value']) {
+                      $showItemProductSpecRow = true;
+                    }
+
+                    $itemProductSpecFields[] = $fieldMeta;
+                  }
+
+                  // Druhý riadok zobraz vždy, keď pre department existuje aspoň
+                  // jeden definovaný formulárový prvok — aj keď ešte nemá hodnotu.
+                  if (!empty($itemProductSpecFields)) {
+                    $showItemProductSpecRow = true;
+                  }
+                }
 
                 // ── Category Info pre G items (Shoptet) ─────────────────
                 // options_json môže mať kľúč "category" vo formáte "Suzuki | DR-Z400 | 1999-2024 | CPM8"
@@ -2763,15 +3080,6 @@ ob_start();
                     $gCategoryMain = $gCategoryRaw;
                   }
                 }
-
-                // Pre graphics items — predvyplnené hodnoty pre options row
-                $gOptName = trim((string) optionValue($extOptArr, ['name', 'rider-name', 'rider_name', 'custom-name']));
-                $gOptNumber = trim((string) optionValue($extOptArr, ['number', 'race-number', 'race_number', 'rider-number']));
-                $gOptNameFont = trim((string) optionValue($extOptArr, ['name-font', 'name_font', 'font-name']));
-                $gOptNumberFont = trim((string) optionValue($extOptArr, ['number-font', 'number_font', 'font-number']));
-                $gOptNumberColor = trim((string) optionValue($extOptArr, ['number-color', 'number_color', 'numcolor']));
-                $gOptNpColor = trim((string) optionValue($extOptArr, ['number-plate-color', 'number_plate_color', 'plate-color', 'numberplate-color']));
-                $gOptNote = trim((string) ($internalOptArr['_graphics_note'] ?? ''));
                 ?>
 
                 <?php
@@ -2797,39 +3105,7 @@ ob_start();
                   <td class="text-muted text-center" style="font-size:11px;">—</td>
                 <?php endif; ?>
 
-                <?php if (!$isGraphicsItem): ?>
-                  <?php /* Non-G: klasický product spec stĺpec */ ?>
-                  <td class="<?= $isSeatCoverItem ? 'print-settings-cell' : 'text-center text-muted print-settings-cell' ?>"
-                    style="font-size:11px; color:#555 !important; min-width:170px; display:none;">
-                    <?php if ($isSeatCoverItem && $seatCoverOpsRequired): ?>
-                      <div class="seat-op-list">
-                        <?php foreach ($seatCoverOpsRequired as $optionKey => $opData): ?>
-                          <label class="seat-op-field product-spec-label" title="<?= h($opData['tooltip']) ?>">
-                            <span class="seat-op-label product-spec-label-title"><?= h($opData['code']) ?></span>
-                            <?php
-                            $seatSpecKeyMap = [
-                              'waterproof-seams' => 'seat_waterproof_seams',
-                              'enduro-pocket' => 'seat_enduro_pocket',
-                              'side-brand-patches' => 'seat_side_brand_patches',
-                            ];
-                            $seatCurrentValue = !empty($opData['confirmed']) ? '1' : '0';
-                            $seatSpecKey = $seatSpecKeyMap[$optionKey] ?? 'seat_waterproof_seams';
-                            ?>
-                            <select class="form-control form-control-sm seat-op-select" data-item-id="<?= (int) $it['id'] ?>"
-                              data-op-key="<?= h($optionKey) ?>">
-                              <?= renderProductSpecOptions($conn, $seatSpecKey, $seatCurrentValue, ['0' => '✗', '1' => '✓'], 'Select...'); ?>
-                            </select>
-                          </label>
-                        <?php endforeach; ?>
-                      </div>
-                    <?php else: ?>
-                      <span title="Printing settings sa netýka tejto kategórie">—</span>
-                    <?php endif; ?>
-                  </td>
-                <?php else: ?>
-                  <?php /* G item: product spec stĺpec skrytý — obsah je v options row */ ?>
-                  <td style="display:none;"></td>
-                <?php endif; ?>
+                <td style="display:none;"></td>
 
                 <td class="text-center">
                   <?php if ($productUrl !== ''): ?>
@@ -2851,13 +3127,13 @@ ob_start();
                 if ($isPatchItem) {
                   $modalOptionsRaw = patchOptionsForModal($extOptArr);
                 }
-                $formattedOptions = json_encode($modalOptionsRaw, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?: '{}';
+                $formattedOptions = jsonEncodeForModal($modalOptionsRaw);
                 $formattedOptions = prepareOptionsJsonForModal($conn, $formattedOptions);
-                $editableOptions = json_encode($modalOptionsRaw, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?: '{}';
+                $editableOptions = prepareEditableOptionsJsonForModal(jsonEncodeForModal($modalOptionsRaw));
                 // Strip _printer/_print_material/_print_finish from modal display — they are shown separately
                 $internalOptForModal = $internalOptArr;
                 unset($internalOptForModal['_printer'], $internalOptForModal['_print_material'], $internalOptForModal['_print_finish'], $internalOptForModal['_print_grip'], $internalOptForModal['_print_tr_swingarms'], $internalOptForModal['_seat_cover_ops_confirmed']);
-                $internalOptions = json_encode($internalOptForModal, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?: '{}';
+                $internalOptions = jsonEncodeForModal($internalOptForModal);
                 ?>
                 <td class="text-center">
                   <button type="button" class="btn btn-xs btn-outline-info btn-view-options"
@@ -2890,9 +3166,7 @@ ob_start();
                   }
                   ?>
 
-                  <?php $hasSeatOpsRequired = $isSeatCoverItem && !empty(array_filter($seatCoverOpsRequired, fn($o) => $o['required'])); ?>
-                  <select class="form-control form-control-sm item-status-select" data-item-id="<?= (int) $it['id'] ?>"
-                    <?php if ($hasSeatOpsRequired): ?>data-seat-status-visible="1"<?php endif; ?>>
+                  <select class="form-control form-control-sm item-status-select" data-item-id="<?= (int) $it['id'] ?>">
                     <?php foreach ($statuses as $s): ?>
                       <option value="<?= h($s) ?>" <?= ($currentStatus === $s ? 'selected' : '') ?>>
                         <?= h($statusLabels[$s] ?? str_replace('_', ' ', $s)) ?>
@@ -2923,12 +3197,8 @@ ob_start();
                   <?php
                   $itTypeRtp = strtoupper(trim((string) ($it['item_type_code'] ?? '')));
                   if ($itTypeRtp === 'G'):
-                    $rtpOpts = json_decode((string) ($it['options_json'] ?? '{}'), true);
-                    $rtpIntOpts = json_decode((string) ($it['internal_options_json'] ?? '{}'), true);
-                    if (!is_array($rtpOpts))
-                      $rtpOpts = [];
-                    if (!is_array($rtpIntOpts))
-                      $rtpIntOpts = [];
+                    $rtpOpts = jsonDecodeAssocSafe((string) ($it['options_json'] ?? '{}'));
+                    $rtpIntOpts = jsonDecodeAssocSafe((string) ($it['internal_options_json'] ?? '{}'));
                     $rtpParams = [
                       'type' => trim((string) ($order['source_code'] ?? 'SO')),
                       'order' => (string) ($order['order_number'] ?? $order['external_order_id'] ?? ''),
@@ -2973,182 +3243,58 @@ ob_start();
                 <?php endif; ?>
               </tr>
 
-              <?php if ($isGraphicsItem): ?>
+              <?php if ($showItemProductSpecRow && !empty($itemProductSpecFields)): ?>
                 <tr class="g-item-options-row <?= $itemTypeClass ?>" data-item-id="<?= (int) $it['id'] ?>">
                   <td colspan="99" style="padding:5px 8px 7px; border-top:none !important;">
                     <div class="g-options-bar">
-
-                      <!-- Material -->
-                      <label class="print-setting-field product-spec-label">
-                        <span class="product-spec-label-title">Material</span>
-                        <select class="form-control form-control-sm item-print-material"
-                          data-item-id="<?= (int) $it['id'] ?>">
-                          <?= renderProductSpecOptions($conn, 'graphics_material', $printMaterial, ['Standard' => 'Standard']); ?>
-                        </select>
-                      </label>
-
-                      <!-- Finish -->
-                      <label class="print-setting-field product-spec-label">
-                        <span class="product-spec-label-title">Finish</span>
-                        <select class="form-control form-control-sm item-print-finish"
-                          data-item-id="<?= (int) $it['id'] ?>">
-                          <?= renderProductSpecOptions($conn, 'graphics_finish', $printFinish, ['Gloss' => 'Gloss', 'Matte' => 'Matte']); ?>
-                        </select>
-                      </label>
-
-                      <!-- Name (autocomplete input) -->
-                      <label class="print-setting-field product-spec-label" style="min-width:110px;">
-                        <span class="product-spec-label-title">Name</span>
-                        <div class="position-relative">
-                          <input type="text" class="form-control form-control-sm print-ac-input"
-                            data-item-id="<?= (int) $it['id'] ?>" data-ac-key="graphics_name"
-                            data-internal-key="_graphics_name" value="<?= h($gOptName) ?>" placeholder="Rider name">
-                          <div class="print-ac-dropdown" style="display:none;"></div>
-                        </div>
-                      </label>
-
-                      <!-- Name Font -->
-                      <label class="print-setting-field product-spec-label">
-                        <span class="product-spec-label-title">Name Font</span>
-                        <select class="form-control form-control-sm item-print-generic"
-                          data-item-id="<?= (int) $it['id'] ?>" data-internal-key="_graphics_name_font">
-                          <?= renderProductSpecOptions(
-                            $conn,
-                            'graphics_name_font',
-                            $gOptNameFont !== '' ? $gOptNameFont : (string) ($internalOptArr['_graphics_name_font'] ?? ''),
-                            ['Style 1' => 'Style 1', 'Style 2' => 'Style 2', 'Style 3' => 'Style 3']
-                          ); ?>
-                        </select>
-                      </label>
-
-                      <!-- Number (autocomplete input) -->
-                      <label class="print-setting-field product-spec-label" style="min-width:80px;">
-                        <span class="product-spec-label-title">Number</span>
-                        <div class="position-relative">
-                          <input type="text" class="form-control form-control-sm print-ac-input"
-                            data-item-id="<?= (int) $it['id'] ?>" data-ac-key="graphics_number"
-                            data-internal-key="_graphics_number" value="<?= h($gOptNumber) ?>" placeholder="Race #">
-                          <div class="print-ac-dropdown" style="display:none;"></div>
-                        </div>
-                      </label>
-
-                      <!-- Number Font -->
-                      <label class="print-setting-field product-spec-label">
-                        <span class="product-spec-label-title">Number Font</span>
-                        <select class="form-control form-control-sm item-print-generic"
-                          data-item-id="<?= (int) $it['id'] ?>" data-internal-key="_graphics_number_font">
-                          <?= renderProductSpecOptions(
-                            $conn,
-                            'graphics_number_font',
-                            $gOptNumberFont !== '' ? $gOptNumberFont : (string) ($internalOptArr['_graphics_number_font'] ?? ''),
-                            ['As per image' => 'As per image', 'Style 1' => 'Style 1', 'Style 2' => 'Style 2']
-                          ); ?>
-                        </select>
-                      </label>
-
-                      <!-- Number Color -->
-                      <label class="print-setting-field product-spec-label">
-                        <span class="product-spec-label-title">Number Color</span>
-                        <select class="form-control form-control-sm item-print-generic"
-                          data-item-id="<?= (int) $it['id'] ?>" data-internal-key="_graphics_number_color">
-                          <?= renderProductSpecOptions(
-                            $conn,
-                            'graphics_number_color',
-                            $gOptNumberColor !== '' ? $gOptNumberColor : (string) ($internalOptArr['_graphics_number_color'] ?? ''),
-                            ['White' => 'White', 'Black' => 'Black', 'Yellow' => 'Yellow', 'Red' => 'Red', 'Blue' => 'Blue', 'Orange' => 'Orange']
-                          ); ?>
-                        </select>
-                      </label>
-
-                      <!-- Number Plate Color -->
-                      <label class="print-setting-field product-spec-label">
-                        <span class="product-spec-label-title">Number Plate Color</span>
-                        <select class="form-control form-control-sm item-print-generic"
-                          data-item-id="<?= (int) $it['id'] ?>" data-internal-key="_graphics_np_color">
-                          <?= renderProductSpecOptions(
-                            $conn,
-                            'graphics_number_plate_color',
-                            $gOptNpColor !== '' ? $gOptNpColor : (string) ($internalOptArr['_graphics_np_color'] ?? ''),
-                            ['Black' => 'Black', 'White' => 'White', 'Yellow' => 'Yellow', 'Red' => 'Red', 'Blue' => 'Blue']
-                          ); ?>
-                        </select>
-                      </label>
-
-                      <!-- Note — flex filler, rozťahuje sa na zostatok riadku -->
-                      <label class="product-spec-label g-opt-note-field" style="flex:1; min-width:140px;">
-                        <span class="product-spec-label-title">Note</span>
-                        <textarea class="form-control form-control-sm g-opt-note-textarea"
-                          data-item-id="<?= (int) $it['id'] ?>" data-internal-key="_graphics_note" placeholder="Poznámka..."
-                          rows="1"><?= h($gOptNote) ?></textarea>
-                      </label>
-
-                      <!-- Grip -->
-                      <label class="print-setting-field product-spec-label print-setting-field-grip">
-                        <span class="product-spec-label-title">Grip</span>
-                        <select class="form-control form-control-sm item-print-grip" data-item-id="<?= (int) $it['id'] ?>">
-                          <?= renderProductSpecOptions($conn, 'graphics_grip', $printGrip, ['None' => 'None', 'Yes' => 'Yes ✓', 'No' => 'No ✗']); ?>
-                        </select>
-                      </label>
-
-                      <!-- Tr. Swingarms -->
-                      <label class="print-setting-field product-spec-label print-setting-field-swingarms">
-                        <span class="product-spec-label-title">Tr. Swingarms</span>
-                        <select class="form-control form-control-sm item-print-tr-swingarms"
-                          data-item-id="<?= (int) $it['id'] ?>">
-                          <?= renderProductSpecOptions($conn, 'graphics_tr_swingarms', $printTrSwingarms, ['None' => 'None', 'Yes' => 'Yes ✓', 'No' => 'No ✗']); ?>
-                        </select>
-                      </label>
-
-                      <!-- Printer -->
-                      <label class="print-setting-field product-spec-label print-setting-field-printer">
-                        <span class="product-spec-label-title">Printer</span>
-                        <select class="form-control form-control-sm item-print-printer"
-                          data-item-id="<?= (int) $it['id'] ?>">
-                          <?= renderProductSpecOptions($conn, 'graphics_printer', $printPrinter, ['New' => 'New', 'Old' => 'Old']); ?>
-                        </select>
-                      </label>
-
-                    </div>
-                  </td>
-                </tr>
-              <?php endif; ?>
-              <?php if ($isSeatCoverItem && !empty($seatCoverOpsRequired)): ?>
-                <tr class="g-item-options-row <?= $itemTypeClass ?>" data-item-id="<?= (int) $it['id'] ?>">
-                  <td colspan="99" style="padding:5px 8px 7px; border-top:none !important;">
-                    <div class="g-options-bar">
-                      <?php
-                      $sPatchSpecKeyMap = [
-                        'waterproof-seams'   => 'seat_waterproof_seams',
-                        'enduro-pocket'      => 'seat_enduro_pocket',
-                        'side-brand-patches' => 'seat_side_brand_patches',
-                        'patch-applied'      => 'seat_patch_applied',
-                      ];
-                      foreach ($seatCoverOpsRequired as $optionKey => $opData):
-                        $isRequired = !empty($opData['required']);
-                        $sPatchCurrentValue = $isRequired ? (!empty($opData['confirmed']) ? '1' : '0') : 'none';
-                        $sPatchSpecKey = $sPatchSpecKeyMap[$optionKey] ?? 'seat_waterproof_seams';
-                      ?>
-                        <label class="seat-op-field product-spec-label<?= !$isRequired ? ' seat-op-inactive' : '' ?>" title="<?= h($opData['tooltip']) ?>">
-                          <span class="seat-op-label product-spec-label-title"><?= h($opData['code']) ?></span>
-                          <select class="form-control form-control-sm seat-op-select"
-                            data-item-id="<?= (int) $it['id'] ?>"
-                            data-op-key="<?= h($optionKey) ?>"
-                            data-required="<?= $isRequired ? '1' : '0' ?>"
-                            <?= !$isRequired ? 'disabled' : '' ?>>
-                            <?php if (!$isRequired): ?>
-                              <option value="none" selected>— N/A —</option>
-                            <?php else: ?>
-                              <?= renderProductSpecOptions($conn, $sPatchSpecKey, $sPatchCurrentValue, ['0' => '✗', '1' => '✓'], 'Select...'); ?>
-                            <?php endif; ?>
-                          </select>
+                      <?php foreach ($itemProductSpecFields as $itemSpecField): ?>
+                        <?php
+                        $fieldStyle = '';
+                        if ($itemSpecField['spec_key'] === 'graphics_name') {
+                          $fieldStyle = 'min-width:110px;';
+                        } elseif ($itemSpecField['spec_key'] === 'graphics_number') {
+                          $fieldStyle = 'min-width:80px;';
+                        } elseif ($itemSpecField['render'] === 'textarea') {
+                          $fieldStyle = 'flex:1; min-width:140px;';
+                        }
+                        ?>
+                        <label class="<?= h($itemSpecField['wrapper_class']) ?>"<?= $fieldStyle !== '' ? ' style="' . h($fieldStyle) . '"' : '' ?>>
+                          <span class="product-spec-label-title"><?= h($itemSpecField['label']) ?></span>
+                          <?php
+                          $sharedFieldAttrs = 'data-item-id="' . (int) $it['id'] . '"'
+                            . ($itemSpecField['source_key'] !== '' ? ' data-source-key="' . h($itemSpecField['source_key']) . '"' : '')
+                            . ' data-field-type="' . h($itemSpecField['field_type']) . '"'
+                            . ($itemSpecField['internal_key'] !== '' ? ' data-internal-key="' . h($itemSpecField['internal_key']) . '"' : '');
+                          ?>
+                          <?php if ($itemSpecField['render'] === 'autocomplete'): ?>
+                            <div class="position-relative">
+                              <input type="text" class="form-control form-control-sm print-ac-input item-product-spec-field"
+                                <?= $sharedFieldAttrs ?>
+                                data-ac-key="<?= h($itemSpecField['autocomplete_key']) ?>"
+                                value="<?= h($itemSpecField['current_value']) ?>"
+                                placeholder="<?= h($itemSpecField['placeholder']) ?>">
+                              <div class="print-ac-dropdown" style="display:none;"></div>
+                            </div>
+                          <?php elseif ($itemSpecField['render'] === 'textarea'): ?>
+                            <textarea class="form-control form-control-sm <?= h($itemSpecField['control_class']) ?>"
+                              <?= $sharedFieldAttrs ?>
+                              placeholder="<?= h($itemSpecField['placeholder']) ?>"
+                              rows="1"><?= h($itemSpecField['current_value']) ?></textarea>
+                          <?php else: ?>
+                            <?=
+                              renderProductSpecField(
+                                $conn,
+                                $itemSpecField['spec_key'],
+                                (string) $itemSpecField['current_value'],
+                                $itemSpecField['fallback_options'],
+                                $itemSpecField['control_class'],
+                                $sharedFieldAttrs,
+                                (string) $itemSpecField['empty_label']
+                              );
+                            ?>
+                          <?php endif; ?>
                         </label>
                       <?php endforeach; ?>
-                      <label class="product-spec-label g-opt-note-field" style="flex:1; min-width:140px;">
-                        <span class="product-spec-label-title">Note</span>
-                        <textarea class="form-control form-control-sm g-opt-note-textarea seat-patch-note-textarea"
-                          data-item-id="<?= (int) $it['id'] ?>" data-internal-key="_seat_patch_note"
-                          placeholder="Poznámka..." rows="1"><?= h($seatPatchNote) ?></textarea>
-                      </label>
                     </div>
                   </td>
                 </tr>
@@ -3301,6 +3447,16 @@ ob_start();
         existing = {};
       }
 
+      var existingOptions = {};
+      try {
+        existingOptions = JSON.parse($detailBtn.attr('data-options-raw') || '{}');
+      } catch (e) {
+        existingOptions = {};
+      }
+      if (!existingOptions || Array.isArray(existingOptions) || typeof existingOptions !== 'object') {
+        existingOptions = {};
+      }
+
       existing['_printer'] = printer;
       existing['_print_material'] = material;
       existing['_print_finish'] = finish;
@@ -3326,127 +3482,65 @@ ob_start();
         if (key) existing[key] = $(this).val() || '';
       });
 
-      var newJson = JSON.stringify(existing);
-
-      $.post('scripts/orders/update_item_internal_options.php', {
-        item_id: itemId,
-        internal_options_json: newJson
-      }, function (res) {
-        console.log('PRINT SAVE RESPONSE:', res);
-
-        if (!res || !res.ok) {
-          alert(res && res.error ? res.error : 'Save failed');
+      $searchRow.find('.item-product-spec-field[data-source-key]').each(function () {
+        var $field = $(this);
+        var sourceKey = String($field.data('source-key') || '');
+        if (!sourceKey) {
           return;
         }
+        existingOptions[sourceKey] = $field.val() || '';
+      });
 
+      var newJson = JSON.stringify(existing);
+      var newOptionsJson = JSON.stringify(existingOptions);
+
+      function finishSave() {
         $detailBtn.attr('data-internal-options', newJson);
+        $detailBtn.attr('data-options-raw', newOptionsJson);
+        $detailBtn.attr('data-options', newOptionsJson);
         $detailBtn.attr('data-print-printer', printer);
         $detailBtn.attr('data-print-material', material);
         $detailBtn.attr('data-print-finish', finish);
         $detailBtn.attr('data-print-grip', grip);
         $detailBtn.attr('data-print-tr-swingarms', trSwingarms);
 
-        // Flash feedback na options row aj info row
         var $flashTargets = $searchRow.find('select, input, textarea').add($infoRow.find('.print-settings-cell input, .print-settings-cell select'));
         $flashTargets.css('border-color', '#28a745');
         setTimeout(function () {
           $flashTargets.css('border-color', '');
         }, 1000);
-      }, 'json').fail(function (xhr) {
-        alert('Update request failed:\n' + xhr.status + '\n' + xhr.responseText);
-      });
-    }
-
-    function saveSeatCoverOps($select) {
-      var $tr = $select.closest('tr');
-      var itemId = parseInt($select.data('item-id'), 10) || 0;
-      if (!itemId) return;
-
-      var $detailBtn = $tr.find('.btn-view-options');
-      if (!$detailBtn.length) {
-        $detailBtn = $tr.prevAll('tr').find('.btn-view-options').first();
-      }
-      if (!$detailBtn.length) return;
-
-      var existing = {};
-      try { existing = JSON.parse($detailBtn.attr('data-internal-options') || '{}'); } catch (e) { existing = {}; }
-      if (!existing || Array.isArray(existing) || typeof existing !== 'object') existing = {};
-      if (!existing._seat_cover_ops_confirmed || typeof existing._seat_cover_ops_confirmed !== 'object' || Array.isArray(existing._seat_cover_ops_confirmed)) {
-        existing._seat_cover_ops_confirmed = {};
       }
 
-      // Prečítaj stav VŠETKÝCH required seat-op-select naraz — zabraňuje race condition
-      var $card = $select.closest('.order-detail-card');
-      $card.find('.seat-op-select[data-item-id="' + itemId + '"][data-required="1"]').each(function () {
-        var key = String($(this).data('op-key') || '');
-        if (key) existing._seat_cover_ops_confirmed[key] = (String($(this).val()) === '1');
-      });
+      function saveInternalOptions() {
+        $.post('scripts/orders/update_item_internal_options.php', {
+          item_id: itemId,
+          internal_options_json: newJson
+        }, function (res) {
+          if (!res || !res.ok) {
+            alert(res && res.error ? res.error : 'Save failed');
+            return;
+          }
+          finishSave();
+        }, 'json').fail(function (xhr) {
+          alert('Update request failed:\n' + xhr.status + '\n' + xhr.responseText);
+        });
+      }
 
-      var newJson = JSON.stringify(existing);
-
-      $.post('scripts/orders/update_item_internal_options.php', {
+      $.post('scripts/orders/update_item_options.php', {
         item_id: itemId,
-        internal_options_json: newJson
+        options_json: newOptionsJson
       }, function (res) {
         if (!res || !res.ok) {
           alert(res && res.error ? res.error : 'Save failed');
           return;
         }
-        $detailBtn.attr('data-internal-options', newJson);
-        $select.css('border-color', '#28a745');
-        setTimeout(function () { $select.css('border-color', ''); }, 800);
+        saveInternalOptions();
       }, 'json').fail(function (xhr) {
         alert('Update request failed:\n' + xhr.status + '\n' + xhr.responseText);
       });
     }
 
-    // Ukladanie seat-patch-note textarea (debounce 600ms)
-    var seatPatchNoteTimer = null;
-    $(document).on('input.printSettings', 'textarea.seat-patch-note-textarea', function () {
-      var $ta = $(this);
-      clearTimeout(seatPatchNoteTimer);
-      seatPatchNoteTimer = setTimeout(function () {
-        var $tr = $ta.closest('tr');
-        var itemId = parseInt($ta.data('item-id'), 10) || parseInt($tr.data('item-id'), 10) || 0;
-        if (!itemId) return;
-        var $detailBtn = $tr.prevAll('tr').find('.btn-view-options[data-item-id="' + itemId + '"]').first();
-        if (!$detailBtn.length) return;
-        var existing = {};
-        try { existing = JSON.parse($detailBtn.attr('data-internal-options') || '{}'); } catch (e) { existing = {}; }
-        existing['_seat_patch_note'] = $ta.val() || '';
-        var newJson = JSON.stringify(existing);
-        $.post('scripts/orders/update_item_internal_options.php', {
-          item_id: itemId,
-          internal_options_json: newJson
-        }, function (res) {
-          if (res && res.ok) {
-            $detailBtn.attr('data-internal-options', newJson);
-            $ta.css('border-color', '#28a745');
-            setTimeout(function () { $ta.css('border-color', ''); }, 800);
-          }
-        }, 'json');
-      }, 600);
-    });
-
-
     // Input events — autocomplete
-    function applySeatOpState($select) {
-      var value = String($select.val() || '');
-      var $label = $select.closest('.seat-op-field');
-
-      if (!$label.length) {
-        return;
-      }
-
-      $label.removeClass('seat-op-state-yes seat-op-state-no');
-
-      if (value === '1') {
-        $label.addClass('seat-op-state-yes');
-      } else if (value === '0') {
-        $label.addClass('seat-op-state-no');
-      }
-    }
-
     function getBinaryProductSpecState($select) {
       var value = $.trim(String($select.val() || '')).toLowerCase();
       var text = $.trim(String($select.find('option:selected').text() || '')).toLowerCase();
@@ -3556,9 +3650,9 @@ ob_start();
       savePrintSettings($tr, itemId, orderId);
     });
 
-    // Ukladanie G-item note textarea (debounce 600ms)
+    // Ukladanie dynamických product-spec textarea polí (debounce 600ms)
     var gNoteTimer = null;
-    $(document).on('input.printSettings', 'textarea[data-internal-key="_graphics_note"]', function () {
+    $(document).on('input.printSettings', 'textarea.item-print-generic[data-internal-key]', function () {
       var $ta = $(this);
       clearTimeout(gNoteTimer);
       gNoteTimer = setTimeout(function () {
@@ -3575,16 +3669,6 @@ ob_start();
       if (!$(e.target).closest('.print-setting-field').length) {
         hideAllDropdowns();
       }
-    });
-
-    $(document).on('change.printSettings', '.seat-op-select', function () {
-      var $select = $(this);
-      applySeatOpState($select);
-      saveSeatCoverOps($select);
-    });
-
-    $('.seat-op-select').each(function () {
-      applySeatOpState($(this));
     });
 
     $('.item-print-grip').each(function () {
