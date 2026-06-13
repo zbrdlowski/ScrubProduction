@@ -71,6 +71,8 @@ try {
     'updated' => $stats['updated'] ?? 0,
     'items' => $stats['items'] ?? 0,
     'skipped_shipping_items' => $stats['skipped_shipping_items'] ?? 0,
+    'skipped_locked_orders' => $stats['skipped_locked_orders'] ?? 0,
+    'skipped_locked_order_refs' => $stats['skipped_locked_order_refs'] ?? [],
     'note' => $stats['note'] ?? null,
   ], JSON_UNESCAPED_UNICODE);
 

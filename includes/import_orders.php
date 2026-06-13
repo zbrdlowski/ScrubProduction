@@ -1,12 +1,12 @@
 <div class="card card-dark">
   <div class="card-header">
-    <h3 class="card-title">Import objednávok DARKSCRUB_IMPORT.csv</h3>
+    <h3 class="card-title">Import objedn&aacute;vok DARKSCRUB_IMPORT.csv</h3>
   </div>
 
   <div class="card-body">
     <div class="alert alert-info">
-      Nahraj jednotný CSV export z Google Sheets tabu <b>DARKSCRUB_IMPORT</b>.
-      Import funguje ako add/update podľa <code>source + external_order_id</code>.
+      Nahraj jednotn&yacute; CSV export z Google Sheets tabu <b>DARKSCRUB_IMPORT</b>.
+      Import funguje ako add/update pod&#318;a <code>source + external_order_id</code>.
     </div>
 
     <input id="sourceSelect" type="hidden" value="DARKSCRUB" />
@@ -20,7 +20,7 @@
         Pretiahni DARKSCRUB_IMPORT.csv sem
       </div>
       <div class="text-muted" style="margin-top:6px;">
-        alebo klikni pre výber súboru
+        alebo klikni pre v&yacute;ber s&uacute;boru
       </div>
       <input id="fileInput" type="file" accept=".csv,text/csv" style="display:none;" />
     </div>
@@ -32,7 +32,7 @@
       <div id="selectedFile" class="ml-3 text-muted"></div>
       <div id="spinner" class="ml-3" style="display:none;">
         <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
-        <span class="ml-2">Importujem…</span>
+        <span class="ml-2">Importujem...</span>
       </div>
     </div>
 
@@ -57,7 +57,7 @@
 
   function setFile(f) {
     file = f;
-    selectedFile.textContent = file ? `${file.name} (${Math.round(file.size/1024)} KB)` : '';
+    selectedFile.textContent = file ? `${file.name} (${Math.round(file.size / 1024)} KB)` : '';
     btnUpload.disabled = !file;
   }
 
@@ -69,8 +69,8 @@
     dropzone.style.background = on ? 'rgba(0,123,255,.08)' : 'transparent';
   }
 
-  ['dragenter','dragover'].forEach(evt => dropzone.addEventListener(evt, e => { e.preventDefault(); highlight(true); }));
-  ['dragleave','drop'].forEach(evt => dropzone.addEventListener(evt, e => { e.preventDefault(); highlight(false); }));
+  ['dragenter', 'dragover'].forEach(evt => dropzone.addEventListener(evt, e => { e.preventDefault(); highlight(true); }));
+  ['dragleave', 'drop'].forEach(evt => dropzone.addEventListener(evt, e => { e.preventDefault(); highlight(false); }));
   dropzone.addEventListener('drop', e => e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0] && setFile(e.dataTransfer.files[0]));
 
   btnUpload.addEventListener('click', async () => {
@@ -99,19 +99,23 @@
         result.innerHTML = `
           <div class="alert alert-success">
             <b>Import OK</b><br>
-            Súbor: ${escapeHtml(data.filename)}<br>
-            Objednávky: ${data.orders}<br>
-            Nové: ${data.created}<br>
-            Aktualizované: ${data.updated}<br>
-            Výrobné položky: ${data.items}<br>
-            Preskočené shipping/payment položky: ${data.skipped_shipping_items}<br>
-            Poznámka: ${escapeHtml(data.note || '-')}
+            S&uacute;bor: ${escapeHtml(data.filename)}<br>
+            Objedn&aacute;vky: ${data.orders}<br>
+            Nov&eacute;: ${data.created}<br>
+            Aktualizovan&eacute;: ${data.updated}<br>
+            V&yacute;robn&eacute; polo&#382;ky: ${data.items}<br>
+            Presko&#269;en&eacute; shipping/payment polo&#382;ky: ${data.skipped_shipping_items}<br>
+            Presko&#269;en&eacute; zamknut&eacute; objedn&aacute;vky: ${data.skipped_locked_orders || 0}<br>
+            ${(data.skipped_locked_order_refs && data.skipped_locked_order_refs.length)
+              ? `Zamknut&eacute; ordery: ${escapeHtml(data.skipped_locked_order_refs.join(', '))}<br>`
+              : ''}
+            Pozn&aacute;mka: ${escapeHtml(data.note || '-')}
           </div>`;
       }
     } catch (err) {
       const details = [
         err && err.name ? `${err.name}: ${err.message || ''}`.trim() : String(err || 'Unknown error'),
-        'Skús hard refresh a pozri v DevTools > Network odpoveď pre scripts/upload_import_orders.php.'
+        'Skus hard refresh a pozri v DevTools > Network odpoved pre scripts/upload_import_orders.php.'
       ];
       result.innerHTML = `<div class="alert alert-danger"><b>Chyba uploadu</b><br>${escapeHtml(details.join(' '))}</div>`;
     } finally {

@@ -113,8 +113,18 @@ function isOrderItemReady(string $type, string $status, ?string $optionsJson = n
             return false;
         }
 
-        $seatCoverState = seatCoverOperationsStateFromJsonStrings($optionsJson, $internalOptionsJson);
-        return $seatCoverState['all_confirmed'];
+        // DOČASNE VYPNUTÉ:
+        // Ready validácia seat-cover operácií je zatiaľ bypassnutá aj pre
+        // workflow/semafor, aby bolo správanie konzistentné s
+        // scripts/orders/update_item_status.php. Po zavedení translation flat
+        // file / unifikácie vstupných hodnôt treba znovu zapnúť vyhodnocovanie
+        // nižšie a doladiť nad normalizovanými dátami.
+        if (false) {
+            $seatCoverState = seatCoverOperationsStateFromJsonStrings($optionsJson, $internalOptionsJson);
+            return $seatCoverState['all_confirmed'];
+        }
+
+        return true;
     }
 
     return $status === 'READY';

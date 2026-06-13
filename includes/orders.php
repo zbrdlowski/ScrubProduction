@@ -890,6 +890,57 @@ $deptOptions = [
     color: #c4b5fd;
   }
 
+  .orders-priority-chip {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    min-height: 28px;
+    padding: 4px 10px;
+    font-size: 12px;
+    font-weight: 600;
+    white-space: nowrap;
+    border-width: 1px;
+    border-radius: .2rem;
+  }
+
+  .orders-status-chip {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 28px;
+    padding: 4px 12px;
+    border: 1px solid transparent;
+    border-radius: .2rem;
+    font-size: 12px;
+    font-weight: 700;
+    line-height: 1.2;
+    white-space: nowrap;
+    box-shadow: inset 0 -1px 0 rgba(0, 0, 0, .14);
+  }
+
+  .orders-priority-chip.badge-danger {
+    color: #dc3545;
+    background: transparent;
+    border: 1px solid #dc3545;
+  }
+
+  .orders-priority-chip.badge-warning {
+    color: #ffc107;
+    background: transparent;
+    border: 1px solid #ffc107;
+  }
+
+  .orders-priority-chip.badge-success {
+    color: #28a745;
+    background: transparent;
+    border: 1px solid #28a745;
+  }
+
+  .orders-priority-chip.priority-badge-clickable {
+    cursor: pointer;
+  }
+
   .assigned-avatar-wrap {
     position: relative;
     display: inline-flex;
@@ -1851,31 +1902,34 @@ $deptOptions = [
                   $badgeStyle .= 'cursor:pointer;';
                 ?>
                 <?php if ($perm >= 300): ?>
-                  <span class="badge <?= $priorityBadge ?> priority-badge-clickable" style="<?= $badgeStyle ?>"
+                  <button type="button" class="badge <?= $priorityBadge ?> orders-priority-chip priority-badge-clickable" style="<?= $badgeStyle ?>"
                     data-order-id="<?= $orderId ?>" data-priority="<?= $priorityValue ?>"
                     data-priority-date="<?= htmlspecialchars($priorityDateRaw) ?>">
                     <?= $priorityEmoji ?>     <?= htmlspecialchars($priorityLabel) ?>
                     <?php if ($priorityDateFmt): ?>
                       <span style="opacity:.75;font-weight:400;">· <?= htmlspecialchars($priorityDateFmt) ?></span>
                     <?php endif; ?>
-                  </span>
+                  </button>
                 <?php else: ?>
-                  <span class="badge <?= $priorityBadge ?>" style="<?= $badgeStyle ?>">
+                  <button type="button" class="badge <?= $priorityBadge ?> orders-priority-chip" style="<?= $badgeStyle ?> pointer-events:none;">
                     <?= $priorityEmoji ?>     <?= htmlspecialchars($priorityLabel) ?>
                     <?php if ($priorityDateFmt): ?>
                       <span style="opacity:.75;font-weight:400;">· <?= htmlspecialchars($priorityDateFmt) ?></span>
                     <?php endif; ?>
-                  </span>
+                  </button>
                 <?php endif; ?>
               </td>
               <td class="text-center" data-status-cell="<?= $orderId ?>">
                 <?php
                 $status = strtoupper((string) ($row['status'] ?? ''));
 
-                $btnClass = ordersGetOrderStatusButtonClass($status);
                 $statusLabel = ordersGetStatusLabel($conn, 'order', $status);
+                $statusColor = ordersGetStatusColor($conn, 'order', $status) ?: '#6c757d';
+                $statusStyle = 'background-color:' . htmlspecialchars($statusColor, ENT_QUOTES, 'UTF-8') . ';'
+                  . 'border-color:' . htmlspecialchars($statusColor, ENT_QUOTES, 'UTF-8') . ';'
+                  . 'color:#fff;';
                 ?>
-                <button class="btn btn-xs <?= $btnClass ?>" style="pointer-events:none;">
+                <button type="button" class="btn btn-xs orders-status-chip" style="<?= $statusStyle ?> pointer-events:none;">
                   <?= htmlspecialchars($statusLabel ?: '-') ?>
                 </button>
               </td>

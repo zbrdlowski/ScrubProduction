@@ -189,6 +189,11 @@ function productSpecFieldMeta(array $definition): array
       $meta['control_class'] = 'item-print-generic item-product-spec-field g-opt-note-textarea';
       $meta['placeholder'] = 'Poznámka...';
       break;
+    case 'seat_patch_applied':
+      $meta['internal_key'] = '_seat_patch_applied';
+      $meta['source_keys'] = ['patch-style'];
+      $meta['fallback_options'] = ['0' => '✗', '1' => '✓'];
+      break;
   }
 
   if ($isNoteLikeField) {
@@ -1271,6 +1276,15 @@ ob_start();
     font-weight: 600;
   }
 
+  .order-detail-table tbody tr.item-repeat-header-row th {
+    background-color: #343a40;
+    color: #fff;
+    font-weight: 600;
+    position: sticky;
+    top: 0;
+    z-index: 1;
+  }
+
   /* ── Item block separácia ───────────────────────────────────────
      AdminLTE používa border-collapse:collapse — border-radius na tr
      nefunguje. Riešenie: box-shadow na td simuluje outline celého bloku.
@@ -1559,6 +1573,22 @@ ob_start();
   .order-detail-header .form-control {
     background-color: rgba(0, 0, 0, 0.18) !important;
     border-color: rgba(255, 255, 255, 0.18) !important;
+    color: #f8f9fa !important;
+  }
+
+  .order-detail-header select.form-control,
+  .order-detail-header-selects select.form-control,
+  .order-detail-header .order-status-select,
+  .order-detail-header .order-types-select {
+    background-color: #2b3035 !important;
+    color: #f8f9fa !important;
+  }
+
+  .order-detail-header select.form-control option,
+  .order-detail-header-selects select.form-control option,
+  .order-detail-header .order-status-select option,
+  .order-detail-header .order-types-select option {
+    background-color: #2b3035 !important;
     color: #f8f9fa !important;
   }
 
@@ -2576,31 +2606,29 @@ ob_start();
       <?php endif; ?>
       <div class="table-responsive">
         <table class="table table-sm table-bordered mb-0 order-detail-table">
-          <thead>
-            <tr>
-              <th class="text-center">Assigned</th>
-              <th>Product Type</th>
-              <th class="text-center">Názov</th>
-              <th>Qty</th>
-              <?php if ((int) ($_SESSION['permission'] ?? 0) >= 300): ?>
-                <th>Price</th>
-              <?php endif; ?>
-
-              <th title="Category / model info">Category Info</th>
-              <th title="Product specification" style="display:none;">📋 Product Specification</th>
-              <th>Link</th>
-              <th class="text-center">Detail</th>
-              <th>Action</th>
-              <th>Waiting</th>
-              <?php if ((int) ($_SESSION['permission'] ?? 0) >= 300): ?>
-                <th class="text-center">Save</th>
-                <th class="text-center">Delete</th>
-              <?php endif; ?>
-            </tr>
-          </thead>
           <tbody>
 
             <?php foreach ($items as $it): ?>
+              <tr class="item-repeat-header-row">
+                <th class="text-center">Assigned</th>
+                <th>Product Type</th>
+                <th class="text-center">Názov</th>
+                <th>Qty</th>
+                <?php if ((int) ($_SESSION['permission'] ?? 0) >= 300): ?>
+                  <th>Price</th>
+                <?php endif; ?>
+
+                <th title="Category / model info">Category Info</th>
+                <th title="Product specification" style="display:none;">📋 Product Specification</th>
+                <th>Link</th>
+                <th class="text-center">Detail</th>
+                <th>Action</th>
+                <th>Waiting</th>
+                <?php if ((int) ($_SESSION['permission'] ?? 0) >= 300): ?>
+                  <th class="text-center">Save</th>
+                  <th class="text-center">Delete</th>
+                <?php endif; ?>
+              </tr>
               <?php
               $t = strtoupper((string) ($it['item_type_code'] ?? 'NULL'));
               $badge = 'badge-secondary';

@@ -322,6 +322,29 @@ function oi_upsert_address(mysqli $conn, int $orderId, string $type, array $a): 
 }
 
 function oi_delete_items_for_order(mysqli $conn, int $orderId): void {
+  // Remove item assignments first, otherwise FK fk_oia_item blocks item refresh
+  // during add/update imports.
+  $stmt = $conn->prepare("
+    DELETE oia
+    FROM order_item_assignments oia
+    JOIN order_items oi ON oi.id = oia.item_id
+    WHERE oi.order_id = ?
+  ");
+  $stmt->bind_param('i', $orderId);
+  $stmt->execute();
+  $stmt->close();
+
+  // Cleanup historical item statuses for the items that are about to be replaced.
+  $stmt = $conn->prepare("
+    DELETE ois
+    FROM order_item_statuses ois
+    JOIN order_items oi ON oi.id = ois.order_item_id
+    WHERE oi.order_id = ?
+  ");
+  $stmt->bind_param('i', $orderId);
+  $stmt->execute();
+  $stmt->close();
+
   // delete item categories first
   $stmt = $conn->prepare("
     DELETE oic
@@ -337,6 +360,78 @@ function oi_delete_items_for_order(mysqli $conn, int $orderId): void {
   $stmt->bind_param('i', $orderId);
   $stmt->execute();
   $stmt->close();
+}
+
+function oi_get_order_reimport_lock_info(mysqli $conn, int $orderId): array {
+  $assignmentCount = 0;
+  $stmt = $conn->prepare("
+    SELECT COUNT(*) AS cnt
+    FROM order_item_assignments oia
+    JOIN order_items oi ON oi.id = oia.item_id
+    WHERE oi.order_id = ?
+      AND oi.deleted_at IS NULL
+      AND oia.removed_at IS NULL
+  ");
+  $stmt->bind_param('i', $orderId);
+  $stmt->execute();
+  $row = $stmt->get_result()->fetch_assoc();
+  $stmt->close();
+  if ($row) {
+    $assignmentCount = (int) ($row['cnt'] ?? 0);
+  }
+
+  $nonNewStatusCount = 0;
+  $stmt = $conn->prepare("
+    SELECT COUNT(*) AS cnt
+    FROM order_items
+    WHERE order_id = ?
+      AND deleted_at IS NULL
+      AND status IS NOT NULL
+      AND TRIM(status) <> ''
+      AND UPPER(TRIM(status)) <> 'NEW'
+  ");
+  $stmt->bind_param('i', $orderId);
+  $stmt->execute();
+  $row = $stmt->get_result()->fetch_assoc();
+  $stmt->close();
+  if ($row) {
+    $nonNewStatusCount = (int) ($row['cnt'] ?? 0);
+  }
+
+  $statusHistoryCount = 0;
+  $stmt = $conn->prepare("
+    SELECT COUNT(*) AS cnt
+    FROM order_item_statuses ois
+    JOIN order_items oi ON oi.id = ois.order_item_id
+    WHERE oi.order_id = ?
+      AND oi.deleted_at IS NULL
+  ");
+  $stmt->bind_param('i', $orderId);
+  $stmt->execute();
+  $row = $stmt->get_result()->fetch_assoc();
+  $stmt->close();
+  if ($row) {
+    $statusHistoryCount = (int) ($row['cnt'] ?? 0);
+  }
+
+  $reasons = [];
+  if ($assignmentCount > 0) {
+    $reasons[] = 'assignments';
+  }
+  if ($nonNewStatusCount > 0) {
+    $reasons[] = 'item_status';
+  }
+  if ($statusHistoryCount > 0) {
+    $reasons[] = 'status_history';
+  }
+
+  return [
+    'locked' => !empty($reasons),
+    'assignment_count' => $assignmentCount,
+    'non_new_status_count' => $nonNewStatusCount,
+    'status_history_count' => $statusHistoryCount,
+    'reasons' => $reasons,
+  ];
 }
 
 function oi_insert_item(mysqli $conn, int $orderId, ?int $lineNo, ?string $sku, ?string $title, ?string $customLabel, int $qty, ?string $optionsJson): int {

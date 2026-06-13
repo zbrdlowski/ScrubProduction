@@ -1162,7 +1162,7 @@
             <td class="spec-value-cell">${escapeHtml(value)}</td>
             <td class="spec-sort-cell">${sortOrder}</td>
             <td class="spec-active-cell">${active === 1 ? 'Yes' : 'No'}</td>
-            <td>
+            <td style="width:30px;">
               <button class="btn bg-gradient-primary btn-sm edit-product-spec-option"><i class="fa fa-edit"></i> Edit</button>
               <button class="btn bg-gradient-success btn-sm save-product-spec-option" style="display:none;"><i class="fa fa-save"></i> Save</button>
               <button class="btn bg-gradient-danger btn-sm delete-product-spec-option"><i class="fa fa-trash"></i></button>

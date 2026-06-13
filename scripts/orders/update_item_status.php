@@ -50,6 +50,13 @@ if (!in_array($newStatus, $allowed, true)) {
 }
 
 if ($newStatus === 'READY' && $itemType === 'S') {
+    // DOČASNE VYPNUTÉ:
+    // Validácia seat-cover operácií pred prechodom na READY ostáva zachovaná
+    // nižšie v tomto bloku, ale je teraz bypassnutá. Dôvod: vstupné hodnoty
+    // z importu zatiaľ prichádzajú vo viacerých jazykových/platformových
+    // variantoch. Po zavedení translation flat file / normalizačnej vrstvy
+    // treba tento blok znovu zapnúť a doladiť nad unifikovanými hodnotami.
+    if (false) {
     $extOptArr      = json_decode((string)($item['options_json'] ?? ''), true) ?: [];
     $internalOptArr = json_decode((string)($item['internal_options_json'] ?? ''), true) ?: [];
     $confirmed      = $internalOptArr['_seat_cover_ops_confirmed'] ?? [];
@@ -89,6 +96,7 @@ if ($newStatus === 'READY' && $itemType === 'S') {
             'message' => '⚠️ Položku nemožno označiť ako Ready. Najskôr potvrď: ' . implode(', ', $missing)
         ]);
         exit;
+    }
     }
 }
 

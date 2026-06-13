@@ -260,6 +260,8 @@ function import_darkscrub_unified_csv(mysqli $conn, string $csvPath): array {
     'items' => 0,
     'skipped_shipping_items' => 0,
     'skipped_rows' => count($rows) - array_sum(array_map('count', $byOrder)),
+    'skipped_locked_orders' => 0,
+    'skipped_locked_order_refs' => [],
   ];
 
   foreach ($byOrder as $groupKey => $itemRows) {
@@ -299,7 +301,18 @@ function import_darkscrub_unified_csv(mysqli $conn, string $csvPath): array {
       'source_name' => $first['source_name'] ?? null,
     ];
 
-    $beforeExists = oi_find_order_id($conn, $sourceId, $externalOrderId) !== null;
+    $existingOrderId = oi_find_order_id($conn, $sourceId, $externalOrderId);
+    $beforeExists = $existingOrderId !== null;
+
+    if ($beforeExists) {
+      $lockInfo = oi_get_order_reimport_lock_info($conn, (int) $existingOrderId);
+      if (!empty($lockInfo['locked'])) {
+        $stats['skipped_locked_orders']++;
+        $stats['skipped_locked_order_refs'][] = $sourceCode . ':' . $externalOrderId;
+        continue;
+      }
+    }
+
     $shippingMethod = oi_extract_shipping_method_from_rows($itemRows);
     $paymentMethod = oi_extract_payment_method_from_rows($itemRows);
 
@@ -528,6 +541,9 @@ function import_darkscrub_unified_csv(mysqli $conn, string $csvPath): array {
   }
 
   $stats['note'] = 'DARKSCRUB unified add/update import completed';
+  if (!empty($stats['skipped_locked_orders'])) {
+    $stats['note'] .= '; skipped locked orders: ' . (int) $stats['skipped_locked_orders'];
+  }
   return $stats;
 }
 
