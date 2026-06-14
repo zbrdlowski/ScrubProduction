@@ -1,4 +1,4 @@
-﻿<!-- pracovne departmenty -->
+<!-- pracovne departmenty -->
 <div class="container-fluid">
   <div class="row">
     <div class="col-md-6">

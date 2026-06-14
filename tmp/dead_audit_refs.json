@@ -1,0 +1,2622 @@
+﻿[
+    {
+        "path":  "includes\\backup\\scan_in_old.php",
+        "area":  "script",
+        "classification":  "archive_or_legacy_copy",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "includes\\items_bckp.php",
+        "area":  "script",
+        "classification":  "archive_or_legacy_copy",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "includes\\items-1.php",
+        "area":  "script",
+        "classification":  "archive_or_legacy_copy",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "includes\\items-ai.php",
+        "area":  "script",
+        "classification":  "archive_or_legacy_copy",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "includes\\kit_diss_1.php",
+        "area":  "script",
+        "classification":  "archive_or_legacy_copy",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "includes\\kit_diss_old.php",
+        "area":  "script",
+        "classification":  "archive_or_legacy_copy",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "includes\\kit_diss-1.php",
+        "area":  "script",
+        "classification":  "archive_or_legacy_copy",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "includes\\orders_old.php",
+        "area":  "script",
+        "classification":  "archive_or_legacy_copy",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "includes\\plastics_dashboard_1.php",
+        "area":  "script",
+        "classification":  "archive_or_legacy_copy",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "includes\\access_control.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "includes\\add_item.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "includes\\archive_stock_movements.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "includes\\assign.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "includes\\attendance.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "includes\\attendance_detail.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "includes\\attendance_modal.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "includes\\attendance_print.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "includes\\backup\\bulk_scan_in.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "includes\\backup\\bulk_scan_in_redesign.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "includes\\backup\\index.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "includes\\backup\\items.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "includes\\backup\\kit_diss.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "includes\\backup\\order_prepare.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "includes\\backup\\order_prepare_form.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "includes\\backup\\scan_in.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "includes\\backup\\scan_in_before_items_update.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "includes\\bulk_scan_in.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "includes\\bulk_scan_in_2.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "includes\\calendar.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "includes\\calendar_default.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "includes\\calendar_no_user.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "includes\\calendar_row.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "includes\\calendar_user.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "includes\\cleanup.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "includes\\conn.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "includes\\controlls.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "includes\\controlls_product_specs.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "includes\\delivered.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "includes\\display_stock.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "includes\\edit_item.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "includes\\employee.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "includes\\employee_add.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "includes\\employee_delete.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "includes\\employee_edit.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "includes\\employee_edit_photo.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "includes\\employee_modal.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "includes\\employee_row.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "includes\\fetch.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "includes\\fetch_data.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "includes\\general_items.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "includes\\get_order_detail_product_spec_selects.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "includes\\get_thread.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "includes\\historical_movements.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "includes\\holidays.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "includes\\chat.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "includes\\import_orders.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "includes\\intake_print.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "includes\\inventory_report.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "includes\\items.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "includes\\items_bckp_1.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "includes\\items_table_renderer.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "includes\\kit_diss.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "includes\\logs.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "includes\\modeldata.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "includes\\modeldata_edit.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "includes\\modeldata_update.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "includes\\navbar.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "includes\\new_items.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "includes\\order_prepare.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "includes\\order_prepare_form.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "includes\\orders.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "includes\\orders_dashboard.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "includes\\orders_status_helpers.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "includes\\orders_workflow_helpers.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "includes\\pato_items.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "includes\\permissions.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "includes\\personal_attendance.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "includes\\personal_attendance_detail.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "includes\\plastics_dashboard.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "includes\\plastics_orders.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "includes\\plastics_orders_active.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "includes\\plastics_orders_all.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "includes\\plastics_orders_sent.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "includes\\plastics_stock.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "includes\\position.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "includes\\position_edit_modal.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "includes\\position_modal.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "includes\\position_row.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "includes\\pprofile.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "includes\\product_chart.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "includes\\profile.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "includes\\profile_detail_modal.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "includes\\profile_modal.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "includes\\profile_online_grid.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "includes\\profile_orders.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "includes\\profile_projects.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "includes\\profile_update.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "includes\\projects.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "includes\\qr.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "includes\\qr_scanner.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "includes\\quick_search.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "includes\\real_data.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "includes\\receive_supply.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "includes\\receiving_summary.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "includes\\relocate_item.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "includes\\reset_location.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "includes\\scan_form.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "includes\\scan_form_out.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "includes\\scripts.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "includes\\scrublistings.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "includes\\scrublistings_import.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "includes\\search.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "includes\\search_item.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "includes\\settings.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "includes\\shelf_utilization.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "includes\\shelves.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "includes\\shoptet_order_download.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "includes\\schedule_edit_modal.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "includes\\schedule_modal.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "includes\\sidebar.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "includes\\sidebar_1.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "includes\\status_policies.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "includes\\stock_movements.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "includes\\submit_order.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "includes\\system.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "includes\\upload_csv.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "includes\\upload_csv_module.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "includes\\upload_items.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "includes\\userbanner.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "scripts\\add_intake_label_manual.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "scripts\\add_item.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "scripts\\add_kit.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "scripts\\add_shelf.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "scripts\\archive_data.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "scripts\\attendance_add.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "scripts\\attendance_delete.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "scripts\\attendance_edit.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "scripts\\attendance_print.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "scripts\\attendance_row.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "scripts\\cleanup_empty_shelves.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "scripts\\clear_saved_order.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "scripts\\db.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "scripts\\delete_kits.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "scripts\\delete_order_row.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "scripts\\dovolenka_add.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "scripts\\download_log.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "scripts\\employee_add.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "scripts\\employee_update.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "scripts\\employees\\employees_search.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "scripts\\excel.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "scripts\\excel_detail.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "scripts\\fetch_kits.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "scripts\\get_barcodes.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "scripts\\get_intake_labels.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "scripts\\get_last_movements.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "scripts\\get_open_suppliers.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "scripts\\get_supplier_orders.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "scripts\\get_suppliers.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "scripts\\chat\\download_attachment.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "scripts\\chat\\get_contacts.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "scripts\\chat\\get_messages.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "scripts\\chat\\get_thread.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "scripts\\chat\\get_unread_count.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "scripts\\chat\\get_unread_thread.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "scripts\\chat\\get_unread_threads.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "scripts\\chat\\helpers.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "scripts\\chat\\check_updates.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "scripts\\chat\\mark_read.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "scripts\\chat\\send_announcement.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "scripts\\chat\\send_message.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "scripts\\chat\\start_dm.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "scripts\\chat\\upload_attachment.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "scripts\\import_darkscrub_unified.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "scripts\\import_ebay.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "scripts\\import_mxlocker.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "scripts\\import_shoptet.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "scripts\\inline_edit_template.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "scripts\\labels\\label_index.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "scripts\\labels\\label_rtp.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "scripts\\labels\\label_seat.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "scripts\\listings\\import_listings_csv.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "scripts\\listings\\platform_suggestions.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "scripts\\listings\\update_listing.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "scripts\\load_order_items.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "scripts\\mark_labels_printed.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "scripts\\movement_trends.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "scripts\\movements.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "scripts\\multi_table_csv_upload.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "scripts\\order_import_lib.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "scripts\\orders\\activity_helper.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "scripts\\orders\\add_invoice.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "scripts\\orders\\add_order_item.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "scripts\\orders\\add_tracking.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "scripts\\orders\\assign_order_item.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "scripts\\orders\\category_sync_helper.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "scripts\\orders\\delete_invoice.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "scripts\\orders\\delete_order_item.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "scripts\\orders\\delete_tracking.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "scripts\\orders\\department_config.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "scripts\\orders\\get_order_detail.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "scripts\\orders\\get_order_traffic.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "scripts\\orders\\get_print_suggestions.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "scripts\\orders\\invite_collab.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "scripts\\orders\\load_activity_log.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "scripts\\orders\\remove_order_assignment.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "scripts\\orders\\take_order.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "scripts\\orders\\update_item_internal_options.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "scripts\\orders\\update_item_options.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "scripts\\orders\\update_item_product_url.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "scripts\\orders\\update_item_status.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "scripts\\orders\\update_item_waiting.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "scripts\\orders\\update_order_country.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "scripts\\orders\\update_order_header.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "scripts\\orders\\update_order_item.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "scripts\\orders\\update_order_priority.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "scripts\\orders\\update_order_status.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "scripts\\orders\\update_order_types.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "scripts\\orders\\update_production_note.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "scripts\\parse_uploaded_file.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "scripts\\PhpXlsxGenerator.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "scripts\\process_archive.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "scripts\\profile_orders\\get_order_detail.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "scripts\\receive_supply.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "scripts\\receive_supply_fifo.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "scripts\\receive_supply_upload.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "scripts\\relocate_item.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "scripts\\reset_position.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "scripts\\save_model_meta.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "scripts\\save_order_item.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "scripts\\save_shelf_layout.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "scripts\\scan_in.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "scripts\\scan_out.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "scripts\\scrublistings\\add_barcode.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "scripts\\scrublistings\\delete_barcode.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "scripts\\scrublistings\\discontinue_listing.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "scripts\\scrublistings\\import_csv.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "scripts\\scrublistings\\update_barcode.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "scripts\\scrublistings\\update_listing.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "scripts\\session_check.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "scripts\\settings\\delete_product_spec_option.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "scripts\\settings\\delete_status_definition.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "scripts\\settings\\get_order_detail_product_spec_selects.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "scripts\\settings\\insert_product_spec_option.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "scripts\\settings\\insert_status_definition.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "scripts\\settings\\product_spec_ajax_bootstrap.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "scripts\\settings\\status_definition_ajax_bootstrap.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "scripts\\settings\\update_product_spec_option.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "scripts\\settings\\update_status_definition.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "scripts\\submit_order.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "scripts\\supplier_distribution.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "scripts\\update_item.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "scripts\\update_kit_order.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "scripts\\update_kits.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "scripts\\update_order.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "scripts\\update_order_number.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "scripts\\update_order_status.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "scripts\\update_quantity.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "scripts\\update_shelf.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "scripts\\update_stock_levels.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "scripts\\upload_csv.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "scripts\\upload_import_orders.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    },
+    {
+        "path":  "scripts\\upload_items.php",
+        "area":  "script",
+        "classification":  "probable_dead",
+        "direct_refs":  0,
+        "page_refs":  0,
+        "include_refs":  0,
+        "endpoint_refs":  0,
+        "sample_refs":  ""
+    }
+]

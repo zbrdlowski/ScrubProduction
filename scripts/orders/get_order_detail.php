@@ -1,5 +1,5 @@
-﻿<?php
-//declare(strict_types=1);
+<?php
+declare(strict_types=1);
 ob_start();
 register_shutdown_function(function () {
   $err = error_get_last();
