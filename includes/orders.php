@@ -932,9 +932,9 @@ $deptOptions = [
   }
 
   .orders-priority-chip.badge-success {
-    color: #28a745;
+    color: #6b6767;
     background: transparent;
-    border: 1px solid #28a745;
+    border: 1px solid #6b6767;
   }
 
   .orders-priority-chip.priority-badge-clickable {
@@ -1504,7 +1504,7 @@ $deptOptions = [
                 <?php foreach ([
                   '20' => '🔴 Priority',
                   '10' => '🟠 Deadline',
-                  '0' => '🟢 Normal',
+                  '0' => '⚫ Normal',
                   // ── sem pridaj ──
                 ] as $val => $lbl): ?>
                   <?= fOpt((string) $val, $lbl, $fPriority) ?>
@@ -1894,7 +1894,7 @@ $deptOptions = [
                   $priorityEmoji = '🟠';
                 } else {
                   $priorityBadge = 'badge-success';
-                  $priorityEmoji = '🟢';
+                  $priorityEmoji = '⚫';
                 }
 
                 $badgeStyle = 'display:inline-flex;align-items:center;gap:6px;padding:4px 10px;font-size:12px;font-weight:500;white-space:nowrap;';
@@ -3582,7 +3582,7 @@ $deptOptions = [
         <div class="form-group mb-3">
           <label class="text-muted small mb-1">Priority level</label>
           <select id="priorityModalLevel" class="form-control form-control-sm bg-dark text-white border-secondary">
-            <option value="0">🟢 Normal</option>
+            <option value="0">⚫ Normal</option>
             <option value="10">🟠 Deadline</option>
             <option value="20">🔴 Priority</option>
           </select>

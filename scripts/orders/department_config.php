@@ -28,7 +28,7 @@ declare(strict_types=1);
 const DEPT_PREFIX_MAP = [
   // --- Pure Graphics ---
   'G'     => ['G'],
-  'TF'    => ['G'],          // TF bez P (len grafika, nie plasty)
+  'TF'    => ['G','F'],          // TF bez P (len grafika, nie plasty)
 
   // --- Pure Plastics ---
   'P'     => ['P'],
@@ -47,8 +47,8 @@ const DEPT_PREFIX_MAP = [
   'GFPS'  => ['G', 'P', 'F', 'S'],
 
   // --- Transfer Foil sets (Graphics + Plastics) ---
-  'TFP'   => ['G', 'P'],
-  'TFPS'  => ['G', 'P', 'S'],
+  'TFP'   => ['G', 'P','F'],
+  'TFPS'  => ['G', 'P', 'S','F'],
 
   // ---------------------------------------------------------------------------
   // DOPLŇ SEM nové prefixe v prípade zmeny sortimentu.
