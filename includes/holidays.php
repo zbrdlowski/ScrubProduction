@@ -97,6 +97,106 @@ function holidayValidDate(string $date): bool
   return checkdate($m, $d, $y);
 }
 
+function holidayIsNonWorkingDate(string $date, array $publicHolidays): bool
+{
+  $dt = new DateTime($date);
+  $isWeekend = intval($dt->format('N')) >= 6;
+  $isPublicHoliday = isset($publicHolidays[$dt->format('d-m')]);
+  return $isWeekend || $isPublicHoliday;
+}
+
+function holidayNextWorkingDate(string $date, array $publicHolidays): string
+{
+  $dt = new DateTime($date);
+  do {
+    $dt->modify('+1 day');
+    $candidate = $dt->format('Y-m-d');
+  } while (holidayIsNonWorkingDate($candidate, $publicHolidays));
+
+  return $candidate;
+}
+
+function holidayCollectRequestIds(array $raw): array
+{
+  $ids = [];
+  foreach ($raw as $item) {
+    $id = is_array($item) ? intval($item['id'] ?? 0) : intval($item);
+    if ($id > 0) {
+      $ids[$id] = $id;
+    }
+  }
+  return array_values($ids);
+}
+
+function holidayStmtBindParams(mysqli_stmt $stmt, string $types, array $values): bool
+{
+  $params = [$types];
+  foreach ($values as $index => $value) {
+    $params[] = &$values[$index];
+  }
+  return call_user_func_array([$stmt, 'bind_param'], $params);
+}
+
+function holidayGroupRequests(array $rows, array $publicHolidays): array
+{
+  if (empty($rows)) {
+    return [];
+  }
+
+  usort($rows, static function (array $a, array $b): int {
+    $cmp = strcmp((string) ($a['employee_name'] ?? ''), (string) ($b['employee_name'] ?? ''));
+    if ($cmp !== 0) {
+      return $cmp;
+    }
+    $cmp = strcmp((string) ($a['created_at'] ?? ''), (string) ($b['created_at'] ?? ''));
+    if ($cmp !== 0) {
+      return $cmp;
+    }
+    $cmp = strcmp((string) ($a['start_date'] ?? ''), (string) ($b['start_date'] ?? ''));
+    if ($cmp !== 0) {
+      return $cmp;
+    }
+    return intval($a['id'] ?? 0) <=> intval($b['id'] ?? 0);
+  });
+
+  $grouped = [];
+
+  foreach ($rows as $row) {
+    $mergeKey = implode('|', [
+      intval($row['employee_id'] ?? 0),
+      (string) ($row['request_type'] ?? ''),
+      (string) ($row['status'] ?? ''),
+      trim((string) ($row['note'] ?? '')),
+      trim((string) ($row['admin_note'] ?? '')),
+      intval($row['requested_by'] ?? 0),
+      intval($row['reviewed_by'] ?? 0),
+      (string) ($row['created_at'] ?? ''),
+    ]);
+
+    $lastIndex = count($grouped) - 1;
+    if ($lastIndex >= 0 && ($grouped[$lastIndex]['_merge_key'] ?? '') === $mergeKey) {
+      $expectedNextDate = holidayNextWorkingDate($grouped[$lastIndex]['end_date'], $publicHolidays);
+      if (($row['start_date'] ?? '') <= $expectedNextDate) {
+        $grouped[$lastIndex]['end_date'] = max($grouped[$lastIndex]['end_date'], $row['end_date']);
+        $grouped[$lastIndex]['request_ids'][] = intval($row['id']);
+        continue;
+      }
+    }
+
+    $row['request_ids'] = [intval($row['id'])];
+    $row['_merge_key'] = $mergeKey;
+    $grouped[] = $row;
+  }
+
+  foreach ($grouped as &$group) {
+    $group['request_ids'] = holidayCollectRequestIds($group['request_ids']);
+    unset($group['_merge_key']);
+  }
+  unset($group);
+
+  return $grouped;
+}
+
 function holidayAvatar(?string $photo, string $name = ''): string
 {
   $photo = trim((string) $photo);
@@ -131,6 +231,13 @@ $holidayError = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && $holidayHasTable) {
   $action = $_POST['action'] ?? '';
+  $requestIdsRaw = $_POST['request_ids'] ?? [];
+  if (!is_array($requestIdsRaw)) {
+    $requestIdsRaw = preg_split('/\s*,\s*/', (string) $requestIdsRaw, -1, PREG_SPLIT_NO_EMPTY);
+  }
+  $requestIds = array_values(array_filter(array_map('intval', $requestIdsRaw), static function (int $id): bool {
+    return $id > 0;
+  }));
   $returnStart = preg_replace('/[^0-9-]/', '', $_POST['return_start'] ?? ($_GET['start'] ?? ''));
   $returnUrl = $_SERVER['PHP_SELF'] . '?page=holidays' . ($returnStart !== '' ? '&start=' . urlencode($returnStart) : '');
 
@@ -145,45 +252,51 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $holidayHasTable) {
     $end = trim($_POST['end_date'] ?? '');
     $note = trim($_POST['note'] ?? '');
 
-if ($employeeId > 0 && holidayValidDate($start) && holidayValidDate($end)) {
-  if (strtotime($end) < strtotime($start)) {
-    [$start, $end] = [$end, $start];
-  }
+    if ($employeeId > 0 && holidayValidDate($start) && holidayValidDate($end)) {
+      if (strtotime($end) < strtotime($start)) {
+        [$start, $end] = [$end, $start];
+      }
 
-  $validDates = [];
+      $validDates = [];
 
-  foreach (holidayRangeDates($start, $end) as $date) {
-    $dt = new DateTime($date);
+      foreach (holidayRangeDates($start, $end) as $date) {
+        if (!holidayIsNonWorkingDate($date, $holidayPublicHolidays)) {
+          $validDates[] = $date;
+        }
+      }
 
-    $isWeekend = intval($dt->format('N')) >= 6;
-    $isPublicHoliday = isset($holidayPublicHolidays[$dt->format('d-m')]);
+      if (!empty($validDates)) {
+        $normalizedStart = reset($validDates);
+        $normalizedEnd = end($validDates);
 
-    if (!$isWeekend && !$isPublicHoliday) {
-      $validDates[] = $date;
+        $stmt = $conn->prepare("INSERT INTO holiday_requests
+            (employee_id, request_type, status, start_date, end_date, note, requested_by)
+            VALUES (?, ?, 'pending', ?, ?, ?, ?)");
+        $stmt->bind_param('issssi', $employeeId, $type, $normalizedStart, $normalizedEnd, $note, $holidayEmpId);
+        $stmt->execute();
+        $stmt->close();
+      }
     }
-  }
-
-  foreach ($validDates as $validDate) {
-    $stmt = $conn->prepare("INSERT INTO holiday_requests
-        (employee_id, request_type, status, start_date, end_date, note, requested_by)
-        VALUES (?, ?, 'pending', ?, ?, ?, ?)");
-    $stmt->bind_param('issssi', $employeeId, $type, $validDate, $validDate, $note, $holidayEmpId);
-    $stmt->execute();
-    $stmt->close();
-  }
-}
     holidayRedirect($returnUrl);
   }
 
   if ($action === 'review_holiday_request' && $holidayIsAdmin) {
-    $requestId = intval($_POST['request_id'] ?? 0);
     $newStatus = $_POST['status'] ?? '';
+    if (empty($requestIds)) {
+      $singleRequestId = intval($_POST['request_id'] ?? 0);
+      if ($singleRequestId > 0) {
+        $requestIds = [$singleRequestId];
+      }
+    }
     $adminNote = trim($_POST['admin_note'] ?? '');
-    if ($requestId > 0 && in_array($newStatus, ['approved', 'rejected'], true)) {
+    if (!empty($requestIds) && in_array($newStatus, ['approved', 'rejected'], true)) {
+      $placeholders = implode(',', array_fill(0, count($requestIds), '?'));
+      $types = 'ssi' . str_repeat('i', count($requestIds));
+      $params = array_merge([$newStatus, $adminNote, $holidayEmpId], $requestIds);
       $stmt = $conn->prepare("UPDATE holiday_requests
           SET status=?, admin_note=?, reviewed_by=?, reviewed_at=NOW(), employee_seen_at=NULL
-          WHERE id=? AND status='pending'");
-      $stmt->bind_param('ssii', $newStatus, $adminNote, $holidayEmpId, $requestId);
+          WHERE id IN ({$placeholders}) AND status='pending'");
+      holidayStmtBindParams($stmt, $types, $params);
       $stmt->execute();
       $stmt->close();
     }
@@ -191,14 +304,27 @@ if ($employeeId > 0 && holidayValidDate($start) && holidayValidDate($end)) {
   }
 
   if ($action === 'cancel_holiday_request') {
-    $requestId = intval($_POST['request_id'] ?? 0);
-    if ($requestId > 0) {
+    if (empty($requestIds)) {
+      $singleRequestId = intval($_POST['request_id'] ?? 0);
+      if ($singleRequestId > 0) {
+        $requestIds = [$singleRequestId];
+      }
+    }
+    if (!empty($requestIds)) {
+      $placeholders = implode(',', array_fill(0, count($requestIds), '?'));
       if ($holidayIsAdmin) {
-        $stmt = $conn->prepare("UPDATE holiday_requests SET status='cancelled' WHERE id=? AND status='pending'");
-        $stmt->bind_param('i', $requestId);
+        $stmt = $conn->prepare("UPDATE holiday_requests
+            SET status='cancelled'
+            WHERE id IN ({$placeholders}) AND status='pending'");
+        $types = str_repeat('i', count($requestIds));
+        holidayStmtBindParams($stmt, $types, $requestIds);
       } else {
-        $stmt = $conn->prepare("UPDATE holiday_requests SET status='cancelled' WHERE id=? AND employee_id=? AND status='pending'");
-        $stmt->bind_param('ii', $requestId, $holidayEmpId);
+        $stmt = $conn->prepare("UPDATE holiday_requests
+            SET status='cancelled'
+            WHERE id IN ({$placeholders}) AND employee_id=? AND status='pending'");
+        $types = str_repeat('i', count($requestIds)) . 'i';
+        $params = array_merge($requestIds, [$holidayEmpId]);
+        holidayStmtBindParams($stmt, $types, $params);
       }
       $stmt->execute();
       $stmt->close();
@@ -271,7 +397,11 @@ if ($holidayHasTable) {
   $res = $stmt->get_result();
   while ($row = $res->fetch_assoc()) {
     foreach (holidayRangeDates($row['start_date'], $row['end_date']) as $date) {
-      if ($date >= $rangeStart && $date <= $rangeEnd) {
+      if (
+        $date >= $rangeStart &&
+        $date <= $rangeEnd &&
+        !holidayIsNonWorkingDate($date, $holidayPublicHolidays)
+      ) {
         $requestsByEmployeeDate[intval($row['employee_id'])][$date][] = $row;
       }
     }
@@ -289,6 +419,7 @@ if ($holidayHasTable) {
       while ($row = $res->fetch_assoc()) {
         $pendingRequests[] = $row;
       }
+      $pendingRequests = holidayGroupRequests($pendingRequests, $holidayPublicHolidays);
     }
   }
 
@@ -306,6 +437,7 @@ if ($holidayHasTable) {
       $myRequests[] = $row;
     }
     $stmt->close();
+    $myRequests = holidayGroupRequests($myRequests, $holidayPublicHolidays);
   }
 }
 
@@ -555,7 +687,9 @@ for ($i = 0; $i < 6; $i++) {
                   <td>
                     <form method="POST" class="d-flex" style="gap:4px;">
                       <input type="hidden" name="action" value="review_holiday_request">
-                      <input type="hidden" name="request_id" value="<?= intval($request['id']) ?>">
+                      <?php foreach (($request['request_ids'] ?? [intval($request['id'])]) as $requestId): ?>
+                        <input type="hidden" name="request_ids[]" value="<?= intval($requestId) ?>">
+                      <?php endforeach; ?>
                       <input type="hidden" name="return_start"
                         value="<?= htmlspecialchars($windowStart->format('Y-m-01')) ?>">
                       <input type="text" name="admin_note" class="form-control form-control-sm" placeholder="Admin note">
@@ -718,7 +852,9 @@ for ($i = 0; $i < 6; $i++) {
                     <?php if ($request['status'] === 'pending'): ?>
                       <form method="POST" onsubmit="return confirm('Cancel this request?');">
                         <input type="hidden" name="action" value="cancel_holiday_request">
-                        <input type="hidden" name="request_id" value="<?= intval($request['id']) ?>">
+                        <?php foreach (($request['request_ids'] ?? [intval($request['id'])]) as $requestId): ?>
+                          <input type="hidden" name="request_ids[]" value="<?= intval($requestId) ?>">
+                        <?php endforeach; ?>
                         <input type="hidden" name="return_start"
                           value="<?= htmlspecialchars($windowStart->format('Y-m-01')) ?>">
                         <button type="submit" class="btn btn-xs btn-outline-danger">Cancel</button>
