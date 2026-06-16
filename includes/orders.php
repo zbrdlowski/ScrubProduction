@@ -40,6 +40,235 @@ function normalizeTypesOrder(string $types): string
 
   return implode('', $typesArr);
 }
+
+// Statusy, pri ktorych sa ma v stlpci Detail namiesto assign/take tlacidiel
+// zobrazit datum zmeny statusu. Pre dalsie statusy neskor staci doplnit mapu.
+$statusDateDetailRules = [
+  'SHIPPED' => [
+    'label' => 'Shipped',
+    'empty' => 'Shipped date not found',
+  ],
+  // 'READY_TO_SHIP' => ['label' => 'Ready to Ship', 'empty' => 'Ready to Ship date not found'],
+  // 'DELIVERED' => ['label' => 'Delivered', 'empty' => 'Delivered date not found'],
+];
+
+function ordersGetTableColumns(mysqli $conn, string $table): array
+{
+  $cols = [];
+  $sql = "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?";
+  $stmt = $conn->prepare($sql);
+  if (!$stmt) {
+    return $cols;
+  }
+  $stmt->bind_param('s', $table);
+  $stmt->execute();
+  $res = $stmt->get_result();
+  while ($row = $res->fetch_assoc()) {
+    $cols[] = (string) $row['COLUMN_NAME'];
+  }
+  $stmt->close();
+  return $cols;
+}
+
+function ordersFirstExistingColumn(array $columns, array $candidates): string
+{
+  foreach ($candidates as $candidate) {
+    if (in_array($candidate, $columns, true)) {
+      return $candidate;
+    }
+  }
+  return '';
+}
+
+function ordersStatusDateColumnCandidates(string $status): array
+{
+  $base = strtolower($status);
+  $base = preg_replace('/[^a-z0-9]+/', '_', $base) ?: $base;
+  return [
+    $base . '_at',
+    $base . '_date',
+    $base . '_on',
+    $base . '_status_at',
+    $base . '_status_date',
+  ];
+}
+
+function ordersFetchStatusEventDates(mysqli $conn, array $orderIds, array $statuses): array
+{
+  $orderIds = array_values(array_unique(array_filter(array_map('intval', $orderIds), fn($v) => $v > 0)));
+  $statuses = array_values(array_unique(array_filter(array_map(fn($v) => strtoupper(trim((string) $v)), $statuses))));
+
+  if (!$orderIds || !$statuses) {
+    return [];
+  }
+
+  $out = [];
+  foreach ($orderIds as $oid) {
+    $out[$oid] = [];
+  }
+
+  // 1) Ak niekedy pribudnu priame stlpce v orders (napr. shipped_at), pouziju sa prednostne.
+  $orderCols = ordersGetTableColumns($conn, 'orders');
+  foreach ($statuses as $status) {
+    $directCol = ordersFirstExistingColumn($orderCols, ordersStatusDateColumnCandidates($status));
+    if ($directCol === '') {
+      continue;
+    }
+
+    $idPh = implode(',', array_fill(0, count($orderIds), '?'));
+    $sql = "SELECT id, `$directCol` AS status_date FROM orders WHERE id IN ($idPh) AND `$directCol` IS NOT NULL";
+    $stmt = $conn->prepare($sql);
+    if (!$stmt) {
+      continue;
+    }
+    $types = str_repeat('i', count($orderIds));
+    $stmt->bind_param($types, ...$orderIds);
+    $stmt->execute();
+    $res = $stmt->get_result();
+    while ($row = $res->fetch_assoc()) {
+      $oid = (int) $row['id'];
+      if (!empty($row['status_date'])) {
+        $out[$oid][$status] = (string) $row['status_date'];
+      }
+    }
+    $stmt->close();
+  }
+
+  // 2) Preferovany zdroj: samostatna historia zmien statusov.
+  // Vytvor ju cez SQL migration order_status_history_migration.sql.
+  $historyCols = ordersGetTableColumns($conn, 'order_status_history');
+  if (
+    in_array('order_id', $historyCols, true)
+    && in_array('new_status', $historyCols, true)
+    && in_array('changed_at', $historyCols, true)
+  ) {
+    $idPh = implode(',', array_fill(0, count($orderIds), '?'));
+    $statusPh = implode(',', array_fill(0, count($statuses), '?'));
+    $sql = "SELECT order_id, UPPER(new_status) AS status_code, MAX(changed_at) AS status_date
+            FROM order_status_history
+            WHERE order_id IN ($idPh)
+              AND UPPER(new_status) IN ($statusPh)
+            GROUP BY order_id, UPPER(new_status)";
+    $stmt = $conn->prepare($sql);
+    if ($stmt) {
+      $types = str_repeat('i', count($orderIds)) . str_repeat('s', count($statuses));
+      $params = array_merge($orderIds, $statuses);
+      $stmt->bind_param($types, ...$params);
+      $stmt->execute();
+      $res = $stmt->get_result();
+      while ($row = $res->fetch_assoc()) {
+        $oid = (int) $row['order_id'];
+        $status = strtoupper((string) $row['status_code']);
+        if (!empty($row['status_date'])) {
+          $out[$oid][$status] = (string) $row['status_date'];
+        }
+      }
+      $stmt->close();
+    }
+  }
+
+  // 3) Fallback na activity log, kde sa bezpecne zisti schema cez INFORMATION_SCHEMA.
+  $activityCols = ordersGetTableColumns($conn, 'order_activity');
+  if (!$activityCols || !in_array('order_id', $activityCols, true)) {
+    return $out;
+  }
+
+  $dateCol = ordersFirstExistingColumn($activityCols, ['created_at', 'activity_at', 'logged_at', 'changed_at', 'event_at', 'updated_at']);
+  if ($dateCol === '') {
+    return $out;
+  }
+
+  $newValueCol = ordersFirstExistingColumn($activityCols, ['new_value', 'new_status', 'status_to', 'to_status', 'value_after', 'after_value', 'status']);
+  $fieldCol = ordersFirstExistingColumn($activityCols, ['field_name', 'field', 'changed_field', 'column_name']);
+  $actionCol = ordersFirstExistingColumn($activityCols, ['action', 'event', 'type', 'activity_type']);
+
+  $idPh = implode(',', array_fill(0, count($orderIds), '?'));
+  $statusPh = implode(',', array_fill(0, count($statuses), '?'));
+
+  $queries = [];
+  if ($newValueCol !== '') {
+    $extra = '';
+    if ($fieldCol !== '') {
+      $extra = " AND (LOWER(`$fieldCol`) IN ('status','order_status') OR `$fieldCol` IS NULL OR `$fieldCol` = '')";
+    }
+    $queries[] = [
+      "SELECT order_id, UPPER(`$newValueCol`) AS status_code, MAX(`$dateCol`) AS status_date
+       FROM order_activity
+       WHERE order_id IN ($idPh)
+         AND UPPER(`$newValueCol`) IN ($statusPh)
+         $extra
+       GROUP BY order_id, UPPER(`$newValueCol`)",
+      str_repeat('i', count($orderIds)) . str_repeat('s', count($statuses)),
+      array_merge($orderIds, $statuses),
+    ];
+  }
+
+  if ($actionCol !== '') {
+    $likeParts = [];
+    $likeParams = [];
+    foreach ($statuses as $status) {
+      $likeParts[] = "UPPER(`$actionCol`) LIKE ?";
+      $likeParams[] = '%' . $status . '%';
+    }
+    $queries[] = [
+      "SELECT order_id, MAX(`$dateCol`) AS status_date
+       FROM order_activity
+       WHERE order_id IN ($idPh)
+         AND (" . implode(' OR ', $likeParts) . ")
+       GROUP BY order_id",
+      str_repeat('i', count($orderIds)) . str_repeat('s', count($likeParams)),
+      array_merge($orderIds, $likeParams),
+    ];
+  }
+
+  foreach ($queries as [$sql, $types, $params]) {
+    $stmt = $conn->prepare($sql);
+    if (!$stmt) {
+      continue;
+    }
+    $stmt->bind_param($types, ...$params);
+    $stmt->execute();
+    $res = $stmt->get_result();
+    while ($row = $res->fetch_assoc()) {
+      $oid = (int) $row['order_id'];
+      if (empty($row['status_date'])) {
+        continue;
+      }
+
+      if (!empty($row['status_code'])) {
+        $status = strtoupper((string) $row['status_code']);
+        if (empty($out[$oid][$status])) {
+          $out[$oid][$status] = (string) $row['status_date'];
+        }
+      } else {
+        foreach ($statuses as $status) {
+          if (empty($out[$oid][$status])) {
+            $out[$oid][$status] = (string) $row['status_date'];
+          }
+        }
+      }
+    }
+    $stmt->close();
+  }
+
+  return $out;
+}
+
+function ordersFormatDetailStatusDate(?string $dateRaw): string
+{
+  $dateRaw = trim((string) $dateRaw);
+  if ($dateRaw === '') {
+    return '';
+  }
+
+  try {
+    $dt = new DateTime($dateRaw);
+    return $dt->format('d.m.Y H:i');
+  } catch (Throwable $e) {
+    return $dateRaw;
+  }
+}
+
 $dpt = (int) ($_SESSION['dpt'] ?? 0);
 $allAccess = in_array($dpt, [1, 3, 4, 5, 7], true);
 
@@ -185,6 +414,15 @@ if ($fStatus !== '') {
 if ($fQ !== '') {
   $fStatus = '';
   $fExcludeStatuses = '';
+}
+
+$detailColumnTitle = 'Detail';
+$detailStatusCode = strtoupper(trim((string) $fStatus));
+
+if ($detailStatusCode !== '' && isset($statusDateDetailRules[$detailStatusCode])) {
+  $detailColumnTitle =
+    ($statusDateDetailRules[$detailStatusCode]['label'] ?? str_replace('_', ' ', $detailStatusCode))
+    . ' At';
 }
 
 // ── Počty objednávok pre jednotlivé taby ──────────────────────────────────────────────────────────
@@ -661,6 +899,18 @@ $stmt->bind_param($bindTypes, ...$bindParams);
 
 $stmt->execute();
 $res = $stmt->get_result();
+
+$orderRows = [];
+$orderIds = [];
+while ($row = $res->fetch_assoc()) {
+  $orderRows[] = $row;
+  $orderIds[] = (int) ($row['id'] ?? 0);
+}
+
+$detailStatusDateRule = $statusDateDetailRules[$detailStatusCode] ?? null;
+$detailStatusDates = $detailStatusDateRule
+  ? ordersFetchStatusEventDates($conn, $orderIds, [$detailStatusCode])
+  : [];
 
 $deptOptions = [
   0 => 'Auto (By my department)',
@@ -1693,11 +1943,11 @@ $deptOptions = [
             <th class="text-center">Priority</th>
             <th class="text-center">Status</th>
             <th class="text-center">Assigned</th>
-            <th>Detail</th>
+            <th><?= htmlspecialchars($detailColumnTitle) ?></th>
           </tr>
         </thead>
         <tbody>
-          <?php while ($row = $res->fetch_assoc()): ?>
+          <?php foreach ($orderRows as $row): ?>
             <?php
             $orderId = (int) $row['id'];
             $hasTM = (int) ($row['has_tm'] ?? 0) === 1;
@@ -1731,6 +1981,8 @@ $deptOptions = [
             $billingCompany = trim((string) ($row['billing_company'] ?? ''));
             $billingCompanyId = trim((string) ($row['billing_company_id'] ?? ''));
             $hasCompanyInfo = ($billingCompany !== '' || $billingCompanyId !== '');
+            $detailStatusDateRaw = $detailStatusDateRule ? ($detailStatusDates[$orderId][$detailStatusCode] ?? '') : '';
+            $detailStatusDateFmt = ordersFormatDetailStatusDate($detailStatusDateRaw);
             ?>
             <tr class="<?= $rowClass ?> order-row" data-order-id="<?= $orderId ?>"
               data-priority-sort="<?= ($priorityValue >= 20 ? 0 : ($priorityValue >= 10 ? 1 : 2)) ?>" data-date-sort="<?= htmlspecialchars((string) (
@@ -2047,6 +2299,20 @@ $deptOptions = [
                   <i class="fas fa-search"></i>
                 </button>
                 </span>
+
+                <?php if ($detailStatusDateRule): ?>
+                  <?php if ($detailStatusDateFmt !== ''): ?>
+                    <span class="badge badge-secondary ml-2 px-3 py-2"
+                      title="<?= htmlspecialchars((string) ($detailStatusDateRule['label'] ?? $detailStatusCode)) ?>">
+                      <?= htmlspecialchars($detailStatusDateFmt) ?>
+                    </span>
+                  <?php else: ?>
+                    <span class="badge badge-warning ml-2 px-3 py-2"
+                      title="<?= htmlspecialchars((string) ($detailStatusDateRule['empty'] ?? 'Status date not found')) ?>">
+                      —
+                    </span>
+                  <?php endif; ?>
+                <?php else: ?>
                 <?php if ($perm >= 400 && empty($uiDeptCode)): ?>
                   <span class="badge badge-info ml-2" title="Select department filter first">
                     Select dept
@@ -2125,6 +2391,7 @@ $deptOptions = [
                   <?php endif; ?>
 
                 <?php endif; ?>
+                <?php endif; ?>
               </td>
             </tr>
 
@@ -2135,7 +2402,7 @@ $deptOptions = [
               </td>
             </tr>
 
-          <?php endwhile; ?>
+          <?php endforeach; ?>
         </tbody>
       </table>
     </div>

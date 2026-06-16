@@ -1,5 +1,5 @@
 <?php
-//declare(strict_types=1);
+declare(strict_types=1);
 ob_start();
 register_shutdown_function(function () {
   $err = error_get_last();
@@ -136,6 +136,7 @@ function productSpecFieldMeta(array $definition): array
     'empty_label' => 'Select...',
     'fallback_options' => [],
     'autocomplete_key' => '',
+    'write_source_key' => true,
   ];
   $isNoteLikeField = (
     $specKey === 'graphics_note'
@@ -184,9 +185,11 @@ function productSpecFieldMeta(array $definition): array
       break;
     case 'graphics_note':
       $meta['internal_key'] = '_graphics_note';
-      $meta['source_keys'] = ['note'];
+      $meta['source_keys'] = ['note', 'Buyer note', 'buyer_note', 'buyer-note'];
+      $meta['source_key'] = '';
       $meta['render'] = 'textarea';
       $meta['control_class'] = 'item-print-generic item-product-spec-field g-opt-note-textarea';
+      $meta['write_source_key'] = false;
       $meta['placeholder'] = 'Poznámka...';
       break;
     case 'seat_patch_applied':
@@ -230,6 +233,52 @@ function productSpecFieldCurrentValue(array $meta, array $extOptArr, array $inte
     }
 
     return '';
+  }
+
+  if ((string) ($meta['spec_key'] ?? '') === 'graphics_note') {
+    $parts = [];
+    $seenNormalizedKeys = [];
+    $seenValues = [];
+
+    foreach ((array) ($meta['source_keys'] ?? []) as $key) {
+      $normalizedKey = productSpecNormalizeKey((string) $key);
+
+      if ($normalizedKey === '' || isset($seenNormalizedKeys[$normalizedKey])) {
+        continue;
+      }
+
+      $seenNormalizedKeys[$normalizedKey] = true;
+
+      $value = productSpecValueFromKeys($extOptArr, [(string) $key]);
+      $value = trim((string) $value);
+
+      if ($value === '') {
+        continue;
+      }
+
+      $valueHash = md5($value);
+      if (isset($seenValues[$valueHash])) {
+        continue;
+      }
+
+      $seenValues[$valueHash] = true;
+
+      if ($normalizedKey === 'note') {
+        $parts[] = "Note:\n" . $value;
+        continue;
+      }
+
+      if ($normalizedKey === 'buyer-note') {
+        $parts[] = "Buyer note:\n" . $value;
+        continue;
+      }
+
+      $parts[] = $value;
+    }
+
+    if (!empty($parts)) {
+      return trim(implode("\n\n", $parts));
+    }
   }
 
   return productSpecValueFromKeys($extOptArr, (array) ($meta['source_keys'] ?? []));
@@ -1872,10 +1921,36 @@ ob_start();
   }
 
   .g-opt-note-textarea {
-    resize: none;
-    height: 100% !important;
-    min-height: 28px;
+    resize: vertical !important;
+    flex: 0 0 auto !important;
+    align-self: stretch;
+    min-height: 31px;
+    height: auto;
+    overflow: auto;
+  }
+
+  .g-opt-text-display,
+  .g-opt-note-display {
     flex: 1;
+    min-height: 31px;
+    padding: .25rem .5rem;
+    border: 1px solid rgba(255, 255, 255, .18);
+    border-radius: .2rem;
+    background-color: transparent;
+    color: inherit;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+
+  /* Note wrapper — rovnaká výška ako susedné labely (stretch) */
+  .g-options-bar .g-opt-note-field {
+    height: auto !important;
+    align-self: stretch;
+    display: flex;
+    flex-direction: column;
+    padding-top: 3px;
+    padding-bottom: 3px;
   }
 
   /* product-spec-label vo vnútri g-options-bar — flex column, height: 100% */
@@ -3597,14 +3672,14 @@ ob_start();
                 </td>
 
                 <?php if ((int) ($_SESSION['permission'] ?? 0) >= 300): ?>
-                  <td class="text-center"  style="width:40px;">
+                  <td class="text-center" style="width:40px;">
                     <button type="button" class="btn btn-xs btn-outline-success btn-save-item"
                       data-id="<?php echo (int) $it['id']; ?>" data-order-id="<?php echo (int) $orderId; ?>">
                       Save
                     </button>
                   </td>
 
-                  <td class="text-center"  style="width:40px;">
+                  <td class="text-center" style="width:40px;">
                     <button type="button" class="btn btn-xs btn-outline-danger btn-delete-order-item"
                       data-item-id="<?php echo (int) $it['id']; ?>" data-order-id="<?php echo (int) $orderId; ?>">
                       Delete
@@ -3631,8 +3706,10 @@ ob_start();
                         <label class="<?= h($itemSpecField['wrapper_class']) ?>" <?= $fieldStyle !== '' ? ' style="' . h($fieldStyle) . '"' : '' ?>>
                           <span class="product-spec-label-title"><?= h($itemSpecField['label']) ?></span>
                           <?php
+                          $isAdminTextEditor = $itemSpecField['field_type'] === 'text' && (int) ($_SESSION['permission'] ?? 0) >= 300;
+                          $isUserTextBlock = $itemSpecField['field_type'] === 'text' && (int) ($_SESSION['permission'] ?? 0) < 300;
                           $sharedFieldAttrs = 'data-item-id="' . (int) $it['id'] . '"'
-                            . ($itemSpecField['source_key'] !== '' ? ' data-source-key="' . h($itemSpecField['source_key']) . '"' : '')
+                            . (!empty($itemSpecField['write_source_key']) && $itemSpecField['source_key'] !== '' ? ' data-source-key="' . h($itemSpecField['source_key']) . '"' : '')
                             . ' data-field-type="' . h($itemSpecField['field_type']) . '"'
                             . ($itemSpecField['internal_key'] !== '' ? ' data-internal-key="' . h($itemSpecField['internal_key']) . '"' : '');
                           ?>
@@ -3644,10 +3721,14 @@ ob_start();
                                 placeholder="<?= h($itemSpecField['placeholder']) ?>">
                               <div class="print-ac-dropdown" style="display:none;"></div>
                             </div>
-                          <?php elseif ($itemSpecField['render'] === 'textarea'): ?>
+                          <?php elseif ($isUserTextBlock): ?>
+                            <?php $userTextValue = trim((string) ($itemSpecField['current_value'] ?? '')); ?>
+                            <div class="g-opt-note-display"><?= $userTextValue !== '' ? h($userTextValue) : '<span class="text-muted">&mdash;</span>' ?></div>
+                          <?php elseif ($itemSpecField['render'] === 'textarea' || $isAdminTextEditor): ?>
+                            <?php $textareaValue = trim((string) ($itemSpecField['current_value'] ?? '')); ?>
                             <textarea class="form-control form-control-sm <?= h($itemSpecField['control_class']) ?>"
                               <?= $sharedFieldAttrs ?> placeholder="<?= h($itemSpecField['placeholder']) ?>"
-                              rows="1"><?= h($itemSpecField['current_value']) ?></textarea>
+                              rows="1"><?= h($textareaValue) ?></textarea>
                           <?php else: ?>
                             <?=
                               renderProductSpecField(
@@ -4124,12 +4205,30 @@ ob_start();
       var orderId = parseInt($card.data('order-id'), 10) || 0;
       if (!orderId) return;
 
-      if (typeof window.loadOrderDetail === 'function') {
-        window.loadOrderDetail(orderId);
-        return;
-      }
+      $.post('scripts/orders/get_order_detail.php', {
+        order_id: orderId
+      }, function (res) {
+        if (!res || !res.ok) {
+          alert(res && res.error ? res.error : 'Detail reload failed');
+          return;
+        }
 
-      window.location.reload();
+        var $wrap = $('#detail-' + orderId);
+
+        if ($wrap.length) {
+          $wrap.html(res.html)
+            .data('loaded', true)
+            .stop(true, true)
+            .show();
+
+          $('#ordersTable .order-row').removeClass('order-row-open');
+          $('.order-row[data-order-id="' + orderId + '"]').addClass('order-row-open');
+          $('#ordersTable').addClass('table-has-open');
+          return;
+        }
+
+        location.reload();
+      }, 'json');
     }
 
     function uploadPhotos($dropzone, files) {

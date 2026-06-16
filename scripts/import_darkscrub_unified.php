@@ -959,8 +959,9 @@ function oi_extract_shoptet_variant_items(array $r, int $qty, int &$startLineNo)
       'auto_tag'  => 'SHOPTET_AUTO_MIDFORKS',
     ];
   }
-
+/*
   // --- grip → GRAPHICS ---
+  //Gip sa uz načítava ako dropdown do grafiky a už nie je treba aby to bola samostatna polozka
   $gripVal = oi_trim($raw['grip'] ?? null);
   if ($isPositive($gripVal)) {
     $items[] = [
@@ -971,6 +972,6 @@ function oi_extract_shoptet_variant_items(array $r, int $qty, int &$startLineNo)
       'auto_tag'  => 'SHOPTET_AUTO_GRIP',
     ];
   }
-
+*/
   return $items;
 }
