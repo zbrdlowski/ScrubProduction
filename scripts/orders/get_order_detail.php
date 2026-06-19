@@ -185,11 +185,11 @@ function productSpecFieldMeta(array $definition): array
       break;
     case 'graphics_note':
       $meta['internal_key'] = '_graphics_note';
-      $meta['source_keys'] = ['note', 'Buyer note', 'buyer_note', 'buyer-note'];
-      $meta['source_key'] = '';
+      $meta['source_keys'] = ['note'];
+      $meta['source_key'] = 'note';
       $meta['render'] = 'textarea';
       $meta['control_class'] = 'item-print-generic item-product-spec-field g-opt-note-textarea';
-      $meta['write_source_key'] = false;
+      $meta['write_source_key'] = true;
       $meta['placeholder'] = 'Poznámka...';
       break;
     case 'seat_patch_applied':
@@ -1908,10 +1908,17 @@ ob_start();
     width: 100%;
   }
 
-  /* print-setting-field pôvodné pravidlo je flex: 0 0 120px — pre g-options-bar necháme auto */
-  .g-options-bar .print-setting-field {
-    flex: 0 0 auto;
-    min-width: 90px;
+  /* Každý formulárový riadok sa vždy roztiahne na celú šírku:
+     1 prvok = 100 %, viac prvkov = rovnomerne rozdelená šírka. */
+  .g-options-bar .print-setting-field,
+  .g-options-bar .product-spec-label {
+    flex: 1 1 0 !important;
+    min-width: 0 !important;
+    margin: 0 !important;
+  }
+
+  .g-options-bar .position-relative {
+    width: 100%;
   }
 
   /* Note field — flex filler */
@@ -2358,6 +2365,30 @@ ob_start();
     .order-photos-card-user {
       min-height: 120px;
     }
+  }
+
+  /* Tracking number / carrier / add-button row: flexible inputs, button always one line */
+  .tracking-add-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: stretch;
+    gap: 6px;
+  }
+
+  .tracking-add-row .tracking-number,
+  .tracking-add-row .tracking-carrier {
+    flex: 1 1 80px;
+    min-width: 60px;
+    width: auto;
+  }
+
+  .tracking-add-row .tracking-carrier {
+    flex: 0.7 1 60px;
+  }
+
+  .tracking-add-row .btn-add-tracking {
+    flex: 0 0 auto;
+    white-space: nowrap;
   }
 </style>
 <div class="p-3">
@@ -2846,20 +2877,12 @@ ob_start();
                 <?php $trackingStmt->close(); ?>
 
                 <?php if ((int) ($_SESSION['permission'] ?? 0) >= 300): ?>
-                  <div class="form-row mt-2">
-                    <div class="col-md-7">
-                      <input class="form-control form-control-sm tracking-number" placeholder="Tracking number">
-                    </div>
-                    <div class="col-md-3">
-                      <input class="form-control form-control-sm tracking-carrier" placeholder="Carrier">
-                    </div>
-                    <div class="col-md-2">
-                      <button class="btn btn-sm btn-info btn-block btn-add-tracking"
-                        data-order-id="<?php echo (int) $orderId; ?>">
-                        Add Tracking
-                      </button>
-
-                    </div>
+                  <div class="tracking-add-row mt-2">
+                    <input class="form-control form-control-sm tracking-number" placeholder="Tracking number">
+                    <input class="form-control form-control-sm tracking-carrier" placeholder="Carrier">
+                    <button class="btn btn-sm btn-info btn-add-tracking" data-order-id="<?php echo (int) $orderId; ?>">
+                      Add Tracking
+                    </button>
                   </div>
                 <?php endif; ?>
               </div>
@@ -3406,6 +3429,23 @@ ob_start();
                 if ($hasOptionsForm && $itemSpecDepartment !== '') {
                   foreach (productSpecFieldDefinitions($conn, $itemSpecDepartment) as $productSpecDefinition) {
                     $fieldMeta = productSpecFieldMeta($productSpecDefinition);
+
+                    $isEbayOrder = strpos(strtoupper((string) ($order['source_code'] ?? '')), 'EBAY') !== false;
+
+                    $fieldSourceKey = productSpecNormalizeKey((string) ($fieldMeta['source_key'] ?? ''));
+
+                    if (in_array($fieldSourceKey, ['my-item-note', 'buyer-note', 'note'], true)) {
+                      if ($isEbayOrder) {
+                        if (!in_array($fieldSourceKey, ['my-item-note', 'buyer-note'], true)) {
+                          continue;
+                        }
+                      } else {
+                        if ($fieldSourceKey !== 'note') {
+                          continue;
+                        }
+                      }
+                    }
+
                     $fieldSubcategory = productSpecGraphicsSubcategoryFromSpecKey(
                       (string) ($fieldMeta['spec_key'] ?? ''),
                       (string) ($fieldMeta['department'] ?? $itemSpecDepartment)
@@ -3451,13 +3491,15 @@ ob_start();
                   }
                 }
 
-                // ── Category Info pre G items (Shoptet) ─────────────────
+                // ── Category Info (Shoptet) ─────────────────
                 // options_json môže mať kľúč "category" vo formáte "Suzuki | DR-Z400 | 1999-2024 | CPM8"
                 // alebo kombináciu polí brand/model/year + design_code
+                // Platí pre všetky departmenty/typy položiek, nielen Graphics (G).
                 $gCategoryRaw = '';
                 $gCategoryMain = '';
-                $gCategoryCode = '';
-                if ($isGraphicsItem) {
+                $gCategoryBrand = '';
+                $gCategoryModelYear = '';
+                $gCategoryCode = ''; {
                   // Hľadáme category v rôznych kľúčoch options_json — Shoptet používa rôzne konvencie
                   $catCandidates = [
                     'Category Info',
@@ -3513,42 +3555,50 @@ ob_start();
                     // Ak posledný segment vyzerá ako kód (max 10 znakov, alfanum, bez medzier)
                     if ($lastPart !== '' && preg_match('/^[A-Z0-9]{2,10}$/i', $lastPart)) {
                       $gCategoryCode = strtoupper($lastPart);
-                      $gCategoryMain = implode('  ', array_filter($catParts));
                     } else {
-                      // Nie je kód — vráť späť a zobraz celé
+                      // Nie je kód — vráť späť a zobraz ako súčasť hlavných častí
                       array_push($catParts, $lastPart);
-                      $gCategoryMain = implode('  ', array_filter($catParts));
                       $gCategoryCode = '';
                     }
+
+                    $catParts = array_values(array_filter($catParts, function ($p) {
+                      return $p !== '';
+                    }));
+                    // 1. riadok = brand (prvá časť), 2. riadok = zvyšok (model + roky...)
+                    $gCategoryBrand = $catParts[0] ?? '';
+                    $gCategoryModelYear = implode('  ', array_slice($catParts, 1));
+                    $gCategoryMain = implode('  ', $catParts);
                   } elseif ($gCategoryRaw !== '') {
-                    // Jednoduchý string bez separátora
+                    // Jednoduchý string bez separátora — necháme na jednom riadku
+                    $gCategoryBrand = $gCategoryRaw;
+                    $gCategoryModelYear = '';
                     $gCategoryMain = $gCategoryRaw;
                   }
                 }
                 ?>
 
                 <?php
-                // ── Category Info stĺpec (pre G items z Shoptet) ─────────────
-                // Pre non-G items zobrazíme prázdnu bunku
-                if ($isGraphicsItem): ?>
-                  <td class="text-center g-cat-td" style="min-width:120px;max-width:50px; white-space:nowrap;">
-                    <?php if ($gCategoryMain !== '' || $gCategoryCode !== ''): ?>
-                      <div class="g-cat-info">
-                        <?php if ($gCategoryMain !== ''): ?>
-                          <span class="g-cat-main"><?= h($gCategoryMain) ?></span>
-                        <?php endif; ?>
-                        <?php if ($gCategoryCode !== ''): ?>
-                          <span class="g-cat-code"><a href="#"
-                              title="Model kód: <?= h($gCategoryCode) ?>"><?= h($gCategoryCode) ?></a></span>
-                        <?php endif; ?>
-                      </div>
-                    <?php else: ?>
-                      <span class="text-muted" style="font-size:11px;">—</span>
-                    <?php endif; ?>
-                  </td>
-                <?php else: ?>
-                  <td class="text-muted text-center" style="font-size:11px;">—</td>
-                <?php endif; ?>
+                // ── Category Info stĺpec (Shoptet) ─────────────
+                // Pre všetky typy položiek: zobraz dáta ak existujú, inak prázdnu bunku.
+                ?>
+                <td class="text-center g-cat-td" style="min-width:120px;max-width:50px; white-space:nowrap;">
+                  <?php if ($gCategoryBrand !== '' || $gCategoryModelYear !== '' || $gCategoryCode !== ''): ?>
+                    <div class="g-cat-info">
+                      <?php if ($gCategoryBrand !== ''): ?>
+                        <span class="g-cat-main"><?= h($gCategoryBrand) ?></span>
+                      <?php endif; ?>
+                      <?php if ($gCategoryModelYear !== ''): ?>
+                        <span class="g-cat-main"><?= h($gCategoryModelYear) ?></span>
+                      <?php endif; ?>
+                      <?php if ($gCategoryCode !== ''): ?>
+                        <span class="g-cat-code"><a href="#"
+                            title="Model kód: <?= h($gCategoryCode) ?>"><?= h($gCategoryCode) ?></a></span>
+                      <?php endif; ?>
+                    </div>
+                  <?php else: ?>
+                    <span class="text-muted" style="font-size:11px;">—</span>
+                  <?php endif; ?>
+                </td>
 
                 <td style="display:none;"></td>
 
@@ -3689,64 +3739,103 @@ ob_start();
               </tr>
 
               <?php if ($showItemProductSpecRow && !empty($itemProductSpecFields)): ?>
-                <tr class="g-item-options-row <?= $itemTypeClass ?>" data-item-id="<?= (int) $it['id'] ?>">
-                  <td colspan="99" style="padding:5px 8px 7px; border-top:none !important;">
-                    <div class="g-options-bar">
-                      <?php foreach ($itemProductSpecFields as $itemSpecField): ?>
-                        <?php
-                        $fieldStyle = '';
-                        if ($itemSpecField['spec_key'] === 'graphics_name') {
-                          $fieldStyle = 'min-width:110px;';
-                        } elseif ($itemSpecField['spec_key'] === 'graphics_number') {
-                          $fieldStyle = 'min-width:80px;';
-                        } elseif ($itemSpecField['render'] === 'textarea') {
-                          $fieldStyle = 'flex:1; min-width:140px;';
-                        }
+                <?php
+                $itemProductSpecMainFields = [];
+                $itemProductSpecTextFields = [];
+
+                foreach ($itemProductSpecFields as $itemSpecField) {
+                  $isGraphicsTextField = (
+                    $itemSpecDepartment === 'G'
+                    && (string) ($itemSpecField['field_type'] ?? '') === 'text'
+                  );
+
+                  if ($isGraphicsTextField) {
+                    $itemProductSpecTextFields[] = $itemSpecField;
+                  } else {
+                    $itemProductSpecMainFields[] = $itemSpecField;
+                  }
+                }
+
+                $renderProductSpecFieldsRow = function (array $fieldsForRow) use ($conn, $it): void {
+                  foreach ($fieldsForRow as $itemSpecField): ?>
+                    <label class="<?= h($itemSpecField['wrapper_class']) ?>">
+                      <span class="product-spec-label-title"><?= h($itemSpecField['label']) ?></span>
+                      <?php
+                      $fieldSourceKeyNormalized = productSpecNormalizeKey((string) ($itemSpecField['source_key'] ?? ''));
+
+                      $isUserEditableTextField = (
+                        $itemSpecField['field_type'] === 'text'
+                        && in_array($fieldSourceKeyNormalized, ['note', 'my-item-note'], true)
+                      );
+
+                      $isAdminTextEditor = (
+                        $itemSpecField['field_type'] === 'text'
+                        && ((int) ($_SESSION['permission'] ?? 0) >= 300 || $isUserEditableTextField)
+                      );
+
+                      $isUserTextBlock = (
+                        $itemSpecField['field_type'] === 'text'
+                        && !$isAdminTextEditor
+                      );
+
+                      $sharedFieldAttrs = ' data-item-id="' . (int) $it['id'] . '"'
+                        . (!empty($itemSpecField['write_source_key']) && $itemSpecField['source_key'] !== '' ? ' data-source-key="' . h($itemSpecField['source_key']) . '"' : '')
+                        . ' data-field-type="' . h($itemSpecField['field_type']) . '"'
+                        . ($itemSpecField['internal_key'] !== '' ? ' data-internal-key="' . h($itemSpecField['internal_key']) . '"' : '');
+                      ?>
+                      <?php if ($itemSpecField['render'] === 'autocomplete'): ?>
+                        <div class="position-relative">
+                          <input type="text" class="form-control form-control-sm print-ac-input item-product-spec-field"
+                            <?= $sharedFieldAttrs ?> data-ac-key="<?= h($itemSpecField['autocomplete_key']) ?>"
+                            value="<?= h($itemSpecField['current_value']) ?>"
+                            placeholder="<?= h($itemSpecField['placeholder']) ?>">
+                          <div class="print-ac-dropdown" style="display:none;"></div>
+                        </div>
+                      <?php elseif ($isUserTextBlock): ?>
+                        <?php $userTextValue = trim((string) ($itemSpecField['current_value'] ?? '')); ?>
+                        <div class="g-opt-note-display">
+                          <?= $userTextValue !== '' ? h($userTextValue) : '<span class="text-muted">&mdash;</span>' ?></div>
+                      <?php elseif ($itemSpecField['render'] === 'textarea' || $isAdminTextEditor): ?>
+                        <?php $textareaValue = trim((string) ($itemSpecField['current_value'] ?? '')); ?>
+                        <textarea class="form-control form-control-sm <?= h($itemSpecField['control_class']) ?>"
+                          <?= $sharedFieldAttrs ?> placeholder="<?= h($itemSpecField['placeholder']) ?>"
+                          rows="1"><?= h($textareaValue) ?></textarea><?php else: ?>
+                        <?=
+                          renderProductSpecField(
+                            $conn,
+                            $itemSpecField['spec_key'],
+                            (string) $itemSpecField['current_value'],
+                            $itemSpecField['fallback_options'],
+                            $itemSpecField['control_class'],
+                            $sharedFieldAttrs,
+                            (string) $itemSpecField['empty_label']
+                          );
                         ?>
-                        <label class="<?= h($itemSpecField['wrapper_class']) ?>" <?= $fieldStyle !== '' ? ' style="' . h($fieldStyle) . '"' : '' ?>>
-                          <span class="product-spec-label-title"><?= h($itemSpecField['label']) ?></span>
-                          <?php
-                          $isAdminTextEditor = $itemSpecField['field_type'] === 'text' && (int) ($_SESSION['permission'] ?? 0) >= 300;
-                          $isUserTextBlock = $itemSpecField['field_type'] === 'text' && (int) ($_SESSION['permission'] ?? 0) < 300;
-                          $sharedFieldAttrs = 'data-item-id="' . (int) $it['id'] . '"'
-                            . (!empty($itemSpecField['write_source_key']) && $itemSpecField['source_key'] !== '' ? ' data-source-key="' . h($itemSpecField['source_key']) . '"' : '')
-                            . ' data-field-type="' . h($itemSpecField['field_type']) . '"'
-                            . ($itemSpecField['internal_key'] !== '' ? ' data-internal-key="' . h($itemSpecField['internal_key']) . '"' : '');
-                          ?>
-                          <?php if ($itemSpecField['render'] === 'autocomplete'): ?>
-                            <div class="position-relative">
-                              <input type="text" class="form-control form-control-sm print-ac-input item-product-spec-field"
-                                <?= $sharedFieldAttrs ?> data-ac-key="<?= h($itemSpecField['autocomplete_key']) ?>"
-                                value="<?= h($itemSpecField['current_value']) ?>"
-                                placeholder="<?= h($itemSpecField['placeholder']) ?>">
-                              <div class="print-ac-dropdown" style="display:none;"></div>
-                            </div>
-                          <?php elseif ($isUserTextBlock): ?>
-                            <?php $userTextValue = trim((string) ($itemSpecField['current_value'] ?? '')); ?>
-                            <div class="g-opt-note-display"><?= $userTextValue !== '' ? h($userTextValue) : '<span class="text-muted">&mdash;</span>' ?></div>
-                          <?php elseif ($itemSpecField['render'] === 'textarea' || $isAdminTextEditor): ?>
-                            <?php $textareaValue = trim((string) ($itemSpecField['current_value'] ?? '')); ?>
-                            <textarea class="form-control form-control-sm <?= h($itemSpecField['control_class']) ?>"
-                              <?= $sharedFieldAttrs ?> placeholder="<?= h($itemSpecField['placeholder']) ?>"
-                              rows="1"><?= h($textareaValue) ?></textarea>
-                          <?php else: ?>
-                            <?=
-                              renderProductSpecField(
-                                $conn,
-                                $itemSpecField['spec_key'],
-                                (string) $itemSpecField['current_value'],
-                                $itemSpecField['fallback_options'],
-                                $itemSpecField['control_class'],
-                                $sharedFieldAttrs,
-                                (string) $itemSpecField['empty_label']
-                              );
-                            ?>
-                          <?php endif; ?>
-                        </label>
-                      <?php endforeach; ?>
-                    </div>
-                  </td>
-                </tr>
+                      <?php endif; ?>
+                    </label>
+                  <?php endforeach;
+                };
+                ?>
+
+                <?php if (!empty($itemProductSpecMainFields)): ?>
+                  <tr class="g-item-options-row <?= $itemTypeClass ?>" data-item-id="<?= (int) $it['id'] ?>">
+                    <td colspan="99" style="padding:5px 8px 7px; border-top:none !important;">
+                      <div class="g-options-bar">
+                        <?php $renderProductSpecFieldsRow($itemProductSpecMainFields); ?>
+                      </div>
+                    </td>
+                  </tr>
+                <?php endif; ?>
+
+                <?php if (!empty($itemProductSpecTextFields)): ?>
+                  <tr class="g-item-options-row g-item-text-options-row <?= $itemTypeClass ?>" data-item-id="<?= (int) $it['id'] ?>">
+                    <td colspan="99" style="padding:5px 8px 7px; border-top:none !important;">
+                      <div class="g-options-bar g-text-options-bar">
+                        <?php $renderProductSpecFieldsRow($itemProductSpecTextFields); ?>
+                      </div>
+                    </td>
+                  </tr>
+                <?php endif; ?>
               <?php endif; ?>
               <tr class="item-spacer-row" aria-hidden="true">
                 <td colspan="99"

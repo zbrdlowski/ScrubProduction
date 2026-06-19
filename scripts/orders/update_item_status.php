@@ -165,10 +165,50 @@ if (!empty($trafficRow['traffic_summary_json'])) {
 }
 
 $orderStatus = strtoupper((string)($trafficRow['status'] ?? ''));
+$departmentStatuses = [];
+$departmentColors = [];
+$departmentLabels = [];
+
+$deptStmt = $pdo->prepare("
+    SELECT item_type_code, status, options_json, internal_options_json
+    FROM order_items
+    WHERE order_id = ?
+      AND deleted_at IS NULL
+      AND item_type_code IS NOT NULL
+      AND item_type_code <> ''
+    ORDER BY id ASC
+");
+$deptStmt->execute([$orderId]);
+$deptGroups = [];
+while ($deptItem = $deptStmt->fetch(PDO::FETCH_ASSOC)) {
+    $itemDept = ordersNormalizeDepartmentCode((string)($deptItem['item_type_code'] ?? ''));
+    if ($itemDept === '') {
+        continue;
+    }
+
+    if (!isset($deptGroups[$itemDept])) {
+        $deptGroups[$itemDept] = [];
+    }
+
+    $deptGroups[$itemDept][] = [
+        'status' => strtoupper((string)($deptItem['status'] ?? 'NEW')),
+        'options_json' => $deptItem['options_json'] ?? null,
+        'internal_options_json' => $deptItem['internal_options_json'] ?? null,
+    ];
+}
+$departmentStatuses = ordersResolveDepartmentStatusesFromGroups($conn, $deptGroups);
+
+foreach ($departmentStatuses as $department => $statusCode) {
+    $departmentLabels[$department] = ordersGetStatusLabel($conn, 'item', $statusCode, $department);
+    $departmentColors[$department] = ordersGetStatusColor($conn, 'item', $statusCode, $department);
+}
 
 echo json_encode([
     'success'         => true,
     'order_id'        => $orderId,
     'traffic_summary' => $trafficSummary,
     'order_status'    => $orderStatus,
+    'department_statuses' => $departmentStatuses,
+    'department_labels' => $departmentLabels,
+    'department_colors' => $departmentColors,
 ]);

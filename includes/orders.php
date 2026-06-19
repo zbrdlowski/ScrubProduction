@@ -3,6 +3,7 @@ declare(strict_types=1);
 /** @var mysqli $conn */
 require_once __DIR__ . '/conn.php';
 require_once __DIR__ . '/orders_status_helpers.php';
+require_once __DIR__ . '/orders_workflow_helpers.php';
 
 if (!isset($conn) || !$conn instanceof mysqli) {
   echo '<div class="alert alert-danger">Database connection error.</div>';
@@ -491,6 +492,7 @@ $rolePrimaryUI = $uiDeptCode ? ('PRIMARY_' . $uiDeptCode) : null;
 
 $meUserId = (int) ($_SESSION['user_id'] ?? 0);
 $perm = (int) ($_SESSION['permission'] ?? 0);
+$isSuperAdmin = $perm >= 900;
 
 $aclCats = [];
 $aclTypes = [];
@@ -911,6 +913,56 @@ $detailStatusDateRule = $statusDateDetailRules[$detailStatusCode] ?? null;
 $detailStatusDates = $detailStatusDateRule
   ? ordersFetchStatusEventDates($conn, $orderIds, [$detailStatusCode])
   : [];
+
+$orderDepartmentStatusMap = [];
+if ($orderIds) {
+  $placeholders = implode(',', array_fill(0, count($orderIds), '?'));
+  $types = str_repeat('i', count($orderIds));
+  $stmtDeptStatuses = $conn->prepare("
+    SELECT order_id, item_type_code, status, options_json, internal_options_json
+    FROM order_items
+    WHERE deleted_at IS NULL
+      AND order_id IN ($placeholders)
+      AND item_type_code IS NOT NULL
+      AND item_type_code <> ''
+    ORDER BY order_id ASC, id ASC
+  ");
+
+  if ($stmtDeptStatuses) {
+    $stmtDeptStatuses->bind_param($types, ...$orderIds);
+    $stmtDeptStatuses->execute();
+    $resDeptStatuses = $stmtDeptStatuses->get_result();
+
+    $groupsByOrder = [];
+    while ($deptRow = $resDeptStatuses->fetch_assoc()) {
+      $orderId = (int)($deptRow['order_id'] ?? 0);
+      $itemType = ordersNormalizeDepartmentCode((string)($deptRow['item_type_code'] ?? ''));
+
+      if ($orderId <= 0 || $itemType === '') {
+        continue;
+      }
+
+      if (!isset($groupsByOrder[$orderId])) {
+        $groupsByOrder[$orderId] = [];
+      }
+      if (!isset($groupsByOrder[$orderId][$itemType])) {
+        $groupsByOrder[$orderId][$itemType] = [];
+      }
+
+      $groupsByOrder[$orderId][$itemType][] = [
+        'status' => strtoupper((string)($deptRow['status'] ?? 'NEW')),
+        'options_json' => $deptRow['options_json'] ?? null,
+        'internal_options_json' => $deptRow['internal_options_json'] ?? null,
+      ];
+    }
+
+    $stmtDeptStatuses->close();
+
+    foreach ($groupsByOrder as $orderId => $groups) {
+      $orderDepartmentStatusMap[$orderId] = ordersResolveDepartmentStatusesFromGroups($conn, $groups);
+    }
+  }
+}
 
 $deptOptions = [
   0 => 'Auto (By my department)',
@@ -1938,7 +1990,9 @@ $deptOptions = [
             <th class="text-center" width="8%">Order #</th>
             <th>Customer</th>
             <th class="text-center" width="4%">Country</th>
-            <th class="text-center">Types</th>
+            <?php if ($isSuperAdmin): ?>
+              <th class="text-center">Types</th>
+            <?php endif; ?>
             <th class="text-center">Semafor</th>
             <th class="text-center">Priority</th>
             <th class="text-center">Status</th>
@@ -2047,53 +2101,56 @@ $deptOptions = [
                 }
                 ?>
               </td>
-              <td class="text-center">
-                <?php
-                if ($hasManualTypes) {
-                  $types = [normalizeTypesOrder($typesStr)];
-                } else {
-                  if ((int) ($row['has_gfp'] ?? 0) === 1) {
-                    $types = ['GFP'];
-                  } else {
-                    $types = array_filter(array_map('trim', explode(',', str_replace(' ', '', $typesStr))));
-                  }
-                }
-
-                if (!$types)
-                  $types = ['NULL'];
-                ?>
-
-                <?php foreach ($types as $t): ?>
+              <?php if ($isSuperAdmin): ?>
+                <td class="text-center">
                   <?php
-                  $tClean = strtoupper(trim($t));
-                  $badge = 'badge-secondary';
+                  if ($hasManualTypes) {
+                    $types = [normalizeTypesOrder($typesStr)];
+                  } else {
+                    if ((int) ($row['has_gfp'] ?? 0) === 1) {
+                      $types = ['GFP'];
+                    } else {
+                      $types = array_filter(array_map('trim', explode(',', str_replace(' ', '', $typesStr))));
+                    }
+                  }
 
-                  if (in_array($tClean, ['T', 'M'], true))
-                    $badge = 'badge-warning';
-                  elseif ($tClean === 'G')
-                    $badge = 'badge-info';
-                  elseif ($tClean === 'P')
-                    $badge = 'badge-primary';
-                  elseif ($tClean === 'S')
-                    $badge = 'badge-success';
-                  elseif ($tClean === 'F')
-                    $badge = 'badge-danger';
-                  elseif (strpos($tClean, 'F') !== false)
-                    $badge = 'badge-danger';
-                  elseif (strpos($tClean, 'S') !== false)
-                    $badge = 'badge-success';
-                  elseif (strpos($tClean, 'P') !== false)
-                    $badge = 'badge-primary';
-                  elseif (strpos($tClean, 'G') !== false)
-                    $badge = 'badge-info';
+                  if (!$types)
+                    $types = ['NULL'];
                   ?>
-                  <span class="badge <?= $badge ?> badge-type mr-1"><?= htmlspecialchars($tClean) ?></span>
-                <?php endforeach; ?>
-              </td>
+
+                  <?php foreach ($types as $t): ?>
+                    <?php
+                    $tClean = strtoupper(trim($t));
+                    $badge = 'badge-secondary';
+
+                    if (in_array($tClean, ['T', 'M'], true))
+                      $badge = 'badge-warning';
+                    elseif ($tClean === 'G')
+                      $badge = 'badge-info';
+                    elseif ($tClean === 'P')
+                      $badge = 'badge-primary';
+                    elseif ($tClean === 'S')
+                      $badge = 'badge-success';
+                    elseif ($tClean === 'F')
+                      $badge = 'badge-danger';
+                    elseif (strpos($tClean, 'F') !== false)
+                      $badge = 'badge-danger';
+                    elseif (strpos($tClean, 'S') !== false)
+                      $badge = 'badge-success';
+                    elseif (strpos($tClean, 'P') !== false)
+                      $badge = 'badge-primary';
+                    elseif (strpos($tClean, 'G') !== false)
+                      $badge = 'badge-info';
+                    ?>
+                    <span class="badge <?= $badge ?> badge-type mr-1"><?= htmlspecialchars($tClean) ?></span>
+                  <?php endforeach; ?>
+                </td>
+              <?php endif; ?>
               <td class="text-center traffic-cell">
                 <?php
                 $summaryRaw = (string) ($row['traffic_summary_json'] ?? '');
                 $summary = json_decode($summaryRaw, true);
+                $departmentStatuses = $orderDepartmentStatusMap[$orderId] ?? [];
 
                 if (!is_array($summary) || !$summary) {
                   $typesFallback = strtoupper((string) ($row['item_types'] ?? ''));
@@ -2114,17 +2171,27 @@ $deptOptions = [
                     continue;
 
                   $state = strtoupper((string) $summary[$type]);
-
-                  if ($state === 'GREEN') {
-                    $color = 'badge-success';
+                  $departmentStatus = strtoupper((string)($departmentStatuses[$type] ?? ''));
+                  $departmentLabel = $departmentStatus !== ''
+                    ? ordersGetStatusLabel($conn, 'item', $departmentStatus, $type)
+                    : $state;
+                  $departmentColor = $departmentStatus !== ''
+                    ? ordersGetStatusColor($conn, 'item', $departmentStatus, $type)
+                    : null;
+                  $badgeStyle = 'font-size:1rem; padding:.5em .7em;';
+                  if ($departmentColor) {
+                    $safeColor = htmlspecialchars($departmentColor, ENT_QUOTES, 'UTF-8');
+                    $badgeStyle .= 'background-color:' . $safeColor . ';border-color:' . $safeColor . ';color:#fff;';
+                  } elseif ($state === 'GREEN') {
+                    $badgeStyle .= 'background-color:#28a745;border-color:#28a745;color:#fff;';
                   } elseif ($state === 'ORANGE') {
-                    $color = 'badge-warning';
+                    $badgeStyle .= 'background-color:#ffc107;border-color:#ffc107;color:#212529;';
                   } else {
-                    $color = 'badge-danger';
+                    $badgeStyle .= 'background-color:#dc3545;border-color:#dc3545;color:#fff;';
                   }
                   ?>
-                  <span class="badge <?= $color ?> mr-1" style="font-size:1rem; padding:.5em .7em;"
-                    title="<?= htmlspecialchars($type . ' ' . $state) ?>">
+                  <span class="badge mr-1" style="<?= $badgeStyle ?>"
+                    title="<?= htmlspecialchars($type . ' - ' . $departmentLabel . ($departmentStatus !== '' ? ' (' . $departmentStatus . ')' : '')) ?>">
                     <?= htmlspecialchars($type) ?>
                   </span>
                 <?php endforeach; ?>
@@ -2398,7 +2465,8 @@ $deptOptions = [
             <!-- Detail row (hidden, will be filled via AJAX) -->
             <tr class="order-detail-row">
               <td colspan="11">
-                <div id="detail-<?= $orderId ?>" class="detail-wrap"></div>
+
+              <div id="detail-<?= $orderId ?>" class="detail-wrap"></div>
               </td>
             </tr>
 

@@ -194,6 +194,8 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == '1') {
     $profileProjectCount = 0;
     $profileUserId = intval($_SESSION['user_id'] ?? 0);
 
+    $profileOrdersCount = 0;
+
     if ($profileUserId > 0) {
       $stmt = $conn->prepare("
     SELECT COUNT(DISTINCT p.id) AS cnt
@@ -207,6 +209,23 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == '1') {
         $stmt->execute();
         $row = $stmt->get_result()->fetch_assoc();
         $profileProjectCount = intval($row['cnt'] ?? 0);
+        $stmt->close();
+      }
+
+      $stmt = $conn->prepare("
+  SELECT COUNT(DISTINCT o.id) AS cnt
+  FROM orders o
+  JOIN order_assignments oa ON oa.order_id = o.id
+  WHERE oa.employee_id = ?
+    AND oa.removed_at IS NULL
+    AND UPPER(o.status) != 'SHIPPED'
+");
+
+      if ($stmt) {
+        $stmt->bind_param('i', $profileUserId);
+        $stmt->execute();
+        $row = $stmt->get_result()->fetch_assoc();
+        $profileOrdersCount = intval($row['cnt'] ?? 0);
         $stmt->close();
       }
     }
@@ -234,6 +253,11 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == '1') {
                   <a class="nav-link <?php echo ($activeTab === 'orders') ? 'active' : ''; ?>"
                     href="?page=profile&tab=orders">
                     Orders
+                    <?php if ($profileOrdersCount > 0): ?>
+                      <span class="badge badge-warning ml-1">
+                        <?php echo $profileOrdersCount; ?>
+                      </span>
+                    <?php endif; ?>
                   </a>
                 </li>
               <?php endif; ?>

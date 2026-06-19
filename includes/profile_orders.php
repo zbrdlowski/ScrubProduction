@@ -26,7 +26,7 @@ if ($personalOrdersEnabled !== 1) {
     return;
 }
 
-/* SEM PRIDA%T MAPOVANIE ROLÍ */
+/* SEM PRIDA%T MAPOVANIE ROLÍ 
 
 $roleMap = [
     2 => ['PRIMARY_GRAPHICS', 'COLLAB_GRAPHICS'],
@@ -44,7 +44,7 @@ if (empty($profileRoles)) {
 }
 
 $rolePlaceholders = implode(',', array_fill(0, count($profileRoles), '?'));
-
+*/
 /* AŽ POTOM NASLEDUJE $sql = "SELECT ..." */
 
 $sql = "SELECT 
@@ -101,7 +101,6 @@ $sql = "SELECT
       JOIN employees e ON e.id = oax.employee_id
       WHERE oax.order_id = o.id
         AND oax.removed_at IS NULL
-        AND oax.role IN ($rolePlaceholders)
     ) AS assigned_users
 
 FROM orders o
@@ -114,15 +113,13 @@ LEFT JOIN order_addresses oa_bill ON oa_bill.order_id = o.id AND UPPER(oa_bill.t
 WHERE 
     oa.employee_id = ?
     AND oa.removed_at IS NULL
-    AND oa.role IN ($rolePlaceholders)
     AND UPPER(o.status) != 'SHIPPED'
-
 ORDER BY o.order_date ASC
 ";
 
 $stmt = $conn->prepare($sql);
-$types = str_repeat('s', count($profileRoles)) . 'i' . str_repeat('s', count($profileRoles));
-$params = array_merge($profileRoles, [$userId], $profileRoles);
+$types = 'i';
+$params = [$userId];
 
 $stmt->bind_param($types, ...$params);
 $stmt->execute();

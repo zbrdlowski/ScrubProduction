@@ -1,4 +1,4 @@
-<!-- pracovne departmenty -->
+﻿<!-- pracovne departmenty -->
 <div class="container-fluid">
   <div class="row">
     <div class="col-md-6">
@@ -65,7 +65,7 @@
       $('.position-table .add-btn').on('click', function () {
         const newRow = `
     <tr class="new-row">
-      <td style='width:0.1em;'>â€”</td>
+      <td style='width:0.1em;'>&mdash;</td>
       <td class="desc-cell">
         <input type='text' class='form-control new-desc' placeholder='Enter new position'>
       </td>
@@ -181,7 +181,7 @@
       $('.schedule-table .add-schedule-btn').on('click', function () {
         const newRow = `
     <tr class="new-schedule-row">
-      <td style='width:0.1em;'>â€”</td>
+      <td style='width:0.1em;'>&mdash;</td>
       <td class="schedule-cell">
         <input type='time' class='form-control new-time-in' placeholder='Start'>
         <input type='time' class='form-control new-time-out' placeholder='End'>
@@ -240,20 +240,20 @@
     'F' => 'Fitting',
   ];
   $productSpecDefaults = [
-    'graphics_material'      => ['department' => 'G', 'label' => 'Material',           'field_type' => 'dropdown'],
-    'graphics_finish'        => ['department' => 'G', 'label' => 'Finish',             'field_type' => 'dropdown'],
-    'graphics_grip'          => ['department' => 'G', 'label' => 'Grip',               'field_type' => 'dropdown'],
-    'graphics_tr_swingarms'  => ['department' => 'G', 'label' => 'Tr. Swingarms',      'field_type' => 'dropdown'],
-    'graphics_printer'       => ['department' => 'G', 'label' => 'Printer',            'field_type' => 'dropdown'],
-    'seat_waterproof_seams'  => ['department' => 'S', 'label' => 'Waterproof Seams',   'field_type' => 'dropdown'],
-    'seat_enduro_pocket'     => ['department' => 'S', 'label' => 'Enduro Pocket',      'field_type' => 'dropdown'],
-    'seat_side_brand_patches'=> ['department' => 'S', 'label' => 'Side Brand Patches', 'field_type' => 'dropdown'],
+    'graphics_material' => ['department' => 'G', 'label' => 'Material', 'field_type' => 'dropdown'],
+    'graphics_finish' => ['department' => 'G', 'label' => 'Finish', 'field_type' => 'dropdown'],
+    'graphics_grip' => ['department' => 'G', 'label' => 'Grip', 'field_type' => 'dropdown'],
+    'graphics_tr_swingarms' => ['department' => 'G', 'label' => 'Tr. Swingarms', 'field_type' => 'dropdown'],
+    'graphics_printer' => ['department' => 'G', 'label' => 'Printer', 'field_type' => 'dropdown'],
+    'seat_waterproof_seams' => ['department' => 'S', 'label' => 'Waterproof Seams', 'field_type' => 'dropdown'],
+    'seat_enduro_pocket' => ['department' => 'S', 'label' => 'Enduro Pocket', 'field_type' => 'dropdown'],
+    'seat_side_brand_patches' => ['department' => 'S', 'label' => 'Side Brand Patches', 'field_type' => 'dropdown'],
   ];
   $fieldTypeLabels = [
     'dropdown' => 'Dropdown',
-    'text'     => 'Text',
+    'text' => 'Text',
     'checkbox' => 'Checkbox',
-    'radio'    => 'Radio',
+    'radio' => 'Radio',
   ];
   $departmentPrefixes = [
     'G' => 'graphics',
@@ -351,6 +351,7 @@
     return str_replace('_', '-', strtolower($specKey));
   };
   $productSpecCategoryOptions = [];
+  /** @var \Closure(string, string=): void $registerProductSpecCategory */
   $registerProductSpecCategory = static function (string $department, string $subCategory = '') use (&$productSpecCategoryOptions, $departmentNames, $graphicsSubcategoryLabels, $normalizeProductSpecDepartment, $normalizeProductSpecSubcategory): void {
     $department = $normalizeProductSpecDepartment($department);
     $subCategory = $department === 'G' ? $normalizeProductSpecSubcategory($subCategory) : '';
@@ -543,7 +544,8 @@
 
     .settings-compact-card .card-body-scroll {
       max-height: none;
-      overflow: visible;
+      overflow-x: auto;
+      overflow-y: visible;
     }
 
     .status-color-preview {
@@ -574,29 +576,227 @@
       border-radius: .35rem;
       padding: .85rem;
     }
+
+
+    .settings-dropdown-stack .settings-compact-card {
+      width: 100%;
+    }
+
+    .settings-compact-card .card-header {
+      gap: .5rem;
+    }
+
+    .settings-compact-card .card-header>.d-flex {
+      flex-wrap: nowrap !important;
+      justify-content: flex-end;
+      max-width: none;
+    }
+
+    .settings-compact-card .card-body {
+      overflow-x: auto;
+    }
+
+    /* Dynamic table layout: columns size by content, not by forced widths. */
+    .settings-compact-card table.status-definitions-table,
+    .settings-compact-card table.product-spec-options-table {
+      width: max-content;
+      min-width: 100%;
+      table-layout: auto;
+    }
+
+    .settings-compact-card table.status-definitions-table th,
+    .settings-compact-card table.status-definitions-table td,
+    .settings-compact-card table.product-spec-options-table th,
+    .settings-compact-card table.product-spec-options-table td {
+      width: auto !important;
+      max-width: none !important;
+      white-space: nowrap;
+    }
+
+    .settings-compact-card .status-definitions-table .status-label-cell,
+    .settings-compact-card .product-spec-options-table .spec-label-cell,
+    .settings-compact-card .product-spec-options-table .spec-value-cell {
+      min-width: 140px;
+    }
+
+    .settings-compact-card .product-spec-options-table .spec-name-cell {
+      min-width: 260px;
+    }
+
+    .settings-compact-card .status-definitions-table .status-color-cell,
+    .settings-compact-card .product-spec-options-table .spec-sourcekey-cell {
+      min-width: 110px;
+    }
+
+    .settings-compact-card .status-definitions-table td:last-child,
+    .settings-compact-card .product-spec-options-table td:last-child {
+      white-space: nowrap;
+    }
+
+    .settings-compact-card .status-definitions-table td:last-child .btn,
+    .settings-compact-card .product-spec-options-table td:last-child .btn {
+      margin-right: .25rem;
+      white-space: nowrap;
+    }
+
+    .settings-compact-card .status-definitions-table td:last-child .btn:last-child,
+    .settings-compact-card .product-spec-options-table td:last-child .btn:last-child {
+      margin-right: 0;
+    }
+
+
+    /* Header toolbar: title left, select + buttons right, same row. */
+    .settings-compact-card .settings-card-toolbar {
+      width: 100%;
+      min-width: 0;
+    }
+
+    .settings-compact-card .settings-card-actions {
+      gap: 8px;
+      min-width: 0;
+      margin-left: auto;
+    }
+
+    .settings-compact-card .settings-card-actions select {
+      width: 420px;
+      max-width: 42vw;
+      min-width: 260px;
+      flex: 0 1 420px;
+    }
+
+    .settings-compact-card .settings-card-actions .btn {
+      flex: 0 0 auto;
+      white-space: nowrap;
+    }
+
+    @media (max-width: 991.98px) {
+      .settings-compact-card .settings-card-toolbar {
+        flex-wrap: wrap !important;
+        gap: 8px;
+      }
+
+      .settings-compact-card .settings-card-actions {
+        width: 100%;
+        margin-left: 0;
+        justify-content: flex-start;
+      }
+
+      .settings-compact-card .settings-card-actions select {
+        width: auto;
+        max-width: none;
+        flex: 1 1 260px;
+      }
+    }
   </style>
 
-  <div class="row">
-    <div class="col-lg-6">
+  <div class="row settings-dropdown-stack">
+    <div class="col-12 mb-3">
+      <div class="card card-dark border-warning settings-compact-card">
+        <div class="card-header">
+          <div class="d-flex align-items-center justify-content-between">
+            <h3 class="card-title mb-0">Status Dropdowns</h3>
+
+            <div class="d-flex align-items-center">
+              <select class="form-control form-control-sm status-definition-group-filter mr-2" style="width:320px;">
+                <?php foreach ($statusDropdownGroups as $key => $label): ?>
+                  <option value="<?= htmlspecialchars($key, ENT_QUOTES, 'UTF-8'); ?>" <?= $currentStatusGroup === $key ? 'selected' : ''; ?>>
+                    <?= htmlspecialchars($label, ENT_QUOTES, 'UTF-8'); ?>
+                  </option>
+                <?php endforeach; ?>
+              </select>
+
+              <button class="btn bg-gradient-success btn-xs add-status-definition" style="white-space: nowrap;">
+                <i class="fa fa-plus"></i> Add Status
+              </button>
+            </div>
+          </div>
+        </div>
+        <div class="card-body p-0 card-body-scroll">
+          <table class="table table-bordered table-striped mb-0 status-definitions-table"
+            data-group-key="<?= htmlspecialchars($currentStatusGroup, ENT_QUOTES, 'UTF-8'); ?>">
+            <thead>
+              <tr>
+                <th style="background-color:gray; width:60px;">ID</th>
+                <th style="background-color:gray; width:150px;">Dropdown</th>
+                <th style="background-color:gray; width:120px;">Code</th>
+                <th style="background-color:gray;">Label</th>
+                <th style="background-color:gray; width:110px;">Color</th>
+                <th style="background-color:gray; width:85px;">Order</th>
+                <th style="background-color:gray; width:75px;">Active</th>
+                <th style="background-color:gray; width:180px;">Tools</th>
+              </tr>
+            </thead>
+            <tbody>
+              <?php
+              $stmt = $conn->prepare("
+                SELECT id, scope, department, code, label, color, sort_order, active
+                FROM status_definitions
+                WHERE scope = ?
+                  AND ((? IS NULL AND department IS NULL) OR department = ?)
+                ORDER BY sort_order ASC, id ASC
+              ");
+              if ($stmt) {
+                $stmt->bind_param('sss', $currentStatusScope, $currentStatusDepartmentOrNull, $currentStatusDepartmentOrNull);
+                $stmt->execute();
+                $result = $stmt->get_result();
+                while ($row = $result->fetch_assoc()):
+                  $color = trim((string) ($row['color'] ?? ''));
+                  ?>
+                  <tr data-id="<?= (int) $row['id']; ?>"
+                    data-group-key="<?= htmlspecialchars($currentStatusGroup, ENT_QUOTES, 'UTF-8'); ?>">
+                    <td><?= (int) $row['id']; ?></td>
+                    <td class="status-group-cell">
+                      <?= htmlspecialchars($statusDropdownGroups[$currentStatusGroup] ?? $currentStatusGroup, ENT_QUOTES, 'UTF-8'); ?>
+                    </td>
+                    <td class="status-code-cell"><?= htmlspecialchars($row['code'], ENT_QUOTES, 'UTF-8'); ?></td>
+                    <td class="status-label-cell"><?= htmlspecialchars($row['label'], ENT_QUOTES, 'UTF-8'); ?></td>
+                    <td class="status-color-cell">
+                      <span class="status-color-preview"
+                        style="background-color: <?= htmlspecialchars($color !== '' ? $color : 'transparent', ENT_QUOTES, 'UTF-8'); ?>;"></span>
+                      <span class="status-color-text"><?= htmlspecialchars($color, ENT_QUOTES, 'UTF-8'); ?></span>
+                    </td>
+                    <td class="status-sort-cell"><?= (int) $row['sort_order']; ?></td>
+                    <td class="status-active-cell"><?= ((int) $row['active'] === 1 ? 'Yes' : 'No'); ?></td>
+                    <td>
+                      <button class="btn bg-gradient-primary btn-sm edit-status-definition"><i class="fa fa-edit"></i>
+                        Edit</button>
+                      <button class="btn bg-gradient-success btn-sm save-status-definition" style="display:none;"><i
+                          class="fa fa-save"></i> Save</button>
+                      <button class="btn bg-gradient-danger btn-sm delete-status-definition"><i
+                          class="fa fa-trash"></i></button>
+                    </td>
+                  </tr>
+                  <?php
+                endwhile;
+                $stmt->close();
+              }
+              ?>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+    <div class="col-12">
       <div class="card card-dark border-info settings-compact-card">
-        <div class="card-header d-flex justify-content-between align-items-center flex-wrap">
-          <h3 class="card-title mb-0">Product Specification Dropdowns</h3>
-          <div class="d-flex align-items-center flex-nowrap" style="gap:8px;">
-            <select class="form-control form-control-sm product-spec-key-filter" style="min-width:260px;">
-              <?php foreach ($productSpecGroups as $key => $label): ?>
-                <option value="<?= htmlspecialchars($key, ENT_QUOTES, 'UTF-8'); ?>" <?= $requestedSpecGroup === $key ? 'selected' : ''; ?>>
-                  <?= htmlspecialchars($label, ENT_QUOTES, 'UTF-8'); ?>
-                </option>
-              <?php endforeach; ?>
-            </select>
-            <button class="btn bg-gradient-info btn-xs add-product-spec-dropdown"
-              style="white-space: nowrap; min-width: 122px;">
-              <i class="fa fa-plus"></i> New Field
-            </button>
-            <button class="btn bg-gradient-success btn-xs add-product-spec-option"
-              style="white-space: nowrap; min-width: 110px;">
-              <i class="fa fa-plus"></i> Add Option
-            </button>
+        <div class="card-header">
+          <div class="d-flex align-items-center justify-content-between flex-nowrap settings-card-toolbar">
+            <h3 class="card-title mb-0 mr-3 flex-shrink-0">Product Specification Dropdowns</h3>
+
+            <div class="d-flex align-items-center flex-nowrap settings-card-actions product-spec-card-actions">
+              <select class="form-control form-control-sm product-spec-key-filter">
+                <?php foreach ($productSpecGroups as $key => $label): ?>
+                  <option value="<?= htmlspecialchars($key, ENT_QUOTES, 'UTF-8'); ?>" <?= $requestedSpecGroup === $key ? 'selected' : ''; ?>>
+                    <?= htmlspecialchars($label, ENT_QUOTES, 'UTF-8'); ?>
+                  </option>
+                <?php endforeach; ?>
+              </select>
+              <button class="btn bg-gradient-info btn-xs add-product-spec-dropdown">
+                <i class="fa fa-plus"></i> New Field
+              </button>
+              <button class="btn bg-gradient-success btn-xs add-product-spec-option">
+                <i class="fa fa-plus"></i> Add Option
+              </button>
+            </div>
           </div>
         </div>
         <div class="card-body p-0 card-body-scroll">
@@ -655,12 +855,15 @@
                     data-apply-to-subcategories="<?= $rowApplyToSubcategories; ?>">
                     <td><?= (int) $row['id']; ?></td>
                     <td class="spec-department-cell"><?= htmlspecialchars($rowDepartment, ENT_QUOTES, 'UTF-8'); ?></td>
-                    <td class="spec-fieldtype-cell"><?= htmlspecialchars($fieldTypeLabels[$row['field_type'] ?? 'dropdown'] ?? 'Dropdown', ENT_QUOTES, 'UTF-8'); ?></td>
+                    <td class="spec-fieldtype-cell">
+                      <?= htmlspecialchars($fieldTypeLabels[$row['field_type'] ?? 'dropdown'] ?? 'Dropdown', ENT_QUOTES, 'UTF-8'); ?>
+                    </td>
                     <td class="spec-name-cell">
                       <?= htmlspecialchars($productSpecGroups[$rowGroupKey] ?? $buildProductSpecGroupLabel((string) $row['spec_key'], $rowDepartment, $rowSubcategory), ENT_QUOTES, 'UTF-8'); ?>
                     </td>
                     <td class="spec-sourcekey-cell"><?= htmlspecialchars($rowSourceKey, ENT_QUOTES, 'UTF-8'); ?></td>
-                    <td class="spec-subcats-cell"><?= $rowCanApplyToSubcategories ? ($rowApplyToSubcategories === 1 ? 'Yes' : 'No') : '&mdash;'; ?></td>
+                    <td class="spec-subcats-cell">
+                      <?= $rowCanApplyToSubcategories ? ($rowApplyToSubcategories === 1 ? 'Yes' : 'No') : '&mdash;'; ?></td>
                     <td class="spec-label-cell"><?= htmlspecialchars($row['label'], ENT_QUOTES, 'UTF-8'); ?></td>
                     <td class="spec-value-cell"><?= htmlspecialchars($row['value'], ENT_QUOTES, 'UTF-8'); ?></td>
                     <td class="spec-sort-cell"><?= (int) $row['sort_order']; ?></td>
@@ -684,81 +887,8 @@
         </div>
       </div>
     </div>
-    <div class="col-lg-6">
-      <div class="card card-dark border-warning settings-compact-card">
-        <div class="card-header d-flex justify-content-between align-items-center flex-wrap">
-          <h3 class="card-title mb-0">Status Dropdowns</h3>
-          <div class="d-flex align-items-center flex-nowrap" style="gap:8px;">
-            <select class="form-control form-control-sm status-definition-group-filter" style="min-width:240px;">
-              <?php foreach ($statusDropdownGroups as $key => $label): ?>
-                <option value="<?= htmlspecialchars($key, ENT_QUOTES, 'UTF-8'); ?>" <?= $currentStatusGroup === $key ? 'selected' : ''; ?>>
-                  <?= htmlspecialchars($label, ENT_QUOTES, 'UTF-8'); ?>
-                </option>
-              <?php endforeach; ?>
-            </select>
-            <button class="btn bg-gradient-success btn-xs add-status-definition" style="white-space: nowrap; min-width: 110px;">
-              <i class="fa fa-plus"></i> Add Status
-            </button>
-          </div>
-        </div>
-        <div class="card-body p-0 card-body-scroll">
-          <table class="table table-bordered table-striped mb-0 status-definitions-table" data-group-key="<?= htmlspecialchars($currentStatusGroup, ENT_QUOTES, 'UTF-8'); ?>">
-            <thead>
-              <tr>
-                <th style="background-color:gray; width:60px;">ID</th>
-                <th style="background-color:gray; width:150px;">Dropdown</th>
-                <th style="background-color:gray; width:120px;">Code</th>
-                <th style="background-color:gray;">Label</th>
-                <th style="background-color:gray; width:110px;">Color</th>
-                <th style="background-color:gray; width:85px;">Order</th>
-                <th style="background-color:gray; width:75px;">Active</th>
-                <th style="background-color:gray; width:180px;">Tools</th>
-              </tr>
-            </thead>
-            <tbody>
-              <?php
-              $stmt = $conn->prepare("
-                SELECT id, scope, department, code, label, color, sort_order, active
-                FROM status_definitions
-                WHERE scope = ?
-                  AND ((? IS NULL AND department IS NULL) OR department = ?)
-                ORDER BY sort_order ASC, id ASC
-              ");
-              if ($stmt) {
-                $stmt->bind_param('sss', $currentStatusScope, $currentStatusDepartmentOrNull, $currentStatusDepartmentOrNull);
-                $stmt->execute();
-                $result = $stmt->get_result();
-                while ($row = $result->fetch_assoc()):
-                  $color = trim((string) ($row['color'] ?? ''));
-                  ?>
-                  <tr data-id="<?= (int) $row['id']; ?>" data-group-key="<?= htmlspecialchars($currentStatusGroup, ENT_QUOTES, 'UTF-8'); ?>">
-                    <td><?= (int) $row['id']; ?></td>
-                    <td class="status-group-cell"><?= htmlspecialchars($statusDropdownGroups[$currentStatusGroup] ?? $currentStatusGroup, ENT_QUOTES, 'UTF-8'); ?></td>
-                    <td class="status-code-cell"><?= htmlspecialchars($row['code'], ENT_QUOTES, 'UTF-8'); ?></td>
-                    <td class="status-label-cell"><?= htmlspecialchars($row['label'], ENT_QUOTES, 'UTF-8'); ?></td>
-                    <td class="status-color-cell">
-                      <span class="status-color-preview" style="background-color: <?= htmlspecialchars($color !== '' ? $color : 'transparent', ENT_QUOTES, 'UTF-8'); ?>;"></span>
-                      <span class="status-color-text"><?= htmlspecialchars($color, ENT_QUOTES, 'UTF-8'); ?></span>
-                    </td>
-                    <td class="status-sort-cell"><?= (int) $row['sort_order']; ?></td>
-                    <td class="status-active-cell"><?= ((int) $row['active'] === 1 ? 'Yes' : 'No'); ?></td>
-                    <td>
-                      <button class="btn bg-gradient-primary btn-sm edit-status-definition"><i class="fa fa-edit"></i> Edit</button>
-                      <button class="btn bg-gradient-success btn-sm save-status-definition" style="display:none;"><i class="fa fa-save"></i> Save</button>
-                      <button class="btn bg-gradient-danger btn-sm delete-status-definition"><i class="fa fa-trash"></i></button>
-                    </td>
-                  </tr>
-                  <?php
-                endwhile;
-                $stmt->close();
-              }
-              ?>
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </div>
   </div>
+
 
   <script>
     (function () {
@@ -1162,7 +1292,7 @@
             <td class="spec-value-cell">${escapeHtml(value)}</td>
             <td class="spec-sort-cell">${sortOrder}</td>
             <td class="spec-active-cell">${active === 1 ? 'Yes' : 'No'}</td>
-            <td style="width:30px;">
+            <td>
               <button class="btn bg-gradient-primary btn-sm edit-product-spec-option"><i class="fa fa-edit"></i> Edit</button>
               <button class="btn bg-gradient-success btn-sm save-product-spec-option" style="display:none;"><i class="fa fa-save"></i> Save</button>
               <button class="btn bg-gradient-danger btn-sm delete-product-spec-option"><i class="fa fa-trash"></i></button>
@@ -1178,9 +1308,9 @@
       // --- Field type change: skryj/zobraz option polia, nastav hint ---
       const fieldTypeHints = {
         dropdown: '',
-        text:     'Text field — žiadne options. Zákazník píše voľný text. Label/value polia nie sú potrebné.',
+        text: 'Text field — žiadne options. Zákazník píše voľný text. Label/value polia nie sú potrebné.',
         checkbox: 'Checkbox — automaticky sa vytvoria dve options: Yes (1) a No (0).',
-        radio:    'Radio — pridaj options rovnako ako pri Dropdown. Render bude ako tlačidlá.',
+        radio: 'Radio — pridaj options rovnako ako pri Dropdown. Render bude ako tlačidlá.',
       };
 
       $('.product-spec-options-table').on('change', '.new-dropdown-field-type', function () {

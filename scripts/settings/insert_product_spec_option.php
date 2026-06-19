@@ -26,6 +26,37 @@ if (!in_array($fieldType, $allowedFieldTypes, true)) {
   out_json(400, ['ok' => false, 'error' => 'Invalid field_type']);
 }
 
+// Zabráň vytvoreniu duplicitného text fieldu
+if ($fieldType === 'text') {
+
+    $check = $conn->prepare("
+        SELECT id
+        FROM product_spec_options
+        WHERE spec_key = ?
+          AND department <=> ?
+          AND field_type = 'text'
+        LIMIT 1
+    ");
+
+    if (!$check) {
+        out_json(500, ['ok' => false, 'error' => mysqli_error($conn)]);
+    }
+
+    $check->bind_param('ss', $specKey, $department);
+    $check->execute();
+
+    if ($check->get_result()->num_rows > 0) {
+        $check->close();
+
+        out_json(400, [
+            'ok' => false,
+            'error' => 'This text field already exists.'
+        ]);
+    }
+
+    $check->close();
+}
+
 $hasApplyToSubcategories = product_spec_column_exists($conn, 'apply_to_subcategories');
 $insertSql = $hasApplyToSubcategories
   ? "INSERT INTO product_spec_options (spec_key, department, field_type, label, value, sort_order, active, color, apply_to_subcategories)

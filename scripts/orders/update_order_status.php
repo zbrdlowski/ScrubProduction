@@ -4,6 +4,7 @@ session_start();
 header('Content-Type: application/json; charset=utf-8');
 
 require_once dirname(__DIR__, 2) . '/includes/conn.php';
+/** @var mysqli $conn */
 require_once dirname(__DIR__, 2) . '/includes/orders_status_helpers.php';
 require_once __DIR__ . '/activity_helper.php';
 
@@ -47,7 +48,10 @@ if ($oldStatus === $newStatus) {
 }
 
 $stmt = $conn->prepare("UPDATE orders
-  SET status = ?
+  SET status = ?,
+      status_override = 1,
+      status_override_by = ?,
+      status_override_at = NOW()
   WHERE id = ?
   LIMIT 1
 ");
@@ -56,7 +60,7 @@ if (!$stmt) {
   out(['ok' => false, 'error' => $conn->error]);
 }
 
-$stmt->bind_param('si', $newStatus, $orderId);
+$stmt->bind_param('sii', $newStatus, $userId, $orderId);
 $stmt->execute();
 $stmt->close();
 

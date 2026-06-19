@@ -13,7 +13,10 @@ function out(array $payload): void
   exit;
 }
 
-if ((int) ($_SESSION['permission'] ?? 0) < 300) {
+// povolenie editácie poznámky bárskomu
+$permission = (int) ($_SESSION['permission'] ?? 0);
+
+if ($permission < 1) {
   out(['ok' => false, 'error' => 'No permission']);
 }
 

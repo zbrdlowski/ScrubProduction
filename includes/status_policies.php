@@ -137,6 +137,108 @@ function statusPoliciesRecalculateAllOrders(mysqli $conn): int
   return $count;
 }
 
+
+function statusPoliciesTableExists(mysqli $conn, string $tableName): bool
+{
+  $tableName = trim($tableName);
+  if ($tableName === '') {
+    return false;
+  }
+
+  $sql = sprintf(
+    "SHOW TABLES LIKE '%s'",
+    $conn->real_escape_string($tableName)
+  );
+  $result = $conn->query($sql);
+
+  if (!$result instanceof mysqli_result) {
+    return false;
+  }
+
+  $exists = $result->num_rows > 0;
+  $result->free();
+  return $exists;
+}
+
+function statusPoliciesFetchAllowedOrderStatuses(mysqli $conn, int $ruleId): array
+{
+  if ($ruleId <= 0 || !statusPoliciesTableExists($conn, 'status_workflow_rule_allowed_order_statuses')) {
+    return [];
+  }
+
+  $stmt = $conn->prepare("
+    SELECT order_status_code
+    FROM status_workflow_rule_allowed_order_statuses
+    WHERE rule_id = ?
+    ORDER BY order_status_code ASC
+  ");
+  if (!$stmt) {
+    return [];
+  }
+
+  $stmt->bind_param('i', $ruleId);
+  $stmt->execute();
+  $result = $stmt->get_result();
+  $statuses = [];
+
+  if ($result instanceof mysqli_result) {
+    while ($row = $result->fetch_assoc()) {
+      $statusCode = strtoupper(trim((string)($row['order_status_code'] ?? '')));
+      if ($statusCode !== '') {
+        $statuses[] = $statusCode;
+      }
+    }
+    $result->free();
+  }
+
+  $stmt->close();
+  return array_values(array_unique($statuses));
+}
+
+function statusPoliciesSaveAllowedOrderStatuses(mysqli $conn, int $ruleId, array $statuses, array $overallStatuses): void
+{
+  if ($ruleId <= 0 || !statusPoliciesTableExists($conn, 'status_workflow_rule_allowed_order_statuses')) {
+    return;
+  }
+
+  $normalizedStatuses = [];
+  foreach ($statuses as $statusCode) {
+    $statusCode = strtoupper(trim((string)$statusCode));
+    if ($statusCode === '' || !isset($overallStatuses[$statusCode])) {
+      continue;
+    }
+    $normalizedStatuses[] = $statusCode;
+  }
+  $normalizedStatuses = array_values(array_unique($normalizedStatuses));
+
+  $stmtDelete = $conn->prepare("DELETE FROM status_workflow_rule_allowed_order_statuses WHERE rule_id = ?");
+  if ($stmtDelete) {
+    $stmtDelete->bind_param('i', $ruleId);
+    $stmtDelete->execute();
+    $stmtDelete->close();
+  }
+
+  if (!$normalizedStatuses) {
+    return;
+  }
+
+  $stmtInsert = $conn->prepare("
+    INSERT IGNORE INTO status_workflow_rule_allowed_order_statuses
+    (rule_id, order_status_code)
+    VALUES (?, ?)
+  ");
+  if (!$stmtInsert) {
+    return;
+  }
+
+  foreach ($normalizedStatuses as $statusCode) {
+    $stmtInsert->bind_param('is', $ruleId, $statusCode);
+    $stmtInsert->execute();
+  }
+
+  $stmtInsert->close();
+}
+
 function statusPoliciesFetchAll(mysqli $conn): array
 {
   $sql = "
@@ -268,6 +370,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $conditionTypes = $_POST['condition_type'] ?? [];
     $conditionOperators = $_POST['condition_operator'] ?? [];
     $conditionStatuses = $_POST['condition_status_codes'] ?? [];
+    $allowedOrderStatuses = $_POST['allowed_order_statuses'] ?? [];
 
     if ($name === '' || $resultOrderStatusCode === '' || !isset($overallStatuses[$resultOrderStatusCode])) {
       $flashMessage = 'Please fill in policy name and valid overall status.';
@@ -353,6 +456,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $sortOrder += 10;
       }
 
+      statusPoliciesSaveAllowedOrderStatuses($conn, $ruleId, is_array($allowedOrderStatuses) ? $allowedOrderStatuses : [$allowedOrderStatuses], $overallStatuses);
+
       $recalculatedCount = statusPoliciesRecalculateAllOrders($conn);
       $_SESSION['status_policies_flash_message'] = 'Policy saved. Recalculated ' . $recalculatedCount . ' orders.';
       $_SESSION['status_policies_flash_type'] = 'success';
@@ -391,6 +496,8 @@ if ($mode === 'edit' && $editingId > 0) {
     $mode = 'list';
     $flashMessage = 'Selected policy was not found.';
     $flashType = 'warning';
+  } else {
+    $editingPolicy['allowed_order_statuses'] = statusPoliciesFetchAllowedOrderStatuses($conn, (int)$editingPolicy['id']);
   }
 } elseif ($mode === 'create') {
   $editingPolicy = [
@@ -411,6 +518,7 @@ if ($mode === 'edit' && $editingId > 0) {
         'sort_order' => 10,
       ],
     ],
+    'allowed_order_statuses' => [],
   ];
 }
 ?>
@@ -541,7 +649,7 @@ if ($mode === 'edit' && $editingId > 0) {
       </a>
     </div>
 
-    <form method="post" class="card card-dark status-policy-card">
+    <form method="post" class="card card-dark status-policy-card" id="status-policy-form">
       <input type="hidden" name="action" value="save_policy">
       <input type="hidden" name="rule_id" value="<?= (int)$editingPolicy['id']; ?>">
 
@@ -684,9 +792,57 @@ if ($mode === 'edit' && $editingId > 0) {
       </div>
 
       <div class="card-footer">
-        <button type="submit" class="btn bg-gradient-success">
+        <button type="button" class="btn bg-gradient-success" id="open-status-policy-scope-modal">
           <i class="fa fa-save"></i> Save Policy
         </button>
+      </div>
+
+      <div class="modal fade" id="status-policy-scope-modal" tabindex="-1" role="dialog" aria-labelledby="status-policy-scope-modal-title" aria-hidden="true">
+        <div class="modal-dialog modal-lg" role="document">
+          <div class="modal-content bg-dark">
+            <div class="modal-header">
+              <h5 class="modal-title" id="status-policy-scope-modal-title">Apply recalculation only for these order statuses</h5>
+              <button type="button" class="close text-white" data-dismiss="modal" aria-label="Close">
+                <span aria-hidden="true">&times;</span>
+              </button>
+            </div>
+            <div class="modal-body">
+              <div class="alert alert-info py-2">
+                Vyber current order statusy, pri ktorych sa tato policy smie pouzit pri prepocitani. Nezaskrtnute statusy workflow necha bez zmeny.
+              </div>
+              <div class="row">
+                <?php $allowedOrderStatuses = array_flip((array)($editingPolicy['allowed_order_statuses'] ?? [])); ?>
+                <?php foreach ($overallStatuses as $statusCode => $meta): ?>
+                  <div class="col-md-6 col-lg-4">
+                    <div class="custom-control custom-checkbox mb-2">
+                      <input
+                        type="checkbox"
+                        class="custom-control-input js-policy-allowed-status"
+                        id="allowed-order-status-<?= htmlspecialchars($statusCode, ENT_QUOTES, 'UTF-8'); ?>"
+                        name="allowed_order_statuses[]"
+                        value="<?= htmlspecialchars($statusCode, ENT_QUOTES, 'UTF-8'); ?>"
+                        <?= isset($allowedOrderStatuses[$statusCode]) ? 'checked' : ''; ?>
+                      >
+                      <label class="custom-control-label" for="allowed-order-status-<?= htmlspecialchars($statusCode, ENT_QUOTES, 'UTF-8'); ?>">
+                        <?= htmlspecialchars((string)($meta['label'] ?? $statusCode), ENT_QUOTES, 'UTF-8'); ?>
+                        <span class="text-muted small">(<?= htmlspecialchars($statusCode, ENT_QUOTES, 'UTF-8'); ?>)</span>
+                      </label>
+                    </div>
+                  </div>
+                <?php endforeach; ?>
+              </div>
+              <div class="text-danger small d-none" id="status-policy-scope-error">
+                Vyber aspon jeden order status, pre ktory sa policy moze prepocitat.
+              </div>
+            </div>
+            <div class="modal-footer">
+              <button type="button" class="btn bg-gradient-secondary" data-dismiss="modal">Cancel</button>
+              <button type="submit" class="btn bg-gradient-success" id="confirm-status-policy-save">
+                <i class="fa fa-save"></i> Confirm Save Policy
+              </button>
+            </div>
+          </div>
+        </div>
       </div>
     </form>
 
@@ -714,6 +870,45 @@ if ($mode === 'edit' && $editingId > 0) {
     const departmentLabels = <?= json_encode($departmentLabels, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES); ?>;
     const container = document.getElementById('status-policy-conditions');
     const addButton = document.getElementById('add-status-policy-condition');
+    const form = document.getElementById('status-policy-form');
+    const openScopeModalButton = document.getElementById('open-status-policy-scope-modal');
+    const scopeModal = document.getElementById('status-policy-scope-modal');
+    const scopeError = document.getElementById('status-policy-scope-error');
+
+    if (form && openScopeModalButton && scopeModal) {
+      openScopeModalButton.addEventListener('click', function () {
+        if (!form.checkValidity()) {
+          form.reportValidity();
+          return;
+        }
+
+        if (scopeError) {
+          scopeError.classList.add('d-none');
+        }
+
+        if (window.jQuery && window.jQuery.fn && window.jQuery.fn.modal) {
+          window.jQuery(scopeModal).modal('show');
+        } else {
+          form.submit();
+        }
+      });
+
+      form.addEventListener('submit', function (event) {
+        if (!event.submitter || event.submitter.id !== 'confirm-status-policy-save') {
+          return;
+        }
+
+        const checkedStatuses = form.querySelectorAll('.js-policy-allowed-status:checked');
+        if (checkedStatuses.length > 0) {
+          return;
+        }
+
+        event.preventDefault();
+        if (scopeError) {
+          scopeError.classList.remove('d-none');
+        }
+      });
+    }
 
     if (!container || !addButton) {
       return;

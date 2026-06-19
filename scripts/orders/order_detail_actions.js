@@ -782,6 +782,9 @@ $(document)
               orderId,
               resp.traffic_summary,
               resp.order_status,
+              resp.department_statuses,
+              resp.department_labels,
+              resp.department_colors,
             );
           }
         },
@@ -820,7 +823,14 @@ $(document)
    * Aplikuje traffic summary + order status button priamo na riadok tabuľky — čisté DOM, žiadny AJAX.
    * Volaná s dátami ktoré už prišli v odpovedi update_item_status.php.
    */
-  function applyTrafficSummaryToRow(orderId, summary, orderStatus) {
+  function applyTrafficSummaryToRow(
+    orderId,
+    summary,
+    orderStatus,
+    departmentStatuses,
+    departmentLabels,
+    departmentColors,
+  ) {
     orderId = parseInt(orderId, 10) || 0;
     if (!orderId) return;
 
@@ -864,13 +874,41 @@ $(document)
           if (!summary[type]) return;
           const state = String(summary[type]).toUpperCase();
           const cls = colorMap[state] || "badge-secondary";
+          const deptStatus =
+            departmentStatuses && departmentStatuses[type]
+              ? String(departmentStatuses[type]).toUpperCase()
+              : "";
+          const deptLabel =
+            departmentLabels && departmentLabels[type]
+              ? String(departmentLabels[type]).trim()
+              : "";
+          const deptColor =
+            departmentColors && departmentColors[type]
+              ? String(departmentColors[type]).trim()
+              : "";
+          let style = "font-size:1rem;padding:.5em .7em;";
+          let badgeClass = cls;
+
+          if (deptColor) {
+            badgeClass = "";
+            style +=
+              "background-color:" +
+              deptColor +
+              ";border-color:" +
+              deptColor +
+              ";color:#fff;";
+          }
+
           html +=
             '<span class="badge ' +
-            cls +
-            ' mr-1" style="font-size:1rem;padding:.5em .7em;" title="' +
+            badgeClass +
+            ' mr-1" style="' +
+            style +
+            '" title="' +
             type +
-            " " +
-            state +
+            " - " +
+            (deptLabel || state) +
+            (deptStatus ? " (" + deptStatus + ")" : "") +
             '">' +
             type +
             "</span>";
@@ -1258,6 +1296,9 @@ $(document)
               resp.order_id,
               resp.traffic_summary,
               resp.order_status,
+              resp.department_statuses,
+              resp.department_labels,
+              resp.department_colors,
             );
           }
 
