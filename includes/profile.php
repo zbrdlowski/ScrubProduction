@@ -163,6 +163,9 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == '1') {
     case 'orders':
       include __DIR__ . '/profile_orders.php';
       break;
+    case 'custom_orders':
+      include __DIR__ . '/profile_custom_orders.php';
+      break;
     case 'online':
       include __DIR__ . '/profile_online_grid.php';
       break;
@@ -195,6 +198,7 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == '1') {
     $profileUserId = intval($_SESSION['user_id'] ?? 0);
 
     $profileOrdersCount = 0;
+    $profileCustomOrdersCount = 0;
 
     if ($profileUserId > 0) {
       $stmt = $conn->prepare("
@@ -228,6 +232,20 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == '1') {
         $profileOrdersCount = intval($row['cnt'] ?? 0);
         $stmt->close();
       }
+
+      $stmt = $conn->prepare("
+        SELECT COUNT(*) AS cnt
+        FROM custom_orders
+        WHERE owner_employee_id = ?
+          AND status NOT IN ('EXPORTED','CANCELLED','DEAD')
+      ");
+      if ($stmt) {
+        $stmt->bind_param('i', $profileUserId);
+        $stmt->execute();
+        $row = $stmt->get_result()->fetch_assoc();
+        $profileCustomOrdersCount = intval($row['cnt'] ?? 0);
+        $stmt->close();
+      }
     }
 
     if ($activeTab === 'projects' && $profileProjectCount <= 0) {
@@ -258,6 +276,17 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == '1') {
                         <?php echo $profileOrdersCount; ?>
                       </span>
                     <?php endif; ?>
+                  </a>
+                </li>
+              <?php endif; ?>
+              <?php if ($profileCustomOrdersCount > 0): ?>
+                <li class="nav-item">
+                  <a class="nav-link <?php echo ($activeTab === 'custom_orders') ? 'active' : ''; ?>"
+                    href="?page=profile&tab=custom_orders">
+                    Custom Leads
+                    <span class="badge badge-info ml-1">
+                      <?php echo $profileCustomOrdersCount; ?>
+                    </span>
                   </a>
                 </li>
               <?php endif; ?>
@@ -442,6 +471,10 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == '1') {
 
               <div id="profileOrdersContainer" class="detail-wrap">
                 <?php include 'includes/profile_orders.php'; ?>
+              </div>
+            <?php elseif ($activeTab === 'custom_orders'): ?>
+              <div id="profileCustomOrdersContainer" class="detail-wrap">
+                <?php include 'includes/profile_custom_orders.php'; ?>
               </div>
             <?php elseif ($activeTab === 'projects'): ?>
               <div id="profileProjectsContainer" class="detail-wrap">

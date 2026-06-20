@@ -56,6 +56,7 @@ $pageLabels = [
   'logs' => 'System Logs',
   'calendar' => 'Dochádzka',
   'orders_dashboard' => 'Orders Dashboard',
+  'custom_orders' => 'Custom Orders',
   'cleanup' => 'Cleanup',
   'holidays' => 'Dovolenky',
   'chat' => 'Interný chat',
