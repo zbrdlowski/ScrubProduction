@@ -337,6 +337,7 @@ $customOrderHelpLang = customOrderResolveHelpLanguage();
   .custom-field-invalid {
     border-color: #dc3545 !important;
     box-shadow: 0 0 0 .12rem rgba(220, 53, 69, .25) !important;
+
     background: rgba(220, 53, 69, .10) !important;
   }
   label.custom-field-invalid,

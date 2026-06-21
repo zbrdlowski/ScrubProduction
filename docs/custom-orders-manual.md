@@ -753,4 +753,4 @@ Aktualna verzia zatial:
 - nema este tvrde dropdown validacie na kazdy material a finish
 - nema este specialny reporting dashboard pre upsell statistiky
 
-To je v poriadku. Modul je pripraveny tak, aby sa dal dalej rozsirovat bez rozbitia workflow.
+To je v poriadku. Modul je pripraveny tak, aby sa dal dalej rozsirovat bez rozbitia workflow.;
