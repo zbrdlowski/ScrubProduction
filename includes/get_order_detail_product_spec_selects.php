@@ -11,6 +11,44 @@ declare(strict_types=1);
  * Načíta aktívne options pre daný spec_key z DB.
  * Vracia ['items' => [...], 'field_type' => 'dropdown|text|checkbox|radio']
  */
+function productSpecColumnExists(mysqli $conn, string $column): bool
+{
+  static $cache = [];
+
+  $column = trim($column);
+  if ($column === '') {
+    return false;
+  }
+
+  if (array_key_exists($column, $cache)) {
+    return $cache[$column];
+  }
+
+  $stmt = $conn->prepare("
+    SELECT 1
+    FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE()
+      AND TABLE_NAME = 'product_spec_options'
+      AND COLUMN_NAME = ?
+    LIMIT 1
+  ");
+  if (!$stmt) {
+    $cache[$column] = false;
+    return false;
+  }
+
+  $stmt->bind_param('s', $column);
+  $exists = false;
+  if ($stmt->execute()) {
+    $res = $stmt->get_result();
+    $exists = $res && $res->fetch_assoc() !== null;
+  }
+  $stmt->close();
+
+  $cache[$column] = $exists;
+  return $exists;
+}
+
 function productSpecOptions(mysqli $conn, string $specKey, array $fallbackOptions): array
 {
   static $cache = [];
@@ -45,10 +83,9 @@ function productSpecOptions(mysqli $conn, string $specKey, array $fallbackOption
   }
 
   if (!$items) {
-    foreach ($fallbackOptions as $value => $label) {
-      $items[] = ['value' => (string) $value, 'label' => (string) $label, 'field_type' => 'dropdown'];
-    }
-  }
+  $cache[$specKey] = ['items' => [], 'field_type' => $fieldType];
+  return $cache[$specKey];
+}
 
   $cache[$specKey] = ['items' => $items, 'field_type' => $fieldType];
   return $cache[$specKey];
@@ -190,35 +227,35 @@ function productSpecSourceKeyFromSpecKey(string $specKey, string $department): s
 
   return str_replace('_', '-', $source);
 }
-
+/*
 function productSpecDefaultFieldDefinitions(string $department): array
 {
   $department = strtoupper(trim($department));
 
   $definitionsByDepartment = [
     'G' => [
-      ['spec_key' => 'graphics_material', 'field_type' => 'dropdown', 'label' => 'Material', 'source_key' => 'base-material', 'apply_to_subcategories' => 0],
-      ['spec_key' => 'graphics_finish', 'field_type' => 'dropdown', 'label' => 'Finish', 'source_key' => 'graphics-finish', 'apply_to_subcategories' => 0],
-      ['spec_key' => 'graphics_grip', 'field_type' => 'dropdown', 'label' => 'Grip', 'source_key' => 'grip', 'apply_to_subcategories' => 0],
-      ['spec_key' => 'graphics_tr_swingarms', 'field_type' => 'dropdown', 'label' => 'Tr. Swingarms', 'source_key' => 'tr-swingarms', 'apply_to_subcategories' => 0],
-      ['spec_key' => 'graphics_printer', 'field_type' => 'dropdown', 'label' => 'Printer', 'source_key' => 'printer', 'apply_to_subcategories' => 1],
-      ['spec_key' => 'graphics_name', 'field_type' => 'text', 'label' => 'Name', 'source_key' => 'name', 'apply_to_subcategories' => 0],
-      ['spec_key' => 'graphics_number', 'field_type' => 'text', 'label' => 'Number', 'source_key' => 'number', 'apply_to_subcategories' => 0],
-      ['spec_key' => 'graphics_note', 'field_type' => 'text', 'label' => 'Note', 'source_key' => 'note', 'apply_to_subcategories' => 1],
+      ['spec_key' => 'graphics_material', 'field_type' => 'dropdown', 'label' => 'Material', 'source_key' => 'base-material', 'apply_to_subcategories' => 0, 'field_sort_order' => 40],
+      ['spec_key' => 'graphics_finish', 'field_type' => 'dropdown', 'label' => 'Finish', 'source_key' => 'graphics-finish', 'apply_to_subcategories' => 0, 'field_sort_order' => 20],
+      ['spec_key' => 'graphics_grip', 'field_type' => 'dropdown', 'label' => 'Grip', 'source_key' => 'grip', 'apply_to_subcategories' => 0, 'field_sort_order' => 30],
+      ['spec_key' => 'graphics_tr_swingarms', 'field_type' => 'dropdown', 'label' => 'Tr. Swingarms', 'source_key' => 'tr-swingarms', 'apply_to_subcategories' => 0, 'field_sort_order' => 70],
+      ['spec_key' => 'graphics_printer', 'field_type' => 'dropdown', 'label' => 'Printer', 'source_key' => 'printer', 'apply_to_subcategories' => 1, 'field_sort_order' => 60],
+      ['spec_key' => 'graphics_name', 'field_type' => 'text', 'label' => 'Name', 'source_key' => 'name', 'apply_to_subcategories' => 0, 'field_sort_order' => 110],
+      ['spec_key' => 'graphics_number', 'field_type' => 'text', 'label' => 'Number', 'source_key' => 'number', 'apply_to_subcategories' => 0, 'field_sort_order' => 120],
+      ['spec_key' => 'graphics_note', 'field_type' => 'text', 'label' => 'Note', 'source_key' => 'note', 'apply_to_subcategories' => 1, 'field_sort_order' => 90],
     ],
     'S' => [
-      ['spec_key' => 'seat_enduro_pocket', 'field_type' => 'dropdown', 'label' => 'Enduro Pocket', 'source_key' => 'enduro-pocket', 'apply_to_subcategories' => 0],
-      ['spec_key' => 'seat_waterproof_seams', 'field_type' => 'dropdown', 'label' => 'Waterproof Seams', 'source_key' => 'waterproof-seams', 'apply_to_subcategories' => 0],
-      ['spec_key' => 'seat_side_brand_patches', 'field_type' => 'dropdown', 'label' => 'Side Brand Patches', 'source_key' => 'side-brand-patches', 'apply_to_subcategories' => 0],
-      ['spec_key' => 'seat_patch_applied', 'field_type' => 'dropdown', 'label' => 'Patch Applied', 'source_key' => 'patch-style', 'apply_to_subcategories' => 0],
-      ['spec_key' => 'seat_note', 'field_type' => 'text', 'label' => 'Note', 'source_key' => 'note', 'apply_to_subcategories' => 0],
+      ['spec_key' => 'seat_enduro_pocket', 'field_type' => 'dropdown', 'label' => 'Enduro Pocket', 'source_key' => 'enduro-pocket', 'apply_to_subcategories' => 0, 'field_sort_order' => 10],
+      ['spec_key' => 'seat_waterproof_seams', 'field_type' => 'dropdown', 'label' => 'Waterproof Seams', 'source_key' => 'waterproof-seams', 'apply_to_subcategories' => 0, 'field_sort_order' => 20],
+      ['spec_key' => 'seat_side_brand_patches', 'field_type' => 'dropdown', 'label' => 'Side Brand Patches', 'source_key' => 'side-brand-patches', 'apply_to_subcategories' => 0, 'field_sort_order' => 30],
+      ['spec_key' => 'seat_patch_applied', 'field_type' => 'dropdown', 'label' => 'Patch Applied', 'source_key' => 'patch-style', 'apply_to_subcategories' => 0, 'field_sort_order' => 40],
+      ['spec_key' => 'seat_note', 'field_type' => 'text', 'label' => 'Note', 'source_key' => 'note', 'apply_to_subcategories' => 0, 'field_sort_order' => 90],
     ],
     'P' => [
-      ['spec_key' => 'plastics_my_item_note', 'field_type' => 'text', 'label' => 'My Item Note', 'source_key' => 'my-item-note', 'apply_to_subcategories' => 0],
-      ['spec_key' => 'plastics_note', 'field_type' => 'text', 'label' => 'Note', 'source_key' => 'note', 'apply_to_subcategories' => 0],
+      ['spec_key' => 'plastics_my_item_note', 'field_type' => 'text', 'label' => 'My Item Note', 'source_key' => 'my-item-note', 'apply_to_subcategories' => 0, 'field_sort_order' => 20],
+      ['spec_key' => 'plastics_note', 'field_type' => 'text', 'label' => 'Note', 'source_key' => 'note', 'apply_to_subcategories' => 0, 'field_sort_order' => 10],
     ],
     'F' => [
-      ['spec_key' => 'fitting_note', 'field_type' => 'text', 'label' => 'Note', 'source_key' => 'note', 'apply_to_subcategories' => 0],
+      ['spec_key' => 'fitting_note', 'field_type' => 'text', 'label' => 'Note', 'source_key' => 'note', 'apply_to_subcategories' => 0, 'field_sort_order' => 10],
     ],
   ];
 
@@ -230,7 +267,7 @@ function productSpecDefaultFieldDefinitions(string $department): array
 
   return $items;
 }
-
+*/
 function productSpecFieldDefinitions(mysqli $conn, string $department): array
 {
   static $cache = [];
@@ -246,17 +283,25 @@ function productSpecFieldDefinitions(mysqli $conn, string $department): array
 
   $definitions = [];
   $seenSpecKeys = [];
+  $hasFieldSortOrder = productSpecColumnExists($conn, 'field_sort_order');
+  $fieldSortSelect = $hasFieldSortOrder
+    ? 'COALESCE(MIN(field_sort_order), MIN(sort_order), 999) AS field_sort_order,'
+    : 'MIN(sort_order) AS field_sort_order,';
+  $fieldSortOrderBy = $hasFieldSortOrder
+    ? 'COALESCE(MIN(field_sort_order), MIN(sort_order), 999) ASC, MIN(id) ASC'
+    : 'MIN(sort_order) ASC, MIN(id) ASC';
   $stmt = $conn->prepare("
     SELECT
       spec_key,
       COALESCE(MAX(field_type), 'dropdown') AS field_type,
       COALESCE(NULLIF(MAX(color), ''), '') AS source_key,
+      $fieldSortSelect
       COALESCE(MAX(apply_to_subcategories), 0) AS apply_to_subcategories
     FROM product_spec_options
     WHERE active = 1
       AND (department = ? OR department IS NULL)
     GROUP BY spec_key
-    ORDER BY MIN(sort_order) ASC, MIN(id) ASC
+    ORDER BY $fieldSortOrderBy
   ");
   if ($stmt) {
     $stmt->bind_param('s', $department);
@@ -275,6 +320,7 @@ function productSpecFieldDefinitions(mysqli $conn, string $department): array
           'source_key' => trim((string) ($row['source_key'] ?? '')) !== ''
             ? trim((string) ($row['source_key'] ?? ''))
             : productSpecSourceKeyFromSpecKey($specKey, $department),
+          'field_sort_order' => (int) ($row['field_sort_order'] ?? 999),
           'apply_to_subcategories' => (int) ($row['apply_to_subcategories'] ?? 0) === 1 ? 1 : 0,
           'department' => $department,
         ];
@@ -283,7 +329,7 @@ function productSpecFieldDefinitions(mysqli $conn, string $department): array
     }
     $stmt->close();
   }
-
+/*
   foreach (productSpecDefaultFieldDefinitions($department) as $defaultDefinition) {
     $defaultSpecKey = trim((string) ($defaultDefinition['spec_key'] ?? ''));
     if ($defaultSpecKey === '' || isset($seenSpecKeys[$defaultSpecKey])) {
@@ -291,6 +337,16 @@ function productSpecFieldDefinitions(mysqli $conn, string $department): array
     }
     $definitions[] = $defaultDefinition;
   }
+  */
+  usort($definitions, static function (array $a, array $b): int {
+    $ao = (int) ($a['field_sort_order'] ?? 999);
+    $bo = (int) ($b['field_sort_order'] ?? 999);
+    if ($ao !== $bo) {
+      return $ao <=> $bo;
+    }
+
+    return strcmp((string) ($a['spec_key'] ?? ''), (string) ($b['spec_key'] ?? ''));
+  });
 
   $cache[$department] = $definitions;
   return $definitions;

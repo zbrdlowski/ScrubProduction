@@ -10,6 +10,7 @@ register_shutdown_function(function () {
     echo json_encode(['ok' => false, 'error' => 'PHP Fatal: ' . $err['message'] . ' in ' . $err['file'] . ':' . $err['line']]);
   }
 });
+// pozor, odskoky v textarea sposobuje <div class="g-opt-note-display"> Ak dáš formatovať dokument
 // DOČASNE — zmaž po diagnostike
 file_put_contents(
   __DIR__ . '/debug.txt',
@@ -123,6 +124,7 @@ function productSpecFieldMeta(array $definition): array
     'field_type' => $fieldType,
     'label' => $label,
     'apply_to_subcategories' => (int) (($definition['apply_to_subcategories'] ?? 0) ? 1 : 0),
+    'field_sort_order' => (int) ($definition['field_sort_order'] ?? 999),
     'source_key' => $sourceKey,
     'source_keys' => array_values(array_unique(array_filter([
       $sourceKey,
@@ -139,11 +141,10 @@ function productSpecFieldMeta(array $definition): array
     'write_source_key' => true,
   ];
   $isNoteLikeField = (
-    $specKey === 'graphics_note'
-    || preg_match('/(?:^|_)note$/i', $specKey)
-    || trim(mb_strtolower($sourceKey, 'UTF-8')) === 'note'
-    || trim(mb_strtolower($label, 'UTF-8')) === 'note'
-  );
+  preg_match('/(?:^|_)(note|buyer_note|my_item_note)$/i', $specKey)
+  || in_array(productSpecNormalizeKey($sourceKey), ['note', 'buyer-note', 'my-item-note'], true)
+  || in_array(productSpecNormalizeKey($label), ['note', 'buyer-note', 'my-item-note'], true)
+);
 
   switch ($specKey) {
     case 'graphics_material':
@@ -2980,8 +2981,8 @@ ob_start();
         </div>
 
 
-        <div class="production-note-editor mt-2" style="display:none;">
-          <textarea class="form-control form-control-sm production-note-input production-note-textarea" rows="2"
+        <div class="production-note-editor mt-2" style="display:none;"><textarea
+            class="form-control form-control-sm production-note-input production-note-textarea" rows="2"
             placeholder="Customer changes / production instructions..."><?php echo h($order['production_note'] ?? ''); ?></textarea>
 
           <div class="mt-2">
@@ -3434,17 +3435,8 @@ ob_start();
 
                     $fieldSourceKey = productSpecNormalizeKey((string) ($fieldMeta['source_key'] ?? ''));
 
-                    if (in_array($fieldSourceKey, ['my-item-note', 'buyer-note', 'note'], true)) {
-                      if ($isEbayOrder) {
-                        if (!in_array($fieldSourceKey, ['my-item-note', 'buyer-note'], true)) {
-                          continue;
-                        }
-                      } else {
-                        if ($fieldSourceKey !== 'note') {
-                          continue;
-                        }
-                      }
-                    }
+                    // Žiadne source-specific filtrovanie.
+                    // Zobraz iba to, čo je aktívne v controlls.php / product_spec_options.
 
                     $fieldSubcategory = productSpecGraphicsSubcategoryFromSpecKey(
                       (string) ($fieldMeta['spec_key'] ?? ''),
@@ -3483,7 +3475,16 @@ ob_start();
 
                     $itemProductSpecFields[] = $fieldMeta;
                   }
+                  usort($itemProductSpecFields, function (array $a, array $b): int {
+                    $ao = (int) ($a['field_sort_order'] ?? 999);
+                    $bo = (int) ($b['field_sort_order'] ?? 999);
 
+                    if ($ao !== $bo) {
+                      return $ao <=> $bo;
+                    }
+
+                    return strcmp((string) ($a['spec_key'] ?? ''), (string) ($b['spec_key'] ?? ''));
+                  });
                   // Druhý riadok zobraz vždy, keď pre department existuje aspoň
                   // jeden definovaný formulárový prvok — aj keď ešte nemá hodnotu.
                   if (!empty($itemProductSpecFields)) {
@@ -3744,15 +3745,15 @@ ob_start();
                 $itemProductSpecTextFields = [];
 
                 foreach ($itemProductSpecFields as $itemSpecField) {
-                  $isGraphicsTextField = (
-                    $itemSpecDepartment === 'G'
-                    && (string) ($itemSpecField['field_type'] ?? '') === 'text'
+
+                  $isTextareaField = (
+                      (string) ($itemSpecField['render'] ?? '') === 'textarea'
                   );
 
-                  if ($isGraphicsTextField) {
-                    $itemProductSpecTextFields[] = $itemSpecField;
+                  if ($isTextareaField) {
+                      $itemProductSpecTextFields[] = $itemSpecField;
                   } else {
-                    $itemProductSpecMainFields[] = $itemSpecField;
+                      $itemProductSpecMainFields[] = $itemSpecField;
                   }
                 }
 
@@ -3793,12 +3794,10 @@ ob_start();
                         </div>
                       <?php elseif ($isUserTextBlock): ?>
                         <?php $userTextValue = trim((string) ($itemSpecField['current_value'] ?? '')); ?>
-                        <div class="g-opt-note-display">
-                          <?= $userTextValue !== '' ? h($userTextValue) : '<span class="text-muted">&mdash;</span>' ?></div>
-                      <?php elseif ($itemSpecField['render'] === 'textarea' || $isAdminTextEditor): ?>
-                        <?php $textareaValue = trim((string) ($itemSpecField['current_value'] ?? '')); ?>
-                        <textarea class="form-control form-control-sm <?= h($itemSpecField['control_class']) ?>"
-                          <?= $sharedFieldAttrs ?> placeholder="<?= h($itemSpecField['placeholder']) ?>"
+                        <div class="g-opt-note-display"><?= $userTextValue !== '' ? h($userTextValue) : '<span class="text-muted">&mdash;</span>' ?></div>
+                      <?php elseif ($itemSpecField['render'] === 'textarea' || $isAdminTextEditor): ?>          <?php $textareaValue = trim((string) ($itemSpecField['current_value'] ?? '')); ?><textarea
+                          class="form-control form-control-sm <?= h($itemSpecField['control_class']) ?>" <?= $sharedFieldAttrs ?>
+                          placeholder="<?= h($itemSpecField['placeholder']) ?>"
                           rows="1"><?= h($textareaValue) ?></textarea><?php else: ?>
                         <?=
                           renderProductSpecField(
@@ -3828,7 +3827,8 @@ ob_start();
                 <?php endif; ?>
 
                 <?php if (!empty($itemProductSpecTextFields)): ?>
-                  <tr class="g-item-options-row g-item-text-options-row <?= $itemTypeClass ?>" data-item-id="<?= (int) $it['id'] ?>">
+                  <tr class="g-item-options-row g-item-text-options-row <?= $itemTypeClass ?>"
+                    data-item-id="<?= (int) $it['id'] ?>">
                     <td colspan="99" style="padding:5px 8px 7px; border-top:none !important;">
                       <div class="g-options-bar g-text-options-bar">
                         <?php $renderProductSpecFieldsRow($itemProductSpecTextFields); ?>

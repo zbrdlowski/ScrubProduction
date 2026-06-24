@@ -23,7 +23,7 @@ if ($title === '') {
   customOrdersRedirect($orderId);
 }
 
-$payload = customOrdersItemPayloadFromPost();
+$payload = customOrdersItemPayloadFromPost($conn, $type);
 $sku = trim((string) ($_POST['sku'] ?? 'MANUAL'));
 $customLabel = trim((string) ($_POST['custom_label'] ?? ''));
 $qty = max(1, (int) ($_POST['qty'] ?? 1));

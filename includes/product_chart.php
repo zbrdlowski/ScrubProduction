@@ -63,16 +63,32 @@ function metaVal(array $meta, string $block, string $field): string
     return strtolower(trim($meta[$block][$field] ?? 'no'));
 }
 
-// ── Helper: YES/NO badge s voliteľným linkom a web-status bodkou ──────────
-function badge(string $avail, string $web, string $linkHref = '#'): string
+// ── Helper: samostatný YES/NO badge pre Available/Web ────────────────────
+function statusBadge(string $value, string $field): string
 {
-    if ($avail !== 'yes') {
-        return '<span class="badge badge-danger">NO</span>';
+    $value = strtolower(trim($value));
+    $isYes = ($value === 'yes');
+    $class = $isYes ? 'badge-success' : 'badge-danger';
+    $label = $isYes ? 'Y' : 'N';
+
+    return '<span class="badge ' . $class . ' meta-status-badge" title="' . htmlspecialchars($field) . '">'
+        . $label
+        . '</span>';
+}
+
+// ── Helper: dvojica badges Available + Web s voliteľným linkom ────────────
+function badgePair(string $avail, string $web, string $linkHref = '#'): string
+{
+    $html = '<span class="badge-pair">'
+        . statusBadge($avail, 'Available')
+        . statusBadge($web, 'Web')
+        . '</span>';
+
+    if ($linkHref !== '#') {
+        return '<a href="' . htmlspecialchars($linkHref) . '" class="badge-pair-link">' . $html . '</a>';
     }
-    $webDot = '<span class="status-dot ' . ($web === 'yes' ? 'yes' : 'no') . '" title="Web: ' . strtoupper($web) . '"></span>';
-    return '<a href="' . htmlspecialchars($linkHref) . '">'
-        . '<span class="badge badge-success">' . $webDot . 'YES</span>'
-        . '</a>';
+
+    return $html;
 }
 ?>
 
@@ -166,6 +182,27 @@ function badge(string $avail, string $web, string $linkHref = '#'): string
         min-width: 70px;
         justify-content: center;
     }
+
+    #scrubTable td .badge-pair {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+    }
+
+    #scrubTable td .badge-pair-link {
+        display: inline-flex;
+        text-decoration: none;
+    }
+
+    #scrubTable td .meta-status-badge {
+        min-width: 52px;
+        padding: 7px 10px;
+    }
+    .meta-status-badge{
+    min-width:34px !important;
+    padding:6px 10px !important;
+}
 </style>
 
 <section class="content">
@@ -318,9 +355,9 @@ function badge(string $avail, string $web, string $linkHref = '#'): string
                             <td><?= htmlspecialchars($row['rangeyear']) ?></td>
                             <td class="text-center"><code><?= htmlspecialchars($code) ?></code></td>
 
-                            <td class="text-center"><?= badge($gfx_avail, $gfx_web, '#') ?></td>
-                            <td class="text-center"><?= badge($pls_avail, $pls_web, $plasticsLink) ?></td>
-                            <td class="text-center"><?= badge($sct_avail, $sct_web, '#') ?></td>
+                            <td class="text-center"><?= badgePair($gfx_avail, $gfx_web, '#') ?></td>
+                            <td class="text-center"><?= badgePair($pls_avail, $pls_web, $plasticsLink) ?></td>
+                            <td class="text-center"><?= badgePair($sct_avail, $sct_web, '#') ?></td>
                         </tr>
                     <?php endwhile; ?>
                     <?php if (isset($stmt))

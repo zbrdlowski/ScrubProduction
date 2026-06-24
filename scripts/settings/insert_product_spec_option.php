@@ -8,6 +8,7 @@ $sourceKey  = post_string_optional('source_key', 120);
 $label      = post_string('label', 120);
 $value      = post_string('value', 120);
 $sortOrder  = post_int('sort_order', 0);
+$fieldSortOrder = post_int('field_sort_order', $sortOrder);
 $active     = post_int('active', 1) === 1 ? 1 : 0;
 $autoCheckbox = ($_POST['auto_checkbox'] ?? '0') === '1';
 $applyToSubcategories = post_int('apply_to_subcategories', 0) === 1 ? 1 : 0;
@@ -58,15 +59,27 @@ if ($fieldType === 'text') {
 }
 
 $hasApplyToSubcategories = product_spec_column_exists($conn, 'apply_to_subcategories');
-$insertSql = $hasApplyToSubcategories
-  ? "INSERT INTO product_spec_options (spec_key, department, field_type, label, value, sort_order, active, color, apply_to_subcategories)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
-  : "INSERT INTO product_spec_options (spec_key, department, field_type, label, value, sort_order, active, color)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
+$hasFieldSortOrder = product_spec_column_exists($conn, 'field_sort_order');
+$insertColumns = ['spec_key', 'department', 'field_type', 'label', 'value', 'sort_order', 'active', 'color'];
+$placeholders = ['?', '?', '?', '?', '?', '?', '?', '?'];
+if ($hasFieldSortOrder) {
+  $insertColumns[] = 'field_sort_order';
+  $placeholders[] = '?';
+}
+if ($hasApplyToSubcategories) {
+  $insertColumns[] = 'apply_to_subcategories';
+  $placeholders[] = '?';
+}
+$insertSql = "INSERT INTO product_spec_options (" . implode(', ', $insertColumns) . ")
+     VALUES (" . implode(', ', $placeholders) . ")";
 
 $stmt = $conn->prepare($insertSql);
 if (!$stmt) out_json(500, ['ok' => false, 'error' => mysqli_error($conn)]);
-if ($hasApplyToSubcategories) {
+if ($hasFieldSortOrder && $hasApplyToSubcategories) {
+  $stmt->bind_param('sssssiisii', $specKey, $department, $fieldType, $label, $value, $sortOrder, $active, $sourceKey, $fieldSortOrder, $applyToSubcategories);
+} elseif ($hasFieldSortOrder) {
+  $stmt->bind_param('sssssiisi', $specKey, $department, $fieldType, $label, $value, $sortOrder, $active, $sourceKey, $fieldSortOrder);
+} elseif ($hasApplyToSubcategories) {
   $stmt->bind_param('sssssiisi', $specKey, $department, $fieldType, $label, $value, $sortOrder, $active, $sourceKey, $applyToSubcategories);
 } else {
   $stmt->bind_param('sssssiis', $specKey, $department, $fieldType, $label, $value, $sortOrder, $active, $sourceKey);
@@ -80,14 +93,14 @@ if ($autoCheckbox) {
   $labelNo  = 'No';
   $valueNo  = '0';
   $sortNo   = $sortOrder + 10;
-  $insertSql2 = $hasApplyToSubcategories
-    ? "INSERT INTO product_spec_options (spec_key, department, field_type, label, value, sort_order, active, color, apply_to_subcategories)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
-    : "INSERT INTO product_spec_options (spec_key, department, field_type, label, value, sort_order, active, color)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
+  $insertSql2 = $insertSql;
   $stmt2 = $conn->prepare($insertSql2);
   if ($stmt2) {
-    if ($hasApplyToSubcategories) {
+    if ($hasFieldSortOrder && $hasApplyToSubcategories) {
+      $stmt2->bind_param('sssssiisii', $specKey, $department, $fieldType, $labelNo, $valueNo, $sortNo, $active, $sourceKey, $fieldSortOrder, $applyToSubcategories);
+    } elseif ($hasFieldSortOrder) {
+      $stmt2->bind_param('sssssiisi', $specKey, $department, $fieldType, $labelNo, $valueNo, $sortNo, $active, $sourceKey, $fieldSortOrder);
+    } elseif ($hasApplyToSubcategories) {
       $stmt2->bind_param('sssssiisi', $specKey, $department, $fieldType, $labelNo, $valueNo, $sortNo, $active, $sourceKey, $applyToSubcategories);
     } else {
       $stmt2->bind_param('sssssiis', $specKey, $department, $fieldType, $labelNo, $valueNo, $sortNo, $active, $sourceKey);

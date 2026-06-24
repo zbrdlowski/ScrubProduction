@@ -50,8 +50,19 @@ CREATE TABLE IF NOT EXISTS `custom_orders` (
   `bike_details` varchar(255) DEFAULT NULL,
   `rider_name` varchar(255) DEFAULT NULL,
   `rider_number` varchar(64) DEFAULT NULL,
+  `payment_method` varchar(128) DEFAULT NULL,
+  `billing_name` varchar(255) DEFAULT NULL,
+  `billing_company` varchar(255) DEFAULT NULL,
+  `billing_company_id` varchar(128) DEFAULT NULL,
+  `billing_street` varchar(255) DEFAULT NULL,
+  `billing_city` varchar(128) DEFAULT NULL,
+  `billing_zip` varchar(32) DEFAULT NULL,
+  `billing_country` varchar(2) DEFAULT NULL,
+  `billing_email` varchar(255) DEFAULT NULL,
+  `billing_phone` varchar(64) DEFAULT NULL,
   `shipping_name` varchar(255) DEFAULT NULL,
   `shipping_company` varchar(255) DEFAULT NULL,
+  `shipping_company_id` varchar(128) DEFAULT NULL,
   `shipping_street` varchar(255) DEFAULT NULL,
   `shipping_city` varchar(128) DEFAULT NULL,
   `shipping_zip` varchar(32) DEFAULT NULL,
@@ -92,6 +103,19 @@ ALTER TABLE `custom_orders`
   ADD COLUMN IF NOT EXISTS `owner_employee_id` int(11) DEFAULT NULL AFTER `official_prefix`,
   ADD COLUMN IF NOT EXISTS `owner_assigned_by` int(11) DEFAULT NULL AFTER `owner_employee_id`,
   ADD COLUMN IF NOT EXISTS `owner_assigned_at` datetime DEFAULT NULL AFTER `owner_assigned_by`;
+
+ALTER TABLE `custom_orders`
+  ADD COLUMN IF NOT EXISTS `payment_method` varchar(128) DEFAULT NULL AFTER `rider_number`,
+  ADD COLUMN IF NOT EXISTS `billing_name` varchar(255) DEFAULT NULL AFTER `payment_method`,
+  ADD COLUMN IF NOT EXISTS `billing_company` varchar(255) DEFAULT NULL AFTER `billing_name`,
+  ADD COLUMN IF NOT EXISTS `billing_company_id` varchar(128) DEFAULT NULL AFTER `billing_company`,
+  ADD COLUMN IF NOT EXISTS `billing_street` varchar(255) DEFAULT NULL AFTER `billing_company_id`,
+  ADD COLUMN IF NOT EXISTS `billing_city` varchar(128) DEFAULT NULL AFTER `billing_street`,
+  ADD COLUMN IF NOT EXISTS `billing_zip` varchar(32) DEFAULT NULL AFTER `billing_city`,
+  ADD COLUMN IF NOT EXISTS `billing_country` varchar(2) DEFAULT NULL AFTER `billing_zip`,
+  ADD COLUMN IF NOT EXISTS `billing_email` varchar(255) DEFAULT NULL AFTER `billing_country`,
+  ADD COLUMN IF NOT EXISTS `billing_phone` varchar(64) DEFAULT NULL AFTER `billing_email`,
+  ADD COLUMN IF NOT EXISTS `shipping_company_id` varchar(128) DEFAULT NULL AFTER `shipping_company`;
 
 ALTER TABLE `custom_orders`
   ADD KEY IF NOT EXISTS `ix_custom_orders_owner_employee_id` (`owner_employee_id`);
@@ -155,6 +179,18 @@ CREATE TABLE IF NOT EXISTS `custom_order_followups` (
   PRIMARY KEY (`id`),
   KEY `ix_custom_order_followups_order` (`custom_order_id`),
   CONSTRAINT `fk_custom_order_followups_order` FOREIGN KEY (`custom_order_id`) REFERENCES `custom_orders` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+CREATE TABLE IF NOT EXISTS `custom_order_notes` (
+  `id` bigint(20) NOT NULL AUTO_INCREMENT,
+  `custom_order_id` bigint(20) NOT NULL,
+  `note_type` varchar(32) NOT NULL DEFAULT 'INTERNAL',
+  `note_body` text NOT NULL,
+  `created_by` int(11) DEFAULT NULL,
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id`),
+  KEY `ix_custom_order_notes_order` (`custom_order_id`),
+  CONSTRAINT `fk_custom_order_notes_order` FOREIGN KEY (`custom_order_id`) REFERENCES `custom_orders` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 CREATE TABLE IF NOT EXISTS `custom_order_activity` (

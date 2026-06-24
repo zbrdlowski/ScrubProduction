@@ -21,7 +21,7 @@ function isYesNoValue(val) {
 
 function renderMetaView(code, meta) {
     if (typeof meta === 'string') {
-        try { meta = JSON.parse(meta); } catch(e) { meta = {}; }
+        try { meta = JSON.parse(meta); } catch (e) { meta = {}; }
     }
     meta = meta || {};
 
@@ -34,19 +34,19 @@ function renderMetaView(code, meta) {
     }
 
     let html = '';
-    Object.keys(meta).forEach(function(blockName) {
+    Object.keys(meta).forEach(function (blockName) {
         const fields = meta[blockName] || {};
         let fieldsHtml = '';
 
-        Object.keys(fields).forEach(function(key) {
+        Object.keys(fields).forEach(function (key) {
             const val = String(fields[key] ?? '');
             let displayVal;
             const v = val.toLowerCase().trim();
 
             if (v === 'yes') {
-                displayVal = '<span class="badge badge-success"><i class="fas fa-check mr-1"></i>YES</span>';
+                displayVal = '<span class="badge meta-status-badge badge-success"><i class="fas fa-check mr-1"></i>YES</span>';
             } else if (v === 'no') {
-                displayVal = '<span class="badge badge-danger"><i class="fas fa-times mr-1"></i>NO</span>';
+                displayVal = '<span class="badge meta-status-badge badge-danger"><i class="fas fa-times mr-1"></i>NO</span>';
             } else {
                 displayVal = '<span class="text-light">' + pcEscHtml(val) + '</span>';
             }
@@ -74,14 +74,14 @@ function renderMetaView(code, meta) {
 
 function renderMetaEditor(code, meta) {
     if (typeof meta === 'string') {
-        try { meta = JSON.parse(meta); } catch(e) { meta = {}; }
+        try { meta = JSON.parse(meta); } catch (e) { meta = {}; }
     }
     meta = meta || {};
 
     if (Object.keys(meta).length === 0) {
         meta = {
-            'Graphics':   { 'Available': 'no', 'Web': 'no' },
-            'Plastics':   { 'Available': 'no', 'Web': 'no' },
+            'Graphics': { 'Available': 'no', 'Web': 'no' },
+            'Plastics': { 'Available': 'no', 'Web': 'no' },
             'Seat Cover': { 'Available': 'no', 'Web': 'no' }
         };
     }
@@ -89,7 +89,7 @@ function renderMetaEditor(code, meta) {
     const $editor = $('#editor-' + code);
     let html = '';
 
-    Object.keys(meta).forEach(function(blockName) {
+    Object.keys(meta).forEach(function (blockName) {
         html += buildBlockEditorHtml(blockName, meta[blockName] || {});
     });
 
@@ -98,7 +98,7 @@ function renderMetaEditor(code, meta) {
 
 function buildBlockEditorHtml(blockName, fields) {
     let fieldsHtml = '';
-    Object.keys(fields).forEach(function(key) {
+    Object.keys(fields).forEach(function (key) {
         fieldsHtml += buildFieldRowHtml(key, String(fields[key] ?? ''));
     });
 
@@ -147,7 +147,7 @@ function buildFieldRowHtmlTyped(key, value, type) {
     let inputHtml;
 
     if (type === 'toggle') {
-        const checked  = (String(value).toLowerCase().trim() === 'yes');
+        const checked = (String(value).toLowerCase().trim() === 'yes');
         const toggleId = 'mt-' + Math.random().toString(36).substr(2, 9);
         inputHtml = `
             <div class="d-flex align-items-center" style="gap:10px;">
@@ -201,14 +201,14 @@ function buildFieldRowHtmlTyped(key, value, type) {
 function collectMetaEditorData(code) {
     const data = {};
 
-    $('#editor-' + code + ' .meta-block').each(function() {
+    $('#editor-' + code + ' .meta-block').each(function () {
         const blockName = $(this).find('.meta-block-name').val().trim();
         if (!blockName) return;
 
         data[blockName] = {};
 
-        $(this).find('.meta-field').each(function() {
-            const key   = $(this).find('.meta-field-key').val().trim();
+        $(this).find('.meta-field').each(function () {
+            const key = $(this).find('.meta-field-key').val().trim();
             const value = $(this).find('.meta-field-value').val().trim();
             if (key) data[blockName][key] = value;
         });
@@ -225,21 +225,21 @@ function collectMetaEditorData(code) {
 
 $(document)
     .off('click.scrubExpand', 'tr.model-row')
-    .on('click.scrubExpand', 'tr.model-row', function(e) {
+    .on('click.scrubExpand', 'tr.model-row', function (e) {
         if ($(e.target).closest('a, button').length) return;
 
-        const code    = $(this).data('modelcode');
-        const meta    = $(this).data('meta') || {};
-        const $panel  = $('#detail-' + code);
-        const $icon   = $(this).find('.toggle-icon');
-        const isOpen  = $(this).hasClass('open');
+        const code = $(this).data('modelcode');
+        const meta = $(this).data('meta') || {};
+        const $panel = $('#detail-' + code);
+        const $icon = $(this).find('.toggle-icon');
+        const isOpen = $(this).hasClass('open');
 
         // Zatvor ostatné otvorené
-        $('tr.model-row.open').not(this).each(function() {
+        $('tr.model-row.open').not(this).each(function () {
             const otherCode = $(this).data('modelcode');
             const $otherPanel = $('#detail-' + otherCode);
             const $otherWrapper = $otherPanel.closest('tr.scrub-detail-wrapper');
-            $otherPanel.slideUp(150, function() {
+            $otherPanel.slideUp(150, function () {
                 $otherWrapper.remove();
                 $('#scrubDetailStore').append($otherPanel);
             });
@@ -251,7 +251,7 @@ $(document)
 
         if (isOpen) {
             const $wrapper = $panel.closest('tr.scrub-detail-wrapper');
-            $panel.slideUp(150, function() {
+            $panel.slideUp(150, function () {
                 $wrapper.remove();
                 $('#scrubDetailStore').append($panel);
             });
@@ -276,7 +276,7 @@ $(document)
 
 $(document)
     .off('click.scrubEditMeta', '.btn-edit-model-meta')
-    .on('click.scrubEditMeta', '.btn-edit-model-meta', function(e) {
+    .on('click.scrubEditMeta', '.btn-edit-model-meta', function (e) {
         e.stopPropagation();
         const code = $(this).data('modelcode');
         const meta = $('tr.model-row[data-modelcode="' + code + '"]').data('meta') || {};
@@ -291,7 +291,7 @@ $(document)
 
 $(document)
     .off('click.scrubCancelMeta', '.btn-cancel-meta-edit')
-    .on('click.scrubCancelMeta', '.btn-cancel-meta-edit', function(e) {
+    .on('click.scrubCancelMeta', '.btn-cancel-meta-edit', function (e) {
         e.stopPropagation();
         const code = $(this).data('modelcode');
         $('#edit-' + code).hide();
@@ -303,8 +303,8 @@ $(document)
 
 $(document)
     .off('change.metaToggle', '.meta-field-toggle')
-    .on('change.metaToggle', '.meta-field-toggle', function() {
-        const $row    = $(this).closest('.meta-field');
+    .on('change.metaToggle', '.meta-field-toggle', function () {
+        const $row = $(this).closest('.meta-field');
         const checked = $(this).is(':checked');
         $row.find('.meta-field-value').val(checked ? 'yes' : 'no');
         $row.find('.meta-toggle-display')
@@ -317,12 +317,12 @@ $(document)
 
 $(document)
     .off('click.metaTypeSwitch', '.meta-type-icon')
-    .on('click.metaTypeSwitch', '.meta-type-icon', function(e) {
+    .on('click.metaTypeSwitch', '.meta-type-icon', function (e) {
         e.stopPropagation();
-        const $field   = $(this).closest('.meta-field');
-        const current  = $(this).data('current');
-        const key      = $field.find('.meta-field-key').val();
-        const newType  = current === 'toggle' ? 'text' : 'toggle';
+        const $field = $(this).closest('.meta-field');
+        const current = $(this).data('current');
+        const key = $field.find('.meta-field-key').val();
+        const newType = current === 'toggle' ? 'text' : 'toggle';
         const newValue = newType === 'toggle' ? 'no' : '';
 
         const newRow = $(buildFieldRowHtmlTyped(key, newValue, newType));
@@ -333,7 +333,7 @@ $(document)
 
 $(document)
     .off('click.scrubAddBlock', '.btn-add-meta-block')
-    .on('click.scrubAddBlock', '.btn-add-meta-block', function(e) {
+    .on('click.scrubAddBlock', '.btn-add-meta-block', function (e) {
         e.stopPropagation();
         const code = $(this).data('modelcode');
         $('#editor-' + code).append(buildBlockEditorHtml('', {}));
@@ -343,7 +343,7 @@ $(document)
 
 $(document)
     .off('click.scrubAddField', '.btn-add-meta-field')
-    .on('click.scrubAddField', '.btn-add-meta-field', function(e) {
+    .on('click.scrubAddField', '.btn-add-meta-field', function (e) {
         e.preventDefault();
         e.stopPropagation();
         const type = $(this).data('type') || 'text';
@@ -355,7 +355,7 @@ $(document)
 
 $(document)
     .off('click.scrubRemoveField', '.btn-remove-meta-field')
-    .on('click.scrubRemoveField', '.btn-remove-meta-field', function(e) {
+    .on('click.scrubRemoveField', '.btn-remove-meta-field', function (e) {
         e.stopPropagation();
         $(this).closest('.meta-field').remove();
     });
@@ -364,7 +364,7 @@ $(document)
 
 $(document)
     .off('click.scrubRemoveBlock', '.btn-remove-meta-block')
-    .on('click.scrubRemoveBlock', '.btn-remove-meta-block', function(e) {
+    .on('click.scrubRemoveBlock', '.btn-remove-meta-block', function (e) {
         e.stopPropagation();
         if (confirm('Odstrániť tento blok?')) {
             $(this).closest('.meta-block').remove();
@@ -375,23 +375,23 @@ $(document)
 
 $(document)
     .off('click.scrubSaveMeta', '.btn-save-model-meta')
-    .on('click.scrubSaveMeta', '.btn-save-model-meta', function(e) {
+    .on('click.scrubSaveMeta', '.btn-save-model-meta', function (e) {
         e.stopPropagation();
-        const $btn     = $(this);
-        const code     = $btn.data('modelcode');
+        const $btn = $(this);
+        const code = $btn.data('modelcode');
         const metaData = collectMetaEditorData(code);
 
         $btn.prop('disabled', true).html('<i class="fas fa-spinner fa-spin mr-1"></i> Saving...');
 
         $.ajax({
-            url:      'scripts/save_model_meta.php',
-            method:   'POST',
+            url: 'scripts/save_model_meta.php',
+            method: 'POST',
             dataType: 'json',
             data: {
                 modelcode: code,
                 meta_json: JSON.stringify(metaData)
             },
-            success: function(resp) {
+            success: function (resp) {
                 if (!resp || !resp.ok) {
                     alert(resp && resp.error ? resp.error : 'Save failed');
                     $btn.prop('disabled', false).html('<i class="fas fa-save mr-1"></i> Save');
@@ -403,19 +403,33 @@ $(document)
                 $row.data('meta', metaData);
 
                 // Refresh badges v riadku
-                const getVal = function(block, field) {
-                    return ((metaData[block] || {})[field] || 'no').toLowerCase().trim();
+                const getVal = function (block, field) {
+                    return String(((metaData[block] || {})[field] || 'no')).toLowerCase().trim();
                 };
-                const makeBadge = function(avail, web, href) {
-                    if (avail !== 'yes') return '<span class="badge badge-danger">NO</span>';
-                    const dot = '<span class="status-dot ' + (web === 'yes' ? 'yes' : 'no') + '" title="Web: ' + web.toUpperCase() + '"></span>';
-                    return '<a href="' + href + '"><span class="badge badge-success">' + dot + 'YES</span></a>';
+
+                const makeBadgePair = function (avail, web, href) {
+                    const a = avail === 'yes';
+                    const w = web === 'yes';
+
+                    const html =
+                        '<span class="badge meta-status-badge ' + (a ? 'badge-success' : 'badge-danger') + '" title="Available">' +
+                        (a ? 'Y' : 'N') +
+                        '</span>' +
+                        '<span class="badge meta-status-badge ' + (w ? 'badge-success' : 'badge-danger') + ' ml-1" title="Web">' +
+                        (w ? 'Y' : 'N') +
+                        '</span>';
+
+                    return href && href !== '#'
+                        ? '<a href="' + href + '">' + html + '</a>'
+                        : html;
                 };
+
                 const plasticsHref = 'index.php?page=scrublistings&modelcode=' + encodeURIComponent(code);
                 const $cells = $row.find('td');
-                $cells.eq(5).html(makeBadge(getVal('Graphics',   'Available'), getVal('Graphics',   'Web'), '#'));
-                $cells.eq(6).html(makeBadge(getVal('Plastics',   'Available'), getVal('Plastics',   'Web'), plasticsHref));
-                $cells.eq(7).html(makeBadge(getVal('Seat Cover', 'Available'), getVal('Seat Cover', 'Web'), '#'));
+
+                $cells.eq(5).html(makeBadgePair(getVal('Graphics', 'Available'), getVal('Graphics', 'Web'), '#'));
+                $cells.eq(6).html(makeBadgePair(getVal('Plastics', 'Available'), getVal('Plastics', 'Web'), plasticsHref));
+                $cells.eq(7).html(makeBadgePair(getVal('Seat Cover', 'Available'), getVal('Seat Cover', 'Web'), '#'));
 
                 // Prepni späť na view
                 $('#edit-' + code).hide();
@@ -427,9 +441,9 @@ $(document)
 
                 // Flash zelená na riadok
                 $row.css('background-color', '#1a3a1a');
-                setTimeout(function() { $row.css('background-color', ''); }, 1200);
+                setTimeout(function () { $row.css('background-color', ''); }, 1200);
             },
-            error: function(xhr) {
+            error: function (xhr) {
                 console.error(xhr.responseText);
                 alert('Save request failed');
                 $btn.prop('disabled', false).html('<i class="fas fa-save mr-1"></i> Save');

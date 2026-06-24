@@ -170,13 +170,13 @@ function isMenuOpen($pages = []) {
             <a href="#" class="nav-link" style="background-color:#2a3036;">
               <i class="nav-icon fas fa-table"></i>
               <p>
-                Tables
+                Model Database
                 <i class="fas fa-angle-left right"></i>
               </p>
             </a>            
       <ul class="nav nav-treeview">
               <li class="nav-item"><a href="<?echo basename($_SERVER['PHP_SELF']);?>?page=modeldata" class="nav-link <?= isActive('modeldata') ?>"><i class="fa fa-caret-right nav-icon"></i><p>Compatibility Chart</p></a></li>
-              <li class="nav-item"><a href="<?echo basename($_SERVER['PHP_SELF']);?>?page=product_chart" class="nav-link <?= isActive('product_chart') ?>"><i class="fa fa-caret-right nav-icon"></i><p>Scrub Products Chart</p></a></li>
+              <li class="nav-item"><a href="<?echo basename($_SERVER['PHP_SELF']);?>?page=product_chart" class="nav-link <?= isActive('product_chart') ?>"><i class="fa fa-caret-right nav-icon"></i><p>Products Database</p></a></li>
       </ul>
               </li>
               <li class="nav-item <?= isMenuOpen([
@@ -195,13 +195,7 @@ function isMenuOpen($pages = []) {
               <li class="nav-item"><? if($path == 'tab'){echo '<a href=pages/orders.php" class="nav-link">';}else{echo '<a href="'.$path.'?page=orders&exclude_status=PENDING%2CSHIPPED" class="nav-link '. isActive('orders') .'">';}?><i class="far fa fa-caret-right nav-icon"></i><p>Open Orders</p></a></li>
               <li class="nav-item"><a href="<?echo basename($_SERVER['PHP_SELF']);?>?page=custom_orders" class="nav-link <?= isActive('custom_orders') ?>"><i class="far fa fa-caret-right nav-icon"></i><p>Custom Orders</p></a></li>
       
-<li class="nav-item"><a href="#" class="nav-link"style="background-color:#2a3036;"><i class="nav-icon fas fa-globe-africa" style="color:#28a745;"></i><p>Finished Orders<i class="right fas fa-angle-left"></i></p></a>
-       <ul class="nav nav-treeview">
-              <li class="nav-item"><a href="<?echo basename($_SERVER['PHP_SELF']);?>?page=delivered&status=nok" class="nav-link"><i class="far fa fa-truck nav-icon"></i><p>Shipped</p></a></li>
-              <li class="nav-item">
-                <a href="<?echo basename($_SERVER['PHP_SELF']);?>?page=delivered&status=ok" class="nav-link"><i class="far fas fa-box-open nav-icon"></i><p>Delivered</p></a></li>
-        </ul>
-      </li>
+
     </li>
  </ul>
  

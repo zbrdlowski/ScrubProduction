@@ -1,6 +1,8 @@
 <?php
 declare(strict_types=1);
 
+require_once dirname(__DIR__, 2) . '/includes/get_order_detail_product_spec_selects.php';
+
 function customOrdersFlash(string $type, string $message, array $meta = []): void
 {
   $_SESSION['custom_orders_flash'] = ['type' => $type, 'message' => $message, 'meta' => $meta];
@@ -94,6 +96,144 @@ function customOrdersAllowedItemTypes(): array
     'T' => 'Accessories',
     'M' => 'Misc / Upsell',
   ];
+}
+
+function customOrdersItemTypeToDepartment(string $type): string
+{
+  $type = strtoupper(trim($type));
+  switch ($type) {
+    case 'G':
+      return 'G';
+    case 'S':
+      return 'S';
+    case 'F':
+      return 'F';
+    case 'P':
+    case 'T':
+    case 'M':
+      return 'P';
+    default:
+      return 'G';
+  }
+}
+
+function customOrdersTableExists(mysqli $conn, string $table): bool
+{
+  static $cache = [];
+  $table = trim($table);
+  if ($table === '') {
+    return false;
+  }
+  if (array_key_exists($table, $cache)) {
+    return $cache[$table];
+  }
+
+  $stmt = $conn->prepare("SELECT 1 FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? LIMIT 1");
+  if (!$stmt) {
+    return $cache[$table] = false;
+  }
+  $stmt->bind_param('s', $table);
+  $stmt->execute();
+  $exists = (bool) $stmt->get_result()->fetch_row();
+  $stmt->close();
+  return $cache[$table] = $exists;
+}
+
+function customOrdersTableColumns(mysqli $conn, string $table, bool $refresh = false): array
+{
+  static $cache = [];
+  $table = trim($table);
+  if ($table === '') {
+    return [];
+  }
+  if ($refresh) {
+    unset($cache[$table]);
+  }
+  if (isset($cache[$table])) {
+    return $cache[$table];
+  }
+
+  $columns = [];
+  $stmt = $conn->prepare("
+    SELECT COLUMN_NAME
+    FROM INFORMATION_SCHEMA.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE()
+      AND TABLE_NAME = ?
+  ");
+  if (!$stmt) {
+    return $cache[$table] = [];
+  }
+  $stmt->bind_param('s', $table);
+  $stmt->execute();
+  $res = $stmt->get_result();
+  while ($row = $res->fetch_assoc()) {
+    $name = trim((string) ($row['COLUMN_NAME'] ?? ''));
+    if ($name !== '') {
+      $columns[$name] = true;
+    }
+  }
+  $stmt->close();
+  return $cache[$table] = $columns;
+}
+
+function customOrdersEnsureSchema(mysqli $conn): void
+{
+  static $done = false;
+  if ($done) {
+    return;
+  }
+
+  if (!customOrdersTableExists($conn, 'custom_order_notes')) {
+    $conn->query("
+      CREATE TABLE IF NOT EXISTS `custom_order_notes` (
+        `id` bigint(20) NOT NULL AUTO_INCREMENT,
+        `custom_order_id` bigint(20) NOT NULL,
+        `note_type` varchar(32) NOT NULL DEFAULT 'INTERNAL',
+        `note_body` text NOT NULL,
+        `created_by` int(11) DEFAULT NULL,
+        `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+        PRIMARY KEY (`id`),
+        KEY `ix_custom_order_notes_order` (`custom_order_id`),
+        CONSTRAINT `fk_custom_order_notes_order` FOREIGN KEY (`custom_order_id`) REFERENCES `custom_orders` (`id`) ON DELETE CASCADE
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
+    ");
+  }
+
+  $columns = customOrdersTableColumns($conn, 'custom_orders');
+  if (!$columns) {
+    $done = true;
+    return;
+  }
+
+  $requiredColumns = [
+    'payment_method' => "ADD COLUMN `payment_method` varchar(128) DEFAULT NULL AFTER `rider_number`",
+    'billing_name' => "ADD COLUMN `billing_name` varchar(255) DEFAULT NULL AFTER `payment_method`",
+    'billing_company' => "ADD COLUMN `billing_company` varchar(255) DEFAULT NULL AFTER `billing_name`",
+    'billing_company_id' => "ADD COLUMN `billing_company_id` varchar(128) DEFAULT NULL AFTER `billing_company`",
+    'billing_street' => "ADD COLUMN `billing_street` varchar(255) DEFAULT NULL AFTER `billing_company_id`",
+    'billing_city' => "ADD COLUMN `billing_city` varchar(128) DEFAULT NULL AFTER `billing_street`",
+    'billing_zip' => "ADD COLUMN `billing_zip` varchar(32) DEFAULT NULL AFTER `billing_city`",
+    'billing_country' => "ADD COLUMN `billing_country` varchar(2) DEFAULT NULL AFTER `billing_zip`",
+    'billing_email' => "ADD COLUMN `billing_email` varchar(255) DEFAULT NULL AFTER `billing_country`",
+    'billing_phone' => "ADD COLUMN `billing_phone` varchar(64) DEFAULT NULL AFTER `billing_email`",
+    'shipping_company_id' => "ADD COLUMN `shipping_company_id` varchar(128) DEFAULT NULL AFTER `shipping_company`",
+  ];
+
+  $alterParts = [];
+  foreach ($requiredColumns as $column => $sql) {
+    if (!isset($columns[$column])) {
+      $alterParts[] = $sql;
+    }
+  }
+
+  if ($alterParts) {
+    $sql = 'ALTER TABLE `custom_orders` ' . implode(",\n  ", $alterParts);
+    if ($conn->query($sql)) {
+      customOrdersTableColumns($conn, 'custom_orders', true);
+    }
+  }
+
+  $done = true;
 }
 
 function customOrdersDepartmentOrder(string $types): string
@@ -269,24 +409,61 @@ function customOrdersNextLineNo(mysqli $conn, int $orderId): int
   return (int) ($row['next_line'] ?? 1);
 }
 
-function customOrdersItemPayloadFromPost(): array
+function customOrdersItemPayloadFromPost(mysqli $conn, string $type = 'G'): array
 {
+  $department = customOrdersItemTypeToDepartment($type);
+  $definitions = productSpecFieldDefinitions($conn, $department);
+
   $options = [
     'category_info' => trim((string) ($_POST['category_info'] ?? '')),
-    'name' => trim((string) ($_POST['option_name'] ?? '')),
-    'number' => trim((string) ($_POST['option_number'] ?? '')),
-    'base-material' => trim((string) ($_POST['option_material'] ?? '')),
-    'graphics-finish' => trim((string) ($_POST['option_finish'] ?? '')),
-    'grip' => trim((string) ($_POST['option_grip'] ?? '')),
-    'tr-swingarms' => trim((string) ($_POST['option_tr_swingarms'] ?? '')),
-    'patch-style' => trim((string) ($_POST['option_patch_style'] ?? '')),
-    'waterproof-seams' => trim((string) ($_POST['option_waterproof_seams'] ?? '')),
-    'enduro-pocket' => trim((string) ($_POST['option_enduro_pocket'] ?? '')),
-    'side-brand-patches' => trim((string) ($_POST['option_side_brand_patches'] ?? '')),
-    'note' => trim((string) ($_POST['option_note'] ?? '')),
   ];
 
-  $options = array_filter($options, static fn($value) => $value !== '');
+  foreach ($definitions as $definition) {
+    $specKey = trim((string) ($definition['spec_key'] ?? ''));
+    $sourceKey = trim((string) ($definition['source_key'] ?? ''));
+    if ($specKey === '' || $sourceKey === '') {
+      continue;
+    }
+
+    $postKey = 'spec_' . $specKey;
+    if (!array_key_exists($postKey, $_POST)) {
+      continue;
+    }
+
+    $value = trim((string) $_POST[$postKey]);
+    if ($value !== '') {
+      $options[$sourceKey] = $value;
+    }
+  }
+
+  $legacyMap = [
+    'option_name' => 'name',
+    'option_number' => 'number',
+    'option_material' => 'base-material',
+    'option_finish' => 'graphics-finish',
+    'option_grip' => 'grip',
+    'option_tr_swingarms' => 'tr-swingarms',
+    'option_patch_style' => 'patch-style',
+    'option_waterproof_seams' => 'waterproof-seams',
+    'option_enduro_pocket' => 'enduro-pocket',
+    'option_side_brand_patches' => 'side-brand-patches',
+    'option_note' => 'note',
+    'option_printer' => 'printer',
+    'option_my_item_note' => 'my-item-note',
+  ];
+  foreach ($legacyMap as $postKey => $sourceKey) {
+    if (isset($options[$sourceKey])) {
+      continue;
+    }
+    $value = trim((string) ($_POST[$postKey] ?? ''));
+    if ($value !== '') {
+      $options[$sourceKey] = $value;
+    }
+  }
+
+  $options = array_filter($options, static function ($value) {
+    return $value !== '';
+  });
   $internal = [
     '_custom_source' => 'custom_orders_module',
   ];
@@ -342,8 +519,112 @@ function customOrdersGetOrder(mysqli $conn, int $orderId): ?array
     $order['activity'][] = $row;
   }
 
+  $order['notes'] = [];
+  if (customOrdersTableExists($conn, 'custom_order_notes')) {
+    $res = $conn->query('SELECT * FROM custom_order_notes WHERE custom_order_id = ' . (int) $orderId . ' ORDER BY created_at DESC, id DESC');
+    if ($res) {
+      while ($row = $res->fetch_assoc()) {
+        $order['notes'][] = $row;
+      }
+    }
+  }
+
+  $order['production_overview'] = customOrdersGetProductionOverview($conn, (int) ($order['production_order_id'] ?? 0));
+
   $order['summary'] = customOrdersComputeSummary($order);
   return $order;
+}
+
+function customOrdersGetProductionOverview(mysqli $conn, int $productionOrderId): array
+{
+  $overview = [
+    'order' => null,
+    'billing' => null,
+    'shipping' => null,
+    'invoices' => [],
+    'tracking' => [],
+  ];
+  if ($productionOrderId <= 0) {
+    return $overview;
+  }
+
+  $stmt = $conn->prepare('SELECT * FROM orders WHERE id = ? LIMIT 1');
+  if ($stmt) {
+    $stmt->bind_param('i', $productionOrderId);
+    $stmt->execute();
+    $overview['order'] = $stmt->get_result()->fetch_assoc() ?: null;
+    $stmt->close();
+  }
+
+  if (customOrdersTableExists($conn, 'order_addresses')) {
+    $stmt = $conn->prepare('SELECT * FROM order_addresses WHERE order_id = ? ORDER BY id ASC');
+    if ($stmt) {
+      $stmt->bind_param('i', $productionOrderId);
+      $stmt->execute();
+      $res = $stmt->get_result();
+      while ($row = $res->fetch_assoc()) {
+        $type = strtoupper(trim((string) ($row['type'] ?? '')));
+        if ($type === 'BILLING' && $overview['billing'] === null) {
+          $overview['billing'] = $row;
+        }
+        if ($type === 'SHIPPING' && $overview['shipping'] === null) {
+          $overview['shipping'] = $row;
+        }
+      }
+      $stmt->close();
+    }
+  }
+
+  if (customOrdersTableExists($conn, 'order_invoices')) {
+    $stmt = $conn->prepare('SELECT id, invoice_number FROM order_invoices WHERE order_id = ? AND deleted_at IS NULL ORDER BY id DESC');
+    if ($stmt) {
+      $stmt->bind_param('i', $productionOrderId);
+      $stmt->execute();
+      $res = $stmt->get_result();
+      while ($row = $res->fetch_assoc()) {
+        $overview['invoices'][] = $row;
+      }
+      $stmt->close();
+    }
+  }
+
+  if (customOrdersTableExists($conn, 'order_tracking_numbers')) {
+    $stmt = $conn->prepare('SELECT id, tracking_number, carrier FROM order_tracking_numbers WHERE order_id = ? AND deleted_at IS NULL ORDER BY id DESC');
+    if ($stmt) {
+      $stmt->bind_param('i', $productionOrderId);
+      $stmt->execute();
+      $res = $stmt->get_result();
+      while ($row = $res->fetch_assoc()) {
+        $overview['tracking'][] = $row;
+      }
+      $stmt->close();
+    }
+  }
+
+  return $overview;
+}
+
+function customOrdersAddNote(mysqli $conn, int $orderId, string $noteType, string $noteBody, int $userId): void
+{
+  $noteType = strtoupper(trim($noteType));
+  if ($orderId <= 0 || $noteBody === '' || !customOrdersTableExists($conn, 'custom_order_notes')) {
+    return;
+  }
+
+  $allowedTypes = ['CUSTOMER', 'INTERNAL', 'REVISION'];
+  if (!in_array($noteType, $allowedTypes, true)) {
+    $noteType = 'INTERNAL';
+  }
+
+  $stmt = $conn->prepare('INSERT INTO custom_order_notes (custom_order_id, note_type, note_body, created_by) VALUES (?, ?, ?, ?)');
+  if (!$stmt) {
+    return;
+  }
+  $stmt->bind_param('issi', $orderId, $noteType, $noteBody, $userId);
+  $stmt->execute();
+  $stmt->close();
+
+  customOrdersLog($conn, $orderId, 'note_added', $userId, ['note_type' => $noteType], 'Lead note appended');
 }
 
 function customOrdersAssignOwner(mysqli $conn, int $orderId, int $ownerEmployeeId, int $assignedBy): void

@@ -10,130 +10,117 @@ if ($orderId <= 0) {
   customOrdersRedirect();
 }
 
+$existing = customOrdersGetOrder($conn, $orderId);
+if (!$existing) {
+  customOrdersFlash('danger', 'Custom order not found.');
+  customOrdersRedirect();
+}
+
+$posted = static function (string $key): bool {
+  return array_key_exists($key, $_POST);
+};
+
+$postString = static function (string $key, array $existing) use ($posted): string {
+  if ($posted($key)) {
+    return trim((string) ($_POST[$key] ?? ''));
+  }
+  return trim((string) ($existing[$key] ?? ''));
+};
+
+$postNullableDate = static function (string $key, array $existing) use ($posted): ?string {
+  if ($posted($key)) {
+    $value = trim((string) ($_POST[$key] ?? ''));
+    return $value !== '' ? $value : null;
+  }
+  $value = trim((string) ($existing[$key] ?? ''));
+  return $value !== '' ? $value : null;
+};
+
+$postInt = static function (string $key, array $existing, int $min, int $max): int {
+  $value = array_key_exists($key, $_POST) ? (int) ($_POST[$key] ?? 0) : (int) ($existing[$key] ?? 0);
+  return max($min, min($max, $value));
+};
+
+$postFloat = static function (string $key, array $existing): float {
+  return array_key_exists($key, $_POST) ? (float) ($_POST[$key] ?? 0) : (float) ($existing[$key] ?? 0);
+};
+
 $data = [
-  'status' => trim((string) ($_POST['status'] ?? 'LEAD')),
-  'complexity_level' => max(1, min(10, (int) ($_POST['complexity_level'] ?? 1))),
-  'source_channel' => trim((string) ($_POST['source_channel'] ?? '')),
-  'social_platform' => trim((string) ($_POST['social_platform'] ?? '')),
-  'social_handle' => trim((string) ($_POST['social_handle'] ?? '')),
-  'customer_name' => trim((string) ($_POST['customer_name'] ?? '')),
-  'customer_email' => trim((string) ($_POST['customer_email'] ?? '')),
-  'customer_phone' => trim((string) ($_POST['customer_phone'] ?? '')),
-  'customer_country' => customOrdersNormalizeCountry((string) ($_POST['customer_country'] ?? '')),
-  'bike_brand' => trim((string) ($_POST['bike_brand'] ?? '')),
-  'bike_model' => trim((string) ($_POST['bike_model'] ?? '')),
-  'bike_year' => trim((string) ($_POST['bike_year'] ?? '')),
-  'bike_details' => trim((string) ($_POST['bike_details'] ?? '')),
-  'rider_name' => trim((string) ($_POST['rider_name'] ?? '')),
-  'rider_number' => trim((string) ($_POST['rider_number'] ?? '')),
-  'shipping_name' => trim((string) ($_POST['shipping_name'] ?? '')),
-  'shipping_company' => trim((string) ($_POST['shipping_company'] ?? '')),
-  'shipping_street' => trim((string) ($_POST['shipping_street'] ?? '')),
-  'shipping_city' => trim((string) ($_POST['shipping_city'] ?? '')),
-  'shipping_zip' => trim((string) ($_POST['shipping_zip'] ?? '')),
-  'shipping_country' => customOrdersNormalizeCountry((string) ($_POST['shipping_country'] ?? '')),
-  'shipping_email' => trim((string) ($_POST['shipping_email'] ?? '')),
-  'shipping_phone' => trim((string) ($_POST['shipping_phone'] ?? '')),
-  'shipping_method' => trim((string) ($_POST['shipping_method'] ?? '')),
-  'shipping_price' => (float) ($_POST['shipping_price'] ?? 0),
-  'currency' => trim((string) ($_POST['currency'] ?? 'EUR')),
-  'deposit_revision_limit' => max(0, min(20, (int) ($_POST['deposit_revision_limit'] ?? 3))),
-  'deposit_revision_used' => max(0, min(20, (int) ($_POST['deposit_revision_used'] ?? 0))),
-  'graphics_brief' => trim((string) ($_POST['graphics_brief'] ?? '')),
-  'customer_notes' => trim((string) ($_POST['customer_notes'] ?? '')),
-  'internal_notes' => trim((string) ($_POST['internal_notes'] ?? '')),
-  'bike_photo_urls' => trim((string) ($_POST['bike_photo_urls'] ?? '')),
-  'reference_urls' => trim((string) ($_POST['reference_urls'] ?? '')),
-  'last_contact_at' => trim((string) ($_POST['last_contact_at'] ?? '')) ?: null,
-  'next_followup_at' => trim((string) ($_POST['next_followup_at'] ?? '')) ?: null,
-  'dead_order_flag' => isset($_POST['dead_order_flag']) ? 1 : 0,
+  'status' => $postString('status', $existing) ?: 'LEAD',
+  'complexity_level' => $postInt('complexity_level', $existing, 1, 10),
+  'source_channel' => $postString('source_channel', $existing),
+  'social_platform' => $postString('social_platform', $existing),
+  'social_handle' => $postString('social_handle', $existing),
+  'customer_name' => $postString('customer_name', $existing),
+  'customer_email' => $postString('customer_email', $existing),
+  'customer_phone' => $postString('customer_phone', $existing),
+  'customer_country' => customOrdersNormalizeCountry($postString('customer_country', $existing)),
+  'bike_brand' => $postString('bike_brand', $existing),
+  'bike_model' => $postString('bike_model', $existing),
+  'bike_year' => $postString('bike_year', $existing),
+  'bike_details' => $postString('bike_details', $existing),
+  'rider_name' => $postString('rider_name', $existing),
+  'rider_number' => $postString('rider_number', $existing),
+  'payment_method' => $postString('payment_method', $existing),
+  'billing_name' => $postString('billing_name', $existing),
+  'billing_company' => $postString('billing_company', $existing),
+  'billing_company_id' => $postString('billing_company_id', $existing),
+  'billing_street' => $postString('billing_street', $existing),
+  'billing_city' => $postString('billing_city', $existing),
+  'billing_zip' => $postString('billing_zip', $existing),
+  'billing_country' => customOrdersNormalizeCountry($postString('billing_country', $existing)),
+  'billing_email' => $postString('billing_email', $existing),
+  'billing_phone' => $postString('billing_phone', $existing),
+  'shipping_name' => $postString('shipping_name', $existing),
+  'shipping_company' => $postString('shipping_company', $existing),
+  'shipping_company_id' => $postString('shipping_company_id', $existing),
+  'shipping_street' => $postString('shipping_street', $existing),
+  'shipping_city' => $postString('shipping_city', $existing),
+  'shipping_zip' => $postString('shipping_zip', $existing),
+  'shipping_country' => customOrdersNormalizeCountry($postString('shipping_country', $existing)),
+  'shipping_email' => $postString('shipping_email', $existing),
+  'shipping_phone' => $postString('shipping_phone', $existing),
+  'shipping_method' => $postString('shipping_method', $existing),
+  'shipping_price' => $postFloat('shipping_price', $existing),
+  'currency' => $postString('currency', $existing) ?: 'EUR',
+  'deposit_revision_limit' => $postInt('deposit_revision_limit', $existing, 0, 20),
+  'deposit_revision_used' => $postInt('deposit_revision_used', $existing, 0, 20),
+  'graphics_brief' => $postString('graphics_brief', $existing),
+  'customer_notes' => $postString('customer_notes', $existing),
+  'internal_notes' => $postString('internal_notes', $existing),
+  'bike_photo_urls' => $postString('bike_photo_urls', $existing),
+  'reference_urls' => $postString('reference_urls', $existing),
+  'last_contact_at' => $postNullableDate('last_contact_at', $existing),
+  'next_followup_at' => $postNullableDate('next_followup_at', $existing),
+  'dead_order_flag' => (int) ($_POST['dead_order_flag'] ?? 0) === 1 ? 1 : 0,
 ];
 
 $contactId = customOrdersUpsertContactDirectory($conn, $data);
 
-$stmt = $pdo->prepare('
-  UPDATE custom_orders
-  SET status = :status,
-      complexity_level = :complexity_level,
-      source_channel = :source_channel,
-      social_platform = :social_platform,
-      social_handle = :social_handle,
-      customer_name = :customer_name,
-      customer_email = :customer_email,
-      customer_phone = :customer_phone,
-      customer_country = :customer_country,
-      bike_brand = :bike_brand,
-      bike_model = :bike_model,
-      bike_year = :bike_year,
-      bike_details = :bike_details,
-      rider_name = :rider_name,
-      rider_number = :rider_number,
-      shipping_name = :shipping_name,
-      shipping_company = :shipping_company,
-      shipping_street = :shipping_street,
-      shipping_city = :shipping_city,
-      shipping_zip = :shipping_zip,
-      shipping_country = :shipping_country,
-      shipping_email = :shipping_email,
-      shipping_phone = :shipping_phone,
-      shipping_method = :shipping_method,
-      shipping_price = :shipping_price,
-      currency = :currency,
-      deposit_revision_limit = :deposit_revision_limit,
-      deposit_revision_used = :deposit_revision_used,
-      graphics_brief = :graphics_brief,
-      customer_notes = :customer_notes,
-      internal_notes = :internal_notes,
-      bike_photo_urls = :bike_photo_urls,
-      reference_urls = :reference_urls,
-      last_contact_at = :last_contact_at,
-      next_followup_at = :next_followup_at,
-      dead_order_flag = :dead_order_flag,
-      contact_directory_id = :contact_directory_id,
-      updated_by = :updated_by
-  WHERE id = :id
-');
-$stmt->execute([
-  ':status' => $data['status'],
-  ':complexity_level' => $data['complexity_level'],
-  ':source_channel' => $data['source_channel'],
-  ':social_platform' => $data['social_platform'],
-  ':social_handle' => $data['social_handle'],
-  ':customer_name' => $data['customer_name'],
-  ':customer_email' => $data['customer_email'],
-  ':customer_phone' => $data['customer_phone'],
-  ':customer_country' => $data['customer_country'],
-  ':bike_brand' => $data['bike_brand'],
-  ':bike_model' => $data['bike_model'],
-  ':bike_year' => $data['bike_year'],
-  ':bike_details' => $data['bike_details'],
-  ':rider_name' => $data['rider_name'],
-  ':rider_number' => $data['rider_number'],
-  ':shipping_name' => $data['shipping_name'],
-  ':shipping_company' => $data['shipping_company'],
-  ':shipping_street' => $data['shipping_street'],
-  ':shipping_city' => $data['shipping_city'],
-  ':shipping_zip' => $data['shipping_zip'],
-  ':shipping_country' => $data['shipping_country'],
-  ':shipping_email' => $data['shipping_email'],
-  ':shipping_phone' => $data['shipping_phone'],
-  ':shipping_method' => $data['shipping_method'],
-  ':shipping_price' => $data['shipping_price'],
-  ':currency' => $data['currency'],
-  ':deposit_revision_limit' => $data['deposit_revision_limit'],
-  ':deposit_revision_used' => $data['deposit_revision_used'],
-  ':graphics_brief' => $data['graphics_brief'],
-  ':customer_notes' => $data['customer_notes'],
-  ':internal_notes' => $data['internal_notes'],
-  ':bike_photo_urls' => $data['bike_photo_urls'],
-  ':reference_urls' => $data['reference_urls'],
-  ':last_contact_at' => $data['last_contact_at'],
-  ':next_followup_at' => $data['next_followup_at'],
-  ':dead_order_flag' => $data['dead_order_flag'],
-  ':contact_directory_id' => $contactId,
-  ':updated_by' => $userId,
-  ':id' => $orderId,
-]);
+$availableColumns = customOrdersTableColumns($conn, 'custom_orders');
+$updateValues = $data;
+$updateValues['contact_directory_id'] = $contactId;
+$updateValues['updated_by'] = $userId;
+
+$assignments = [];
+$params = [':id' => $orderId];
+foreach ($updateValues as $column => $value) {
+  if (!isset($availableColumns[$column])) {
+    continue;
+  }
+  $assignments[] = $column . ' = :' . $column;
+  $params[':' . $column] = $value;
+}
+
+if (!$assignments) {
+  throw new RuntimeException('No compatible custom_orders columns found for header save.');
+}
+
+$stmt = $pdo->prepare('UPDATE custom_orders SET ' . implode(",\n      ", $assignments) . ' WHERE id = :id');
+$saved = $stmt->execute($params);
+if (!$saved) {
+  throw new RuntimeException('Failed to save custom order header.');
+}
 
 customOrdersLog($conn, $orderId, 'header_updated', $userId, ['status' => $data['status']], 'Header updated');
 customOrdersFlash('success', 'Custom order saved.');

@@ -425,6 +425,20 @@
   $currentSpecDepartment = $normalizeProductSpecDepartment($currentSpecDepartment);
   $currentSpecSubcategory = $currentSpecDepartment === 'G' ? $normalizeProductSpecSubcategory($currentSpecSubcategory) : '';
   $currentProductSpecCategoryKey = $currentSpecDepartment . '|' . $currentSpecSubcategory;
+  $productSpecHasFieldSortOrder = false;
+  $productSpecFieldSortStmt = $conn->prepare("
+    SELECT 1
+    FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE()
+      AND TABLE_NAME = 'product_spec_options'
+      AND COLUMN_NAME = 'field_sort_order'
+    LIMIT 1
+  ");
+  if ($productSpecFieldSortStmt && $productSpecFieldSortStmt->execute()) {
+    $productSpecFieldSortOrderResult = $productSpecFieldSortStmt->get_result();
+    $productSpecHasFieldSortOrder = $productSpecFieldSortOrderResult && $productSpecFieldSortOrderResult->fetch_assoc() !== null;
+    $productSpecFieldSortStmt->close();
+  }
 
   $productSpecSourceKeys = [];
   $registerProductSpecSourceKey = static function (string $sourceKey, string $department) use (&$productSpecSourceKeys, $humanizeProductSpecKey, $normalizeProductSpecSourceKey): void {
@@ -817,15 +831,17 @@
                 <th style="background-color:gray; width:110px;">Subcats</th>
                 <th style="background-color:gray;">Label</th>
                 <th style="background-color:gray;">Value</th>
-                <th style="background-color:gray; width:110px;">Order</th>
+                <th style="background-color:gray; width:110px;">Field Order</th>
+                <th style="background-color:gray; width:110px;">Option Order</th>
                 <th style="background-color:gray; width:90px;">Active</th>
                 <th style="background-color:gray; width:210px;">Tools</th>
               </tr>
             </thead>
             <tbody>
               <?php
+              $fieldSortSelectSql = $productSpecHasFieldSortOrder ? 'field_sort_order' : 'sort_order AS field_sort_order';
               $stmt = $conn->prepare("
-                SELECT id, spec_key, department, field_type, label, value, sort_order, active, color, apply_to_subcategories
+                SELECT id, spec_key, department, field_type, label, value, sort_order, $fieldSortSelectSql, active, color, apply_to_subcategories
                 FROM product_spec_options
                 WHERE spec_key = ?
                   AND (? = '' OR department = ? OR department IS NULL)
@@ -852,6 +868,7 @@
                     data-subcategory="<?= htmlspecialchars($rowSubcategory, ENT_QUOTES, 'UTF-8'); ?>"
                     data-spec-group="<?= htmlspecialchars($rowGroupKey, ENT_QUOTES, 'UTF-8'); ?>"
                     data-source-key="<?= htmlspecialchars($rowSourceKey, ENT_QUOTES, 'UTF-8'); ?>"
+                    data-field-sort-order="<?= (int) ($row['field_sort_order'] ?? $row['sort_order'] ?? 0); ?>"
                     data-apply-to-subcategories="<?= $rowApplyToSubcategories; ?>">
                     <td><?= (int) $row['id']; ?></td>
                     <td class="spec-department-cell"><?= htmlspecialchars($rowDepartment, ENT_QUOTES, 'UTF-8'); ?></td>
@@ -866,6 +883,7 @@
                       <?= $rowCanApplyToSubcategories ? ($rowApplyToSubcategories === 1 ? 'Yes' : 'No') : '&mdash;'; ?></td>
                     <td class="spec-label-cell"><?= htmlspecialchars($row['label'], ENT_QUOTES, 'UTF-8'); ?></td>
                     <td class="spec-value-cell"><?= htmlspecialchars($row['value'], ENT_QUOTES, 'UTF-8'); ?></td>
+                    <td class="spec-field-sort-cell"><?= (int) ($row['field_sort_order'] ?? $row['sort_order'] ?? 0); ?></td>
                     <td class="spec-sort-cell"><?= (int) $row['sort_order']; ?></td>
                     <td class="spec-active-cell"><?= ((int) $row['active'] === 1 ? 'Yes' : 'No'); ?></td>
                     <td>
@@ -1089,9 +1107,10 @@
         const sourceKey = String($table.find('tbody tr[data-source-key]').first().data('source-key') || $table.data('source-key') || '');
         const applyToSubcategories = parseInt($table.find('tbody tr[data-apply-to-subcategories]').first().data('apply-to-subcategories'), 10) === 1 ? 1 : 0;
         const canApplyToSubcategories = department === 'G' && !subcategory;
+        const fieldSortOrder = parseInt($table.find('tbody tr[data-field-sort-order]').first().data('field-sort-order'), 10) || 0;
 
         const newRow = `
-      <tr class="new-product-spec-row" data-spec-key="${escapeHtml(specKey)}" data-department="${escapeHtml(department)}" data-subcategory="${escapeHtml(subcategory)}" data-spec-group="${escapeHtml(specGroup)}" data-apply-to-subcategories="${applyToSubcategories}">
+      <tr class="new-product-spec-row" data-spec-key="${escapeHtml(specKey)}" data-department="${escapeHtml(department)}" data-subcategory="${escapeHtml(subcategory)}" data-spec-group="${escapeHtml(specGroup)}" data-apply-to-subcategories="${applyToSubcategories}" data-field-sort-order="${fieldSortOrder}">
         <td>&mdash;</td>
         <td>${escapeHtml(department)}</td>
         <td class="spec-fieldtype-cell">Option</td>
@@ -1100,6 +1119,7 @@
         <td class="spec-subcats-cell">${canApplyToSubcategories ? (applyToSubcategories === 1 ? 'Yes' : 'No') : '&mdash;'}</td>
         <td><input type="text" class="form-control form-control-sm new-spec-label" placeholder="Option label"></td>
         <td><input type="text" class="form-control form-control-sm new-spec-value" placeholder="Saved value"></td>
+        <td><input type="number" class="form-control form-control-sm new-spec-field-sort" value="${fieldSortOrder}" step="1"></td>
         <td><input type="number" class="form-control form-control-sm new-spec-sort" value="0" step="1"></td>
         <td>
           <select class="form-control form-control-sm new-spec-active">
@@ -1137,7 +1157,7 @@
         const newRow = `
           <tr class="new-product-spec-dropdown-row">
             <td>&mdash;</td>
-            <td colspan="10">
+            <td colspan="11">
               <div class="product-spec-create-panel">
                 <div class="product-spec-create-grid">
                   <div class="form-group">
@@ -1179,7 +1199,11 @@
                     <input type="text" class="form-control form-control-sm new-spec-value" placeholder="Yes">
                   </div>
                   <div class="form-group">
-                    <label class="small text-muted mb-1">Order</label>
+                    <label class="small text-muted mb-1">Field order</label>
+                    <input type="number" class="form-control form-control-sm new-spec-field-sort" value="0" step="1">
+                  </div>
+                  <div class="form-group">
+                    <label class="small text-muted mb-1">Option order</label>
                     <input type="number" class="form-control form-control-sm new-spec-sort" value="0" step="1">
                   </div>
                   <div class="form-group">
@@ -1258,6 +1282,7 @@
         const specGroup = $row.data('spec-group');
         const label = $row.find('.new-spec-label').val().trim();
         const value = $row.find('.new-spec-value').val().trim();
+        const fieldSortOrder = parseInt($row.find('.new-spec-field-sort').val(), 10) || 0;
         const sortOrder = parseInt($row.find('.new-spec-sort').val(), 10) || 0;
         const active = parseInt($row.find('.new-spec-active').val(), 10) || 0;
         const applyToSubcategories = parseInt($row.closest('tr').data('apply-to-subcategories'), 10) === 1 ? 1 : 0;
@@ -1271,7 +1296,7 @@
           url: 'scripts/settings/insert_product_spec_option.php',
           method: 'POST',
           dataType: 'json',
-          data: { spec_key: specKey, department: department, source_key: String($row.closest('tr').data('source-key') || $('.product-spec-options-table tbody tr[data-source-key]').first().data('source-key') || $('.product-spec-options-table').data('source-key') || ''), label: label, value: value, sort_order: sortOrder, active: active, apply_to_subcategories: applyToSubcategories },
+          data: { spec_key: specKey, department: department, source_key: String($row.closest('tr').data('source-key') || $('.product-spec-options-table tbody tr[data-source-key]').first().data('source-key') || $('.product-spec-options-table').data('source-key') || ''), label: label, value: value, field_sort_order: fieldSortOrder, sort_order: sortOrder, active: active, apply_to_subcategories: applyToSubcategories },
           success: function (data) {
             if (!data || !data.ok) {
               alert(data && data.error ? data.error : 'Insert failed.');
@@ -1281,7 +1306,7 @@
             const sourceKey = String($row.closest('tr').data('source-key') || $('.product-spec-options-table tbody tr[data-source-key]').first().data('source-key') || $('.product-spec-options-table').data('source-key') || '');
             const canApplyToSubcategories = department === 'G' && !subcategory;
             $row.replaceWith(`
-          <tr data-id="${data.id}" data-spec-key="${escapeHtml(specKey)}" data-department="${escapeHtml(department)}" data-subcategory="${escapeHtml(subcategory)}" data-spec-group="${escapeHtml(specGroup)}" data-source-key="${escapeHtml(sourceKey)}" data-apply-to-subcategories="${applyToSubcategories}">
+          <tr data-id="${data.id}" data-spec-key="${escapeHtml(specKey)}" data-department="${escapeHtml(department)}" data-subcategory="${escapeHtml(subcategory)}" data-spec-group="${escapeHtml(specGroup)}" data-source-key="${escapeHtml(sourceKey)}" data-apply-to-subcategories="${applyToSubcategories}" data-field-sort-order="${fieldSortOrder}">
             <td>${data.id}</td>
             <td class="spec-department-cell">${escapeHtml(department)}</td>
             <td class="spec-fieldtype-cell">Option</td>
@@ -1290,6 +1315,7 @@
             <td class="spec-subcats-cell">${canApplyToSubcategories ? (applyToSubcategories === 1 ? 'Yes' : 'No') : '&mdash;'}</td>
             <td class="spec-label-cell">${escapeHtml(label)}</td>
             <td class="spec-value-cell">${escapeHtml(value)}</td>
+            <td class="spec-field-sort-cell">${fieldSortOrder}</td>
             <td class="spec-sort-cell">${sortOrder}</td>
             <td class="spec-active-cell">${active === 1 ? 'Yes' : 'No'}</td>
             <td>
@@ -1348,6 +1374,7 @@
         const fieldType = $row.find('.new-dropdown-field-type').val() || 'dropdown';
         const sourceKey = $row.find('.new-dropdown-source-key').val().trim();
         const specKey = ensureSpecKeyMatchesCategory(categoryKey, $row.find('.new-dropdown-spec-key').val().trim(), sourceKey);
+        const fieldSortOrder = parseInt($row.find('.new-spec-field-sort').val(), 10) || 0;
         const sortOrder = parseInt($row.find('.new-spec-sort').val(), 10) || 0;
         const active = parseInt($row.find('.new-spec-active').val(), 10) || 0;
         const applyToSubcategories = parseInt($row.find('.new-dropdown-apply-subcategories').val(), 10) === 1 ? 1 : 0;
@@ -1390,6 +1417,7 @@
             field_type: fieldType,
             label: label,
             value: value,
+            field_sort_order: fieldSortOrder,
             sort_order: sortOrder,
             active: active,
             apply_to_subcategories: applyToSubcategories,
@@ -1419,6 +1447,7 @@
         const sourceKey = $row.find('.spec-sourcekey-cell').text().trim();
         const label = $row.find('.spec-label-cell').text().trim();
         const value = $row.find('.spec-value-cell').text().trim();
+        const fieldSortOrder = $row.find('.spec-field-sort-cell').text().trim();
         const sortOrder = $row.find('.spec-sort-cell').text().trim();
         const active = $row.find('.spec-active-cell').text().trim() === 'Yes' ? '1' : '0';
         const applyToSubcategories = String($row.data('apply-to-subcategories') || '0') === '1' ? '1' : '0';
@@ -1433,6 +1462,7 @@
           : '&mdash;');
         $row.find('.spec-label-cell').html(`<input type="text" class="form-control form-control-sm spec-label-input" value="${escapeHtml(label)}">`);
         $row.find('.spec-value-cell').html(`<input type="text" class="form-control form-control-sm spec-value-input" value="${escapeHtml(value)}">`);
+        $row.find('.spec-field-sort-cell').html(`<input type="number" class="form-control form-control-sm spec-field-sort-input" value="${escapeHtml(fieldSortOrder)}" step="1">`);
         $row.find('.spec-sort-cell').html(`<input type="number" class="form-control form-control-sm spec-sort-input" value="${escapeHtml(sortOrder)}" step="1">`);
         $row.find('.spec-active-cell').html(`
       <select class="form-control form-control-sm spec-active-input">
@@ -1451,6 +1481,7 @@
         const sourceKey = $row.find('.spec-sourcekey-input').val().trim();
         const label = $row.find('.spec-label-input').val().trim();
         const value = $row.find('.spec-value-input').val().trim();
+        const fieldSortOrder = parseInt($row.find('.spec-field-sort-input').val(), 10) || 0;
         const sortOrder = parseInt($row.find('.spec-sort-input').val(), 10) || 0;
         const active = parseInt($row.find('.spec-active-input').val(), 10) || 0;
         const canApplyToSubcategories = String($row.data('department') || '') === 'G' && String($row.data('subcategory') || '') === '';
@@ -1467,7 +1498,7 @@
           url: 'scripts/settings/update_product_spec_option.php',
           method: 'POST',
           dataType: 'json',
-          data: { id: id, source_key: sourceKey, label: label, value: value, sort_order: sortOrder, active: active, apply_to_subcategories: applyToSubcategories },
+          data: { id: id, source_key: sourceKey, label: label, value: value, field_sort_order: fieldSortOrder, sort_order: sortOrder, active: active, apply_to_subcategories: applyToSubcategories },
           success: function (data) {
             if (!data || !data.ok) {
               alert(data && data.error ? data.error : 'Save failed.');
@@ -1475,10 +1506,12 @@
             }
             $row.attr('data-source-key', sourceKey);
             $row.attr('data-apply-to-subcategories', applyToSubcategories);
+            $row.attr('data-field-sort-order', fieldSortOrder);
             $row.find('.spec-sourcekey-cell').text(sourceKey);
             $row.find('.spec-subcats-cell').html(canApplyToSubcategories ? (applyToSubcategories === 1 ? 'Yes' : 'No') : '&mdash;');
             $row.find('.spec-label-cell').text(label);
             $row.find('.spec-value-cell').text(value);
+            $row.find('.spec-field-sort-cell').text(fieldSortOrder);
             $row.find('.spec-sort-cell').text(sortOrder);
             $row.find('.spec-active-cell').text(active === 1 ? 'Yes' : 'No');
             $row.find('.save-product-spec-option').hide();
