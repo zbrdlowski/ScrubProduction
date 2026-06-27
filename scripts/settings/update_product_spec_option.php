@@ -6,6 +6,7 @@ if ($id <= 0) {
   out_json(400, ['ok' => false, 'error' => 'Invalid id']);
 }
 
+$fieldLabel = post_string_optional('field_label', 190);
 $label     = post_string('label', 120);
 $value     = post_string('value', 120);
 $sortOrder = post_int('sort_order', 0);
@@ -24,7 +25,8 @@ if ($fieldType !== '' && !in_array($fieldType, $allowedFieldTypes, true)) {
 // Field-level metadata should stay unified across every option row of the same field.
 $metaSpecKey = '';
 $metaDepartment = null;
-$metaStmt = $conn->prepare("SELECT spec_key, department FROM product_spec_options WHERE id = ? LIMIT 1");
+$metaSourceKey = '';
+$metaStmt = $conn->prepare("SELECT spec_key, department, COALESCE(color, '') AS source_key FROM product_spec_options WHERE id = ? LIMIT 1");
 if ($metaStmt) {
   $metaStmt->bind_param('i', $id);
   if ($metaStmt->execute()) {
@@ -32,18 +34,30 @@ if ($metaStmt) {
     if ($metaRow) {
       $metaSpecKey = trim((string) ($metaRow['spec_key'] ?? ''));
       $metaDepartment = $metaRow['department'] ?? null;
+      $metaSourceKey = trim((string) ($metaRow['source_key'] ?? ''));
     }
   }
   $metaStmt->close();
 }
 
+// Source key nechame pri beznom editovani zamknuty.
+// Friendly name (field_label) ma byt samostatna prezentačná vrstva,
+// nie trigger na prepisovanie prepojeni importovanych options.
+if ($metaSourceKey !== '') {
+  $sourceKey = $metaSourceKey;
+}
+
 $hasApplyToSubcategories = product_spec_column_exists($conn, 'apply_to_subcategories');
 $hasFieldSortOrder = product_spec_column_exists($conn, 'field_sort_order');
+$hasFieldLabel = product_spec_column_exists($conn, 'field_label');
 
 if ($fieldType !== '') {
   $sql = "
     UPDATE product_spec_options
     SET label = ?, value = ?, sort_order = ?, active = ?, field_type = ?, color = ?";
+  if ($hasFieldLabel) {
+    $sql .= ", field_label = ?";
+  }
   if ($hasFieldSortOrder) {
     $sql .= ", field_sort_order = ?";
   }
@@ -55,7 +69,11 @@ if ($fieldType !== '') {
   if (!$stmt) {
     out_json(500, ['ok' => false, 'error' => mysqli_error($conn)]);
   }
-  if ($hasFieldSortOrder) {
+  if ($hasFieldLabel && $hasFieldSortOrder) {
+    $stmt->bind_param('ssiisssii', $label, $value, $sortOrder, $active, $fieldType, $sourceKey, $fieldLabel, $fieldSortOrder, $id);
+  } elseif ($hasFieldLabel) {
+    $stmt->bind_param('ssiisssi', $label, $value, $sortOrder, $active, $fieldType, $sourceKey, $fieldLabel, $id);
+  } elseif ($hasFieldSortOrder) {
     $stmt->bind_param('ssiissii', $label, $value, $sortOrder, $active, $fieldType, $sourceKey, $fieldSortOrder, $id);
   } else {
     $stmt->bind_param('ssiissi', $label, $value, $sortOrder, $active, $fieldType, $sourceKey, $id);
@@ -64,6 +82,9 @@ if ($fieldType !== '') {
   $sql = "
     UPDATE product_spec_options
     SET label = ?, value = ?, sort_order = ?, active = ?, color = ?";
+  if ($hasFieldLabel) {
+    $sql .= ", field_label = ?";
+  }
   if ($hasFieldSortOrder) {
     $sql .= ", field_sort_order = ?";
   }
@@ -75,7 +96,11 @@ if ($fieldType !== '') {
   if (!$stmt) {
     out_json(500, ['ok' => false, 'error' => mysqli_error($conn)]);
   }
-  if ($hasFieldSortOrder) {
+  if ($hasFieldLabel && $hasFieldSortOrder) {
+    $stmt->bind_param('ssiissii', $label, $value, $sortOrder, $active, $sourceKey, $fieldLabel, $fieldSortOrder, $id);
+  } elseif ($hasFieldLabel) {
+    $stmt->bind_param('ssiissi', $label, $value, $sortOrder, $active, $sourceKey, $fieldLabel, $id);
+  } elseif ($hasFieldSortOrder) {
     $stmt->bind_param('ssiisii', $label, $value, $sortOrder, $active, $sourceKey, $fieldSortOrder, $id);
   } else {
     $stmt->bind_param('ssiisi', $label, $value, $sortOrder, $active, $sourceKey, $id);
@@ -93,19 +118,27 @@ if ($metaSpecKey !== '') {
       $metaSql = "
         UPDATE product_spec_options
         SET field_type = ?, color = ?, apply_to_subcategories = ?";
+      if ($hasFieldLabel) {
+        $metaSql .= ", field_label = ?";
+      }
       if ($hasFieldSortOrder) {
         $metaSql .= ", field_sort_order = ?";
       }
       $metaSql .= "
         WHERE spec_key = ?
           AND ((department IS NULL AND ? IS NULL) OR department = ?)
+          AND COALESCE(color, '') = ?
       ";
       $metaUpdateStmt = $conn->prepare($metaSql);
       if ($metaUpdateStmt) {
-        if ($hasFieldSortOrder) {
-          $metaUpdateStmt->bind_param('ssissss', $fieldType, $sourceKey, $applyToSubcategories, $fieldSortOrder, $metaSpecKey, $metaDepartment, $metaDepartment);
+        if ($hasFieldLabel && $hasFieldSortOrder) {
+          $metaUpdateStmt->bind_param('ssississs', $fieldType, $sourceKey, $applyToSubcategories, $fieldLabel, $fieldSortOrder, $metaSpecKey, $metaDepartment, $metaDepartment, $metaSourceKey);
+        } elseif ($hasFieldLabel) {
+          $metaUpdateStmt->bind_param('ssisssss', $fieldType, $sourceKey, $applyToSubcategories, $fieldLabel, $metaSpecKey, $metaDepartment, $metaDepartment, $metaSourceKey);
+        } elseif ($hasFieldSortOrder) {
+          $metaUpdateStmt->bind_param('ssisssss', $fieldType, $sourceKey, $applyToSubcategories, $fieldSortOrder, $metaSpecKey, $metaDepartment, $metaDepartment, $metaSourceKey);
         } else {
-          $metaUpdateStmt->bind_param('ssisss', $fieldType, $sourceKey, $applyToSubcategories, $metaSpecKey, $metaDepartment, $metaDepartment);
+          $metaUpdateStmt->bind_param('ssissss', $fieldType, $sourceKey, $applyToSubcategories, $metaSpecKey, $metaDepartment, $metaDepartment, $metaSourceKey);
         }
         $metaUpdateStmt->execute();
         $metaUpdateStmt->close();
@@ -114,19 +147,27 @@ if ($metaSpecKey !== '') {
       $metaSql = "
         UPDATE product_spec_options
         SET field_type = ?, color = ?";
+      if ($hasFieldLabel) {
+        $metaSql .= ", field_label = ?";
+      }
       if ($hasFieldSortOrder) {
         $metaSql .= ", field_sort_order = ?";
       }
       $metaSql .= "
         WHERE spec_key = ?
           AND ((department IS NULL AND ? IS NULL) OR department = ?)
+          AND COALESCE(color, '') = ?
       ";
       $metaUpdateStmt = $conn->prepare($metaSql);
       if ($metaUpdateStmt) {
-        if ($hasFieldSortOrder) {
-          $metaUpdateStmt->bind_param('ssssss', $fieldType, $sourceKey, $fieldSortOrder, $metaSpecKey, $metaDepartment, $metaDepartment);
+        if ($hasFieldLabel && $hasFieldSortOrder) {
+          $metaUpdateStmt->bind_param('ssssssss', $fieldType, $sourceKey, $fieldLabel, $fieldSortOrder, $metaSpecKey, $metaDepartment, $metaDepartment, $metaSourceKey);
+        } elseif ($hasFieldLabel) {
+          $metaUpdateStmt->bind_param('sssssss', $fieldType, $sourceKey, $fieldLabel, $metaSpecKey, $metaDepartment, $metaDepartment, $metaSourceKey);
+        } elseif ($hasFieldSortOrder) {
+          $metaUpdateStmt->bind_param('sssssss', $fieldType, $sourceKey, $fieldSortOrder, $metaSpecKey, $metaDepartment, $metaDepartment, $metaSourceKey);
         } else {
-          $metaUpdateStmt->bind_param('sssss', $fieldType, $sourceKey, $metaSpecKey, $metaDepartment, $metaDepartment);
+          $metaUpdateStmt->bind_param('ssssss', $fieldType, $sourceKey, $metaSpecKey, $metaDepartment, $metaDepartment, $metaSourceKey);
         }
         $metaUpdateStmt->execute();
         $metaUpdateStmt->close();
@@ -136,19 +177,27 @@ if ($metaSpecKey !== '') {
     $metaSql = "
       UPDATE product_spec_options
       SET color = ?, apply_to_subcategories = ?";
+    if ($hasFieldLabel) {
+      $metaSql .= ", field_label = ?";
+    }
     if ($hasFieldSortOrder) {
       $metaSql .= ", field_sort_order = ?";
     }
     $metaSql .= "
       WHERE spec_key = ?
         AND ((department IS NULL AND ? IS NULL) OR department = ?)
+        AND COALESCE(color, '') = ?
     ";
     $metaUpdateStmt = $conn->prepare($metaSql);
     if ($metaUpdateStmt) {
-      if ($hasFieldSortOrder) {
-        $metaUpdateStmt->bind_param('sissss', $sourceKey, $applyToSubcategories, $fieldSortOrder, $metaSpecKey, $metaDepartment, $metaDepartment);
+      if ($hasFieldLabel && $hasFieldSortOrder) {
+        $metaUpdateStmt->bind_param('sississs', $sourceKey, $applyToSubcategories, $fieldLabel, $fieldSortOrder, $metaSpecKey, $metaDepartment, $metaDepartment, $metaSourceKey);
+      } elseif ($hasFieldLabel) {
+        $metaUpdateStmt->bind_param('sisssss', $sourceKey, $applyToSubcategories, $fieldLabel, $metaSpecKey, $metaDepartment, $metaDepartment, $metaSourceKey);
+      } elseif ($hasFieldSortOrder) {
+        $metaUpdateStmt->bind_param('sisssss', $sourceKey, $applyToSubcategories, $fieldSortOrder, $metaSpecKey, $metaDepartment, $metaDepartment, $metaSourceKey);
       } else {
-        $metaUpdateStmt->bind_param('sisss', $sourceKey, $applyToSubcategories, $metaSpecKey, $metaDepartment, $metaDepartment);
+        $metaUpdateStmt->bind_param('sissss', $sourceKey, $applyToSubcategories, $metaSpecKey, $metaDepartment, $metaDepartment, $metaSourceKey);
       }
       $metaUpdateStmt->execute();
       $metaUpdateStmt->close();
@@ -156,12 +205,30 @@ if ($metaSpecKey !== '') {
   } elseif ($hasFieldSortOrder) {
     $metaUpdateStmt = $conn->prepare("
       UPDATE product_spec_options
-      SET color = ?, field_sort_order = ?
+      SET color = ?, field_sort_order = ?" . ($hasFieldLabel ? ", field_label = ?" : "") . "
       WHERE spec_key = ?
         AND ((department IS NULL AND ? IS NULL) OR department = ?)
+        AND COALESCE(color, '') = ?
     ");
     if ($metaUpdateStmt) {
-      $metaUpdateStmt->bind_param('sisss', $sourceKey, $fieldSortOrder, $metaSpecKey, $metaDepartment, $metaDepartment);
+      if ($hasFieldLabel) {
+        $metaUpdateStmt->bind_param('sisssss', $sourceKey, $fieldSortOrder, $fieldLabel, $metaSpecKey, $metaDepartment, $metaDepartment, $metaSourceKey);
+      } else {
+        $metaUpdateStmt->bind_param('sissss', $sourceKey, $fieldSortOrder, $metaSpecKey, $metaDepartment, $metaDepartment, $metaSourceKey);
+      }
+      $metaUpdateStmt->execute();
+      $metaUpdateStmt->close();
+    }
+  } elseif ($hasFieldLabel) {
+    $metaUpdateStmt = $conn->prepare("
+      UPDATE product_spec_options
+      SET color = ?, field_label = ?
+      WHERE spec_key = ?
+        AND ((department IS NULL AND ? IS NULL) OR department = ?)
+        AND COALESCE(color, '') = ?
+    ");
+    if ($metaUpdateStmt) {
+      $metaUpdateStmt->bind_param('ssssss', $sourceKey, $fieldLabel, $metaSpecKey, $metaDepartment, $metaDepartment, $metaSourceKey);
       $metaUpdateStmt->execute();
       $metaUpdateStmt->close();
     }

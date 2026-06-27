@@ -471,6 +471,74 @@ function customOrderBuilderSpecLabel(string $itemTypeCode, array $definition): s
   return $label;
 }
 
+function customOrderItemOptionGroups(mysqli $conn, string $itemTypeCode, array $options): array
+{
+  $department = customOrdersItemTypeToDepartment($itemTypeCode);
+  $sortMap = [];
+
+  foreach (productSpecFieldDefinitions($conn, $department) as $definition) {
+    $sourceKey = productSpecNormalizeSourceKey((string) ($definition['source_key'] ?? ''));
+    if ($sourceKey === '') {
+      continue;
+    }
+
+    $sortMap[$sourceKey] = (int) ($definition['field_sort_order'] ?? 999);
+  }
+
+  $groups = [
+    'spec_rows' => [],
+    'note_rows' => [],
+  ];
+
+  foreach ($options as $rawKey => $rawValue) {
+    if (!is_scalar($rawValue) && $rawValue !== null) {
+      continue;
+    }
+
+    $value = trim((string) $rawValue);
+    if ($value === '') {
+      continue;
+    }
+
+    $normalizedKey = productSpecNormalizeSourceKey((string) $rawKey);
+    if ($normalizedKey === '' || strpos($normalizedKey, '_') === 0) {
+      continue;
+    }
+    if (in_array($normalizedKey, ['category-info', 'name', 'number'], true)) {
+      continue;
+    }
+
+    $row = [
+      'label' => productSpecDisplayLabelForOptionKey($conn, (string) $rawKey, $department),
+      'value' => $value,
+      'sort_order' => $sortMap[$normalizedKey] ?? 999,
+    ];
+
+    if (in_array($normalizedKey, ['note', 'buyer-note', 'my-item-note'], true)) {
+      $groups['note_rows'][] = $row;
+      continue;
+    }
+
+    $groups['spec_rows'][] = $row;
+  }
+
+  $sortRows = static function (array &$rows): void {
+    usort($rows, static function (array $a, array $b): int {
+      $sortCompare = ((int) ($a['sort_order'] ?? 999)) <=> ((int) ($b['sort_order'] ?? 999));
+      if ($sortCompare !== 0) {
+        return $sortCompare;
+      }
+
+      return strnatcasecmp((string) ($a['label'] ?? ''), (string) ($b['label'] ?? ''));
+    });
+  };
+
+  $sortRows($groups['spec_rows']);
+  $sortRows($groups['note_rows']);
+
+  return $groups;
+}
+
 function customOrderRenderSpecFieldInput(mysqli $conn, array $definition, array $editOptions, array $selectedOrder, string $cssClass = '', string $extraAttr = ''): string
 {
   $specKey = trim((string) ($definition['spec_key'] ?? ''));
@@ -498,6 +566,7 @@ function customOrderRenderSpecFieldInput(mysqli $conn, array $definition, array 
 $customOrderHelpLang = customOrderResolveHelpLanguage();
 $graphicsMaterialOptions = customOrderLoadSpecDropdownOptions($conn, 'graphics_material');
 $graphicsFinishOptions = customOrderLoadSpecDropdownOptions($conn, 'graphics_finish');
+$graphicsSubcategoryLabels = customOrdersGraphicsSubcategoryLabels();
 $productSpecDefinitions = [
   'G' => productSpecFieldDefinitions($conn, 'G'),
   'P' => productSpecFieldDefinitions($conn, 'P'),
@@ -1513,7 +1582,8 @@ if (!isset(customOrdersAllowedItemTypes()[$builderType])) {
           <?php endforeach; ?>
         </datalist>
 
-        <div
+        <div id="custom-order-accounting-panel"
+          data-scroll-block
           class="custom-orders-panel mb-3<?= isset($invalidFields['customer_name']) || isset($invalidFields['social_handle']) || isset($invalidFields['shipping_name']) || isset($invalidFields['shipping_street']) || isset($invalidFields['shipping_city']) || isset($invalidFields['shipping_zip']) || isset($invalidFields['shipping_country']) || isset($invalidFields['customer_email']) || isset($invalidFields['shipping_email']) || isset($invalidFields['shipping_phone']) || isset($invalidFields['shipping_price']) ? ' custom-panel-invalid' : '' ?>">
           <div class="panel-body">
             <div class="custom-order-section-title">1. Accounting, Addresses And Production</div>
@@ -1527,7 +1597,7 @@ if (!isset(customOrdersAllowedItemTypes()[$builderType])) {
                 | by <?= h($selectedOrder['owner_assigned_by_name']) ?>
               <?php endif; ?>
             </div>
-            <form method="post" action="scripts/custom_orders/save_order.php">
+            <form method="post" action="scripts/custom_orders/save_order.php" data-scroll-target="#custom-order-accounting-panel">
               <input type="hidden" name="custom_order_id" value="<?= (int) $selectedOrder['id'] ?>">
               <div class="custom-order-subgrid">
                 <fieldset class="custom-field-cluster custom-form-full">
@@ -1537,6 +1607,27 @@ if (!isset(customOrdersAllowedItemTypes()[$builderType])) {
                     <div><label>Shipping<?= customOrderHelp('shipping_method') ?></label><input type="text" name="shipping_method" class="form-control form-control-sm" value="<?= h($selectedOrder['shipping_method']) ?>" placeholder="FedEx International Economy"></div>
                     <div><label class="<?= trim(customOrderInvalid($invalidFields, 'shipping_price')) ?>">Shipping price<?= customOrderHelp('shipping_price') ?></label><input type="number" step="0.01" name="shipping_price" class="form-control form-control-sm<?= customOrderInvalid($invalidFields, 'shipping_price') ?>" value="<?= h($selectedOrder['shipping_price']) ?>"></div>
                     <div><label>Currency<?= customOrderHelp('currency') ?></label><input type="text" name="currency" class="form-control form-control-sm" value="<?= h($selectedOrder['currency']) ?>"></div>
+                  </div>
+                </fieldset>
+
+                <fieldset class="custom-field-cluster custom-form-full">
+                  <legend class="custom-field-cluster-title">Lead Identity And Billing</legend>
+                  <div class="custom-form-grid">
+                    <div><label>Status<?= customOrderHelp('status') ?></label><select name="status" class="form-control form-control-sm"><?php foreach ($statuses as $code => $label): ?><option value="<?= h($code) ?>" <?= $selectedOrder['status'] === $code ? 'selected' : '' ?>><?= h($label) ?></option><?php endforeach; ?></select></div>
+                    <div><label>Source channel<?= customOrderHelp('source_channel') ?></label><input type="text" name="source_channel" class="form-control form-control-sm" value="<?= h($selectedOrder['source_channel']) ?>" placeholder="Instagram, WhatsApp, Email"></div>
+                    <div><label>Communication platform<?= customOrderHelp('social_platform') ?></label><input type="text" name="social_platform" class="form-control form-control-sm" value="<?= h($selectedOrder['social_platform']) ?>"></div>
+                    <div><label class="<?= trim(customOrderInvalid($invalidFields, 'social_handle')) ?>">Social handle<?= customOrderHelp('social_handle') ?></label><input type="text" name="social_handle" class="form-control form-control-sm<?= customOrderInvalid($invalidFields, 'social_handle') ?>" value="<?= h($selectedOrder['social_handle']) ?>" list="custom-contact-suggestions"></div>
+                    <div><label class="<?= trim(customOrderInvalid($invalidFields, 'customer_name')) ?>">Customer name<?= customOrderHelp('customer_name') ?></label><input type="text" name="customer_name" class="form-control form-control-sm<?= customOrderInvalid($invalidFields, 'customer_name') ?>" value="<?= h($selectedOrder['customer_name']) ?>" list="custom-contact-suggestions"></div>
+                    <div><label class="<?= trim(customOrderInvalid($invalidFields, 'customer_email')) ?>">Customer email<?= customOrderHelp('customer_email') ?></label><input type="text" name="customer_email" class="form-control form-control-sm<?= customOrderInvalid($invalidFields, 'customer_email') ?>" value="<?= h($selectedOrder['customer_email']) ?>"></div>
+                  </div>
+                </fieldset>
+
+                <fieldset class="custom-field-cluster custom-form-full">
+                  <legend class="custom-field-cluster-title">Order Financial Rules</legend>
+                  <div class="custom-form-grid-4">
+                    <div><label>Complexity<?= customOrderHelp('complexity_level') ?></label><input type="number" min="1" max="10" name="complexity_level" class="form-control form-control-sm" value="<?= (int) $selectedOrder['complexity_level'] ?>"></div>
+                    <div><label>Revisions included<?= customOrderHelp('deposit_revision_limit') ?></label><input type="number" name="deposit_revision_limit" class="form-control form-control-sm" value="<?= (int) $selectedOrder['deposit_revision_limit'] ?>"></div>
+                    <div><label>Revisions used<?= customOrderHelp('deposit_revision_used') ?></label><input type="number" name="deposit_revision_used" class="form-control form-control-sm" value="<?= (int) $selectedOrder['deposit_revision_used'] ?>"></div>
                   </div>
                 </fieldset>
 
@@ -1569,27 +1660,6 @@ if (!isset(customOrdersAllowedItemTypes()[$builderType])) {
                     <div class="custom-form-full"><label class="<?= trim(customOrderInvalid($invalidFields, 'shipping_phone')) ?>">Phone<?= customOrderHelp('shipping_phone') ?></label><input type="text" name="shipping_phone" class="form-control form-control-sm<?= customOrderInvalid($invalidFields, 'shipping_phone') ?>" value="<?= h($selectedOrder['shipping_phone']) ?>" placeholder="Phone"></div>
                   </div>
                 </fieldset>
-
-                <fieldset class="custom-field-cluster custom-form-full">
-                  <legend class="custom-field-cluster-title">Lead Identity And Billing</legend>
-                  <div class="custom-form-grid">
-                    <div><label>Status<?= customOrderHelp('status') ?></label><select name="status" class="form-control form-control-sm"><?php foreach ($statuses as $code => $label): ?><option value="<?= h($code) ?>" <?= $selectedOrder['status'] === $code ? 'selected' : '' ?>><?= h($label) ?></option><?php endforeach; ?></select></div>
-                    <div><label>Source channel<?= customOrderHelp('source_channel') ?></label><input type="text" name="source_channel" class="form-control form-control-sm" value="<?= h($selectedOrder['source_channel']) ?>" placeholder="Instagram, WhatsApp, Email"></div>
-                    <div><label>Communication platform<?= customOrderHelp('social_platform') ?></label><input type="text" name="social_platform" class="form-control form-control-sm" value="<?= h($selectedOrder['social_platform']) ?>"></div>
-                    <div><label class="<?= trim(customOrderInvalid($invalidFields, 'social_handle')) ?>">Social handle<?= customOrderHelp('social_handle') ?></label><input type="text" name="social_handle" class="form-control form-control-sm<?= customOrderInvalid($invalidFields, 'social_handle') ?>" value="<?= h($selectedOrder['social_handle']) ?>" list="custom-contact-suggestions"></div>
-                    <div><label class="<?= trim(customOrderInvalid($invalidFields, 'customer_name')) ?>">Customer name<?= customOrderHelp('customer_name') ?></label><input type="text" name="customer_name" class="form-control form-control-sm<?= customOrderInvalid($invalidFields, 'customer_name') ?>" value="<?= h($selectedOrder['customer_name']) ?>" list="custom-contact-suggestions"></div>
-                    <div><label class="<?= trim(customOrderInvalid($invalidFields, 'customer_email')) ?>">Customer email<?= customOrderHelp('customer_email') ?></label><input type="text" name="customer_email" class="form-control form-control-sm<?= customOrderInvalid($invalidFields, 'customer_email') ?>" value="<?= h($selectedOrder['customer_email']) ?>"></div>
-                  </div>
-                </fieldset>
-
-                <fieldset class="custom-field-cluster custom-form-full">
-                  <legend class="custom-field-cluster-title">Order Financial Rules</legend>
-                  <div class="custom-form-grid-4">
-                    <div><label>Complexity<?= customOrderHelp('complexity_level') ?></label><input type="number" min="1" max="10" name="complexity_level" class="form-control form-control-sm" value="<?= (int) $selectedOrder['complexity_level'] ?>"></div>
-                    <div><label>Revisions included<?= customOrderHelp('deposit_revision_limit') ?></label><input type="number" name="deposit_revision_limit" class="form-control form-control-sm" value="<?= (int) $selectedOrder['deposit_revision_limit'] ?>"></div>
-                    <div><label>Revisions used<?= customOrderHelp('deposit_revision_used') ?></label><input type="number" name="deposit_revision_used" class="form-control form-control-sm" value="<?= (int) $selectedOrder['deposit_revision_used'] ?>"></div>
-                  </div>
-                </fieldset>
               </div>
               <button type="submit" class="btn btn-success btn-sm mt-3">Save Accounting / Addresses</button>
             </form>
@@ -1597,9 +1667,9 @@ if (!isset(customOrdersAllowedItemTypes()[$builderType])) {
             <div class="custom-optical-divider"></div>
 
             <div class="custom-order-subgrid">
-              <fieldset class="custom-field-cluster">
+              <fieldset class="custom-field-cluster" id="custom-order-payments-block" data-scroll-block>
                 <legend class="custom-field-cluster-title">Payments And Deposits</legend>
-                <form method="post" action="scripts/custom_orders/save_payment.php">
+                <form method="post" action="scripts/custom_orders/save_payment.php" data-scroll-target="#custom-order-payments-block">
                   <input type="hidden" name="custom_order_id" value="<?= (int) $selectedOrder['id'] ?>">
                   <div class="custom-form-grid-4">
                     <div><label>Kind<?= customOrderHelp('payment_kind') ?></label><select name="payment_kind"
@@ -1639,7 +1709,7 @@ if (!isset(customOrdersAllowedItemTypes()[$builderType])) {
                         <td><?= customOrderTruncate((string) ($payment['note'] ?? ''), 42) ?></td>
                         <td><?= h($payment['received_at']) ?></td>
                         <td>
-                          <form method="post" action="scripts/custom_orders/delete_payment.php" onsubmit="return confirm('Delete this payment record?');">
+                          <form method="post" action="scripts/custom_orders/delete_payment.php" data-scroll-target="#custom-order-payments-block" onsubmit="return confirm('Delete this payment record?');">
                             <input type="hidden" name="custom_order_id" value="<?= (int) $selectedOrder['id'] ?>">
                             <input type="hidden" name="payment_id" value="<?= (int) $payment['id'] ?>">
                             <button type="submit" class="btn btn-danger btn-xs">Delete</button>
@@ -1687,10 +1757,10 @@ if (!isset(customOrdersAllowedItemTypes()[$builderType])) {
           </div>
         </div>
 
-        <div class="custom-orders-panel custom-order-block">
+        <div id="custom-order-service-panel" data-scroll-block class="custom-orders-panel custom-order-block">
           <div class="panel-body">
             <div class="custom-order-section-title">2. Customer Service Workspace</div>
-            <form method="post" action="scripts/custom_orders/save_order.php">
+            <form method="post" action="scripts/custom_orders/save_order.php" data-scroll-target="#custom-order-service-panel">
               <input type="hidden" name="custom_order_id" value="<?= (int) $selectedOrder['id'] ?>">
               <div class="custom-order-subgrid">
                 <fieldset class="custom-field-cluster">
@@ -1721,10 +1791,10 @@ if (!isset(customOrdersAllowedItemTypes()[$builderType])) {
             </form>
             <div class="custom-optical-divider"></div>
 
-            <fieldset class="custom-field-cluster">
+            <fieldset class="custom-field-cluster" id="custom-order-followups-block" data-scroll-block>
               <legend class="custom-field-cluster-title">Contact Attempts And Follow-ups</legend>
               <?php $deadOrderLocked = !empty($selectedOrder['exported_at']) || !empty($selectedOrder['production_order_id']) || (string) ($selectedOrder['status'] ?? '') === 'EXPORTED'; ?>
-              <form method="post" action="scripts/custom_orders/save_order.php" class="mb-3">
+              <form method="post" action="scripts/custom_orders/save_order.php" class="mb-3" data-scroll-target="#custom-order-followups-block">
                 <input type="hidden" name="custom_order_id" value="<?= (int) $selectedOrder['id'] ?>">
                 <input type="hidden" name="dead_order_flag" value="<?= $deadOrderLocked ? (int) $selectedOrder['dead_order_flag'] : 0 ?>">
                 <div class="custom-form-grid-4">
@@ -1743,7 +1813,7 @@ if (!isset(customOrdersAllowedItemTypes()[$builderType])) {
                 </div>
                 <button type="submit" class="btn btn-outline-light btn-sm mt-2">Save Follow-up Status</button>
               </form>
-              <form method="post" action="scripts/custom_orders/save_followup.php">
+              <form method="post" action="scripts/custom_orders/save_followup.php" data-scroll-target="#custom-order-followups-block">
                 <input type="hidden" name="custom_order_id" value="<?= (int) $selectedOrder['id'] ?>">
                 <div class="custom-form-grid-4">
                   <div><label>Contacted at<?= customOrderHelp('followup_contacted_at') ?></label><input
@@ -1778,13 +1848,15 @@ if (!isset(customOrdersAllowedItemTypes()[$builderType])) {
           </div>
         </div>
 
-        <div class="custom-orders-panel mb-3<?= isset($invalidFields['items']) ? ' custom-panel-invalid' : '' ?>">
+        <div id="custom-order-builder-panel" data-scroll-block class="custom-orders-panel mb-3<?= isset($invalidFields['items']) ? ' custom-panel-invalid' : '' ?>">
           <div class="panel-body">
             <div class="custom-order-section-title">3. Product Builder</div>
             <?php $editOptions = $editItem ? (json_decode((string) $editItem['options_json'], true) ?: []) : []; ?>
+            <?php $editInternalOptions = $editItem ? (json_decode((string) ($editItem['internal_options_json'] ?? ''), true) ?: []) : []; ?>
             <?php $currentBuilderType = $editItem ? strtoupper((string) ($editItem['item_type_code'] ?? '')) : $builderType; ?>
             <?php $currentBuilderDepartment = customOrdersItemTypeToDepartment($currentBuilderType); ?>
-            <form method="post" action="scripts/custom_orders/save_item.php">
+            <?php $currentBuilderSubcategory = $currentBuilderDepartment === 'G' ? customOrdersGraphicsSubcategoryFromItemData((string) ($editInternalOptions['_subcat'] ?? ''), (string) ($editItem['custom_label'] ?? ''), (string) ($editItem['sku'] ?? '')) : ''; ?>
+            <form method="post" action="scripts/custom_orders/save_item.php" data-scroll-target="#custom-order-builder-panel">
               <input type="hidden" name="custom_order_id" value="<?= (int) $selectedOrder['id'] ?>">
               <input type="hidden" name="custom_item_id" value="<?= (int) ($editItem['id'] ?? 0) ?>">
               <div class="custom-item-builder-shell">
@@ -1800,6 +1872,15 @@ if (!isset(customOrdersAllowedItemTypes()[$builderType])) {
                     <select name="item_type_code" class="form-control form-control-sm custom-item-type-select">
                       <option value="">Select kind...</option>
                       <?php foreach ($allowedTypes as $code => $label): ?><option value="<?= h($code) ?>" <?= ($currentBuilderType === $code) ? 'selected' : '' ?>><?= h($label) ?></option><?php endforeach; ?>
+                    </select>
+                  </div>
+                  <div class="custom-builder-picker-label" data-graphics-subcategory-wrap <?= $currentBuilderDepartment === 'G' ? '' : 'hidden' ?>>
+                    <label>Graphics subcategory</label>
+                    <select name="graphics_subcategory" class="form-control form-control-sm custom-graphics-subcategory-select">
+                      <option value="">General graphics</option>
+                      <?php foreach ($graphicsSubcategoryLabels as $subcatCode => $subcatLabel): ?>
+                        <option value="<?= h((string) $subcatCode) ?>" <?= $currentBuilderSubcategory === (string) $subcatCode ? 'selected' : '' ?>><?= h((string) $subcatLabel) ?></option>
+                      <?php endforeach; ?>
                     </select>
                   </div>
                 </div>
@@ -1856,7 +1937,7 @@ if (!isset(customOrdersAllowedItemTypes()[$builderType])) {
                             <button type="button" class="btn btn-xs btn-outline-info custom-builder-mini-btn" disabled>Detail</button>
                           </td>
                           <td style="min-width:140px;">
-                            <select class="form-control form-control-sm" disabled><option selected>RTP</option></select>
+                            <select class="form-control form-control-sm" disabled><option selected>NEW</option></select>
                           </td>
                           <td style="min-width:170px;">
                             <div class="input-group input-group-sm mb-1">
@@ -1876,49 +1957,62 @@ if (!isset(customOrdersAllowedItemTypes()[$builderType])) {
                         </tr>
 
                         <?php foreach ($productSpecDefinitions as $departmentCode => $definitions): ?>
-                          <?php $departmentMainFields = []; ?>
-                          <?php $departmentTextFields = []; ?>
-                          <?php foreach ($definitions as $definition): ?>
+                          <?php
+                          $subcatScopes = [''];
+                          if ($departmentCode === 'G') {
+                            $subcatScopes = array_merge($subcatScopes, array_keys($graphicsSubcategoryLabels));
+                          }
+                          ?>
+                          <?php foreach ($subcatScopes as $subcatScope): ?>
                             <?php
-                            $sourceKey = trim((string) ($definition['source_key'] ?? ''));
-                            $fieldType = trim((string) ($definition['field_type'] ?? 'dropdown'));
-                            if ($fieldType === 'text' || in_array($sourceKey, ['name', 'number', 'note', 'my-item-note'], true)) {
-                              $departmentTextFields[] = $definition;
-                            } else {
-                              $departmentMainFields[] = $definition;
+                            $filteredDefinitions = customOrdersFilterSpecDefinitionsForBuilder($definitions, $departmentCode, (string) $subcatScope);
+                            $departmentMainFields = [];
+                            $departmentTextFields = [];
+                            foreach ($filteredDefinitions as $definition) {
+                              $sourceKey = trim((string) ($definition['source_key'] ?? ''));
+                              $fieldType = trim((string) ($definition['field_type'] ?? 'dropdown'));
+                              if ($fieldType === 'text' || in_array($sourceKey, ['name', 'number', 'note', 'my-item-note'], true)) {
+                                $departmentTextFields[] = $definition;
+                              } else {
+                                $departmentMainFields[] = $definition;
+                              }
+                            }
+                            $rowVisible = $currentBuilderDepartment === $departmentCode;
+                            if ($rowVisible && $departmentCode === 'G') {
+                              $rowVisible = (string) $currentBuilderSubcategory === (string) $subcatScope;
                             }
                             ?>
+
+                            <?php if (!empty($departmentMainFields)): ?>
+                              <tr class="g-item-options-row <?= $currentBuilderType !== '' ? 'item-type-' . h($currentBuilderType) : '' ?> custom-item-spec-group" data-builder-row data-department="<?= h($departmentCode) ?>" data-subcategory="<?= h((string) $subcatScope) ?>" <?= $rowVisible ? '' : 'hidden' ?>>
+                                <td colspan="99">
+                                  <div class="g-options-bar">
+                                    <?php foreach ($departmentMainFields as $definition): ?>
+                                      <label class="product-spec-label">
+                                        <span class="product-spec-label-title"><?= h(customOrderBuilderSpecLabel($departmentCode, $definition)) ?></span>
+                                        <?= customOrderRenderSpecFieldInput($conn, $definition, $editOptions, $selectedOrder) ?>
+                                      </label>
+                                    <?php endforeach; ?>
+                                  </div>
+                                </td>
+                              </tr>
+                            <?php endif; ?>
+
+                            <?php if (!empty($departmentTextFields)): ?>
+                              <tr class="g-item-options-row <?= $currentBuilderType !== '' ? 'item-type-' . h($currentBuilderType) : '' ?> custom-item-spec-group" data-builder-row data-department="<?= h($departmentCode) ?>" data-subcategory="<?= h((string) $subcatScope) ?>" <?= $rowVisible ? '' : 'hidden' ?>>
+                                <td colspan="99">
+                                  <div class="g-options-bar">
+                                    <?php foreach ($departmentTextFields as $definition): ?>
+                                      <label class="product-spec-label">
+                                        <span class="product-spec-label-title"><?= h(customOrderBuilderSpecLabel($departmentCode, $definition)) ?></span>
+                                        <?= customOrderRenderSpecFieldInput($conn, $definition, $editOptions, $selectedOrder) ?>
+                                      </label>
+                                    <?php endforeach; ?>
+                                  </div>
+                                </td>
+                              </tr>
+                            <?php endif; ?>
                           <?php endforeach; ?>
-
-                          <?php if (!empty($departmentMainFields)): ?>
-                            <tr class="g-item-options-row <?= $currentBuilderType !== '' ? 'item-type-' . h($currentBuilderType) : '' ?> custom-item-spec-group" data-builder-row data-department="<?= h($departmentCode) ?>" <?= $currentBuilderDepartment === $departmentCode ? '' : 'hidden' ?>>
-                              <td colspan="99">
-                                <div class="g-options-bar">
-                                  <?php foreach ($departmentMainFields as $definition): ?>
-                                    <label class="product-spec-label">
-                                      <span class="product-spec-label-title"><?= h(customOrderBuilderSpecLabel($departmentCode, $definition)) ?></span>
-                                      <?= customOrderRenderSpecFieldInput($conn, $definition, $editOptions, $selectedOrder) ?>
-                                    </label>
-                                  <?php endforeach; ?>
-                                </div>
-                              </td>
-                            </tr>
-                          <?php endif; ?>
-
-                          <?php if (!empty($departmentTextFields)): ?>
-                            <tr class="g-item-options-row <?= $currentBuilderType !== '' ? 'item-type-' . h($currentBuilderType) : '' ?> custom-item-spec-group" data-builder-row data-department="<?= h($departmentCode) ?>" <?= $currentBuilderDepartment === $departmentCode ? '' : 'hidden' ?>>
-                              <td colspan="99">
-                                <div class="g-options-bar">
-                                  <?php foreach ($departmentTextFields as $definition): ?>
-                                    <label class="product-spec-label">
-                                      <span class="product-spec-label-title"><?= h(customOrderBuilderSpecLabel($departmentCode, $definition)) ?></span>
-                                      <?= customOrderRenderSpecFieldInput($conn, $definition, $editOptions, $selectedOrder) ?>
-                                    </label>
-                                  <?php endforeach; ?>
-                                </div>
-                              </td>
-                            </tr>
-                          <?php endif; ?>
                         <?php endforeach; ?>
 
                         <tr class="item-spacer-row" aria-hidden="true">
@@ -1942,7 +2036,7 @@ if (!isset(customOrdersAllowedItemTypes()[$builderType])) {
                 class="btn btn-success btn-sm mt-2"><?= $editItem ? 'Update Item' : 'Add Item' ?></button>
               <?php if ($editItem): ?>
                 <a href="index.php?page=custom_orders&custom_order_id=<?= (int) $selectedOrder['id'] ?>"
-                  class="btn btn-secondary btn-sm mt-2">Cancel Edit</a>
+                  class="btn btn-secondary btn-sm mt-2 custom-order-remember-position" data-scroll-target="#custom-order-builder-panel">Cancel Edit</a>
               <?php endif; ?>
             </form>
             <div class="custom-optical-divider"></div>
@@ -1980,8 +2074,8 @@ if (!isset(customOrdersAllowedItemTypes()[$builderType])) {
                       <button type="button" class="btn btn-info btn-xs" data-toggle="modal"
                         data-target="#<?= h($itemModalId) ?>">View</button>
                       <a href="index.php?page=custom_orders&custom_order_id=<?= (int) $selectedOrder['id'] ?>&edit_item_id=<?= (int) $item['id'] ?>"
-                        class="btn btn-secondary btn-xs">Edit</a>
-                      <form method="post" action="scripts/custom_orders/delete_item.php" style="display:inline-block;">
+                        class="btn btn-secondary btn-xs custom-order-remember-position" data-scroll-target="#custom-order-builder-panel">Edit</a>
+                      <form method="post" action="scripts/custom_orders/delete_item.php" style="display:inline-block;" data-scroll-target="#custom-order-builder-panel">
                         <input type="hidden" name="custom_order_id" value="<?= (int) $selectedOrder['id'] ?>">
                         <input type="hidden" name="custom_item_id" value="<?= (int) $item['id'] ?>">
                         <button type="submit" class="btn btn-danger btn-xs">Delete</button>
@@ -1994,6 +2088,7 @@ if (!isset(customOrdersAllowedItemTypes()[$builderType])) {
             <?php foreach ($selectedOrder['items'] as $item): ?>
               <?php $itemOptions = json_decode((string) ($item['options_json'] ?? ''), true) ?: []; ?>
               <?php $itemCategoryInfo = trim((string) ($itemOptions['category_info'] ?? '')); ?>
+              <?php $itemOptionGroups = customOrderItemOptionGroups($conn, (string) ($item['item_type_code'] ?? ''), $itemOptions); ?>
               <?php $itemModalId = 'custom-item-modal-' . (int) $item['id']; ?>
               <div class="modal fade custom-item-modal" id="<?= h($itemModalId) ?>" tabindex="-1" role="dialog"
                 aria-hidden="true">
@@ -2071,51 +2166,34 @@ if (!isset(customOrdersAllowedItemTypes()[$builderType])) {
                         <div class="custom-item-section">
                           <div class="custom-item-section-title">Specification</div>
                           <div class="custom-item-detail-grid">
-                            <div class="custom-item-detail-row">
-                              <div class="custom-item-detail-label">Material</div>
-                              <div class="custom-item-detail-value">
-                                <?= h((string) ($itemOptions['base-material'] ?? '-')) ?></div>
-                            </div>
-                            <div class="custom-item-detail-row">
-                              <div class="custom-item-detail-label">Finish</div>
-                              <div class="custom-item-detail-value">
-                                <?= h((string) ($itemOptions['graphics-finish'] ?? '-')) ?></div>
-                            </div>
-                            <div class="custom-item-detail-row">
-                              <div class="custom-item-detail-label">Grip</div>
-                              <div class="custom-item-detail-value"><?= h((string) ($itemOptions['grip'] ?? '-')) ?></div>
-                            </div>
-                            <div class="custom-item-detail-row">
-                              <div class="custom-item-detail-label">Tr. swingarms</div>
-                              <div class="custom-item-detail-value"><?= h((string) ($itemOptions['tr-swingarms'] ?? '-')) ?>
+                            <?php if (!empty($itemOptionGroups['spec_rows'])): ?>
+                              <?php foreach ($itemOptionGroups['spec_rows'] as $specRow): ?>
+                                <div class="custom-item-detail-row">
+                                  <div class="custom-item-detail-label"><?= h((string) ($specRow['label'] ?? '')) ?></div>
+                                  <div class="custom-item-detail-value"><?= h((string) ($specRow['value'] ?? '-')) ?></div>
+                                </div>
+                              <?php endforeach; ?>
+                            <?php else: ?>
+                              <div class="custom-item-detail-row is-full">
+                                <div class="custom-item-detail-label">Specification</div>
+                                <div class="custom-item-detail-value">-</div>
                               </div>
-                            </div>
-                            <div class="custom-item-detail-row">
-                              <div class="custom-item-detail-label">Patch style</div>
-                              <div class="custom-item-detail-value"><?= h((string) ($itemOptions['patch-style'] ?? '-')) ?>
-                              </div>
-                            </div>
-                            <div class="custom-item-detail-row">
-                              <div class="custom-item-detail-label">Waterproof seams</div>
-                              <div class="custom-item-detail-value">
-                                <?= h((string) ($itemOptions['waterproof-seams'] ?? '-')) ?></div>
-                            </div>
-                            <div class="custom-item-detail-row">
-                              <div class="custom-item-detail-label">Enduro pocket</div>
-                              <div class="custom-item-detail-value">
-                                <?= h((string) ($itemOptions['enduro-pocket'] ?? '-')) ?></div>
-                            </div>
-                            <div class="custom-item-detail-row">
-                              <div class="custom-item-detail-label">Side brand patches</div>
-                              <div class="custom-item-detail-value">
-                                <?= h((string) ($itemOptions['side-brand-patches'] ?? '-')) ?></div>
-                            </div>
+                            <?php endif; ?>
                           </div>
                         </div>
 
                         <div class="custom-item-section">
                           <div class="custom-item-section-title">Notes</div>
-                          <div class="custom-item-note-box"><?= h((string) ($itemOptions['note'] ?? '-')) ?></div>
+                          <?php if (!empty($itemOptionGroups['note_rows'])): ?>
+                            <?php foreach ($itemOptionGroups['note_rows'] as $noteRow): ?>
+                              <div class="custom-item-note-box mb-2">
+                                <strong><?= h((string) ($noteRow['label'] ?? '')) ?>:</strong><br>
+                                <?= nl2br(h((string) ($noteRow['value'] ?? '-'))) ?>
+                              </div>
+                            <?php endforeach; ?>
+                          <?php else: ?>
+                            <div class="custom-item-note-box">-</div>
+                          <?php endif; ?>
                         </div>
                       </div>
                     </div>
@@ -2154,24 +2232,32 @@ if (!isset(customOrdersAllowedItemTypes()[$builderType])) {
         <div class="custom-orders-panel">
           <div class="panel-body">
             <div class="custom-order-section-title">Recent Activity</div>
-            <table class="table table-sm table-dark table-striped custom-mini-table">
+            <?php $recentActivity = $selectedOrder['activity'] ?? []; ?>
+            <?php $recentActivityVisibleLimit = 5; ?>
+            <table class="table table-sm table-dark table-striped custom-mini-table" id="custom-order-recent-activity-table">
               <thead>
                 <tr>
                   <th>When</th>
+                  <th>Who</th>
                   <th>Action</th>
-                  <th>Note</th>
+                  <th>Detail</th>
                 </tr>
               </thead>
               <tbody>
-                <?php foreach ($selectedOrder['activity'] as $activity): ?>
-                  <tr>
+                <?php foreach ($recentActivity as $activityIndex => $activity): ?>
+                  <tr<?= $activityIndex >= $recentActivityVisibleLimit ? ' class="custom-activity-extra-row" hidden' : '' ?>>
                     <td><?= h($activity['created_at']) ?></td>
-                    <td><?= h($activity['action']) ?></td>
-                    <td><?= h($activity['note']) ?></td>
+                    <td><?= h(trim((string) ($activity['actor_name'] ?? '')) !== '' ? (string) $activity['actor_name'] : ((int) ($activity['actor_employee_id'] ?? 0) > 0 ? ('Employee #' . (int) $activity['actor_employee_id']) : 'System')) ?></td>
+                    <td><?= h(customOrdersActivityActionLabel((string) ($activity['action'] ?? ''))) ?></td>
+                    <td><?= h(customOrdersActivityDetail($activity)) ?></td>
                   </tr>
                 <?php endforeach; ?>
               </tbody>
             </table>
+            <?php if (count($recentActivity) > $recentActivityVisibleLimit): ?>
+              <button type="button" class="btn btn-outline-light btn-sm" id="custom-order-activity-toggle"
+                aria-expanded="false">Show more</button>
+            <?php endif; ?>
           </div>
         </div>
       <?php endif; ?>
@@ -2181,6 +2267,99 @@ if (!isset(customOrdersAllowedItemTypes()[$builderType])) {
 
 <script>
   (function () {
+    var customOrdersScrollStorageKey = 'custom-orders-scroll:' + window.location.pathname;
+    var customOrdersHighlightStorageKey = 'custom-orders-highlight:' + window.location.pathname;
+
+    function resolveScrollTargetSelector(element) {
+      if (!element) return '';
+      var explicitTarget = String(element.getAttribute('data-scroll-target') || '').trim();
+      if (explicitTarget !== '') {
+        return explicitTarget;
+      }
+      var nearestBlock = element.closest('[data-scroll-block]');
+      if (nearestBlock && nearestBlock.id) {
+        return '#' + nearestBlock.id;
+      }
+      return '';
+    }
+
+    function ensureHighlightStyles() {
+      if (document.getElementById('custom-orders-scroll-highlight-style')) {
+        return;
+      }
+      var style = document.createElement('style');
+      style.id = 'custom-orders-scroll-highlight-style';
+      style.textContent = ''
+        + '.custom-orders-scroll-highlight {'
+        + ' box-shadow: 0 0 0 1px rgba(53, 208, 127, 0.55), 0 0 0 10px rgba(53, 208, 127, 0.10);'
+        + ' transition: box-shadow 0.45s ease;'
+        + '}'
+        + '.custom-orders-scroll-highlight-fade {'
+        + ' transition: box-shadow 1.4s ease;'
+        + ' box-shadow: 0 0 0 1px rgba(53, 208, 127, 0), 0 0 0 0 rgba(53, 208, 127, 0);'
+        + '}';
+      document.head.appendChild(style);
+    }
+
+    function flashCustomOrdersTarget(target) {
+      if (!target) return;
+      ensureHighlightStyles();
+      target.classList.remove('custom-orders-scroll-highlight', 'custom-orders-scroll-highlight-fade');
+      void target.offsetWidth;
+      target.classList.add('custom-orders-scroll-highlight');
+      window.setTimeout(function () {
+        target.classList.add('custom-orders-scroll-highlight-fade');
+      }, 220);
+      window.setTimeout(function () {
+        target.classList.remove('custom-orders-scroll-highlight', 'custom-orders-scroll-highlight-fade');
+      }, 1900);
+    }
+
+    function rememberCustomOrdersScroll(element) {
+      try {
+        sessionStorage.setItem(customOrdersScrollStorageKey, String(window.scrollY || window.pageYOffset || 0));
+        var targetSelector = resolveScrollTargetSelector(element);
+        if (targetSelector !== '') {
+          sessionStorage.setItem(customOrdersHighlightStorageKey, targetSelector);
+        } else {
+          sessionStorage.removeItem(customOrdersHighlightStorageKey);
+        }
+      } catch (err) {
+      }
+    }
+
+    function restoreCustomOrdersScroll() {
+      try {
+        var stored = sessionStorage.getItem(customOrdersScrollStorageKey);
+        if (stored === null) {
+          return;
+        }
+        sessionStorage.removeItem(customOrdersScrollStorageKey);
+        var targetSelector = sessionStorage.getItem(customOrdersHighlightStorageKey);
+        if (targetSelector !== null) {
+          sessionStorage.removeItem(customOrdersHighlightStorageKey);
+        }
+        var top = parseInt(stored, 10);
+        if (!isNaN(top)) {
+          window.requestAnimationFrame(function () {
+            window.scrollTo(0, top);
+            if (targetSelector) {
+              window.setTimeout(function () {
+                flashCustomOrdersTarget(document.querySelector(targetSelector));
+              }, 140);
+            }
+          });
+        } else if (targetSelector) {
+          flashCustomOrdersTarget(document.querySelector(targetSelector));
+        }
+      } catch (err) {
+      }
+    }
+
+    restoreCustomOrdersScroll();
+    window.addEventListener('DOMContentLoaded', restoreCustomOrdersScroll);
+    window.addEventListener('load', restoreCustomOrdersScroll);
+
     function mapTypeToDepartment(typeCode) {
       var code = String(typeCode || '').toUpperCase();
       if (!code) return '';
@@ -2196,6 +2375,9 @@ if (!isset(customOrdersAllowedItemTypes()[$builderType])) {
       if (!form) return;
       var typeCode = String(selectEl.value || '').toUpperCase();
       var department = mapTypeToDepartment(typeCode);
+      var subcategoryWrap = form.querySelector('[data-graphics-subcategory-wrap]');
+      var subcategorySelect = form.querySelector('.custom-graphics-subcategory-select');
+      var subcategory = subcategorySelect ? String(subcategorySelect.value || '').toUpperCase() : '';
 
       form.querySelectorAll('[data-builder-body]').forEach(function (block) {
         block.hidden = typeCode === '';
@@ -2205,8 +2387,20 @@ if (!isset(customOrdersAllowedItemTypes()[$builderType])) {
         note.hidden = typeCode !== '';
       });
 
+      if (subcategoryWrap) {
+        subcategoryWrap.hidden = department !== 'G';
+      }
+      if (department !== 'G' && subcategorySelect) {
+        subcategorySelect.value = '';
+        subcategory = '';
+      }
+
       form.querySelectorAll('.custom-item-spec-group').forEach(function (group) {
-        group.hidden = !department || group.getAttribute('data-department') !== department;
+        var visible = !!department && group.getAttribute('data-department') === department;
+        if (visible && department === 'G') {
+          visible = String(group.getAttribute('data-subcategory') || '').toUpperCase() === subcategory;
+        }
+        group.hidden = !visible;
       });
 
       form.querySelectorAll('[data-builder-row]').forEach(function (row) {
@@ -2237,11 +2431,29 @@ if (!isset(customOrdersAllowedItemTypes()[$builderType])) {
       }
     }
 
+    document.querySelectorAll('form[action^="scripts/custom_orders/"]').forEach(function (form) {
+      form.addEventListener('submit', function () {
+        rememberCustomOrdersScroll(form);
+      });
+    });
+
+    document.querySelectorAll('a.custom-order-remember-position').forEach(function (link) {
+      link.addEventListener('click', function () {
+        rememberCustomOrdersScroll(link);
+      });
+    });
+
     document.querySelectorAll('form[action="scripts/custom_orders/save_item.php"]').forEach(function (form) {
       var typeSelect = form.querySelector('.custom-item-type-select');
+      var subcategorySelect = form.querySelector('.custom-graphics-subcategory-select');
       if (typeSelect) {
         syncCustomItemSpecGroups(typeSelect);
         typeSelect.addEventListener('change', function () {
+          syncCustomItemSpecGroups(typeSelect);
+        });
+      }
+      if (subcategorySelect && typeSelect) {
+        subcategorySelect.addEventListener('change', function () {
           syncCustomItemSpecGroups(typeSelect);
         });
       }
@@ -2266,5 +2478,17 @@ if (!isset(customOrdersAllowedItemTypes()[$builderType])) {
         }
       });
     });
+
+    var activityToggle = document.getElementById('custom-order-activity-toggle');
+    if (activityToggle) {
+      activityToggle.addEventListener('click', function () {
+        var expanded = activityToggle.getAttribute('aria-expanded') === 'true';
+        document.querySelectorAll('.custom-activity-extra-row').forEach(function (row) {
+          row.hidden = expanded;
+        });
+        activityToggle.setAttribute('aria-expanded', expanded ? 'false' : 'true');
+        activityToggle.textContent = expanded ? 'Show more' : 'Show less';
+      });
+    }
   })();
 </script>

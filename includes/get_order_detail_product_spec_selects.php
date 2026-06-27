@@ -49,6 +49,11 @@ function productSpecColumnExists(mysqli $conn, string $column): bool
   return $exists;
 }
 
+function productSpecFieldLabelColumnExists(mysqli $conn): bool
+{
+  return productSpecColumnExists($conn, 'field_label');
+}
+
 function productSpecOptions(mysqli $conn, string $specKey, array $fallbackOptions): array
 {
   static $cache = [];
@@ -227,6 +232,90 @@ function productSpecSourceKeyFromSpecKey(string $specKey, string $department): s
 
   return str_replace('_', '-', $source);
 }
+
+function productSpecNormalizeSourceKey(string $key): string
+{
+  $key = trim(mb_strtolower($key, 'UTF-8'));
+  $key = str_replace('_', '-', $key);
+  $key = preg_replace('/[^a-z0-9-]+/u', '-', $key) ?? $key;
+  $key = trim($key, '-');
+  return preg_replace('/-+/', '-', $key) ?? $key;
+}
+
+function productSpecHumanizeOptionKey(string $key): string
+{
+  static $overrides = [
+    'base-material' => 'Material',
+    'graphics-finish' => 'Finish',
+    'grip' => 'Grip',
+    'tr-swingarms' => 'Tr. Swingarms',
+    'printer' => 'Printer',
+    'name' => 'Rider Name',
+    'number' => 'Rider Number',
+    'patch-style' => 'Patch Style',
+    'waterproof-seams' => 'Waterproof Seams',
+    'enduro-pocket' => 'Enduro Pocket',
+    'side-brand-patches' => 'Side Brand Patches',
+    'my-item-note' => 'My Item Note',
+    'buyer-note' => 'Buyer Note',
+    'category-info' => 'Category Info',
+  ];
+
+  $normalized = productSpecNormalizeSourceKey($key);
+  if ($normalized !== '' && isset($overrides[$normalized])) {
+    return $overrides[$normalized];
+  }
+
+  $label = str_replace(['_', '-'], ' ', trim($key));
+  $label = preg_replace('/\s+/', ' ', $label) ?? $label;
+  $label = trim($label);
+
+  return $label !== '' ? mb_convert_case($label, MB_CASE_TITLE, 'UTF-8') : $key;
+}
+
+function productSpecDisplayLabelForOptionKey(mysqli $conn, string $optionKey, string $department = ''): string
+{
+  static $cache = [];
+
+  $normalizedOptionKey = productSpecNormalizeSourceKey($optionKey);
+  if ($normalizedOptionKey === '') {
+    return trim($optionKey);
+  }
+
+  $department = strtoupper(trim($department));
+  $cacheKey = $department . '|' . $normalizedOptionKey;
+  if (isset($cache[$cacheKey])) {
+    return $cache[$cacheKey];
+  }
+
+  $departmentsToCheck = [];
+  if ($department !== '') {
+    $departmentsToCheck[] = $department;
+  }
+  foreach (['G', 'S', 'P', 'F'] as $departmentCode) {
+    if (!in_array($departmentCode, $departmentsToCheck, true)) {
+      $departmentsToCheck[] = $departmentCode;
+    }
+  }
+
+  foreach ($departmentsToCheck as $departmentCode) {
+    foreach (productSpecFieldDefinitions($conn, $departmentCode) as $definition) {
+      $sourceKey = productSpecNormalizeSourceKey((string) ($definition['source_key'] ?? ''));
+      if ($sourceKey === '' || $sourceKey !== $normalizedOptionKey) {
+        continue;
+      }
+
+      $label = trim((string) ($definition['label'] ?? ''));
+      if ($label !== '') {
+        $cache[$cacheKey] = $label;
+        return $label;
+      }
+    }
+  }
+
+  $cache[$cacheKey] = productSpecHumanizeOptionKey($optionKey);
+  return $cache[$cacheKey];
+}
 /*
 function productSpecDefaultFieldDefinitions(string $department): array
 {
@@ -284,9 +373,13 @@ function productSpecFieldDefinitions(mysqli $conn, string $department): array
   $definitions = [];
   $seenSpecKeys = [];
   $hasFieldSortOrder = productSpecColumnExists($conn, 'field_sort_order');
+  $hasFieldLabel = productSpecFieldLabelColumnExists($conn);
   $fieldSortSelect = $hasFieldSortOrder
     ? 'COALESCE(MIN(field_sort_order), MIN(sort_order), 999) AS field_sort_order,'
     : 'MIN(sort_order) AS field_sort_order,';
+  $fieldLabelSelect = $hasFieldLabel
+    ? "COALESCE(NULLIF(MAX(field_label), ''), '') AS field_label,"
+    : "'' AS field_label,";
   $fieldSortOrderBy = $hasFieldSortOrder
     ? 'COALESCE(MIN(field_sort_order), MIN(sort_order), 999) ASC, MIN(id) ASC'
     : 'MIN(sort_order) ASC, MIN(id) ASC';
@@ -294,6 +387,7 @@ function productSpecFieldDefinitions(mysqli $conn, string $department): array
     SELECT
       spec_key,
       COALESCE(MAX(field_type), 'dropdown') AS field_type,
+      $fieldLabelSelect
       COALESCE(NULLIF(MAX(color), ''), '') AS source_key,
       $fieldSortSelect
       COALESCE(MAX(apply_to_subcategories), 0) AS apply_to_subcategories
@@ -316,7 +410,9 @@ function productSpecFieldDefinitions(mysqli $conn, string $department): array
         $definitions[] = [
           'spec_key' => $specKey,
           'field_type' => trim((string) ($row['field_type'] ?? 'dropdown')) ?: 'dropdown',
-          'label' => productSpecLabelFromKey($specKey, $department),
+          'label' => trim((string) ($row['field_label'] ?? '')) !== ''
+            ? trim((string) ($row['field_label'] ?? ''))
+            : productSpecLabelFromKey($specKey, $department),
           'source_key' => trim((string) ($row['source_key'] ?? '')) !== ''
             ? trim((string) ($row['source_key'] ?? ''))
             : productSpecSourceKeyFromSpecKey($specKey, $department),

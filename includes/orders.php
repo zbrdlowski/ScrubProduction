@@ -3099,38 +3099,11 @@ $deptOptions = [
     });
   });
 
-  $(document).on('click', '.btn-add-tracking', function () {
-    const orderId = $(this).data('order-id');
-    const $box = $(this).closest('.form-row');
-
-    const trackingNumber = $box.find('.tracking-number').val().trim();
-    const carrier = $box.find('.tracking-carrier').val().trim();
-
-    $.post('scripts/orders/add_tracking.php', {
-      order_id: orderId,
-      tracking_number: trackingNumber,
-      carrier: carrier
-    }, function (res) {
-      if (!res.ok) {
-        alert(res.error || 'Error');
-        return;
-      }
-
-      $box.find('.tracking-number').val('');
-      $box.find('.tracking-carrier').val('');
-
-      const $wrap = $('#detail-' + orderId);
-      $wrap.removeData('loaded').html('');
-      $('.btn-toggle-detail[data-order-id="' + orderId + '"]').click();
-
-    }, 'json');
-  });
-
   $(document).on('keypress', '.tracking-number', function (e) {
     if (e.which === 13) {
       e.preventDefault();
       e.stopPropagation();
-      $(this).closest('.form-row').find('.btn-add-tracking').click();
+      $(this).closest('.tracking-add-row, .form-row').find('.btn-add-tracking').trigger('click');
     }
   });
 
@@ -3200,22 +3173,6 @@ $deptOptions = [
     $wrap.removeData('loaded').html('');
     $('.btn-toggle-detail[data-order-id="' + orderId + '"]').click();
   }
-  $(document).on('click', '.btn-delete-tracking', function () {
-    const id = $(this).data('id');
-    const orderId = $(this).data('order-id');
-
-    if (!confirm('Delete tracking?')) return;
-
-    $.post('scripts/orders/delete_tracking.php', { id: id }, function (res) {
-      if (!res || !res.ok) {
-        alert(res && res.error ? res.error : 'Delete failed');
-        return;
-      }
-
-      reloadOrderDetail(orderId);
-    }, 'json');
-  });
-
   $(document).on('click', '.btn-delete-invoice', function () {
     const id = $(this).data('id');
     const orderId = $(this).data('order-id');

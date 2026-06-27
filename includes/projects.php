@@ -1259,7 +1259,7 @@ if ($viewId > 0) {
             </table>
             <?php if ($project['notes']): ?>
               <hr>
-              <p class="text-muted mb-0" style="font-size:13px;white-space:pre-wrap;">
+              <p class="text-muted mb-0" style="font-size:13px;white-space:pre-line;">
                 <?= htmlspecialchars($project['notes']) ?>
               </p>
             <?php endif; ?>
@@ -1379,10 +1379,7 @@ if ($viewId > 0) {
                   </select>
                 </div>
               </div>
-              <div class="form-group">
-                <label>Notes</label>
-                <textarea name="task_notes" class="form-control form-control-sm" rows="2"></textarea>
-              </div>
+              <div class="form-group"><label>Notes</label> <textarea name="task_notes" class="form-control form-control-sm" rows="2"></textarea></div>
             </div>
             <div class="modal-footer">
               <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancel</button>
@@ -1446,9 +1443,7 @@ if ($viewId > 0) {
                     </select>
                   </div>
                 </div>
-                <div class="form-group">
-                  <label>Notes</label>
-                  <textarea name="task_notes" id="editTaskNotes" class="form-control form-control-sm" rows="2"></textarea>
+                <div class="form-group"><label>Notes</label><textarea name="task_notes" id="editTaskNotes" class="form-control form-control-sm" rows="2"></textarea>
                 </div>
               </div>
               <div class="modal-footer">
@@ -1589,9 +1584,7 @@ if ($viewId > 0) {
                     <?php endforeach; ?>
                   </select>
                 </div>
-                <div class="form-group">
-                  <label>Description</label>
-                  <textarea name="description" class="form-control"
+                <div class="form-group"><label>Description</label><textarea name="description" class="form-control"
                     rows="2"><?= htmlspecialchars($project['description'] ?? '') ?></textarea>
                 </div>
                 <div class="form-row">
@@ -1631,9 +1624,7 @@ if ($viewId > 0) {
                       value="<?= htmlspecialchars($project['due_date'] ?? '') ?>">
                   </div>
                 </div>
-                <div class="form-group">
-                  <label>Notes</label>
-                  <textarea name="notes" class="form-control form-control-sm"
+                <div class="form-group"><label>Notes</label><textarea name="notes" class="form-control form-control-sm"
                     rows="3"><?= htmlspecialchars($project['notes'] ?? '') ?></textarea>
                 </div>
               </div>
@@ -2136,9 +2127,7 @@ if ($viewId > 0) {
                   <?php endforeach; ?>
                 </select>
               </div>
-              <div class="form-group">
-                <label>Description</label>
-                <textarea name="description" class="form-control" rows="2"></textarea>
+              <div class="form-group"><label>Description</label><textarea name="description" class="form-control" rows="2"></textarea>
               </div>
               <div class="form-row">
                 <div class="form-group col-md-4">
@@ -2176,9 +2165,7 @@ if ($viewId > 0) {
                   <input type="date" name="due_date" class="form-control form-control-sm">
                 </div>
               </div>
-              <div class="form-group">
-                <label>Notes</label>
-                <textarea name="notes" class="form-control form-control-sm" rows="3"></textarea>
+              <div class="form-group"><label>Notes</label><textarea name="notes" class="form-control form-control-sm" rows="3"></textarea>
               </div>
             </div>
             <div class="modal-footer">
@@ -2215,9 +2202,7 @@ if ($viewId > 0) {
                   <?php endforeach; ?>
                 </select>
               </div>
-              <div class="form-group">
-                <label>Description</label>
-                <textarea name="description" id="editDesc" class="form-control" rows="2"></textarea>
+              <div class="form-group"><label>Description</label><textarea name="description" id="editDesc" class="form-control" rows="2"></textarea>
               </div>
               <div class="form-row">
                 <div class="form-group col-md-4">
@@ -2255,9 +2240,7 @@ if ($viewId > 0) {
                   <input type="date" name="due_date" id="editDue" class="form-control form-control-sm">
                 </div>
               </div>
-              <div class="form-group">
-                <label>Notes</label>
-                <textarea name="notes" id="editNotes" class="form-control form-control-sm" rows="3"></textarea>
+              <div class="form-group"><label>Notes</label><textarea name="notes" id="editNotes" class="form-control form-control-sm" rows="3"></textarea>
               </div>
             </div>
             <div class="modal-footer">

@@ -1222,6 +1222,27 @@ function prepareEditableOptionsJsonForModal(string $json): string
   return jsonEncodeForModal($editable);
 }
 
+function optionLabelMapForModal(mysqli $conn, array $data, string $itemTypeCode = ''): array
+{
+  $department = productSpecDepartmentForItemType($itemTypeCode);
+  $labels = [];
+
+  foreach ($data as $key => $value) {
+    if ($value === null || $value === '' || is_array($value) || is_object($value)) {
+      continue;
+    }
+
+    $stringKey = (string) $key;
+    if ($stringKey === '' || strpos($stringKey, '_') === 0) {
+      continue;
+    }
+
+    $labels[$stringKey] = productSpecDisplayLabelForOptionKey($conn, $stringKey, $department);
+  }
+
+  return $labels;
+}
+
 // Hľadá prvú existujúcu a neprázdnu hodnotu z poľa kľúčov
 function optionValue(array $data, array $keys): string
 {
@@ -2878,10 +2899,10 @@ ob_start();
                 <?php $trackingStmt->close(); ?>
 
                 <?php if ((int) ($_SESSION['permission'] ?? 0) >= 300): ?>
-                  <div class="tracking-add-row mt-2">
+                  <div class="form-row tracking-add-row mt-2">
                     <input class="form-control form-control-sm tracking-number" placeholder="Tracking number">
                     <input class="form-control form-control-sm tracking-carrier" placeholder="Carrier">
-                    <button class="btn btn-sm btn-info btn-add-tracking" data-order-id="<?php echo (int) $orderId; ?>">
+                    <button type="button" class="btn btn-sm btn-info btn-add-tracking" data-order-id="<?php echo (int) $orderId; ?>">
                       Add Tracking
                     </button>
                   </div>
@@ -3626,6 +3647,7 @@ ob_start();
                 $formattedOptions = jsonEncodeForModal($modalOptionsRaw);
                 $formattedOptions = prepareOptionsJsonForModal($conn, $formattedOptions);
                 $editableOptions = prepareEditableOptionsJsonForModal(jsonEncodeForModal($modalOptionsRaw));
+                $optionLabels = jsonEncodeForModal(optionLabelMapForModal($conn, $modalOptionsRaw, (string) ($it['item_type_code'] ?? '')));
                 // Strip _printer/_print_material/_print_finish from modal display — they are shown separately
                 $internalOptForModal = $internalOptArr;
                 unset($internalOptForModal['_printer'], $internalOptForModal['_print_material'], $internalOptForModal['_print_finish'], $internalOptForModal['_print_grip'], $internalOptForModal['_print_tr_swingarms'], $internalOptForModal['_seat_cover_ops_confirmed']);
@@ -3635,6 +3657,7 @@ ob_start();
                   <button type="button" class="btn btn-xs btn-outline-info btn-view-options"
                     data-item-id="<?= (int) $it['id'] ?>" data-options="<?= h($formattedOptions) ?>"
                     data-options-raw="<?= h($editableOptions) ?>"
+                    data-option-labels="<?= h($optionLabels) ?>"
                     data-can-edit-options="<?= ((int) ($_SESSION['permission'] ?? 0) >= 300 ? '1' : '0') ?>"
                     data-internal-options="<?= h($internalOptions) ?>"
                     data-detail-title="<?= h($isPatchItem ? 'Patch Detail' : 'Product Detail') ?>"

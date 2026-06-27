@@ -25,11 +25,14 @@ if (!is_file($connFile)) {
 }
 require_once $connFile;
 
+$brand     = trim((string)($_POST['brand'] ?? ''));
+$model     = trim((string)($_POST['model'] ?? ''));
+$rangeyear = trim((string)($_POST['rangeyear'] ?? ''));
 $modelcode = trim((string)($_POST['modelcode'] ?? ''));
 $metaRaw   = trim((string)($_POST['meta_json'] ?? ''));
 
-if ($modelcode === '') {
-    out(400, ['ok' => false, 'error' => 'Missing modelcode']);
+if ($brand === '' || $model === '' || $rangeyear === '' || $modelcode === '') {
+    out(400, ['ok' => false, 'error' => 'Missing product identity']);
 }
 if ($metaRaw === '') {
     out(400, ['ok' => false, 'error' => 'Missing meta_json']);
@@ -45,8 +48,16 @@ if (!is_array($decoded)) {
 $metaClean = json_encode($decoded, JSON_UNESCAPED_UNICODE);
 
 // Overenie, že modelcode existuje
-$check = $conn->prepare("SELECT modelcode FROM scrubdata WHERE modelcode = ? LIMIT 1");
-$check->bind_param('s', $modelcode);
+$check = $conn->prepare("
+    SELECT lineid
+    FROM scrubdata
+    WHERE brand = ?
+      AND model = ?
+      AND rangeyear = ?
+      AND modelcode = ?
+    LIMIT 1
+");
+$check->bind_param('ssss', $brand, $model, $rangeyear, $modelcode);
 $check->execute();
 $exists = $check->get_result()->fetch_assoc();
 $check->close();
@@ -59,14 +70,14 @@ if (!$exists) {
 $updatedBy = (int)($_SESSION['user_id'] ?? 0) ?: null;
 
 $stmt = $conn->prepare("
-    INSERT INTO scrubdata_meta (modelcode, meta_json, updated_by)
-    VALUES (?, ?, ?)
+    INSERT INTO scrubdata_meta (brand, model, rangeyear, modelcode, meta_json, updated_by)
+    VALUES (?, ?, ?, ?, ?, ?)
     ON DUPLICATE KEY UPDATE
         meta_json  = VALUES(meta_json),
         updated_by = VALUES(updated_by),
         updated_at = CURRENT_TIMESTAMP
 ");
-$stmt->bind_param('ssi', $modelcode, $metaClean, $updatedBy);
+$stmt->bind_param('sssssi', $brand, $model, $rangeyear, $modelcode, $metaClean, $updatedBy);
 
 if (!$stmt->execute()) {
     out(500, ['ok' => false, 'error' => 'DB error: ' . $stmt->error]);

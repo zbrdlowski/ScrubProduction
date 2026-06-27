@@ -28,6 +28,18 @@ $stmt->bind_param('sii', $contactedAt, $userId, $orderId);
 $stmt->execute();
 $stmt->close();
 
-customOrdersLog($conn, $orderId, 'followup_added', $userId, ['followup_id' => $followupId, 'channel' => $channel], 'Follow-up logged');
+customOrdersLog(
+  $conn,
+  $orderId,
+  'followup_added',
+  $userId,
+  [
+    'followup_id' => $followupId,
+    'channel' => $channel,
+    'note' => $note,
+    'contacted_at' => $contactedAt,
+  ],
+  'Follow-up logged'
+);
 customOrdersFlash('success', 'Follow-up saved.');
 customOrdersRedirect($orderId);

@@ -32,6 +32,13 @@ $isUpsell = isset($_POST['is_upsell']) ? 1 : 0;
 $upsellSource = trim((string) ($_POST['upsell_source'] ?? ''));
 
 if ($itemId > 0) {
+  $existingItem = null;
+  $stmt = $conn->prepare('SELECT * FROM custom_order_items WHERE id = ? AND custom_order_id = ? LIMIT 1');
+  $stmt->bind_param('ii', $itemId, $orderId);
+  $stmt->execute();
+  $existingItem = $stmt->get_result()->fetch_assoc() ?: null;
+  $stmt->close();
+
   $stmt = $conn->prepare('
     UPDATE custom_order_items
     SET item_type_code = ?, sku = ?, title = ?, custom_label = ?, qty = ?, unit_price = ?,
@@ -41,7 +48,33 @@ if ($itemId > 0) {
   $stmt->bind_param('ssssidisssiii', $type, $sku, $title, $customLabel, $qty, $unitPrice, $isUpsell, $upsellSource, $payload['options_json'], $payload['internal_options_json'], $userId, $itemId, $orderId);
   $stmt->execute();
   $stmt->close();
-  customOrdersLog($conn, $orderId, 'item_updated', $userId, ['item_id' => $itemId, 'title' => $title], 'Custom item updated');
+
+  $itemAfter = [
+    'item_type_code' => $type,
+    'sku' => $sku,
+    'title' => $title,
+    'custom_label' => $customLabel,
+    'qty' => $qty,
+    'unit_price' => $unitPrice,
+    'is_upsell' => $isUpsell,
+    'upsell_source' => $upsellSource,
+  ];
+  $itemChanges = customOrdersActivityCollectChanges((array) $existingItem, $itemAfter, array_keys($itemAfter));
+  customOrdersLog(
+    $conn,
+    $orderId,
+    'item_updated',
+    $userId,
+    [
+      'item_id' => $itemId,
+      'title' => $title,
+      'item_type_code' => $type,
+      'qty' => $qty,
+      'unit_price' => $unitPrice,
+      'changes' => $itemChanges,
+    ],
+    $itemChanges ? ('Updated item fields: ' . count($itemChanges)) : 'Custom item updated'
+  );
   customOrdersFlash('success', 'Item updated.');
   customOrdersRedirect($orderId);
 }
@@ -58,6 +91,19 @@ $stmt->execute();
 $newItemId = (int) $stmt->insert_id;
 $stmt->close();
 
-customOrdersLog($conn, $orderId, 'item_added', $userId, ['item_id' => $newItemId, 'title' => $title], 'Custom item added');
+customOrdersLog(
+  $conn,
+  $orderId,
+  'item_added',
+  $userId,
+  [
+    'item_id' => $newItemId,
+    'title' => $title,
+    'item_type_code' => $type,
+    'qty' => $qty,
+    'unit_price' => $unitPrice,
+  ],
+  'Custom item added'
+);
 customOrdersFlash('success', 'Item added.');
 customOrdersRedirect($orderId);

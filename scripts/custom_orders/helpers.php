@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 require_once dirname(__DIR__, 2) . '/includes/get_order_detail_product_spec_selects.php';
+require_once dirname(__DIR__) . '/orders/department_config.php';
 
 function customOrdersFlash(string $type, string $message, array $meta = []): void
 {
@@ -115,6 +116,95 @@ function customOrdersItemTypeToDepartment(string $type): string
     default:
       return 'G';
   }
+}
+
+function customOrdersGraphicsSubcategoryLabels(): array
+{
+  return defined('GRAPHICS_SUBCAT_LABELS') && is_array(GRAPHICS_SUBCAT_LABELS)
+    ? GRAPHICS_SUBCAT_LABELS
+    : [];
+}
+
+function customOrdersNormalizeGraphicsSubcategory(?string $subcat): string
+{
+  $subcat = strtoupper(trim((string) $subcat));
+  $labels = customOrdersGraphicsSubcategoryLabels();
+  return isset($labels[$subcat]) ? $subcat : '';
+}
+
+function customOrdersGraphicsSubcategoryFromSpecKey(string $specKey, string $department): string
+{
+  if (strtoupper(trim($department)) !== 'G') {
+    return '';
+  }
+
+  static $slugMap = null;
+  if ($slugMap === null) {
+    $slugMap = [];
+    foreach (customOrdersGraphicsSubcategoryLabels() as $subCategoryCode => $_label) {
+      $slugMap[(string) $subCategoryCode] = strtolower((string) preg_replace('/[^a-z0-9]+/i', '_', (string) $subCategoryCode));
+    }
+  }
+
+  $normalizedSpecKey = strtolower(trim($specKey));
+  foreach ($slugMap as $subCategoryCode => $subCategorySlug) {
+    $prefix = 'graphics_' . $subCategorySlug . '_';
+    if (strpos($normalizedSpecKey, $prefix) === 0) {
+      return customOrdersNormalizeGraphicsSubcategory((string) $subCategoryCode);
+    }
+  }
+
+  return '';
+}
+
+function customOrdersGraphicsSubcategoryFromItemData(?string $storedSubcat, ?string $customLabel, ?string $sku): string
+{
+  $storedSubcat = customOrdersNormalizeGraphicsSubcategory($storedSubcat);
+  if ($storedSubcat !== '') {
+    return $storedSubcat;
+  }
+
+  $detected = dept_get_graphics_subcat($customLabel, $sku);
+  return customOrdersNormalizeGraphicsSubcategory($detected);
+}
+
+function customOrdersFilterSpecDefinitionsForBuilder(array $definitions, string $department, string $itemSubcat = ''): array
+{
+  $department = strtoupper(trim($department));
+  $itemSubcat = customOrdersNormalizeGraphicsSubcategory($itemSubcat);
+  $filtered = [];
+
+  foreach ($definitions as $definition) {
+    $fieldSubcategory = customOrdersGraphicsSubcategoryFromSpecKey(
+      (string) ($definition['spec_key'] ?? ''),
+      $department
+    );
+    $fieldAppliesToSubcategories = (int) ($definition['apply_to_subcategories'] ?? 0) === 1;
+
+    if ($department === 'G' && $itemSubcat !== '') {
+      if ($fieldSubcategory === '' && !$fieldAppliesToSubcategories) {
+        continue;
+      }
+    }
+
+    if ($fieldSubcategory !== '' && $fieldSubcategory !== $itemSubcat) {
+      continue;
+    }
+
+    $filtered[] = $definition;
+  }
+
+  usort($filtered, static function (array $a, array $b): int {
+    $ao = (int) ($a['field_sort_order'] ?? 999);
+    $bo = (int) ($b['field_sort_order'] ?? 999);
+    if ($ao !== $bo) {
+      return $ao <=> $bo;
+    }
+
+    return strcmp((string) ($a['spec_key'] ?? ''), (string) ($b['spec_key'] ?? ''));
+  });
+
+  return $filtered;
 }
 
 function customOrdersTableExists(mysqli $conn, string $table): bool
@@ -281,6 +371,247 @@ function customOrdersLog(mysqli $conn, int $orderId, string $action, ?int $actor
   $stmt->close();
 }
 
+function customOrdersActivityActionLabel(string $action): string
+{
+  $map = [
+    'created' => 'Created',
+    'header_updated' => 'Order updated',
+    'item_added' => 'Item added',
+    'item_updated' => 'Item updated',
+    'item_deleted' => 'Item deleted',
+    'payment_added' => 'Payment added',
+    'payment_deleted' => 'Payment deleted',
+    'followup_added' => 'Follow-up added',
+    'note_added' => 'Note added',
+    'owner_assigned' => 'Owner changed',
+    'official_number_assigned' => 'Official number assigned',
+    'exported' => 'Exported',
+  ];
+
+  $normalized = strtolower(trim($action));
+  if (isset($map[$normalized])) {
+    return $map[$normalized];
+  }
+
+  return ucwords(str_replace('_', ' ', $normalized));
+}
+
+function customOrdersActivityFieldLabels(): array
+{
+  return [
+    'status' => 'Status',
+    'complexity_level' => 'Complexity',
+    'source_channel' => 'Source channel',
+    'social_platform' => 'Communication platform',
+    'social_handle' => 'Social handle',
+    'customer_name' => 'Customer name',
+    'customer_email' => 'Customer email',
+    'customer_phone' => 'Customer phone',
+    'customer_country' => 'Customer country',
+    'bike_brand' => 'Bike brand',
+    'bike_model' => 'Bike model',
+    'bike_year' => 'Bike year',
+    'bike_details' => 'Bike details',
+    'rider_name' => 'Rider name',
+    'rider_number' => 'Rider number',
+    'payment_method' => 'Payment method',
+    'billing_name' => 'Billing name',
+    'billing_company' => 'Billing company',
+    'billing_company_id' => 'Billing company ID',
+    'billing_street' => 'Billing street',
+    'billing_city' => 'Billing city',
+    'billing_zip' => 'Billing ZIP',
+    'billing_country' => 'Billing country',
+    'billing_email' => 'Billing email',
+    'billing_phone' => 'Billing phone',
+    'shipping_name' => 'Shipping name',
+    'shipping_company' => 'Shipping company',
+    'shipping_company_id' => 'Shipping company ID',
+    'shipping_street' => 'Shipping street',
+    'shipping_city' => 'Shipping city',
+    'shipping_zip' => 'Shipping ZIP',
+    'shipping_country' => 'Shipping country',
+    'shipping_email' => 'Shipping email',
+    'shipping_phone' => 'Shipping phone',
+    'shipping_method' => 'Shipping method',
+    'shipping_price' => 'Shipping price',
+    'currency' => 'Currency',
+    'deposit_revision_limit' => 'Revisions included',
+    'deposit_revision_used' => 'Revisions used',
+    'graphics_brief' => 'Graphics brief',
+    'customer_notes' => 'Customer notes',
+    'internal_notes' => 'Internal notes',
+    'bike_photo_urls' => 'Bike photo URLs',
+    'reference_urls' => 'Reference URLs',
+    'last_contact_at' => 'Last contact',
+    'next_followup_at' => 'Next follow-up',
+    'dead_order_flag' => 'Dead order',
+    'item_type_code' => 'Item type',
+    'sku' => 'SKU',
+    'title' => 'Title',
+    'custom_label' => 'Custom label',
+    'qty' => 'Qty',
+    'unit_price' => 'Unit price',
+    'is_upsell' => 'Upsell',
+    'upsell_source' => 'Upsell source',
+  ];
+}
+
+function customOrdersActivityNormalizeValue($value): string
+{
+  if ($value === null) {
+    return '';
+  }
+  if (is_bool($value)) {
+    return $value ? '1' : '0';
+  }
+  if (is_int($value) || is_float($value)) {
+    return (string) $value;
+  }
+  if (is_array($value)) {
+    ksort($value);
+    return json_encode($value, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?: '';
+  }
+  return trim((string) $value);
+}
+
+function customOrdersActivityDisplayValue(string $field, $value): string
+{
+  if ($value === null || $value === '') {
+    return 'empty';
+  }
+
+  if (in_array($field, ['dead_order_flag', 'is_upsell'], true)) {
+    return ((int) $value) === 1 ? 'Yes' : 'No';
+  }
+
+  if (in_array($field, ['shipping_price', 'unit_price'], true) && is_numeric((string) $value)) {
+    return number_format((float) $value, 2, '.', '');
+  }
+
+  return trim((string) $value);
+}
+
+function customOrdersActivityCollectChanges(array $before, array $after, array $fields): array
+{
+  $labels = customOrdersActivityFieldLabels();
+  $changes = [];
+
+  foreach ($fields as $field) {
+    $beforeValue = $before[$field] ?? null;
+    $afterValue = $after[$field] ?? null;
+    if (customOrdersActivityNormalizeValue($beforeValue) === customOrdersActivityNormalizeValue($afterValue)) {
+      continue;
+    }
+
+    $changes[] = [
+      'field' => $field,
+      'label' => $labels[$field] ?? ucwords(str_replace('_', ' ', $field)),
+      'from' => customOrdersActivityDisplayValue($field, $beforeValue),
+      'to' => customOrdersActivityDisplayValue($field, $afterValue),
+    ];
+  }
+
+  return $changes;
+}
+
+function customOrdersActivityPayload(array $activity): array
+{
+  $payload = $activity['payload'] ?? [];
+  if (is_array($payload)) {
+    return $payload;
+  }
+
+  $decoded = json_decode((string) $payload, true);
+  return is_array($decoded) ? $decoded : [];
+}
+
+function customOrdersActivityDetail(array $activity): string
+{
+  $payload = customOrdersActivityPayload($activity);
+  $action = strtolower(trim((string) ($activity['action'] ?? '')));
+  $note = trim((string) ($activity['note'] ?? ''));
+
+  if (!empty($payload['changes']) && is_array($payload['changes'])) {
+    $parts = [];
+    foreach ($payload['changes'] as $change) {
+      $label = trim((string) ($change['label'] ?? $change['field'] ?? 'Change'));
+      $from = trim((string) ($change['from'] ?? 'empty'));
+      $to = trim((string) ($change['to'] ?? 'empty'));
+      $parts[] = $label . ': ' . $from . ' -> ' . $to;
+    }
+    if ($parts) {
+      return implode(' | ', $parts);
+    }
+  }
+
+  if ($action === 'item_added' || $action === 'item_updated') {
+    $parts = [];
+    if (!empty($payload['title'])) {
+      $parts[] = 'Title: ' . trim((string) $payload['title']);
+    }
+    if (!empty($payload['item_type_code'])) {
+      $parts[] = 'Type: ' . trim((string) $payload['item_type_code']);
+    }
+    if (isset($payload['qty'])) {
+      $parts[] = 'Qty: ' . (int) $payload['qty'];
+    }
+    if (isset($payload['unit_price'])) {
+      $parts[] = 'Price: ' . number_format((float) $payload['unit_price'], 2, '.', '');
+    }
+    if ($parts) {
+      return implode(' | ', $parts);
+    }
+  }
+
+  if ($action === 'item_deleted' && !empty($payload['title'])) {
+    return 'Deleted: ' . trim((string) $payload['title']);
+  }
+
+  if ($action === 'payment_added') {
+    $parts = [];
+    if (!empty($payload['kind'])) {
+      $parts[] = trim((string) $payload['kind']);
+    }
+    if (isset($payload['amount'])) {
+      $parts[] = number_format((float) $payload['amount'], 2, '.', '') . ' ' . trim((string) ($payload['currency'] ?? ''));
+    }
+    if (!empty($payload['note'])) {
+      $parts[] = trim((string) $payload['note']);
+    }
+    if ($parts) {
+      return implode(' | ', array_filter($parts));
+    }
+  }
+
+  if ($action === 'payment_deleted' && isset($payload['amount'])) {
+    return 'Deleted payment: ' . number_format((float) $payload['amount'], 2, '.', '') . ' ' . trim((string) ($payload['currency'] ?? ''));
+  }
+
+  if ($action === 'followup_added') {
+    $parts = [];
+    if (!empty($payload['channel'])) {
+      $parts[] = 'Channel: ' . trim((string) $payload['channel']);
+    }
+    if (!empty($payload['note'])) {
+      $parts[] = trim((string) $payload['note']);
+    }
+    if ($parts) {
+      return implode(' | ', $parts);
+    }
+  }
+
+  if ($action === 'official_number_assigned' && !empty($payload['official_order_number'])) {
+    return trim((string) $payload['official_order_number']);
+  }
+
+  if ($action === 'exported' && !empty($payload['production_order_id'])) {
+    return 'Production order #' . (int) $payload['production_order_id'];
+  }
+
+  return $note !== '' ? $note : '-';
+}
+
 function customOrdersCreateSkeleton(mysqli $conn, int $userId): int
 {
   $stmt = $conn->prepare('
@@ -412,7 +743,23 @@ function customOrdersNextLineNo(mysqli $conn, int $orderId): int
 function customOrdersItemPayloadFromPost(mysqli $conn, string $type = 'G'): array
 {
   $department = customOrdersItemTypeToDepartment($type);
-  $definitions = productSpecFieldDefinitions($conn, $department);
+  $selectedSubcat = '';
+  if ($department === 'G') {
+    $selectedSubcat = customOrdersNormalizeGraphicsSubcategory((string) ($_POST['graphics_subcategory'] ?? ''));
+    if ($selectedSubcat === '') {
+      $selectedSubcat = customOrdersGraphicsSubcategoryFromItemData(
+        null,
+        (string) ($_POST['custom_label'] ?? ''),
+        (string) ($_POST['sku'] ?? '')
+      );
+    }
+  }
+
+  $definitions = customOrdersFilterSpecDefinitionsForBuilder(
+    productSpecFieldDefinitions($conn, $department),
+    $department,
+    $selectedSubcat
+  );
 
   $options = [
     'category_info' => trim((string) ($_POST['category_info'] ?? '')),
@@ -467,6 +814,9 @@ function customOrdersItemPayloadFromPost(mysqli $conn, string $type = 'G'): arra
   $internal = [
     '_custom_source' => 'custom_orders_module',
   ];
+  if ($department === 'G' && $selectedSubcat !== '') {
+    $internal['_subcat'] = $selectedSubcat;
+  }
 
   return [
     'options_json' => json_encode($options, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
@@ -514,7 +864,16 @@ function customOrdersGetOrder(mysqli $conn, int $orderId): ?array
   }
 
   $order['activity'] = [];
-  $res = $conn->query('SELECT * FROM custom_order_activity WHERE custom_order_id = ' . (int) $orderId . ' ORDER BY created_at DESC, id DESC LIMIT 30');
+  $res = $conn->query("
+    SELECT
+      coa.*,
+      TRIM(CONCAT_WS(' ', e.firstname, e.lastname)) AS actor_name
+    FROM custom_order_activity coa
+    LEFT JOIN employees e ON e.id = coa.actor_employee_id
+    WHERE coa.custom_order_id = " . (int) $orderId . "
+    ORDER BY coa.created_at DESC, coa.id DESC
+    LIMIT 30
+  ");
   while ($row = $res->fetch_assoc()) {
     $order['activity'][] = $row;
   }

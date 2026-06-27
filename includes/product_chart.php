@@ -34,7 +34,11 @@ else
 // ── SQL pre hlavnú tabuľku ────────────────────────────────────────────────
 $sql_parts = "SELECT DISTINCT sd.brand, sd.model, sd.rangeyear, sd.modelcode, sm.meta_json
                FROM scrubdata sd
-               LEFT JOIN scrubdata_meta sm ON sm.modelcode = sd.modelcode";
+               LEFT JOIN scrubdata_meta sm
+                 ON sm.brand = sd.brand
+                AND sm.model = sd.model
+                AND sm.rangeyear = sd.rangeyear
+                AND sm.modelcode = sd.modelcode";
 $sql_where = [];
 $sql_params = [];
 $sql_types = '';
@@ -87,6 +91,30 @@ function badgePair(string $avail, string $web, string $linkHref = '#'): string
     if ($linkHref !== '#') {
         return '<a href="' . htmlspecialchars($linkHref) . '" class="badge-pair-link">' . $html . '</a>';
     }
+
+    return $html;
+}
+
+// ── Helper: 4 mini-badges pre blok "Configuration" (Y/N toggle polia) ─────
+function configBadges(array $meta): string
+{
+    $fields = [
+        'Create New Categories' => 'CNC',
+        'Add Filters'            => 'FLT',
+        'Add Accessories'        => 'ACC',
+        'Add Existing Designs'   => 'EXD',
+    ];
+
+    $html = '<span class="badge-pair config-badges">';
+    foreach ($fields as $field => $abbr) {
+        $val = metaVal($meta, 'Configuration', $field);
+        $isYes = ($val === 'yes');
+        $class = $isYes ? 'badge-success' : 'badge-danger';
+        $html .= '<span class="badge meta-status-badge config-mini-badge ' . $class . '" title="' . htmlspecialchars($field) . '">'
+            . $abbr
+            . '</span>';
+    }
+    $html .= '</span>';
 
     return $html;
 }
@@ -199,10 +227,24 @@ function badgePair(string $avail, string $web, string $linkHref = '#'): string
         min-width: 52px;
         padding: 7px 10px;
     }
-    .meta-status-badge{
-    min-width:34px !important;
-    padding:6px 10px !important;
-}
+
+    .meta-status-badge {
+        min-width: 34px !important;
+        padding: 6px 10px !important;
+    }
+
+    /* Config blok — 4 mini-badges (CNC/FLT/ACC/EXD) v jednej bunke */
+    #scrubTable td .meta-status-badge.config-mini-badge {
+        min-width: 38px !important;
+        padding: 5px 5px !important;
+        font-size: 0.68rem;
+        letter-spacing: 0.02em;
+    }
+
+    .config-badges {
+        flex-wrap: wrap;
+        gap: 4px !important;
+    }
 </style>
 
 <section class="content">
@@ -226,7 +268,8 @@ function badgePair(string $avail, string $web, string $linkHref = '#'): string
                                 $sel = ($r['brand'] === $scrubrand) ? ' selected' : '';
                                 ?>
                                 <option value="<?= htmlspecialchars($url) ?>" <?= $sel ?>>
-                                    <?= htmlspecialchars($r['brand']) ?></option>
+                                    <?= htmlspecialchars($r['brand']) ?>
+                                </option>
                             <?php endwhile; ?>
                         </select>
                     </td>
@@ -248,7 +291,8 @@ function badgePair(string $avail, string $web, string $linkHref = '#'): string
                                     $sel = ($r['model'] === $scrubmodel) ? ' selected' : '';
                                     ?>
                                     <option value="<?= htmlspecialchars($url) ?>" <?= $sel ?>>
-                                        <?= htmlspecialchars($r['model']) ?></option>
+                                        <?= htmlspecialchars($r['model']) ?>
+                                    </option>
                                 <?php endwhile;
                                 $stmt->close(); ?>
                             </select>
@@ -272,7 +316,8 @@ function badgePair(string $avail, string $web, string $linkHref = '#'): string
                                     $sel = ($r['rangeyear'] === $scrubrange) ? ' selected' : '';
                                     ?>
                                     <option value="<?= htmlspecialchars($url) ?>" <?= $sel ?>>
-                                        <?= htmlspecialchars($r['rangeyear']) ?></option>
+                                        <?= htmlspecialchars($r['rangeyear']) ?>
+                                    </option>
                                 <?php endwhile;
                                 $stmt->close(); ?>
                             </select>
@@ -309,6 +354,7 @@ function badgePair(string $avail, string $web, string $linkHref = '#'): string
                         <th style="background:#444242; color:#fff;">MODEL</th>
                         <th style="background:#444242; color:#fff;">RANGE</th>
                         <th style="background:#444242; color:#fff;">CODE</th>
+                        <th style="background:#444242; color:#fff; text-align:center;">CONFIG</th>
                         <th style="background:#444242; color:#fff; text-align:center;">GRAPHICS</th>
                         <th style="background:#444242; color:#fff; text-align:center;">PLASTICS</th>
                         <th style="background:#444242; color:#fff; text-align:center;">SEAT COVER</th>
@@ -325,9 +371,12 @@ function badgePair(string $avail, string $web, string $linkHref = '#'): string
                     } else {
                         $query = $conn->query($sql2);
                     }
-
+                                if (!$query) {
+    die('SQL ERROR main query: ' . $conn->error . '<br><pre>' . htmlspecialchars($sql2) . '</pre>');
+}
                     while ($row = $query->fetch_assoc()):
                         $code = $row['modelcode'];
+                        $rowkey = md5($row['brand'] . '|' . $row['model'] . '|' . $row['rangeyear'] . '|' . $row['modelcode']);
                         $meta = [];
                         if (!empty($row['meta_json'])) {
                             $decoded = json_decode($row['meta_json'], true);
@@ -345,7 +394,11 @@ function badgePair(string $avail, string $web, string $linkHref = '#'): string
 
                         $plasticsLink = 'index.php?page=scrublistings&modelcode=' . urlencode($code);
                         ?>
-                        <tr class="model-row" data-modelcode="<?= htmlspecialchars($code) ?>"
+                        <tr class="model-row" data-rowkey="<?= htmlspecialchars($rowkey) ?>"
+                            data-brand="<?= htmlspecialchars($row['brand']) ?>"
+                            data-model="<?= htmlspecialchars($row['model']) ?>"
+                            data-rangeyear="<?= htmlspecialchars($row['rangeyear']) ?>"
+                            data-modelcode="<?= htmlspecialchars($code) ?>"
                             data-meta="<?= htmlspecialchars(json_encode($meta, JSON_UNESCAPED_UNICODE)) ?>">
                             <td class="text-center" style="vertical-align:middle;">
                                 <i class="fas fa-chevron-right toggle-icon" style="font-size:0.75rem; color:#8eabc4;"></i>
@@ -354,6 +407,7 @@ function badgePair(string $avail, string $web, string $linkHref = '#'): string
                             <td><?= htmlspecialchars($row['model']) ?></td>
                             <td><?= htmlspecialchars($row['rangeyear']) ?></td>
                             <td class="text-center"><code><?= htmlspecialchars($code) ?></code></td>
+                            <td class="text-center"><?= configBadges($meta) ?></td>
 
                             <td class="text-center"><?= badgePair($gfx_avail, $gfx_web, '#') ?></td>
                             <td class="text-center"><?= badgePair($pls_avail, $pls_web, $plasticsLink) ?></td>
@@ -370,6 +424,7 @@ function badgePair(string $avail, string $web, string $linkHref = '#'): string
                         <th style="background:#444242; color:#fff;">MODEL</th>
                         <th style="background:#444242; color:#fff;">RANGE</th>
                         <th style="background:#444242; color:#fff;">CODE</th>
+                        <th style="background:#444242; color:#fff;">CONFIG</th>
                         <th style="background:#444242; color:#fff;">GRAPHICS</th>
                         <th style="background:#444242; color:#fff;">PLASTICS</th>
                         <th style="background:#444242; color:#fff;">SEAT COVER</th>
@@ -389,8 +444,12 @@ function badgePair(string $avail, string $web, string $linkHref = '#'): string
     } else {
         $query2 = $conn->query($sql2);
     }
+    if (!$query2) {
+    die('SQL ERROR detail query: ' . $conn->error . '<br><pre>' . htmlspecialchars($sql2) . '</pre>');
+}
     while ($row2 = $query2->fetch_assoc()):
-        $code2 = $row2['modelcode'];
+    $code2 = $row2['modelcode'];
+    $rowkey2 = md5($row2['brand'] . '|' . $row2['model'] . '|' . $row2['rangeyear'] . '|' . $row2['modelcode']);
         $meta2 = [];
         if (!empty($row2['meta_json'])) {
             $d = json_decode($row2['meta_json'], true);
@@ -398,36 +457,44 @@ function badgePair(string $avail, string $web, string $linkHref = '#'): string
                 $meta2 = $d;
         }
         ?>
-        <div class="scrub-detail-panel" id="detail-<?= htmlspecialchars($code2) ?>" style="display:none;">
+        <div class="scrub-detail-panel" id="detail-<?= htmlspecialchars($rowkey2) ?>" style="display:none;">
             <div class="scrub-detail-inner">
                 <div class="d-flex justify-content-between align-items-center mb-3">
-                    <span class="text-muted" style="font-size:0.85rem;">                        
+                    <span class="text-muted" style="font-size:0.85rem;">
                         <?= htmlspecialchars($row2['brand']) ?>
                         — <?= htmlspecialchars($row2['model']) ?>
                         (<?= htmlspecialchars($row2['rangeyear']) ?>)
                         <code><?= htmlspecialchars($code2) ?></code>
                     </span>
                     <button type="button" class="btn btn-sm btn-outline-warning btn-edit-model-meta"
+                        data-rowkey="<?= htmlspecialchars($rowkey2) ?>"
+                        data-brand="<?= htmlspecialchars($row2['brand']) ?>"
+                        data-model="<?= htmlspecialchars($row2['model']) ?>"
+                        data-rangeyear="<?= htmlspecialchars($row2['rangeyear']) ?>"
                         data-modelcode="<?= htmlspecialchars($code2) ?>">
                         <i class="fas fa-edit mr-1"></i> Edit meta
                     </button>
                 </div>
 
-                <div class="row meta-view-area" id="view-<?= htmlspecialchars($code2) ?>"></div>
+                <div class="row meta-view-area" id="view-<?= htmlspecialchars($rowkey2) ?>"></div>
 
-                <div class="meta-edit-area" id="edit-<?= htmlspecialchars($code2) ?>" style="display:none;">
+                <div class="meta-edit-area" id="edit-<?= htmlspecialchars($rowkey2) ?>" style="display:none;">
                     <div class="d-flex justify-content-between align-items-center mb-2">
                         <small class="text-muted">Pridaj alebo uprav bloky a fieldy.</small>
                         <button type="button" class="btn btn-sm btn-outline-info btn-add-meta-block"
-                            data-modelcode="<?= htmlspecialchars($code2) ?>">
+                            data-rowkey="<?= htmlspecialchars($rowkey2) ?>">
                             <i class="fas fa-plus mr-1"></i> Add block
                         </button>
                     </div>
-                    <div class="meta-blocks-editor" id="editor-<?= htmlspecialchars($code2) ?>"></div>
+                    <div class="meta-blocks-editor" id="editor-<?= htmlspecialchars($rowkey2) ?>"></div>
                     <div class="d-flex justify-content-end mt-2" style="gap:8px;">
                         <button type="button" class="btn btn-sm btn-secondary btn-cancel-meta-edit"
-                            data-modelcode="<?= htmlspecialchars($code2) ?>">Cancel</button>
+                        data-rowkey="<?= htmlspecialchars($rowkey2) ?>">Cancel</button>
                         <button type="button" class="btn btn-sm btn-success btn-save-model-meta"
+                            data-rowkey="<?= htmlspecialchars($rowkey2) ?>"
+                            data-brand="<?= htmlspecialchars($row2['brand']) ?>"
+                            data-model="<?= htmlspecialchars($row2['model']) ?>"
+                            data-rangeyear="<?= htmlspecialchars($row2['rangeyear']) ?>"
                             data-modelcode="<?= htmlspecialchars($code2) ?>">
                             <i class="fas fa-save mr-1"></i> Save
                         </button>
@@ -471,9 +538,9 @@ function badgePair(string $avail, string $web, string $linkHref = '#'): string
 
         // Render meta VIEW blokov
         $('#scrubTable tbody tr.model-row').each(function () {
-            const code = $(this).data('modelcode');
+            const rowkey = $(this).data('rowkey');
             const meta = $(this).data('meta') || {};
-            renderMetaView(code, meta);
+            renderMetaView(rowkey, meta);
         });
     });
 </script>

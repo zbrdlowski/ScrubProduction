@@ -107,3 +107,23 @@ function product_spec_column_exists(mysqli $conn, string $column): bool
   $cache[$column] = $exists;
   return $exists;
 }
+
+function ensure_product_spec_field_label_column(mysqli $conn): void
+{
+  static $done = false;
+
+  if ($done) {
+    return;
+  }
+
+  if (!product_spec_column_exists($conn, 'field_label')) {
+    $conn->query("
+      ALTER TABLE product_spec_options
+      ADD COLUMN field_label VARCHAR(190) NULL DEFAULT NULL AFTER field_type
+    ");
+  }
+
+  $done = true;
+}
+
+ensure_product_spec_field_label_column($conn);

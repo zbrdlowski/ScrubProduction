@@ -32,6 +32,19 @@ $stmt->execute();
 $paymentId = (int) $stmt->insert_id;
 $stmt->close();
 
-customOrdersLog($conn, $orderId, 'payment_added', $userId, ['payment_id' => $paymentId, 'kind' => $kind, 'amount' => $amount], 'Payment added');
+customOrdersLog(
+  $conn,
+  $orderId,
+  'payment_added',
+  $userId,
+  [
+    'payment_id' => $paymentId,
+    'kind' => $kind,
+    'amount' => $amount,
+    'currency' => $currency,
+    'note' => $note,
+  ],
+  'Payment added'
+);
 customOrdersFlash('success', 'Payment added.');
 customOrdersRedirect($orderId);

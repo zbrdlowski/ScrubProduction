@@ -107,6 +107,55 @@ $(document)
     }
   }
 
+  function getOptionLabelMap($btn) {
+    const raw = $btn.attr("data-option-labels") || "{}";
+
+    try {
+      const parsed = JSON.parse(raw);
+      return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+        ? parsed
+        : {};
+    } catch (e) {
+      return {};
+    }
+  }
+
+  function humanizeOptionKey(key) {
+    const normalized = String(key || "")
+      .trim()
+      .replace(/_/g, "-")
+      .toLowerCase();
+
+    const overrides = {
+      "base-material": "Material",
+      "graphics-finish": "Finish",
+      grip: "Grip",
+      "tr-swingarms": "Tr. Swingarms",
+      printer: "Printer",
+      name: "Rider Name",
+      number: "Rider Number",
+      "patch-style": "Patch Style",
+      "waterproof-seams": "Waterproof Seams",
+      "enduro-pocket": "Enduro Pocket",
+      "side-brand-patches": "Side Brand Patches",
+      "my-item-note": "My Item Note",
+      "buyer-note": "Buyer Note",
+      "category-info": "Category Info",
+    };
+
+    if (overrides[normalized]) {
+      return overrides[normalized];
+    }
+
+    return String(key || "")
+      .replace(/[_-]+/g, " ")
+      .replace(/\s+/g, " ")
+      .trim()
+      .replace(/\b\w/g, function (chr) {
+        return chr.toUpperCase();
+      });
+  }
+
   function stripProtectedOptions(data) {
     const copy = { ...(data || {}) };
 
@@ -118,7 +167,7 @@ $(document)
     return copy;
   }
 
-  function renderOptionsPretty(data) {
+  function renderOptionsPretty(data, labelMap = {}) {
     if (!data || Object.keys(data).length === 0) {
       return '<div class="text-muted">No options</div>';
     }
@@ -171,9 +220,9 @@ $(document)
       if (String(k).startsWith("_")) continue;
       if (typeof v === "object") continue;
 
-      let label = k;
+      let label = labelMap[k] || humanizeOptionKey(k);
 
-      if (k === "name-color") label = "number plates color";
+      if (k === "name-color") label = "Number Plates Color";
       if (k === "applyinggraphics") label = "Fitting";
 
       if (k === "number-font" || k === "name-font") {
@@ -627,6 +676,10 @@ $(document)
     });
   }
 
+  function findInlineActionRow($el, primarySelector) {
+    return $el.closest(primarySelector + ", .form-row");
+  }
+
   function triggerEnterSave($field) {
     function clickButton($btn, allowHidden) {
       $btn = $btn
@@ -655,12 +708,12 @@ $(document)
       return clickButton($headerEdit.find(".btn-save-order-header"), true);
     }
 
-    const $invoiceRow = $field.closest(".form-row");
+    const $invoiceRow = findInlineActionRow($field, ".invoice-add-row");
     if ($invoiceRow.find(".btn-add-invoice").length) {
       return clickButton($invoiceRow.find(".btn-add-invoice"));
     }
 
-    const $trackingRow = $field.closest(".form-row");
+    const $trackingRow = findInlineActionRow($field, ".tracking-add-row");
     if ($trackingRow.find(".btn-add-tracking").length) {
       return clickButton($trackingRow.find(".btn-add-tracking"));
     }
@@ -1073,6 +1126,7 @@ $(document)
         $btn.attr("data-detail-title") || "Product Detail",
       );
       const data = getOptionsData($btn);
+      const labelMap = getOptionLabelMap($btn);
       currentCustomerOptions = stripProtectedOptions(getRawOptionsData($btn));
       currentCanEditOptions =
         String($btn.attr("data-can-edit-options") || "0") === "1";
@@ -1081,7 +1135,7 @@ $(document)
         '<i class="fas fa-list-alt mr-1"></i> ' + escapeHtml(detailTitle),
       );
 
-      $("#customerOptionsView").html(renderOptionsPretty(data));
+      $("#customerOptionsView").html(renderOptionsPretty(data, labelMap));
       $("#customerOptionsEditBox").hide();
       $("#btnEditCustomerOptions").toggle(currentCanEditOptions);
 
@@ -1110,13 +1164,15 @@ $(document)
       e.preventDefault();
       e.stopPropagation();
 
-      const data = getOptionsData($(this));
+      const $btn = $(this);
+      const data = getOptionsData($btn);
+      const labelMap = getOptionLabelMap($btn);
       let text = "";
 
       for (let k in data) {
         if (k.startsWith("_")) continue;
         if (typeof data[k] === "object") continue;
-        text += `${k}: ${data[k]}\n`;
+        text += `${labelMap[k] || humanizeOptionKey(k)}: ${data[k]}\n`;
       }
 
       if (!text.trim()) {
@@ -1130,7 +1186,6 @@ $(document)
         copyTextFallback(text);
       }
 
-      const $btn = $(this);
       const oldText = $btn.text();
       $btn.text("COPIED");
       setTimeout(() => $btn.text(oldText), 1000);
@@ -1311,6 +1366,102 @@ $(document)
         },
       });
     });
+
+  $(document)
+    .off("click.orderDetailActionsTracking", ".btn-add-tracking")
+    .on("click.orderDetailActionsTracking", ".btn-add-tracking", function (e) {
+      e.preventDefault();
+      e.stopPropagation();
+
+      const $btn = $(this);
+      const orderId = parseInt($btn.data("order-id"), 10) || 0;
+      const $row = findInlineActionRow($btn, ".tracking-add-row");
+      const trackingNumber = $.trim(
+        String($row.find(".tracking-number").val() || ""),
+      );
+      const carrier = $.trim(String($row.find(".tracking-carrier").val() || ""));
+
+      if (!orderId || trackingNumber === "") {
+        alert("Missing tracking number");
+        return;
+      }
+
+      $btn.prop("disabled", true);
+
+      $.ajax({
+        url: "scripts/orders/add_tracking.php",
+        method: "POST",
+        dataType: "json",
+        data: {
+          order_id: orderId,
+          tracking_number: trackingNumber,
+          carrier: carrier,
+        },
+        success: function (resp) {
+          if (!resp || !resp.ok) {
+            alert(resp && resp.error ? resp.error : "Tracking save failed");
+            $btn.prop("disabled", false);
+            return;
+          }
+
+          $row.find(".tracking-number").val("");
+          $row.find(".tracking-carrier").val("");
+          refreshOrderDetail(orderId);
+        },
+        error: function (xhr) {
+          console.log(xhr.responseText);
+          alert("Tracking save request failed");
+          $btn.prop("disabled", false);
+        },
+      });
+    });
+
+  $(document)
+    .off("click.orderDetailActionsTrackingDelete", ".btn-delete-tracking")
+    .on(
+      "click.orderDetailActionsTrackingDelete",
+      ".btn-delete-tracking",
+      function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+
+        const $btn = $(this);
+        const id = parseInt($btn.data("id"), 10) || 0;
+        const orderId = parseInt($btn.data("order-id"), 10) || 0;
+
+        if (!id) {
+          alert("Missing tracking ID");
+          return;
+        }
+
+        if (!confirm("Delete tracking?")) {
+          return;
+        }
+
+        $btn.prop("disabled", true);
+
+        $.ajax({
+          url: "scripts/orders/delete_tracking.php",
+          method: "POST",
+          dataType: "json",
+          data: { id: id },
+          success: function (resp) {
+            if (!resp || !resp.ok) {
+              alert(resp && resp.error ? resp.error : "Delete failed");
+              $btn.prop("disabled", false);
+              return;
+            }
+
+            refreshOrderDetail(orderId);
+          },
+          error: function (xhr) {
+            console.log(xhr.responseText);
+            alert("Delete tracking request failed");
+            $btn.prop("disabled", false);
+          },
+        });
+      },
+    );
 
   $(document)
     .off("click.orderDetailActions", ".btn-edit-production-note")

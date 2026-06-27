@@ -426,6 +426,27 @@
   $currentSpecSubcategory = $currentSpecDepartment === 'G' ? $normalizeProductSpecSubcategory($currentSpecSubcategory) : '';
   $currentProductSpecCategoryKey = $currentSpecDepartment . '|' . $currentSpecSubcategory;
   $productSpecHasFieldSortOrder = false;
+  $productSpecHasFieldLabel = false;
+  $productSpecFieldLabelStmt = $conn->prepare("
+    SELECT 1
+    FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE()
+      AND TABLE_NAME = 'product_spec_options'
+      AND COLUMN_NAME = 'field_label'
+    LIMIT 1
+  ");
+  if ($productSpecFieldLabelStmt && $productSpecFieldLabelStmt->execute()) {
+    $productSpecFieldLabelResult = $productSpecFieldLabelStmt->get_result();
+    $productSpecHasFieldLabel = $productSpecFieldLabelResult && $productSpecFieldLabelResult->fetch_assoc() !== null;
+    $productSpecFieldLabelStmt->close();
+  }
+  if (!$productSpecHasFieldLabel) {
+    $conn->query("
+      ALTER TABLE product_spec_options
+      ADD COLUMN field_label VARCHAR(190) NULL DEFAULT NULL AFTER field_type
+    ");
+    $productSpecHasFieldLabel = true;
+  }
   $productSpecFieldSortStmt = $conn->prepare("
     SELECT 1
     FROM information_schema.COLUMNS
@@ -794,7 +815,10 @@
       <div class="card card-dark border-info settings-compact-card">
         <div class="card-header">
           <div class="d-flex align-items-center justify-content-between flex-nowrap settings-card-toolbar">
-            <h3 class="card-title mb-0 mr-3 flex-shrink-0">Product Specification Dropdowns</h3>
+            <div class="mr-3 flex-shrink-0">
+              <h3 class="card-title mb-0">Product Specification Dropdowns</h3>
+              <div class="small text-muted mt-1">`Field Label` je friendly name pola. `Option Label` je nazov konkretnej hodnoty. `Source Key` je pri editacii zamknuty, aby sa nerozbili importovane mapovania.</div>
+            </div>
 
             <div class="d-flex align-items-center flex-nowrap settings-card-actions product-spec-card-actions">
               <select class="form-control form-control-sm product-spec-key-filter">
@@ -826,10 +850,10 @@
                 <th style="background-color:gray; width:70px;">ID</th>
                 <th style="background-color:gray; width:90px;">Dept</th>
                 <th style="background-color:gray; width:100px;">Type</th>
-                <th style="background-color:gray; width:200px;">Field</th>
+                <th style="background-color:gray; width:200px;">Field Label</th>
                 <th style="background-color:gray; width:180px;">Source Key</th>
                 <th style="background-color:gray; width:110px;">Subcats</th>
-                <th style="background-color:gray;">Label</th>
+                <th style="background-color:gray;">Option Label</th>
                 <th style="background-color:gray;">Value</th>
                 <th style="background-color:gray; width:110px;">Field Order</th>
                 <th style="background-color:gray; width:110px;">Option Order</th>
@@ -840,8 +864,9 @@
             <tbody>
               <?php
               $fieldSortSelectSql = $productSpecHasFieldSortOrder ? 'field_sort_order' : 'sort_order AS field_sort_order';
+              $fieldLabelSelectSql = $productSpecHasFieldLabel ? 'field_label' : "'' AS field_label";
               $stmt = $conn->prepare("
-                SELECT id, spec_key, department, field_type, label, value, sort_order, $fieldSortSelectSql, active, color, apply_to_subcategories
+                SELECT id, spec_key, department, field_type, $fieldLabelSelectSql, label, value, sort_order, $fieldSortSelectSql, active, color, apply_to_subcategories
                 FROM product_spec_options
                 WHERE spec_key = ?
                   AND (? = '' OR department = ? OR department IS NULL)
@@ -859,6 +884,10 @@
                   if ($rowSourceKey === '') {
                     $rowSourceKey = $deriveProductSpecSourceKey((string) ($row['spec_key'] ?? ''), $rowDepartment);
                   }
+                  $rowFieldLabel = trim((string) ($row['field_label'] ?? ''));
+                  if ($rowFieldLabel === '') {
+                    $rowFieldLabel = $productSpecGroups[$rowGroupKey] ?? $buildProductSpecGroupLabel((string) $row['spec_key'], $rowDepartment, $rowSubcategory);
+                  }
                   $rowApplyToSubcategories = (int) ($row['apply_to_subcategories'] ?? 0) === 1 ? 1 : 0;
                   $rowCanApplyToSubcategories = ($rowDepartment === 'G' && $rowSubcategory === '');
                   ?>
@@ -868,6 +897,7 @@
                     data-subcategory="<?= htmlspecialchars($rowSubcategory, ENT_QUOTES, 'UTF-8'); ?>"
                     data-spec-group="<?= htmlspecialchars($rowGroupKey, ENT_QUOTES, 'UTF-8'); ?>"
                     data-source-key="<?= htmlspecialchars($rowSourceKey, ENT_QUOTES, 'UTF-8'); ?>"
+                    data-field-label="<?= htmlspecialchars($rowFieldLabel, ENT_QUOTES, 'UTF-8'); ?>"
                     data-field-sort-order="<?= (int) ($row['field_sort_order'] ?? $row['sort_order'] ?? 0); ?>"
                     data-apply-to-subcategories="<?= $rowApplyToSubcategories; ?>">
                     <td><?= (int) $row['id']; ?></td>
@@ -876,7 +906,7 @@
                       <?= htmlspecialchars($fieldTypeLabels[$row['field_type'] ?? 'dropdown'] ?? 'Dropdown', ENT_QUOTES, 'UTF-8'); ?>
                     </td>
                     <td class="spec-name-cell">
-                      <?= htmlspecialchars($productSpecGroups[$rowGroupKey] ?? $buildProductSpecGroupLabel((string) $row['spec_key'], $rowDepartment, $rowSubcategory), ENT_QUOTES, 'UTF-8'); ?>
+                      <?= htmlspecialchars($rowFieldLabel, ENT_QUOTES, 'UTF-8'); ?>
                     </td>
                     <td class="spec-sourcekey-cell"><?= htmlspecialchars($rowSourceKey, ENT_QUOTES, 'UTF-8'); ?></td>
                     <td class="spec-subcats-cell">
@@ -919,6 +949,35 @@
       const graphicsSubcategoryLabels = <?= json_encode($graphicsSubcategoryLabels, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES); ?>;
       const graphicsSubcategorySlugs = <?= json_encode($graphicsSubcategorySlugs, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES); ?>;
       const productSpecCategories = <?= json_encode($productSpecCategoryOptions, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES); ?>;
+      const controlsScrollStorageKey = 'controls-scroll:' + window.location.pathname;
+
+      window.__controllsRememberScroll = function () {
+        try {
+          sessionStorage.setItem(controlsScrollStorageKey, String(window.scrollY || window.pageYOffset || 0));
+        } catch (err) {
+        }
+      };
+
+      window.__controllsRestoreScroll = function () {
+        try {
+          const stored = sessionStorage.getItem(controlsScrollStorageKey);
+          if (stored === null) {
+            return;
+          }
+          sessionStorage.removeItem(controlsScrollStorageKey);
+          const top = parseInt(stored, 10);
+          if (!isNaN(top)) {
+            window.requestAnimationFrame(function () {
+              window.scrollTo(0, top);
+            });
+          }
+        } catch (err) {
+        }
+      };
+
+      window.__controllsRestoreScroll();
+      window.addEventListener('DOMContentLoaded', window.__controllsRestoreScroll);
+      window.addEventListener('load', window.__controllsRestoreScroll);
 
       function escapeHtml(value) {
         return String(value || '')
@@ -1094,6 +1153,7 @@
         const url = new URL(window.location.href);
         url.searchParams.set('spec_group', key);
         url.searchParams.delete('spec_key');
+        window.__controllsRememberScroll();
         window.location.href = url.toString();
       });
 
@@ -1105,16 +1165,17 @@
         const specGroup = $table.data('spec-group');
         const specName = specGroupLabels[specGroup] || buildProductSpecGroupLabel(specKey, department, subcategory);
         const sourceKey = String($table.find('tbody tr[data-source-key]').first().data('source-key') || $table.data('source-key') || '');
+        const fieldLabel = String($table.find('tbody tr[data-field-label]').first().data('field-label') || specName);
         const applyToSubcategories = parseInt($table.find('tbody tr[data-apply-to-subcategories]').first().data('apply-to-subcategories'), 10) === 1 ? 1 : 0;
         const canApplyToSubcategories = department === 'G' && !subcategory;
         const fieldSortOrder = parseInt($table.find('tbody tr[data-field-sort-order]').first().data('field-sort-order'), 10) || 0;
 
         const newRow = `
-      <tr class="new-product-spec-row" data-spec-key="${escapeHtml(specKey)}" data-department="${escapeHtml(department)}" data-subcategory="${escapeHtml(subcategory)}" data-spec-group="${escapeHtml(specGroup)}" data-apply-to-subcategories="${applyToSubcategories}" data-field-sort-order="${fieldSortOrder}">
+      <tr class="new-product-spec-row" data-spec-key="${escapeHtml(specKey)}" data-department="${escapeHtml(department)}" data-subcategory="${escapeHtml(subcategory)}" data-spec-group="${escapeHtml(specGroup)}" data-field-label="${escapeHtml(fieldLabel)}" data-apply-to-subcategories="${applyToSubcategories}" data-field-sort-order="${fieldSortOrder}">
         <td>&mdash;</td>
         <td>${escapeHtml(department)}</td>
         <td class="spec-fieldtype-cell">Option</td>
-        <td>${escapeHtml(specName)}</td>
+        <td class="spec-name-cell">${escapeHtml(fieldLabel)}</td>
         <td class="spec-sourcekey-cell">${escapeHtml(sourceKey)}</td>
         <td class="spec-subcats-cell">${canApplyToSubcategories ? (applyToSubcategories === 1 ? 'Yes' : 'No') : '&mdash;'}</td>
         <td><input type="text" class="form-control form-control-sm new-spec-label" placeholder="Option label"></td>
@@ -1174,6 +1235,10 @@
                       <option value="checkbox">Checkbox</option>
                       <option value="radio">Radio</option>
                     </select>
+                  </div>
+                  <div class="form-group">
+                    <label class="small text-muted mb-1">Field label</label>
+                    <input type="text" class="form-control form-control-sm new-field-label" placeholder="Accent 1">
                   </div>
                   <div class="form-group">
                     <label class="small text-muted mb-1">Source key from options_json</label>
@@ -1244,6 +1309,7 @@
         const parsedCategory = parseCategoryKey($row.find('.new-dropdown-category').val());
         const categoryKey = parsedCategory.categoryKey;
         const sourceKey = $row.find('.new-dropdown-source-key').val().trim();
+        const $fieldLabelInput = $row.find('.new-field-label');
         const currentSpecKey = $row.find('.new-dropdown-spec-key').val().trim();
         const specKey = shouldAutofillKey || currentSpecKey === ''
           ? buildSpecKeyFromSourceKey(categoryKey, sourceKey)
@@ -1252,9 +1318,13 @@
         if (shouldAutofillKey || currentSpecKey === '') {
           $row.find('.new-dropdown-spec-key').val(specKey);
         }
+        if ($fieldLabelInput.length && (shouldAutofillKey || $fieldLabelInput.val().trim() === '')) {
+          $fieldLabelInput.val(humanizeSpecToken(sourceKey || specKey));
+        }
 
         syncApplyToSubcategoriesVisibility($row);
-        $row.find('.new-dropdown-preview').text(buildProductSpecGroupLabel(specKey, parsedCategory.department, parsedCategory.subcategory));
+        const previewLabel = $fieldLabelInput.length ? $fieldLabelInput.val().trim() : '';
+        $row.find('.new-dropdown-preview').text(previewLabel !== '' ? previewLabel : buildProductSpecGroupLabel(specKey, parsedCategory.department, parsedCategory.subcategory));
       }
 
       $('.product-spec-options-table').on('change input', '.new-dropdown-category, .new-dropdown-source-key', function () {
@@ -1274,12 +1344,18 @@
         refreshNewDropdownPreview($row, false);
       });
 
+      $('.product-spec-options-table').on('input', '.new-field-label', function () {
+        const $row = $(this).closest('.new-product-spec-dropdown-row');
+        refreshNewDropdownPreview($row, false);
+      });
+
       $('.product-spec-options-table').on('click', '.confirm-product-spec-add', function () {
         const $row = $(this).closest('tr');
         const specKey = $row.data('spec-key');
         const department = normalizeDepartment($row.data('department'));
         const subcategory = normalizeSubcategory($row.data('subcategory'));
         const specGroup = $row.data('spec-group');
+        const fieldLabel = String($row.data('field-label') || '').trim();
         const label = $row.find('.new-spec-label').val().trim();
         const value = $row.find('.new-spec-value').val().trim();
         const fieldSortOrder = parseInt($row.find('.new-spec-field-sort').val(), 10) || 0;
@@ -1296,17 +1372,17 @@
           url: 'scripts/settings/insert_product_spec_option.php',
           method: 'POST',
           dataType: 'json',
-          data: { spec_key: specKey, department: department, source_key: String($row.closest('tr').data('source-key') || $('.product-spec-options-table tbody tr[data-source-key]').first().data('source-key') || $('.product-spec-options-table').data('source-key') || ''), label: label, value: value, field_sort_order: fieldSortOrder, sort_order: sortOrder, active: active, apply_to_subcategories: applyToSubcategories },
+          data: { spec_key: specKey, department: department, field_label: fieldLabel, source_key: String($row.closest('tr').data('source-key') || $('.product-spec-options-table tbody tr[data-source-key]').first().data('source-key') || $('.product-spec-options-table').data('source-key') || ''), label: label, value: value, field_sort_order: fieldSortOrder, sort_order: sortOrder, active: active, apply_to_subcategories: applyToSubcategories },
           success: function (data) {
             if (!data || !data.ok) {
               alert(data && data.error ? data.error : 'Insert failed.');
               return;
             }
-            const specName = specGroupLabels[specGroup] || buildProductSpecGroupLabel(specKey, department, subcategory);
+            const specName = fieldLabel || specGroupLabels[specGroup] || buildProductSpecGroupLabel(specKey, department, subcategory);
             const sourceKey = String($row.closest('tr').data('source-key') || $('.product-spec-options-table tbody tr[data-source-key]').first().data('source-key') || $('.product-spec-options-table').data('source-key') || '');
             const canApplyToSubcategories = department === 'G' && !subcategory;
             $row.replaceWith(`
-          <tr data-id="${data.id}" data-spec-key="${escapeHtml(specKey)}" data-department="${escapeHtml(department)}" data-subcategory="${escapeHtml(subcategory)}" data-spec-group="${escapeHtml(specGroup)}" data-source-key="${escapeHtml(sourceKey)}" data-apply-to-subcategories="${applyToSubcategories}" data-field-sort-order="${fieldSortOrder}">
+          <tr data-id="${data.id}" data-spec-key="${escapeHtml(specKey)}" data-department="${escapeHtml(department)}" data-subcategory="${escapeHtml(subcategory)}" data-spec-group="${escapeHtml(specGroup)}" data-source-key="${escapeHtml(sourceKey)}" data-field-label="${escapeHtml(specName)}" data-apply-to-subcategories="${applyToSubcategories}" data-field-sort-order="${fieldSortOrder}">
             <td>${data.id}</td>
             <td class="spec-department-cell">${escapeHtml(department)}</td>
             <td class="spec-fieldtype-cell">Option</td>
@@ -1374,6 +1450,7 @@
         const fieldType = $row.find('.new-dropdown-field-type').val() || 'dropdown';
         const sourceKey = $row.find('.new-dropdown-source-key').val().trim();
         const specKey = ensureSpecKeyMatchesCategory(categoryKey, $row.find('.new-dropdown-spec-key').val().trim(), sourceKey);
+        const fieldLabel = $row.find('.new-field-label').val().trim() || humanizeSpecToken(sourceKey || specKey);
         const fieldSortOrder = parseInt($row.find('.new-spec-field-sort').val(), 10) || 0;
         const sortOrder = parseInt($row.find('.new-spec-sort').val(), 10) || 0;
         const active = parseInt($row.find('.new-spec-active').val(), 10) || 0;
@@ -1413,6 +1490,7 @@
           data: {
             spec_key: specKey,
             department: department,
+            field_label: fieldLabel,
             source_key: sourceKey,
             field_type: fieldType,
             label: label,
@@ -1433,6 +1511,7 @@
             const url = new URL(window.location.href);
             url.searchParams.set('spec_group', groupKey);
             url.searchParams.delete('spec_key');
+            window.__controllsRememberScroll();
             window.location.href = url.toString();
           },
           error: function (xhr) {
@@ -1444,7 +1523,8 @@
       $('.product-spec-options-table').on('click', '.edit-product-spec-option', function (e) {
         e.preventDefault();
         const $row = $(this).closest('tr');
-        const sourceKey = $row.find('.spec-sourcekey-cell').text().trim();
+        const fieldLabel = String($row.data('field-label') || $row.find('.spec-name-cell').text().trim());
+        const sourceKey = String($row.data('source-key') || $row.find('.spec-sourcekey-cell').text().trim());
         const label = $row.find('.spec-label-cell').text().trim();
         const value = $row.find('.spec-value-cell').text().trim();
         const fieldSortOrder = $row.find('.spec-field-sort-cell').text().trim();
@@ -1453,7 +1533,8 @@
         const applyToSubcategories = String($row.data('apply-to-subcategories') || '0') === '1' ? '1' : '0';
         const canApplyToSubcategories = String($row.data('department') || '') === 'G' && String($row.data('subcategory') || '') === '';
 
-        $row.find('.spec-sourcekey-cell').html(`<input type="text" class="form-control form-control-sm spec-sourcekey-input" value="${escapeHtml(sourceKey)}">`);
+        $row.find('.spec-name-cell').html(`<input type="text" class="form-control form-control-sm spec-name-input" value="${escapeHtml(fieldLabel)}">`);
+        $row.find('.spec-sourcekey-cell').html(`<div class="text-muted small" title="Source Key is locked during edit">${escapeHtml(sourceKey)}</div>`);
         $row.find('.spec-subcats-cell').html(canApplyToSubcategories
           ? `<select class="form-control form-control-sm spec-subcats-input">
               <option value="0" ${applyToSubcategories === '0' ? 'selected' : ''}>No</option>
@@ -1478,7 +1559,8 @@
         e.preventDefault();
         const $row = $(this).closest('tr');
         const id = parseInt($row.data('id'), 10) || 0;
-        const sourceKey = $row.find('.spec-sourcekey-input').val().trim();
+        const fieldLabel = $row.find('.spec-name-input').val().trim();
+        const sourceKey = String($row.data('source-key') || '').trim();
         const label = $row.find('.spec-label-input').val().trim();
         const value = $row.find('.spec-value-input').val().trim();
         const fieldSortOrder = parseInt($row.find('.spec-field-sort-input').val(), 10) || 0;
@@ -1489,8 +1571,8 @@
           ? (parseInt($row.find('.spec-subcats-input').val(), 10) === 1 ? 1 : 0)
           : 0;
 
-        if (!id || label === '' || value === '') {
-          alert('Label and value are required.');
+        if (!id || fieldLabel === '' || label === '' || value === '') {
+          alert('Field, label and value are required.');
           return;
         }
 
@@ -1498,15 +1580,31 @@
           url: 'scripts/settings/update_product_spec_option.php',
           method: 'POST',
           dataType: 'json',
-          data: { id: id, source_key: sourceKey, label: label, value: value, field_sort_order: fieldSortOrder, sort_order: sortOrder, active: active, apply_to_subcategories: applyToSubcategories },
+          data: { id: id, field_label: fieldLabel, source_key: sourceKey, label: label, value: value, field_sort_order: fieldSortOrder, sort_order: sortOrder, active: active, apply_to_subcategories: applyToSubcategories },
           success: function (data) {
             if (!data || !data.ok) {
               alert(data && data.error ? data.error : 'Save failed.');
               return;
             }
+            const specKey = String($row.data('spec-key') || '');
+            const department = String($row.data('department') || '');
+            const originalSourceKey = String($row.data('source-key') || '');
+            $('.product-spec-options-table tbody tr').each(function () {
+              const $peer = $(this);
+              if (
+                String($peer.data('spec-key') || '') === specKey &&
+                String($peer.data('department') || '') === department &&
+                String($peer.data('source-key') || '') === originalSourceKey
+              ) {
+                $peer.attr('data-field-label', fieldLabel);
+                $peer.find('.spec-name-cell').text(fieldLabel);
+              }
+            });
+            $row.attr('data-field-label', fieldLabel);
             $row.attr('data-source-key', sourceKey);
             $row.attr('data-apply-to-subcategories', applyToSubcategories);
             $row.attr('data-field-sort-order', fieldSortOrder);
+            $row.find('.spec-name-cell').text(fieldLabel);
             $row.find('.spec-sourcekey-cell').text(sourceKey);
             $row.find('.spec-subcats-cell').html(canApplyToSubcategories ? (applyToSubcategories === 1 ? 'Yes' : 'No') : '&mdash;');
             $row.find('.spec-label-cell').text(label);
@@ -1577,6 +1675,9 @@
       $('.status-definition-group-filter').on('change', function () {
         const url = new URL(window.location.href);
         url.searchParams.set('status_group', $(this).val());
+        if (typeof window.__controllsRememberScroll === 'function') {
+          window.__controllsRememberScroll();
+        }
         window.location.href = url.toString();
       });
 

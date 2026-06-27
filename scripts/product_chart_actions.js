@@ -82,7 +82,13 @@ function renderMetaEditor(code, meta) {
         meta = {
             'Graphics': { 'Available': 'no', 'Web': 'no' },
             'Plastics': { 'Available': 'no', 'Web': 'no' },
-            'Seat Cover': { 'Available': 'no', 'Web': 'no' }
+            'Seat Cover': { 'Available': 'no', 'Web': 'no' },
+            'Configuration': {
+                'Create New Categories': 'yes',
+                'Add Filters': 'yes',
+                'Add Accessories': 'yes',
+                'Add Existing Designs': 'yes'
+            }
         };
     }
 
@@ -228,16 +234,17 @@ $(document)
     .on('click.scrubExpand', 'tr.model-row', function (e) {
         if ($(e.target).closest('a, button').length) return;
 
+        const rowkey = $(this).data('rowkey');
         const code = $(this).data('modelcode');
         const meta = $(this).data('meta') || {};
-        const $panel = $('#detail-' + code);
+        const $panel = $('#detail-' + rowkey);
         const $icon = $(this).find('.toggle-icon');
         const isOpen = $(this).hasClass('open');
 
         // Zatvor ostatné otvorené
         $('tr.model-row.open').not(this).each(function () {
-            const otherCode = $(this).data('modelcode');
-            const $otherPanel = $('#detail-' + otherCode);
+            const otherRowkey = $(this).data('rowkey');
+            const $otherPanel = $('#detail-' + otherRowkey);
             const $otherWrapper = $otherPanel.closest('tr.scrub-detail-wrapper');
             $otherPanel.slideUp(150, function () {
                 $otherWrapper.remove();
@@ -245,8 +252,8 @@ $(document)
             });
             $(this).removeClass('open');
             $(this).find('.toggle-icon').removeClass('fa-chevron-down').addClass('fa-chevron-right');
-            $('#edit-' + otherCode).hide();
-            $('#view-' + otherCode).show();
+            $('#edit-' + otherRowkey).hide();
+            $('#view-' + otherRowkey).show();
         });
 
         if (isOpen) {
@@ -258,10 +265,10 @@ $(document)
             $(this).removeClass('open');
             $icon.removeClass('fa-chevron-down').addClass('fa-chevron-right');
         } else {
-            renderMetaView(code, meta);
+            renderMetaView(rowkey, meta);
 
             // Obal panel do tr/td aby bol validný v tbody
-            const $wrapper = $('<tr class="scrub-detail-wrapper"><td colspan="8" style="padding:0; border-top:none;"></td></tr>');
+            const $wrapper = $('<tr class="scrub-detail-wrapper"><td colspan="9" style="padding:0; border-top:none;"></td></tr>');
             $wrapper.find('td').append($panel);
             $panel.css('display', 'none');
             $(this).after($wrapper);
@@ -279,11 +286,12 @@ $(document)
     .on('click.scrubEditMeta', '.btn-edit-model-meta', function (e) {
         e.stopPropagation();
         const code = $(this).data('modelcode');
-        const meta = $('tr.model-row[data-modelcode="' + code + '"]').data('meta') || {};
+        const rowkey = $(this).data('rowkey');
+        const meta = $('tr.model-row[data-rowkey="' + rowkey + '"]').data('meta') || {};
 
-        renderMetaEditor(code, meta);
-        $('#view-' + code).hide();
-        $('#edit-' + code).show();
+        renderMetaEditor(rowkey, meta);
+        $('#view-' + rowkey).hide();
+        $('#edit-' + rowkey).show();
         $(this).hide();
     });
 
@@ -293,10 +301,10 @@ $(document)
     .off('click.scrubCancelMeta', '.btn-cancel-meta-edit')
     .on('click.scrubCancelMeta', '.btn-cancel-meta-edit', function (e) {
         e.stopPropagation();
-        const code = $(this).data('modelcode');
-        $('#edit-' + code).hide();
-        $('#view-' + code).show();
-        $('.btn-edit-model-meta[data-modelcode="' + code + '"]').show();
+        const rowkey = $(this).data('rowkey');
+        $('#edit-' + rowkey).hide();
+        $('#view-' + rowkey).show();
+        $('.btn-edit-model-meta[data-rowkey="' + rowkey + '"]').show();
     });
 
 // ── Toggle switch → hidden input sync ─────────────────────────────────────
@@ -335,8 +343,8 @@ $(document)
     .off('click.scrubAddBlock', '.btn-add-meta-block')
     .on('click.scrubAddBlock', '.btn-add-meta-block', function (e) {
         e.stopPropagation();
-        const code = $(this).data('modelcode');
-        $('#editor-' + code).append(buildBlockEditorHtml('', {}));
+        const rowkey = $(this).data('rowkey');
+        $('#editor-' + rowkey).append(buildBlockEditorHtml('', {}));
     });
 
 // ── Add field (dropdown) ───────────────────────────────────────────────────
@@ -378,8 +386,9 @@ $(document)
     .on('click.scrubSaveMeta', '.btn-save-model-meta', function (e) {
         e.stopPropagation();
         const $btn = $(this);
+        const rowkey = $btn.data('rowkey');
         const code = $btn.data('modelcode');
-        const metaData = collectMetaEditorData(code);
+        const metaData = collectMetaEditorData(rowkey);
 
         $btn.prop('disabled', true).html('<i class="fas fa-spinner fa-spin mr-1"></i> Saving...');
 
@@ -388,6 +397,9 @@ $(document)
             method: 'POST',
             dataType: 'json',
             data: {
+                brand: $btn.data('brand'),
+                model: $btn.data('model'),
+                rangeyear: $btn.data('rangeyear'),
                 modelcode: code,
                 meta_json: JSON.stringify(metaData)
             },
@@ -399,7 +411,7 @@ $(document)
                 }
 
                 // Aktualizuj data-meta v riadku
-                const $row = $('tr.model-row[data-modelcode="' + code + '"]');
+                const $row = $('tr.model-row[data-rowkey="' + rowkey + '"]');
                 $row.data('meta', metaData);
 
                 // Refresh badges v riadku
@@ -424,18 +436,39 @@ $(document)
                         : html;
                 };
 
+                const makeConfigBadges = function (meta) {
+                    const fields = [
+                        ['Create New Categories', 'CNC'],
+                        ['Add Filters', 'FLT'],
+                        ['Add Accessories', 'ACC'],
+                        ['Add Existing Designs', 'EXD']
+                    ];
+                    let html = '<span class="badge-pair config-badges">';
+                    fields.forEach(function (f) {
+                        const key = f[0], abbr = f[1];
+                        const val = String(((meta['Configuration'] || {})[key] || 'no')).toLowerCase().trim();
+                        const isYes = val === 'yes';
+                        html += '<span class="badge meta-status-badge config-mini-badge ' +
+                            (isYes ? 'badge-success' : 'badge-danger') + '" title="' + pcEscHtml(key) + '">' +
+                            abbr + '</span>';
+                    });
+                    html += '</span>';
+                    return html;
+                };
+
                 const plasticsHref = 'index.php?page=scrublistings&modelcode=' + encodeURIComponent(code);
                 const $cells = $row.find('td');
 
-                $cells.eq(5).html(makeBadgePair(getVal('Graphics', 'Available'), getVal('Graphics', 'Web'), '#'));
-                $cells.eq(6).html(makeBadgePair(getVal('Plastics', 'Available'), getVal('Plastics', 'Web'), plasticsHref));
-                $cells.eq(7).html(makeBadgePair(getVal('Seat Cover', 'Available'), getVal('Seat Cover', 'Web'), '#'));
+                $cells.eq(5).html(makeConfigBadges(metaData));
+                $cells.eq(6).html(makeBadgePair(getVal('Graphics', 'Available'), getVal('Graphics', 'Web'), '#'));
+                $cells.eq(7).html(makeBadgePair(getVal('Plastics', 'Available'), getVal('Plastics', 'Web'), plasticsHref));
+                $cells.eq(8).html(makeBadgePair(getVal('Seat Cover', 'Available'), getVal('Seat Cover', 'Web'), '#'));
 
                 // Prepni späť na view
-                $('#edit-' + code).hide();
-                renderMetaView(code, metaData);
-                $('#view-' + code).show();
-                $('.btn-edit-model-meta[data-modelcode="' + code + '"]').show();
+                $('#edit-' + rowkey).hide();
+                renderMetaView(rowkey, metaData);
+                $('#view-' + rowkey).show();
+                $('.btn-edit-model-meta[data-rowkey="' + rowkey + '"]').show();
 
                 $btn.prop('disabled', false).html('<i class="fas fa-save mr-1"></i> Save');
 

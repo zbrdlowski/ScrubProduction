@@ -122,6 +122,18 @@ if (!$saved) {
   throw new RuntimeException('Failed to save custom order header.');
 }
 
-customOrdersLog($conn, $orderId, 'header_updated', $userId, ['status' => $data['status']], 'Header updated');
+$trackedFields = array_keys($data);
+$changes = customOrdersActivityCollectChanges($existing, $data, $trackedFields);
+customOrdersLog(
+  $conn,
+  $orderId,
+  'header_updated',
+  $userId,
+  [
+    'status' => $data['status'],
+    'changes' => $changes,
+  ],
+  $changes ? ('Updated ' . count($changes) . ' field(s)') : 'No visible field changes'
+);
 customOrdersFlash('success', 'Custom order saved.');
 customOrdersRedirect($orderId);
