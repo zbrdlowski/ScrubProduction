@@ -62,9 +62,11 @@ if ($fieldType === 'text') {
 
 $hasApplyToSubcategories = product_spec_column_exists($conn, 'apply_to_subcategories');
 $hasFieldSortOrder = product_spec_column_exists($conn, 'field_sort_order');
+$hasFieldLabel = product_spec_column_exists($conn, 'field_label');
+$storedFieldMeta = product_spec_encode_field_meta($sourceKey, $fieldLabel, $hasFieldLabel);
 $insertColumns = ['spec_key', 'department', 'field_type', 'label', 'value', 'sort_order', 'active', 'color'];
 $placeholders = ['?', '?', '?', '?', '?', '?', '?', '?'];
-if (product_spec_column_exists($conn, 'field_label')) {
+if ($hasFieldLabel) {
   array_splice($insertColumns, 3, 0, ['field_label']);
   array_splice($placeholders, 3, 0, ['?']);
 }
@@ -81,22 +83,22 @@ $insertSql = "INSERT INTO product_spec_options (" . implode(', ', $insertColumns
 
 $stmt = $conn->prepare($insertSql);
 if (!$stmt) out_json(500, ['ok' => false, 'error' => mysqli_error($conn)]);
-if (product_spec_column_exists($conn, 'field_label') && $hasFieldSortOrder && $hasApplyToSubcategories) {
-  $stmt->bind_param('ssssssiisii', $specKey, $department, $fieldType, $fieldLabel, $label, $value, $sortOrder, $active, $sourceKey, $fieldSortOrder, $applyToSubcategories);
-} elseif (product_spec_column_exists($conn, 'field_label') && $hasFieldSortOrder) {
-  $stmt->bind_param('ssssssiisi', $specKey, $department, $fieldType, $fieldLabel, $label, $value, $sortOrder, $active, $sourceKey, $fieldSortOrder);
-} elseif (product_spec_column_exists($conn, 'field_label') && $hasApplyToSubcategories) {
-  $stmt->bind_param('ssssssiisi', $specKey, $department, $fieldType, $fieldLabel, $label, $value, $sortOrder, $active, $sourceKey, $applyToSubcategories);
-} elseif (product_spec_column_exists($conn, 'field_label')) {
-  $stmt->bind_param('ssssssiis', $specKey, $department, $fieldType, $fieldLabel, $label, $value, $sortOrder, $active, $sourceKey);
+if ($hasFieldLabel && $hasFieldSortOrder && $hasApplyToSubcategories) {
+  $stmt->bind_param('ssssssiisii', $specKey, $department, $fieldType, $fieldLabel, $label, $value, $sortOrder, $active, $storedFieldMeta, $fieldSortOrder, $applyToSubcategories);
+} elseif ($hasFieldLabel && $hasFieldSortOrder) {
+  $stmt->bind_param('ssssssiisi', $specKey, $department, $fieldType, $fieldLabel, $label, $value, $sortOrder, $active, $storedFieldMeta, $fieldSortOrder);
+} elseif ($hasFieldLabel && $hasApplyToSubcategories) {
+  $stmt->bind_param('ssssssiisi', $specKey, $department, $fieldType, $fieldLabel, $label, $value, $sortOrder, $active, $storedFieldMeta, $applyToSubcategories);
+} elseif ($hasFieldLabel) {
+  $stmt->bind_param('ssssssiis', $specKey, $department, $fieldType, $fieldLabel, $label, $value, $sortOrder, $active, $storedFieldMeta);
 } elseif ($hasFieldSortOrder && $hasApplyToSubcategories) {
-  $stmt->bind_param('sssssiisii', $specKey, $department, $fieldType, $label, $value, $sortOrder, $active, $sourceKey, $fieldSortOrder, $applyToSubcategories);
+  $stmt->bind_param('sssssiisii', $specKey, $department, $fieldType, $label, $value, $sortOrder, $active, $storedFieldMeta, $fieldSortOrder, $applyToSubcategories);
 } elseif ($hasFieldSortOrder) {
-  $stmt->bind_param('sssssiisi', $specKey, $department, $fieldType, $label, $value, $sortOrder, $active, $sourceKey, $fieldSortOrder);
+  $stmt->bind_param('sssssiisi', $specKey, $department, $fieldType, $label, $value, $sortOrder, $active, $storedFieldMeta, $fieldSortOrder);
 } elseif ($hasApplyToSubcategories) {
-  $stmt->bind_param('sssssiisi', $specKey, $department, $fieldType, $label, $value, $sortOrder, $active, $sourceKey, $applyToSubcategories);
+  $stmt->bind_param('sssssiisi', $specKey, $department, $fieldType, $label, $value, $sortOrder, $active, $storedFieldMeta, $applyToSubcategories);
 } else {
-  $stmt->bind_param('sssssiis', $specKey, $department, $fieldType, $label, $value, $sortOrder, $active, $sourceKey);
+  $stmt->bind_param('sssssiis', $specKey, $department, $fieldType, $label, $value, $sortOrder, $active, $storedFieldMeta);
 }
 if (!$stmt->execute()) out_json(500, ['ok' => false, 'error' => $stmt->error]);
 $insertedId = (int) $stmt->insert_id;
@@ -110,22 +112,22 @@ if ($autoCheckbox) {
   $insertSql2 = $insertSql;
   $stmt2 = $conn->prepare($insertSql2);
   if ($stmt2) {
-    if (product_spec_column_exists($conn, 'field_label') && $hasFieldSortOrder && $hasApplyToSubcategories) {
-      $stmt2->bind_param('ssssssiisii', $specKey, $department, $fieldType, $fieldLabel, $labelNo, $valueNo, $sortNo, $active, $sourceKey, $fieldSortOrder, $applyToSubcategories);
-    } elseif (product_spec_column_exists($conn, 'field_label') && $hasFieldSortOrder) {
-      $stmt2->bind_param('ssssssiisi', $specKey, $department, $fieldType, $fieldLabel, $labelNo, $valueNo, $sortNo, $active, $sourceKey, $fieldSortOrder);
-    } elseif (product_spec_column_exists($conn, 'field_label') && $hasApplyToSubcategories) {
-      $stmt2->bind_param('ssssssiisi', $specKey, $department, $fieldType, $fieldLabel, $labelNo, $valueNo, $sortNo, $active, $sourceKey, $applyToSubcategories);
-    } elseif (product_spec_column_exists($conn, 'field_label')) {
-      $stmt2->bind_param('ssssssiis', $specKey, $department, $fieldType, $fieldLabel, $labelNo, $valueNo, $sortNo, $active, $sourceKey);
+    if ($hasFieldLabel && $hasFieldSortOrder && $hasApplyToSubcategories) {
+      $stmt2->bind_param('ssssssiisii', $specKey, $department, $fieldType, $fieldLabel, $labelNo, $valueNo, $sortNo, $active, $storedFieldMeta, $fieldSortOrder, $applyToSubcategories);
+    } elseif ($hasFieldLabel && $hasFieldSortOrder) {
+      $stmt2->bind_param('ssssssiisi', $specKey, $department, $fieldType, $fieldLabel, $labelNo, $valueNo, $sortNo, $active, $storedFieldMeta, $fieldSortOrder);
+    } elseif ($hasFieldLabel && $hasApplyToSubcategories) {
+      $stmt2->bind_param('ssssssiisi', $specKey, $department, $fieldType, $fieldLabel, $labelNo, $valueNo, $sortNo, $active, $storedFieldMeta, $applyToSubcategories);
+    } elseif ($hasFieldLabel) {
+      $stmt2->bind_param('ssssssiis', $specKey, $department, $fieldType, $fieldLabel, $labelNo, $valueNo, $sortNo, $active, $storedFieldMeta);
     } elseif ($hasFieldSortOrder && $hasApplyToSubcategories) {
-      $stmt2->bind_param('sssssiisii', $specKey, $department, $fieldType, $labelNo, $valueNo, $sortNo, $active, $sourceKey, $fieldSortOrder, $applyToSubcategories);
+      $stmt2->bind_param('sssssiisii', $specKey, $department, $fieldType, $labelNo, $valueNo, $sortNo, $active, $storedFieldMeta, $fieldSortOrder, $applyToSubcategories);
     } elseif ($hasFieldSortOrder) {
-      $stmt2->bind_param('sssssiisi', $specKey, $department, $fieldType, $labelNo, $valueNo, $sortNo, $active, $sourceKey, $fieldSortOrder);
+      $stmt2->bind_param('sssssiisi', $specKey, $department, $fieldType, $labelNo, $valueNo, $sortNo, $active, $storedFieldMeta, $fieldSortOrder);
     } elseif ($hasApplyToSubcategories) {
-      $stmt2->bind_param('sssssiisi', $specKey, $department, $fieldType, $labelNo, $valueNo, $sortNo, $active, $sourceKey, $applyToSubcategories);
+      $stmt2->bind_param('sssssiisi', $specKey, $department, $fieldType, $labelNo, $valueNo, $sortNo, $active, $storedFieldMeta, $applyToSubcategories);
     } else {
-      $stmt2->bind_param('sssssiis', $specKey, $department, $fieldType, $labelNo, $valueNo, $sortNo, $active, $sourceKey);
+      $stmt2->bind_param('sssssiis', $specKey, $department, $fieldType, $labelNo, $valueNo, $sortNo, $active, $storedFieldMeta);
     }
     $stmt2->execute();
     $stmt2->close();

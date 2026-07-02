@@ -435,6 +435,58 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
           $tid,
           ['project_id' => $pid, 'new_status' => $status]
         );
+
+        // ── Auto-sync stavu projektu podľa hotových úloh ────────
+        $countStmt = $conn->prepare("
+          SELECT COUNT(*) AS total_tasks, SUM(status = 'done') AS done_tasks
+          FROM project_tasks
+          WHERE project_id = ?
+        ");
+        if ($countStmt) {
+          $countStmt->bind_param('i', $pid);
+          $countStmt->execute();
+          $counts = $countStmt->get_result()->fetch_assoc();
+          $countStmt->close();
+
+          $totalTasks = intval($counts['total_tasks'] ?? 0);
+          $doneTasksCnt = intval($counts['done_tasks'] ?? 0);
+
+          $projStmt = $conn->prepare("SELECT status FROM projects WHERE id = ?");
+          $projStmt->bind_param('i', $pid);
+          $projStmt->execute();
+          $currentProject = $projStmt->get_result()->fetch_assoc();
+          $projStmt->close();
+          $currentProjectStatus = $currentProject['status'] ?? null;
+
+          $newProjectStatus = null;
+
+          if ($totalTasks > 0 && $doneTasksCnt >= $totalTasks) {
+            // Všetky úlohy hotové -> projekt Done
+            if ($currentProjectStatus !== 'done' && $currentProjectStatus !== 'cancelled') {
+              $newProjectStatus = 'done';
+            }
+          } elseif ($currentProjectStatus === 'done') {
+            // Projekt bol Done, ale niektorá úloha bola odznačená -> vrátiť na In Progress
+            $newProjectStatus = 'in_progress';
+          }
+
+          if ($newProjectStatus !== null && $newProjectStatus !== $currentProjectStatus) {
+            $updProjStmt = $conn->prepare("UPDATE projects SET status = ? WHERE id = ?");
+            $updProjStmt->bind_param('si', $newProjectStatus, $pid);
+            $updProjStmt->execute();
+            $updProjStmt->close();
+
+            log_order_activity(
+              $conn,
+              null,
+              $empId,
+              'project_status_autoupdated',
+              'project',
+              $pid,
+              ['old_status' => $currentProjectStatus, 'new_status' => $newProjectStatus, 'reason' => 'task_completion_sync']
+            );
+          }
+        }
       }
     }
     projectRedirect($_SERVER['PHP_SELF'] . '?page=projects&view=' . $pid);

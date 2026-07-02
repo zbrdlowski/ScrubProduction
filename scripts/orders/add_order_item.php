@@ -7,6 +7,7 @@ require_once dirname(__DIR__, 2) . '/includes/conn.php';
 require_once __DIR__ . '/activity_helper.php';
 require_once __DIR__ . '/category_sync_helper.php';
 require_once dirname(__DIR__, 2) . '/includes/orders_workflow_helpers.php';
+require_once __DIR__ . '/manual_item_builder_helper.php';
 
 function out(array $payload): void {
   echo json_encode($payload, JSON_UNESCAPED_UNICODE);
@@ -44,22 +45,26 @@ $stmt->close();
 
 $lineNo = (int)($row['next_line'] ?? 1);
 
-$options = [
-  '_manual' => true,
-  'created_by' => $userId,
-  'reason' => $reason,
-];
-
+$payload = manualItemPayloadFromPost($conn, $type);
+$options = json_decode((string) ($payload['options_json'] ?? '{}'), true);
+if (!is_array($options)) {
+  $options = [];
+}
+$options['created_by'] = $userId;
+if ($reason !== '') {
+  $options['reason'] = $reason;
+}
 $optionsJson = json_encode($options, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+$internalOptionsJson = (string) ($payload['internal_options_json'] ?? '{}');
 
 if ($sku === '') {
   $sku = 'MANUAL';
 }
 
 $stmt = $conn->prepare("INSERT INTO order_items
-    (order_id, line_no, sku, title, custom_label, item_type_code, qty, options_json, created_by, updated_by, updated_at)
+    (order_id, line_no, sku, title, custom_label, item_type_code, qty, options_json, internal_options_json, created_by, updated_by, updated_at)
   VALUES
-    (?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, NOW())
+    (?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, NOW())
 ");
 
 if (!$stmt) {
@@ -67,7 +72,7 @@ if (!$stmt) {
 }
 
 $stmt->bind_param(
-  'iisssisii',
+  'iisssissii',
   $orderId,
   $lineNo,
   $sku,
@@ -75,11 +80,17 @@ $stmt->bind_param(
   $type,
   $qty,
   $optionsJson,
+  $internalOptionsJson,
   $userId,
   $userId
 );
 
-$stmt->execute();
+$ok = $stmt->execute();
+if (!$ok) {
+  $error = $stmt->error ?: $conn->error ?: 'Unknown DB error';
+  $stmt->close();
+  out(['ok' => false, 'error' => $error]);
+}
 $itemId = (int)$conn->insert_id;
 $stmt->close();
 sync_order_categories($conn, $orderId);

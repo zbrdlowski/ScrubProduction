@@ -42,6 +42,50 @@ function normalizeTypesOrder(string $types): string
   return implode('', $typesArr);
 }
 
+function ordersFollowupTypeLabel(string $type): string
+{
+  $type = strtoupper(trim($type));
+  $map = [
+    'REPEAT' => 'Repeat Order',
+    'WARRANTY' => 'Warranty Claim',
+    'CRASH' => 'Crash Replacement',
+  ];
+
+  return $map[$type] ?? $type;
+}
+
+function ordersExternalOrderDisplay(string $externalOrderId, ?string $sourceMetaJson = null): string
+{
+  $externalOrderId = trim($externalOrderId);
+  if ($externalOrderId === '') {
+    return '';
+  }
+
+  $sourceMeta = json_decode((string) $sourceMetaJson, true);
+  if (is_array($sourceMeta) && !empty($sourceMeta['_followup']) && is_array($sourceMeta['_followup'])) {
+    $followup = $sourceMeta['_followup'];
+    $label = ordersFollowupTypeLabel((string) ($followup['type'] ?? ''));
+    $parentOrderNumber = trim((string) ($followup['parent_order_number'] ?? ''));
+    if ($parentOrderNumber !== '') {
+      return $label . ' from ' . $parentOrderNumber;
+    }
+
+    $parentOrderId = (int) ($followup['parent_order_id'] ?? 0);
+    if ($parentOrderId > 0) {
+      return $label . ' from order #' . $parentOrderId;
+    }
+
+    return $label;
+  }
+
+  if (preg_match('/^FOLLOWUP:(\d+):([A-Z_]+):\d+$/i', $externalOrderId, $m)) {
+    $label = ordersFollowupTypeLabel((string) $m[2]);
+    return $label . ' from order #' . (int) $m[1];
+  }
+
+  return $externalOrderId;
+}
+
 // Statusy, pri ktorych sa ma v stlpci Detail namiesto assign/take tlacidiel
 // zobrazit datum zmeny statusu. Pre dalsie statusy neskor staci doplnit mapu.
 $statusDateDetailRules = [
@@ -752,6 +796,7 @@ $sql = " SELECT
   o.traffic_light,
   o.traffic_blocker,
   o.traffic_summary_json,
+  o.source_meta,
   o.manual_types_override,
   o.payment_method,
   o.shipping_method,
@@ -2037,6 +2082,10 @@ $deptOptions = [
             $hasCompanyInfo = ($billingCompany !== '' || $billingCompanyId !== '');
             $detailStatusDateRaw = $detailStatusDateRule ? ($detailStatusDates[$orderId][$detailStatusCode] ?? '') : '';
             $detailStatusDateFmt = ordersFormatDetailStatusDate($detailStatusDateRaw);
+            $externalOrderDisplay = ordersExternalOrderDisplay(
+              (string) ($row['external_order_id'] ?? ''),
+              (string) ($row['source_meta'] ?? '')
+            );
             ?>
             <tr class="<?= $rowClass ?> order-row" data-order-id="<?= $orderId ?>"
               data-priority-sort="<?= ($priorityValue >= 20 ? 0 : ($priorityValue >= 10 ? 1 : 2)) ?>" data-date-sort="<?= htmlspecialchars((string) (
@@ -2061,7 +2110,7 @@ $deptOptions = [
                 </div>
 
                 <?php if (!empty($row['external_order_id']) && $row['external_order_id'] !== $row['order_number']): ?>
-                  <small class="text-muted">Ext: <?= htmlspecialchars((string) $row['external_order_id']) ?></small>
+                  <small class="text-muted"><?= htmlspecialchars($externalOrderDisplay) ?></small>
 
                 <?php endif; ?>
 
@@ -3173,6 +3222,113 @@ $deptOptions = [
     $wrap.removeData('loaded').html('');
     $('.btn-toggle-detail[data-order-id="' + orderId + '"]').click();
   }
+
+  function applyFollowupTypeState($panel) {
+    const type = String($panel.find('.followup-type-select').val() || 'REPEAT').toUpperCase();
+    const $checkbox = $panel.find('.followup-do-not-invoice');
+    const $state = $panel.find('.followup-invoice-state');
+    const $hint = $panel.find('.followup-hint');
+    const wasLockedByWarranty = $checkbox.prop('disabled');
+
+    if (type === 'WARRANTY') {
+      $checkbox.prop('checked', true).prop('disabled', true);
+      $state.text('Do not invoice').removeClass('bg-secondary').addClass('bg-danger');
+      $hint.text('Warranty claim creates a no-invoice production order and keeps the workflow out of Ready to Invoice.');
+      return;
+    }
+
+    $checkbox.prop('disabled', false);
+    if (wasLockedByWarranty) {
+      $checkbox.prop('checked', false);
+    }
+    if ($checkbox.is(':checked')) {
+      $state.text('Do not invoice').removeClass('bg-secondary').addClass('bg-danger');
+    } else {
+      $state.text('Standard invoicing').removeClass('bg-danger').addClass('bg-secondary');
+    }
+
+    if (type === 'CRASH') {
+      $hint.text('Crash replacement lets you keep only the damaged parts and adjust quantities.');
+    } else {
+      $hint.text('Repeat order will copy selected items into a new production order.');
+    }
+  }
+
+  $(document).on('click', '.btn-toggle-followup-panel', function () {
+    const $panel = $(this).closest('.order-followup-panel');
+    const $form = $panel.find('.order-followup-form');
+    $form.slideToggle(150);
+    $(this).text($form.is(':visible') ? 'Open' : 'Hide');
+    setTimeout(function () {
+      applyFollowupTypeState($panel);
+    }, 0);
+  });
+
+  $(document).on('click', '.btn-followup-select-all', function () {
+    const $panel = $(this).closest('.order-followup-panel');
+    const $checks = $panel.find('.followup-item-check');
+    const shouldCheck = $checks.filter(':checked').length !== $checks.length;
+    $checks.prop('checked', shouldCheck);
+    $(this).text(shouldCheck ? 'Clear all' : 'Select all');
+  });
+
+  $(document).on('change', '.followup-type-select, .followup-do-not-invoice', function () {
+    applyFollowupTypeState($(this).closest('.order-followup-panel'));
+  });
+
+  $(document).on('click', '.btn-create-followup-order', function () {
+    const $panel = $(this).closest('.order-followup-panel');
+    const orderId = parseInt($panel.find('.followup-order-id').val() || '0', 10);
+    const type = String($panel.find('.followup-type-select').val() || 'REPEAT').toUpperCase();
+    const reason = String($panel.find('.followup-reason').val() || '').trim();
+    const doNotInvoice = $panel.find('.followup-do-not-invoice').is(':checked') ? 1 : 0;
+    const payload = {
+      order_id: orderId,
+      followup_type: type,
+      do_not_invoice: doNotInvoice,
+      reason: reason
+    };
+
+    let selectedCount = 0;
+    $panel.find('.followup-item-check:checked').each(function () {
+      const itemId = parseInt($(this).data('item-id') || '0', 10);
+      const qty = parseInt($panel.find('.followup-item-qty[data-item-id="' + itemId + '"]').val() || '0', 10);
+      if (!itemId || qty <= 0) return;
+      payload['selected_items[' + itemId + ']'] = qty;
+      selectedCount++;
+    });
+
+    if (!orderId || selectedCount === 0) {
+      alert('Select at least one item for the follow-up order.');
+      return;
+    }
+
+    const $btn = $(this);
+    $btn.prop('disabled', true).text('Creating...');
+
+    $.ajax({
+      url: 'scripts/orders/create_followup_order.php',
+      method: 'POST',
+      dataType: 'json',
+      data: payload,
+      success: function (res) {
+        if (!res || !res.ok) {
+          alert(res && res.error ? res.error : 'Follow-up creation failed');
+          $btn.prop('disabled', false).text('Create Follow-up');
+          return;
+        }
+
+        const url = new URL(window.location.href);
+        url.searchParams.set('page', 'orders');
+        url.searchParams.set('q', String(res.order_number || ''));
+        window.location.href = url.toString();
+      },
+      error: function () {
+        alert('Follow-up creation request failed');
+        $btn.prop('disabled', false).text('Create Follow-up');
+      }
+    });
+  });
   $(document).on('click', '.btn-delete-invoice', function () {
     const id = $(this).data('id');
     const orderId = $(this).data('order-id');
@@ -3245,6 +3401,47 @@ $deptOptions = [
       $select.prop('disabled', false);
     });
   });
+
+  function applyManualItemTypeTheme($box, type) {
+    const themeClasses = 'manual-item-type-neutral manual-item-type-G manual-item-type-P manual-item-type-T manual-item-type-M manual-item-type-S manual-item-type-F';
+    $box.removeClass(themeClasses);
+
+    const normalizedType = String(type || '').trim();
+    if (!normalizedType) {
+      $box.addClass('manual-item-type-neutral');
+      return;
+    }
+
+    $box.addClass('manual-item-type-' + normalizedType);
+  }
+
+  $(document).on('change', '.manual-item-type', function () {
+    const $box = $(this).closest('.manual-item-box');
+    const type = String($(this).val() || '').trim();
+    const $target = $box.find('.manual-item-generated-fields');
+
+    applyManualItemTypeTheme($box, type);
+    $target.html('');
+    if (!type) {
+      return;
+    }
+
+    $target.html('<div class="small text-muted"><span class="spinner-border spinner-border-sm"></span> Loading fields...</div>');
+
+    $.post('scripts/orders/get_manual_item_builder.php', {
+      item_type_code: type
+    }, function (res) {
+      if (!res || !res.ok) {
+        $target.html('<div class="small text-danger">Could not load fields.</div>');
+        return;
+      }
+
+      $target.html(String(res.html || ''));
+    }, 'json').fail(function () {
+      $target.html('<div class="small text-danger">Could not load fields.</div>');
+    });
+  });
+
   $(document).on('click', '.btn-add-manual-item', function () {
     const $box = $(this).closest('.manual-item-box');
     const orderId = $(this).data('order-id');
@@ -3263,17 +3460,22 @@ $deptOptions = [
     const qty = $box.find('.manual-item-qty').val();
     const sku = $box.find('.manual-item-sku').val().trim();
     const reason = $box.find('.manual-item-reason').val().trim();
-
-    $btn.prop('disabled', true).text('Adding...');
-
-    $.post('scripts/orders/add_order_item.php', {
+    const payload = {
       order_id: orderId,
       title: title,
       item_type_code: type,
       qty: qty,
       sku: sku,
       reason: reason
-    }, function (res) {
+    };
+
+    $box.find('.manual-item-generated-fields :input[name]').each(function () {
+      payload[$(this).attr('name')] = $(this).val();
+    });
+
+    $btn.prop('disabled', true).text('Adding...');
+
+    $.post('scripts/orders/add_order_item.php', payload, function (res) {
       if (!res || !res.ok) {
         alert(res && res.error ? res.error : 'Add item failed');
         $btn.prop('disabled', false).text('Add item');

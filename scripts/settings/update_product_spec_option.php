@@ -26,6 +26,8 @@ if ($fieldType !== '' && !in_array($fieldType, $allowedFieldTypes, true)) {
 $metaSpecKey = '';
 $metaDepartment = null;
 $metaSourceKey = '';
+$metaFieldLabel = '';
+$metaStoredRaw = '';
 $metaStmt = $conn->prepare("SELECT spec_key, department, COALESCE(color, '') AS source_key FROM product_spec_options WHERE id = ? LIMIT 1");
 if ($metaStmt) {
   $metaStmt->bind_param('i', $id);
@@ -34,7 +36,10 @@ if ($metaStmt) {
     if ($metaRow) {
       $metaSpecKey = trim((string) ($metaRow['spec_key'] ?? ''));
       $metaDepartment = $metaRow['department'] ?? null;
-      $metaSourceKey = trim((string) ($metaRow['source_key'] ?? ''));
+      $metaStoredRaw = (string) ($metaRow['source_key'] ?? '');
+      $decodedMeta = product_spec_decode_field_meta($metaStoredRaw);
+      $metaSourceKey = $decodedMeta['source_key'];
+      $metaFieldLabel = $decodedMeta['field_label'];
     }
   }
   $metaStmt->close();
@@ -50,6 +55,8 @@ if ($metaSourceKey !== '') {
 $hasApplyToSubcategories = product_spec_column_exists($conn, 'apply_to_subcategories');
 $hasFieldSortOrder = product_spec_column_exists($conn, 'field_sort_order');
 $hasFieldLabel = product_spec_column_exists($conn, 'field_label');
+$effectiveFieldLabel = $fieldLabel !== '' ? $fieldLabel : $metaFieldLabel;
+$storedFieldMeta = product_spec_encode_field_meta($sourceKey, $effectiveFieldLabel, $hasFieldLabel);
 
 if ($fieldType !== '') {
   $sql = "
@@ -70,13 +77,13 @@ if ($fieldType !== '') {
     out_json(500, ['ok' => false, 'error' => mysqli_error($conn)]);
   }
   if ($hasFieldLabel && $hasFieldSortOrder) {
-    $stmt->bind_param('ssiisssii', $label, $value, $sortOrder, $active, $fieldType, $sourceKey, $fieldLabel, $fieldSortOrder, $id);
+    $stmt->bind_param('ssiisssii', $label, $value, $sortOrder, $active, $fieldType, $storedFieldMeta, $effectiveFieldLabel, $fieldSortOrder, $id);
   } elseif ($hasFieldLabel) {
-    $stmt->bind_param('ssiisssi', $label, $value, $sortOrder, $active, $fieldType, $sourceKey, $fieldLabel, $id);
+    $stmt->bind_param('ssiisssi', $label, $value, $sortOrder, $active, $fieldType, $storedFieldMeta, $effectiveFieldLabel, $id);
   } elseif ($hasFieldSortOrder) {
-    $stmt->bind_param('ssiissii', $label, $value, $sortOrder, $active, $fieldType, $sourceKey, $fieldSortOrder, $id);
+    $stmt->bind_param('ssiissii', $label, $value, $sortOrder, $active, $fieldType, $storedFieldMeta, $fieldSortOrder, $id);
   } else {
-    $stmt->bind_param('ssiissi', $label, $value, $sortOrder, $active, $fieldType, $sourceKey, $id);
+    $stmt->bind_param('ssiissi', $label, $value, $sortOrder, $active, $fieldType, $storedFieldMeta, $id);
   }
 } else {
   $sql = "
@@ -97,13 +104,13 @@ if ($fieldType !== '') {
     out_json(500, ['ok' => false, 'error' => mysqli_error($conn)]);
   }
   if ($hasFieldLabel && $hasFieldSortOrder) {
-    $stmt->bind_param('ssiissii', $label, $value, $sortOrder, $active, $sourceKey, $fieldLabel, $fieldSortOrder, $id);
+    $stmt->bind_param('ssiissii', $label, $value, $sortOrder, $active, $storedFieldMeta, $effectiveFieldLabel, $fieldSortOrder, $id);
   } elseif ($hasFieldLabel) {
-    $stmt->bind_param('ssiissi', $label, $value, $sortOrder, $active, $sourceKey, $fieldLabel, $id);
+    $stmt->bind_param('ssiissi', $label, $value, $sortOrder, $active, $storedFieldMeta, $effectiveFieldLabel, $id);
   } elseif ($hasFieldSortOrder) {
-    $stmt->bind_param('ssiisii', $label, $value, $sortOrder, $active, $sourceKey, $fieldSortOrder, $id);
+    $stmt->bind_param('ssiisii', $label, $value, $sortOrder, $active, $storedFieldMeta, $fieldSortOrder, $id);
   } else {
-    $stmt->bind_param('ssiisi', $label, $value, $sortOrder, $active, $sourceKey, $id);
+    $stmt->bind_param('ssiisi', $label, $value, $sortOrder, $active, $storedFieldMeta, $id);
   }
 }
 
@@ -132,13 +139,13 @@ if ($metaSpecKey !== '') {
       $metaUpdateStmt = $conn->prepare($metaSql);
       if ($metaUpdateStmt) {
         if ($hasFieldLabel && $hasFieldSortOrder) {
-          $metaUpdateStmt->bind_param('ssississs', $fieldType, $sourceKey, $applyToSubcategories, $fieldLabel, $fieldSortOrder, $metaSpecKey, $metaDepartment, $metaDepartment, $metaSourceKey);
+          $metaUpdateStmt->bind_param('ssississs', $fieldType, $storedFieldMeta, $applyToSubcategories, $effectiveFieldLabel, $fieldSortOrder, $metaSpecKey, $metaDepartment, $metaDepartment, $metaStoredRaw);
         } elseif ($hasFieldLabel) {
-          $metaUpdateStmt->bind_param('ssisssss', $fieldType, $sourceKey, $applyToSubcategories, $fieldLabel, $metaSpecKey, $metaDepartment, $metaDepartment, $metaSourceKey);
+          $metaUpdateStmt->bind_param('ssisssss', $fieldType, $storedFieldMeta, $applyToSubcategories, $effectiveFieldLabel, $metaSpecKey, $metaDepartment, $metaDepartment, $metaStoredRaw);
         } elseif ($hasFieldSortOrder) {
-          $metaUpdateStmt->bind_param('ssisssss', $fieldType, $sourceKey, $applyToSubcategories, $fieldSortOrder, $metaSpecKey, $metaDepartment, $metaDepartment, $metaSourceKey);
+          $metaUpdateStmt->bind_param('ssisssss', $fieldType, $storedFieldMeta, $applyToSubcategories, $fieldSortOrder, $metaSpecKey, $metaDepartment, $metaDepartment, $metaStoredRaw);
         } else {
-          $metaUpdateStmt->bind_param('ssissss', $fieldType, $sourceKey, $applyToSubcategories, $metaSpecKey, $metaDepartment, $metaDepartment, $metaSourceKey);
+          $metaUpdateStmt->bind_param('ssissss', $fieldType, $storedFieldMeta, $applyToSubcategories, $metaSpecKey, $metaDepartment, $metaDepartment, $metaStoredRaw);
         }
         $metaUpdateStmt->execute();
         $metaUpdateStmt->close();
@@ -161,13 +168,13 @@ if ($metaSpecKey !== '') {
       $metaUpdateStmt = $conn->prepare($metaSql);
       if ($metaUpdateStmt) {
         if ($hasFieldLabel && $hasFieldSortOrder) {
-          $metaUpdateStmt->bind_param('ssssssss', $fieldType, $sourceKey, $fieldLabel, $fieldSortOrder, $metaSpecKey, $metaDepartment, $metaDepartment, $metaSourceKey);
+          $metaUpdateStmt->bind_param('ssssssss', $fieldType, $storedFieldMeta, $effectiveFieldLabel, $fieldSortOrder, $metaSpecKey, $metaDepartment, $metaDepartment, $metaStoredRaw);
         } elseif ($hasFieldLabel) {
-          $metaUpdateStmt->bind_param('sssssss', $fieldType, $sourceKey, $fieldLabel, $metaSpecKey, $metaDepartment, $metaDepartment, $metaSourceKey);
+          $metaUpdateStmt->bind_param('sssssss', $fieldType, $storedFieldMeta, $effectiveFieldLabel, $metaSpecKey, $metaDepartment, $metaDepartment, $metaStoredRaw);
         } elseif ($hasFieldSortOrder) {
-          $metaUpdateStmt->bind_param('sssssss', $fieldType, $sourceKey, $fieldSortOrder, $metaSpecKey, $metaDepartment, $metaDepartment, $metaSourceKey);
+          $metaUpdateStmt->bind_param('sssssss', $fieldType, $storedFieldMeta, $fieldSortOrder, $metaSpecKey, $metaDepartment, $metaDepartment, $metaStoredRaw);
         } else {
-          $metaUpdateStmt->bind_param('ssssss', $fieldType, $sourceKey, $metaSpecKey, $metaDepartment, $metaDepartment, $metaSourceKey);
+          $metaUpdateStmt->bind_param('ssssss', $fieldType, $storedFieldMeta, $metaSpecKey, $metaDepartment, $metaDepartment, $metaStoredRaw);
         }
         $metaUpdateStmt->execute();
         $metaUpdateStmt->close();
@@ -191,13 +198,13 @@ if ($metaSpecKey !== '') {
     $metaUpdateStmt = $conn->prepare($metaSql);
     if ($metaUpdateStmt) {
       if ($hasFieldLabel && $hasFieldSortOrder) {
-        $metaUpdateStmt->bind_param('sississs', $sourceKey, $applyToSubcategories, $fieldLabel, $fieldSortOrder, $metaSpecKey, $metaDepartment, $metaDepartment, $metaSourceKey);
+        $metaUpdateStmt->bind_param('sississs', $storedFieldMeta, $applyToSubcategories, $effectiveFieldLabel, $fieldSortOrder, $metaSpecKey, $metaDepartment, $metaDepartment, $metaStoredRaw);
       } elseif ($hasFieldLabel) {
-        $metaUpdateStmt->bind_param('sisssss', $sourceKey, $applyToSubcategories, $fieldLabel, $metaSpecKey, $metaDepartment, $metaDepartment, $metaSourceKey);
+        $metaUpdateStmt->bind_param('sisssss', $storedFieldMeta, $applyToSubcategories, $effectiveFieldLabel, $metaSpecKey, $metaDepartment, $metaDepartment, $metaStoredRaw);
       } elseif ($hasFieldSortOrder) {
-        $metaUpdateStmt->bind_param('sisssss', $sourceKey, $applyToSubcategories, $fieldSortOrder, $metaSpecKey, $metaDepartment, $metaDepartment, $metaSourceKey);
+        $metaUpdateStmt->bind_param('sisssss', $storedFieldMeta, $applyToSubcategories, $fieldSortOrder, $metaSpecKey, $metaDepartment, $metaDepartment, $metaStoredRaw);
       } else {
-        $metaUpdateStmt->bind_param('sissss', $sourceKey, $applyToSubcategories, $metaSpecKey, $metaDepartment, $metaDepartment, $metaSourceKey);
+        $metaUpdateStmt->bind_param('sissss', $storedFieldMeta, $applyToSubcategories, $metaSpecKey, $metaDepartment, $metaDepartment, $metaStoredRaw);
       }
       $metaUpdateStmt->execute();
       $metaUpdateStmt->close();
@@ -212,9 +219,9 @@ if ($metaSpecKey !== '') {
     ");
     if ($metaUpdateStmt) {
       if ($hasFieldLabel) {
-        $metaUpdateStmt->bind_param('sisssss', $sourceKey, $fieldSortOrder, $fieldLabel, $metaSpecKey, $metaDepartment, $metaDepartment, $metaSourceKey);
+        $metaUpdateStmt->bind_param('sisssss', $storedFieldMeta, $fieldSortOrder, $effectiveFieldLabel, $metaSpecKey, $metaDepartment, $metaDepartment, $metaStoredRaw);
       } else {
-        $metaUpdateStmt->bind_param('sissss', $sourceKey, $fieldSortOrder, $metaSpecKey, $metaDepartment, $metaDepartment, $metaSourceKey);
+        $metaUpdateStmt->bind_param('sissss', $storedFieldMeta, $fieldSortOrder, $metaSpecKey, $metaDepartment, $metaDepartment, $metaStoredRaw);
       }
       $metaUpdateStmt->execute();
       $metaUpdateStmt->close();
@@ -228,7 +235,7 @@ if ($metaSpecKey !== '') {
         AND COALESCE(color, '') = ?
     ");
     if ($metaUpdateStmt) {
-      $metaUpdateStmt->bind_param('ssssss', $sourceKey, $fieldLabel, $metaSpecKey, $metaDepartment, $metaDepartment, $metaSourceKey);
+      $metaUpdateStmt->bind_param('ssssss', $storedFieldMeta, $effectiveFieldLabel, $metaSpecKey, $metaDepartment, $metaDepartment, $metaStoredRaw);
       $metaUpdateStmt->execute();
       $metaUpdateStmt->close();
     }

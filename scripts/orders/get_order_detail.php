@@ -39,11 +39,38 @@ function seatCoverOptionIsFilled($value): bool
 function productSpecDepartmentForItemType(string $itemTypeCode): string
 {
   $itemTypeCode = strtoupper(trim($itemTypeCode));
-  if ($itemTypeCode === 'T' || $itemTypeCode === 'M') {
+  if ($itemTypeCode === 'M') {
+    $itemTypeCode = 'G';
+  }
+  if ($itemTypeCode === 'T') {
     $itemTypeCode = 'P';
   }
 
   return in_array($itemTypeCode, ['G', 'S', 'P', 'F'], true) ? $itemTypeCode : '';
+}
+
+function productSpecDepartmentForItem(array $item): string
+{
+  $department = productSpecDepartmentForItemType((string) ($item['item_type_code'] ?? ''));
+  if ($department !== '') {
+    return $department;
+  }
+
+  if (function_exists('dept_get_departments')) {
+    $departments = dept_get_departments(
+      (string) ($item['custom_label'] ?? ''),
+      (string) ($item['sku'] ?? '')
+    );
+
+    if (count($departments) === 1) {
+      $resolvedDepartment = strtoupper(trim((string) $departments[0]));
+      if (in_array($resolvedDepartment, ['G', 'S', 'P', 'F'], true)) {
+        return $resolvedDepartment;
+      }
+    }
+  }
+
+  return '';
 }
 
 function productSpecValueIsFilled($value): bool
@@ -839,6 +866,23 @@ $stmt->close();
 
 if (!$order)
   out(404, ['ok' => false, 'error' => 'Order not found']);
+
+$sourceMeta = json_decode((string) ($order['source_meta'] ?? ''), true);
+if (!is_array($sourceMeta)) {
+  $sourceMeta = [];
+}
+$followupMeta = is_array($sourceMeta['_followup'] ?? null) ? $sourceMeta['_followup'] : [];
+$followupTypeLabels = [
+  'REPEAT' => 'Repeat Order',
+  'WARRANTY' => 'Warranty Claim',
+  'CRASH' => 'Crash Replacement',
+];
+$followupTypeCode = strtoupper(trim((string) ($followupMeta['type'] ?? '')));
+$followupLabel = $followupTypeLabels[$followupTypeCode] ?? trim((string) ($followupMeta['label'] ?? ''));
+$followupParentOrderId = (int) ($followupMeta['parent_order_id'] ?? 0);
+$followupParentOrderNumber = trim((string) ($followupMeta['parent_order_number'] ?? ''));
+$followupReason = trim((string) ($followupMeta['reason'] ?? ''));
+$followupDoNotInvoice = !empty($followupMeta['do_not_invoice']);
 
 // --- ACL (dept) ---
 if (!$allAccess) {
@@ -1703,6 +1747,104 @@ ob_start();
     color: #0f1720 !important;
   }
 
+  .manual-item-box {
+    position: relative;
+    border-width: 1px !important;
+    border-radius: 12px;
+    background:
+      linear-gradient(180deg, rgba(31, 41, 55, 0.92) 0%, rgba(23, 31, 43, 0.96) 100%) !important;
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.03),
+      0 10px 24px rgba(0, 0, 0, 0.16);
+    transition: border-color .18s ease, box-shadow .18s ease, background .18s ease;
+  }
+
+  .manual-item-box::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 4px;
+    border-radius: 12px 0 0 12px;
+    background: rgba(80, 180, 255, 0.85);
+  }
+
+  .manual-item-box .manual-item-generated-fields {
+    margin-top: 10px;
+    padding: 10px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.035);
+  }
+
+  .manual-item-box .manual-item-generated-fields:empty {
+    display: none;
+  }
+
+  .manual-item-box:focus-within {
+    border-color: rgba(80, 180, 255, 0.7) !important;
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.04),
+      0 0 0 1px rgba(80, 180, 255, 0.26),
+      0 14px 28px rgba(0, 0, 0, 0.22);
+  }
+
+  .manual-item-box.manual-item-type-G {
+    background:
+      linear-gradient(180deg, rgba(18, 55, 69, 0.92) 0%, rgba(17, 42, 56, 0.96) 100%) !important;
+    border-color: rgba(23, 162, 184, 0.55) !important;
+  }
+
+  .manual-item-box.manual-item-type-G::before {
+    background: #1fbfd6;
+  }
+
+  .manual-item-box.manual-item-type-P,
+  .manual-item-box.manual-item-type-T,
+  .manual-item-box.manual-item-type-M {
+    background:
+      linear-gradient(180deg, rgba(35, 46, 74, 0.92) 0%, rgba(25, 34, 56, 0.96) 100%) !important;
+    border-color: rgba(64, 126, 231, 0.52) !important;
+  }
+
+  .manual-item-box.manual-item-type-P::before,
+  .manual-item-box.manual-item-type-T::before,
+  .manual-item-box.manual-item-type-M::before {
+    background: #5b8cff;
+  }
+
+  .manual-item-box.manual-item-type-S {
+    background:
+      linear-gradient(180deg, rgba(32, 68, 52, 0.92) 0%, rgba(23, 51, 39, 0.96) 100%) !important;
+    border-color: rgba(61, 179, 110, 0.5) !important;
+  }
+
+  .manual-item-box.manual-item-type-S::before {
+    background: #4ad184;
+  }
+
+  .manual-item-box.manual-item-type-F {
+    background:
+      linear-gradient(180deg, rgba(82, 39, 34, 0.92) 0%, rgba(58, 29, 25, 0.96) 100%) !important;
+    border-color: rgba(224, 105, 88, 0.5) !important;
+  }
+
+  .manual-item-box.manual-item-type-F::before {
+    background: #f0725f;
+  }
+
+  .manual-item-box .manual-item-spec-row .product-spec-label {
+    background: rgba(255, 255, 255, 0.045);
+    border-color: rgba(255, 255, 255, 0.12);
+  }
+
+  .order-detail-table tbody tr.item-info-row:focus-within>td,
+  .order-detail-table tbody tr.g-item-options-row:focus-within>td {
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+    filter: brightness(1.05);
+  }
+
   @media (max-width: 575.98px) {
     .order-detail-header-actions {
       justify-content: flex-start !important;
@@ -2549,6 +2691,21 @@ ob_start();
             <div class="col-md-6">
               <div><b>Shipping:</b> <?php echo h($order['shipping_method'] ?? '-'); ?></div>
               <div><b>Payment:</b> <?php echo h($order['payment_method'] ?? '-'); ?></div>
+              <?php if ($followupLabel !== ''): ?>
+                <div class="mt-1">
+                  <span class="badge badge-info"><?php echo h($followupLabel); ?></span>
+                  <?php if ($followupDoNotInvoice): ?>
+                    <span class="badge badge-danger">Do not invoice</span>
+                  <?php endif; ?>
+                </div>
+                <div class="small text-muted mt-1">
+                  Parent:
+                  <?php echo h($followupParentOrderNumber !== '' ? $followupParentOrderNumber : ('#' . $followupParentOrderId)); ?>
+                  <?php if ($followupReason !== ''): ?>
+                    <span class="ml-2">Reason: <?php echo h($followupReason); ?></span>
+                  <?php endif; ?>
+                </div>
+              <?php endif; ?>
 
               <div>
                 <b>Country:</b>
@@ -2665,6 +2822,106 @@ ob_start();
                   <button type="button" class="btn btn-secondary btn-sm mt-2 btn-cancel-order-header">
                     Cancel
                   </button>
+                </div>
+              </div>
+            </div>
+          <?php endif; ?>
+
+          <?php if ((int) ($_SESSION['permission'] ?? 0) >= 300 && !empty($items)): ?>
+            <div class="order-followup-panel mt-3">
+              <div class="card bg-dark border-info">
+                <div class="card-header d-flex align-items-center justify-content-between">
+                  <div>
+                    <b>Create Follow-up Order</b>
+                    <div class="small text-muted">Repeat, warranty claim or crash replacement from selected items.</div>
+                  </div>
+                  <button type="button" class="btn btn-sm btn-outline-info btn-toggle-followup-panel">
+                    Open
+                  </button>
+                </div>
+                <div class="card-body order-followup-form" style="display:none;">
+                  <input type="hidden" class="followup-order-id" value="<?php echo (int) $orderId; ?>">
+
+                  <div class="form-row">
+                    <div class="form-group col-md-4">
+                      <label>Type</label>
+                      <select class="form-control form-control-sm followup-type-select">
+                        <option value="REPEAT">Repeat Order</option>
+                        <option value="WARRANTY">Warranty Claim</option>
+                        <option value="CRASH">Crash Replacement</option>
+                      </select>
+                    </div>
+                    <div class="form-group col-md-4">
+                      <label>Billing</label>
+                      <div class="form-control form-control-sm bg-secondary followup-invoice-state">Standard invoicing</div>
+                    </div>
+                    <div class="form-group col-md-4">
+                      <label>&nbsp;</label>
+                      <div class="form-check mt-1">
+                        <input class="form-check-input followup-do-not-invoice" type="checkbox" value="1" id="followup-do-not-invoice-<?php echo (int) $orderId; ?>">
+                        <label class="form-check-label" for="followup-do-not-invoice-<?php echo (int) $orderId; ?>">
+                          Do not invoice
+                        </label>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="form-group">
+                    <label>Reason / note</label>
+                    <textarea class="form-control form-control-sm followup-reason" rows="2" placeholder="Why are we creating this follow-up order?"></textarea>
+                  </div>
+
+                  <div class="d-flex align-items-center justify-content-between mb-2">
+                    <div class="small text-muted">Select items and quantities for the new order.</div>
+                    <button type="button" class="btn btn-xs btn-outline-light btn-followup-select-all">Select all</button>
+                  </div>
+
+                  <div class="table-responsive">
+                    <table class="table table-sm table-bordered table-dark mb-0">
+                      <thead>
+                        <tr>
+                          <th style="width:50px;">Use</th>
+                          <th style="width:70px;">Type</th>
+                          <th>Item</th>
+                          <th style="width:90px;">Orig. Qty</th>
+                          <th style="width:90px;">New Qty</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <?php foreach ($items as $followupItem): ?>
+                          <tr>
+                            <td class="text-center">
+                              <input type="checkbox" class="followup-item-check" data-item-id="<?php echo (int) $followupItem['id']; ?>" checked>
+                            </td>
+                            <td><?php echo h((string) ($followupItem['item_type_code'] ?? '')); ?></td>
+                            <td>
+                              <?php echo h((string) ($followupItem['title'] ?? '')); ?>
+                              <?php if (!empty($followupItem['sku']) || !empty($followupItem['custom_label'])): ?>
+                                <div class="small text-muted">
+                                  <?php echo h(trim((string) ($followupItem['sku'] ?? ''))); ?>
+                                  <?php if (!empty($followupItem['custom_label'])): ?>
+                                    <span class="ml-1"><?php echo h((string) $followupItem['custom_label']); ?></span>
+                                  <?php endif; ?>
+                                </div>
+                              <?php endif; ?>
+                            </td>
+                            <td><?php echo (int) ($followupItem['qty'] ?? 0); ?></td>
+                            <td>
+                              <input type="number" min="1" max="<?php echo (int) ($followupItem['qty'] ?? 1); ?>"
+                                value="<?php echo (int) ($followupItem['qty'] ?? 1); ?>"
+                                class="form-control form-control-sm followup-item-qty"
+                                data-item-id="<?php echo (int) $followupItem['id']; ?>">
+                            </td>
+                          </tr>
+                        <?php endforeach; ?>
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <div class="mt-3 d-flex align-items-center justify-content-between">
+                    <div class="small text-muted followup-hint">Repeat order will copy selected items into a new production order.</div>
+                    <button type="button" class="btn btn-success btn-sm btn-create-followup-order">Create Follow-up</button>
+                  </div>
                 </div>
               </div>
             </div>
@@ -3022,7 +3279,7 @@ ob_start();
 
         <h6 class="text-muted mb-2">Položky </h6>
         <?php if ((int) ($_SESSION['permission'] ?? 0) >= 300): ?>
-          <div class="card bg-dark border-info p-2 mb-3 manual-item-box">
+          <div class="card bg-dark border-info p-2 mb-3 manual-item-box manual-item-type-neutral">
             <div class="d-flex justify-content-between align-items-center">
               <b class="text-info">Add manual item</b>
             </div>
@@ -3064,6 +3321,8 @@ ob_start();
           <div class="mt-2">
             <input class="form-control form-control-sm manual-item-reason" placeholder="Reason / customer request note">
           </div>
+
+          <div class="manual-item-generated-fields mt-2"></div>
         </div>
       <?php endif; ?>
       <div class="table-responsive">
@@ -3443,12 +3702,16 @@ ob_start();
                   (string) ($it['custom_label'] ?? ''),
                   (string) ($it['sku'] ?? '')
                 );
+                if ($itemSubcat === '' && strtoupper(trim((string) ($it['item_type_code'] ?? ''))) === 'M') {
+                  $itemSubcat = 'MOTO_CARPET';
+                }
                 // editaciu môže urobiť ktokoľvek z grafiky alebo admin, aby sa dali nastaviť tlačiarne aj pre iné oddelenia.
                 $canEditPrint = ((int) ($_SESSION['permission'] ?? 0) >= 0);
-                $itemSpecDepartment = productSpecDepartmentForItemType((string) ($it['item_type_code'] ?? ''));
+                $itemSpecDepartment = productSpecDepartmentForItem($it);
                 $itemProductSpecFields = [];
                 $showItemProductSpecRow = false;
-                if ($hasOptionsForm && $itemSpecDepartment !== '') {
+                $shouldRenderProductSpecFields = $itemSpecDepartment !== '' && ($hasOptionsForm || $itemSpecDepartment === 'F');
+                if ($shouldRenderProductSpecFields) {
                   foreach (productSpecFieldDefinitions($conn, $itemSpecDepartment) as $productSpecDefinition) {
                     $fieldMeta = productSpecFieldMeta($productSpecDefinition);
 
@@ -3652,6 +3915,8 @@ ob_start();
                 $internalOptForModal = $internalOptArr;
                 unset($internalOptForModal['_printer'], $internalOptForModal['_print_material'], $internalOptForModal['_print_finish'], $internalOptForModal['_print_grip'], $internalOptForModal['_print_tr_swingarms'], $internalOptForModal['_seat_cover_ops_confirmed']);
                 $internalOptions = jsonEncodeForModal($internalOptForModal);
+                $isManualItem = !empty($extOptArr['_manual']);
+                $manualItemReason = $isManualItem ? trim((string) ($extOptArr['reason'] ?? '')) : '';
                 ?>
                 <td class="text-center">
                   <button type="button" class="btn btn-xs btn-outline-info btn-view-options"
@@ -3661,6 +3926,9 @@ ob_start();
                     data-can-edit-options="<?= ((int) ($_SESSION['permission'] ?? 0) >= 300 ? '1' : '0') ?>"
                     data-internal-options="<?= h($internalOptions) ?>"
                     data-detail-title="<?= h($isPatchItem ? 'Patch Detail' : 'Product Detail') ?>"
+                    data-source-code="<?= h((string) ($order['source_code'] ?? '')) ?>"
+                    data-is-manual-item="<?= $isManualItem ? '1' : '0' ?>"
+                    data-manual-reason="<?= h($manualItemReason) ?>"
                     data-is-graphics="<?= $isGraphicsItem ? '1' : '0' ?>" data-print-printer="<?= h($printPrinter) ?>"
                     data-print-material="<?= h($printMaterial) ?>" data-print-finish="<?= h($printFinish) ?>"
                     data-print-grip="<?= h($printGrip) ?>" data-print-tr-swingarms="<?= h($printTrSwingarms) ?>">

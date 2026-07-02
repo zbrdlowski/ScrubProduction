@@ -163,7 +163,8 @@ function isMenuOpen($pages = []) {
 </li>
 <li class="nav-item <?= isMenuOpen([
       'modeldata',
-      'product_chart'      
+      'product_chart',
+      'product_listing_catalog'
     ]) ? 'menu-open' : '' ?>">
     <!-- <li class="nav-item menu-open"> zabezpečí rozbalené menu po refreshi -->
     
@@ -176,7 +177,8 @@ function isMenuOpen($pages = []) {
             </a>            
       <ul class="nav nav-treeview">
               <li class="nav-item"><a href="<?echo basename($_SERVER['PHP_SELF']);?>?page=modeldata" class="nav-link <?= isActive('modeldata') ?>"><i class="fa fa-caret-right nav-icon"></i><p>Compatibility Chart</p></a></li>
-              <li class="nav-item"><a href="<?echo basename($_SERVER['PHP_SELF']);?>?page=product_chart" class="nav-link <?= isActive('product_chart') ?>"><i class="fa fa-caret-right nav-icon"></i><p>Products Database</p></a></li>
+              <li class="nav-item"><a href="<?echo basename($_SERVER['PHP_SELF']);?>?page=product_chart" class="nav-link <?= isActive('product_chart') ?>"><i class="fa fa-caret-right nav-icon"></i><p>Models Database</p></a></li>
+              <li class="nav-item"><a href="<?echo basename($_SERVER['PHP_SELF']);?>?page=product_listing_catalog" class="nav-link <?= isActive('product_listing_catalog') ?>"><i class="fa fa-caret-right nav-icon"></i><p>Product Listings</p></a></li>
       </ul>
               </li>
               <li class="nav-item <?= isMenuOpen([

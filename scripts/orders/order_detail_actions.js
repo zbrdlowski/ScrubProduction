@@ -167,9 +167,97 @@ $(document)
     return copy;
   }
 
-  function renderOptionsPretty(data, labelMap = {}) {
+  function isEbaySourceCode(sourceCode) {
+    return String(sourceCode || "").toUpperCase().includes("EBAY");
+  }
+
+  function shouldKeepEbayOption(key) {
+    const normalized = String(key || "")
+      .trim()
+      .replace(/_/g, "-")
+      .toLowerCase();
+
+    if (!normalized || normalized === "reason") {
+      return false;
+    }
+
+    const exactKeep = new Set([
+      "buyer-note",
+      "my-item-note",
+      "note",
+      "name",
+      "number",
+      "name-font",
+      "number-font",
+      "name-color",
+      "number-color",
+      "base-material",
+      "graphics-finish",
+      "grip",
+      "tr-swingarms",
+      "printer",
+      "uploaded-file",
+      "upload",
+      "file",
+      "logo",
+      "item-title",
+      "custom-label",
+      "category-info",
+      "patch-style",
+      "waterproof-seams",
+      "enduro-pocket",
+      "side-brand-patches",
+      "fitting",
+      "applyinggraphics",
+    ]);
+    if (exactKeep.has(normalized)) {
+      return true;
+    }
+
+    const partialKeep = [
+      "bike",
+      "manufacturer",
+      "material",
+      "finish",
+      "graphics",
+      "rim",
+      "fork",
+      "file",
+      "logo",
+      "upload",
+      "font",
+      "number",
+      "name",
+      "buyer-note",
+      "my-item-note",
+    ];
+
+    return partialKeep.some(function (fragment) {
+      return normalized.includes(fragment);
+    });
+  }
+
+  function renderManualReasonBlock(reason) {
+    const text = String(reason || "").trim();
+    if (!text) {
+      return "";
+    }
+
+    return `
+      <div class="alert alert-info border-info mb-3">
+        <div class="font-weight-bold mb-1">Manual item reason</div>
+        <div style="white-space:pre-wrap;">${escapeHtml(text)}</div>
+      </div>
+    `;
+  }
+
+  function renderOptionsPretty(data, labelMap = {}, meta = {}) {
+    const sourceCode = String(meta.sourceCode || "");
+    const isEbay = isEbaySourceCode(sourceCode);
+    const manualReason = String(meta.manualReason || "").trim();
     if (!data || Object.keys(data).length === 0) {
-      return '<div class="text-muted">No options</div>';
+      const reasonBlock = renderManualReasonBlock(manualReason);
+      return reasonBlock || '<div class="text-muted">No options</div>';
     }
 
     const isPatchDetail = Object.prototype.hasOwnProperty.call(
@@ -215,10 +303,13 @@ $(document)
         continue;
       }
       let v = data[k];
+      const key = k.toLowerCase();
 
       if (v === null || v === "") continue;
       if (String(k).startsWith("_")) continue;
       if (typeof v === "object") continue;
+      if (key === "reason") continue;
+      if (isEbay && !shouldKeepEbayOption(k)) continue;
 
       let label = labelMap[k] || humanizeOptionKey(k);
 
@@ -229,8 +320,6 @@ $(document)
         const match = String(v).match(/(\d+)$/);
         if (match) v = match[1];
       }
-
-      const key = k.toLowerCase();
 
       if (
         k === "Category Info" ||
@@ -272,6 +361,7 @@ $(document)
       warnings.push("Missing uploaded file / logo");
 
     let html = "";
+    html += renderManualReasonBlock(manualReason);
 
     if (warnings.length) {
       html += `
@@ -1127,6 +1217,13 @@ $(document)
       );
       const data = getOptionsData($btn);
       const labelMap = getOptionLabelMap($btn);
+      const modalMeta = {
+        sourceCode: String($btn.attr("data-source-code") || ""),
+        manualReason:
+          String($btn.attr("data-is-manual-item") || "0") === "1"
+            ? String($btn.attr("data-manual-reason") || "")
+            : "",
+      };
       currentCustomerOptions = stripProtectedOptions(getRawOptionsData($btn));
       currentCanEditOptions =
         String($btn.attr("data-can-edit-options") || "0") === "1";
@@ -1135,7 +1232,9 @@ $(document)
         '<i class="fas fa-list-alt mr-1"></i> ' + escapeHtml(detailTitle),
       );
 
-      $("#customerOptionsView").html(renderOptionsPretty(data, labelMap));
+      $("#customerOptionsView").html(
+        renderOptionsPretty(data, labelMap, modalMeta),
+      );
       $("#customerOptionsEditBox").hide();
       $("#btnEditCustomerOptions").toggle(currentCanEditOptions);
 

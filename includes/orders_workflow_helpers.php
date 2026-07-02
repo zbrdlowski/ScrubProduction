@@ -495,13 +495,51 @@ function ordersResolveStatusFromRules(mysqli $conn, array $departmentStatuses, s
     return null;
 }
 
-function ordersResolveFallbackOrderStatus(array $groups, bool $allGreen, bool $hasOrange, bool $hasGreen): array
+function ordersOrderSourceMeta(mysqli $conn, int $orderId): array
+{
+    $stmt = $conn->prepare("
+        SELECT source_meta
+        FROM orders
+        WHERE id = ?
+        LIMIT 1
+    ");
+
+    if (!$stmt) {
+        return [];
+    }
+
+    $stmt->bind_param('i', $orderId);
+    $stmt->execute();
+    $row = $stmt->get_result()->fetch_assoc();
+    $stmt->close();
+
+    $decoded = json_decode((string) ($row['source_meta'] ?? ''), true);
+    return is_array($decoded) ? $decoded : [];
+}
+
+function ordersOrderDoNotInvoice(mysqli $conn, int $orderId): bool
+{
+    $sourceMeta = ordersOrderSourceMeta($conn, $orderId);
+    $followupMeta = $sourceMeta['_followup'] ?? null;
+
+    if (!is_array($followupMeta)) {
+        return false;
+    }
+
+    return !empty($followupMeta['do_not_invoice']);
+}
+
+function ordersResolveFallbackOrderStatus(mysqli $conn, int $orderId, array $groups, bool $allGreen, bool $hasOrange, bool $hasGreen): array
 {
     if (!$groups) {
         return ['NEW', 'RED'];
     }
 
     if ($allGreen) {
+        if (ordersOrderDoNotInvoice($conn, $orderId)) {
+            return ['READY', 'GREEN'];
+        }
+
         return ['READY_TO_INVOICE', 'GREEN'];
     }
 
@@ -614,7 +652,7 @@ function recalculateOrderWorkflow(mysqli $conn, int $orderId): void
     }
 
     $departmentStatuses = ordersResolveDepartmentStatusesFromGroups($conn, $groups);
-    [$fallbackOrderStatus, $traffic] = ordersResolveFallbackOrderStatus($groups, $allGreen, $hasOrange, $hasGreen);
+    [$fallbackOrderStatus, $traffic] = ordersResolveFallbackOrderStatus($conn, $orderId, $groups, $allGreen, $hasOrange, $hasGreen);
     $currentStatusIsWorkflowScoped = ordersWorkflowCurrentStatusIsAllowedByAnyRule($conn, $currentOrderStatus);
     $ruleBasedOrderStatus = ordersResolveStatusFromRules($conn, $departmentStatuses, $currentOrderStatus);
     $orderStatus = $currentStatusIsWorkflowScoped

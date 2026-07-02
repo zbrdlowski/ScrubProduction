@@ -272,6 +272,22 @@
     $value = trim($value, '-');
     return preg_replace('/-+/', '-', $value) ?? $value;
   };
+  $decodeProductSpecStoredMeta = static function (?string $rawValue): array {
+    $rawValue = trim((string) $rawValue);
+    if ($rawValue === '') {
+      return ['source_key' => '', 'field_label' => ''];
+    }
+
+    $decoded = json_decode($rawValue, true);
+    if (is_array($decoded)) {
+      return [
+        'source_key' => trim((string) ($decoded['source_key'] ?? '')),
+        'field_label' => trim((string) ($decoded['field_label'] ?? '')),
+      ];
+    }
+
+    return ['source_key' => $rawValue, 'field_label' => ''];
+  };
   $normalizeProductSpecDepartment = static function (?string $code): string {
     $code = strtoupper(trim((string) $code));
     if (isset(['G' => true, 'S' => true, 'P' => true, 'F' => true][$code])) {
@@ -880,11 +896,15 @@
                   $rowDepartment = $normalizeProductSpecDepartment($row['department'] ?? ($productSpecDefaults[$row['spec_key']]['department'] ?? ''));
                   $rowSubcategory = $detectProductSpecSubcategory((string) ($row['spec_key'] ?? ''), $rowDepartment);
                   $rowGroupKey = $buildProductSpecGroupKey((string) ($row['spec_key'] ?? ''), $rowDepartment, $rowSubcategory);
-                  $rowSourceKey = trim((string) ($row['color'] ?? ''));
+                  $rowStoredMeta = $decodeProductSpecStoredMeta((string) ($row['color'] ?? ''));
+                  $rowSourceKey = trim((string) ($rowStoredMeta['source_key'] ?? ''));
                   if ($rowSourceKey === '') {
                     $rowSourceKey = $deriveProductSpecSourceKey((string) ($row['spec_key'] ?? ''), $rowDepartment);
                   }
                   $rowFieldLabel = trim((string) ($row['field_label'] ?? ''));
+                  if ($rowFieldLabel === '') {
+                    $rowFieldLabel = trim((string) ($rowStoredMeta['field_label'] ?? ''));
+                  }
                   if ($rowFieldLabel === '') {
                     $rowFieldLabel = $productSpecGroups[$rowGroupKey] ?? $buildProductSpecGroupLabel((string) $row['spec_key'], $rowDepartment, $rowSubcategory);
                   }

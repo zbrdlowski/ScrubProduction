@@ -61,7 +61,8 @@ $pageLabels = [
   'holidays' => 'Dovolenky',
   'chat' => 'Interný chat',
   'shoptet_order_download' => 'Shoptet Order Download',
-  'status_policies' => 'Status Policies'
+  'status_policies' => 'Status Policies',
+  'product_listing_catalog' => 'Product Listing Catalog'
 
   // Add more as needed
 ];

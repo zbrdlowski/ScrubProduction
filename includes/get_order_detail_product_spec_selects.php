@@ -242,6 +242,24 @@ function productSpecNormalizeSourceKey(string $key): string
   return preg_replace('/-+/', '-', $key) ?? $key;
 }
 
+function productSpecDecodeStoredFieldMeta(?string $rawValue): array
+{
+  $rawValue = trim((string) $rawValue);
+  if ($rawValue === '') {
+    return ['source_key' => '', 'field_label' => ''];
+  }
+
+  $decoded = json_decode($rawValue, true);
+  if (is_array($decoded)) {
+    return [
+      'source_key' => trim((string) ($decoded['source_key'] ?? '')),
+      'field_label' => trim((string) ($decoded['field_label'] ?? '')),
+    ];
+  }
+
+  return ['source_key' => $rawValue, 'field_label' => ''];
+}
+
 function productSpecHumanizeOptionKey(string $key): string
 {
   static $overrides = [
@@ -388,7 +406,7 @@ function productSpecFieldDefinitions(mysqli $conn, string $department): array
       spec_key,
       COALESCE(MAX(field_type), 'dropdown') AS field_type,
       $fieldLabelSelect
-      COALESCE(NULLIF(MAX(color), ''), '') AS source_key,
+      COALESCE(NULLIF(MAX(color), ''), '') AS stored_field_meta,
       $fieldSortSelect
       COALESCE(MAX(apply_to_subcategories), 0) AS apply_to_subcategories
     FROM product_spec_options
@@ -407,15 +425,25 @@ function productSpecFieldDefinitions(mysqli $conn, string $department): array
           continue;
         }
 
+        $storedMeta = productSpecDecodeStoredFieldMeta((string) ($row['stored_field_meta'] ?? ''));
+        $resolvedFieldLabel = trim((string) ($row['field_label'] ?? ''));
+        if ($resolvedFieldLabel === '') {
+          $resolvedFieldLabel = $storedMeta['field_label'];
+        }
+        if ($resolvedFieldLabel === '') {
+          $resolvedFieldLabel = productSpecLabelFromKey($specKey, $department);
+        }
+
+        $resolvedSourceKey = trim((string) ($storedMeta['source_key'] ?? ''));
+        if ($resolvedSourceKey === '') {
+          $resolvedSourceKey = productSpecSourceKeyFromSpecKey($specKey, $department);
+        }
+
         $definitions[] = [
           'spec_key' => $specKey,
           'field_type' => trim((string) ($row['field_type'] ?? 'dropdown')) ?: 'dropdown',
-          'label' => trim((string) ($row['field_label'] ?? '')) !== ''
-            ? trim((string) ($row['field_label'] ?? ''))
-            : productSpecLabelFromKey($specKey, $department),
-          'source_key' => trim((string) ($row['source_key'] ?? '')) !== ''
-            ? trim((string) ($row['source_key'] ?? ''))
-            : productSpecSourceKeyFromSpecKey($specKey, $department),
+          'label' => $resolvedFieldLabel,
+          'source_key' => $resolvedSourceKey,
           'field_sort_order' => (int) ($row['field_sort_order'] ?? 999),
           'apply_to_subcategories' => (int) ($row['apply_to_subcategories'] ?? 0) === 1 ? 1 : 0,
           'department' => $department,

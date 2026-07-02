@@ -205,8 +205,19 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == '1') {
     SELECT COUNT(DISTINCT p.id) AS cnt
     FROM projects p
     LEFT JOIN project_tasks pt ON pt.project_id = p.id
+    LEFT JOIN (
+        SELECT project_id,
+               COUNT(*) AS total_tasks,
+               SUM(status = 'done') AS done_tasks
+        FROM project_tasks
+        GROUP BY project_id
+    ) ts ON ts.project_id = p.id
     WHERE p.status NOT IN ('done','cancelled')
       AND (p.assigned_to = ? OR pt.assigned_to = ?)
+      AND NOT (
+            COALESCE(ts.total_tasks, 0) > 0
+            AND COALESCE(ts.done_tasks, 0) >= COALESCE(ts.total_tasks, 0)
+          )
   ");
       if ($stmt) {
         $stmt->bind_param('ii', $profileUserId, $profileUserId);

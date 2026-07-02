@@ -108,6 +108,42 @@ function product_spec_column_exists(mysqli $conn, string $column): bool
   return $exists;
 }
 
+function product_spec_decode_field_meta(?string $rawValue): array
+{
+  $rawValue = trim((string) $rawValue);
+  if ($rawValue === '') {
+    return ['source_key' => '', 'field_label' => ''];
+  }
+
+  $decoded = json_decode($rawValue, true);
+  if (is_array($decoded)) {
+    return [
+      'source_key' => trim((string) ($decoded['source_key'] ?? '')),
+      'field_label' => trim((string) ($decoded['field_label'] ?? '')),
+    ];
+  }
+
+  return ['source_key' => $rawValue, 'field_label' => ''];
+}
+
+function product_spec_encode_field_meta(?string $sourceKey, ?string $fieldLabel, bool $hasDedicatedFieldLabelColumn): ?string
+{
+  $sourceKey = trim((string) $sourceKey);
+  $fieldLabel = trim((string) $fieldLabel);
+
+  if ($hasDedicatedFieldLabelColumn || $fieldLabel === '') {
+    return $sourceKey !== '' ? $sourceKey : null;
+  }
+
+  return json_encode(
+    [
+      'source_key' => $sourceKey,
+      'field_label' => $fieldLabel,
+    ],
+    JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES
+  ) ?: ($sourceKey !== '' ? $sourceKey : null);
+}
+
 function ensure_product_spec_field_label_column(mysqli $conn): void
 {
   static $done = false;

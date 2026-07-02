@@ -25,6 +25,7 @@ $builderType = strtoupper(trim((string) ($_GET['builder_type'] ?? '')));
 $listRows = [];
 $selectedOrder = null;
 $editItem = null;
+$relatedOrders = [];
 $moduleLoadError = null;
 
 $where = [];
@@ -47,6 +48,7 @@ try {
       co.*,
       TRIM(CONCAT_WS(' ', eo.firstname, eo.lastname)) AS owner_name,
       COALESCE(item_stats.item_count, 0) AS item_count,
+      COALESCE(item_stats.item_total, 0) AS item_total,
       COALESCE(item_stats.upsell_total, 0) AS upsell_total,
       COALESCE(payment_stats.deposit_total, 0) AS deposit_total,
       COALESCE(payment_stats.paid_total, 0) AS paid_total
@@ -56,6 +58,7 @@ try {
       SELECT
         custom_order_id,
         COUNT(*) AS item_count,
+        SUM(qty * unit_price) AS item_total,
         SUM(CASE WHEN is_upsell = 1 THEN qty * unit_price ELSE 0 END) AS upsell_total
       FROM custom_order_items
       GROUP BY custom_order_id
@@ -79,10 +82,6 @@ try {
   }
   while ($row = $res->fetch_assoc()) {
     $listRows[] = $row;
-  }
-
-  if ($selectedOrderId <= 0 && !empty($listRows)) {
-    $selectedOrderId = (int) $listRows[0]['id'];
   }
 
   $selectedOrder = $selectedOrderId > 0 ? customOrdersGetOrder($conn, $selectedOrderId) : null;
@@ -144,6 +143,76 @@ try {
       $statusCounts['_all'] += $cnt;
     }
   }
+
+  if ($selectedOrder) {
+    $relatedWhere = [];
+    if ((int) ($selectedOrder['contact_directory_id'] ?? 0) > 0) {
+      $relatedWhere[] = 'co.contact_directory_id = ' . (int) $selectedOrder['contact_directory_id'];
+    }
+
+    $relatedEmail = trim((string) ($selectedOrder['customer_email'] ?? ''));
+    if ($relatedEmail !== '') {
+      $relatedWhere[] = "LOWER(TRIM(co.customer_email)) = '" . $conn->real_escape_string(strtolower($relatedEmail)) . "'";
+    }
+
+    $relatedHandle = trim((string) ($selectedOrder['social_handle'] ?? ''));
+    if ($relatedHandle !== '') {
+      $relatedWhere[] = "LOWER(TRIM(co.social_handle)) = '" . $conn->real_escape_string(strtolower($relatedHandle)) . "'";
+    }
+
+    $relatedName = trim((string) ($selectedOrder['customer_name'] ?? ''));
+    if ($relatedName !== '') {
+      $relatedWhere[] = "LOWER(TRIM(co.customer_name)) = '" . $conn->real_escape_string(strtolower($relatedName)) . "'";
+    }
+
+    if ($relatedWhere) {
+      $relatedSql = "
+        SELECT
+          co.id,
+          co.internal_code,
+          co.official_order_number,
+          co.status,
+          co.customer_name,
+          co.social_handle,
+          co.customer_email,
+          co.customer_country,
+          co.currency,
+          co.shipping_price,
+          co.updated_at,
+          co.production_order_id,
+          TRIM(CONCAT_WS(' ', eo.firstname, eo.lastname)) AS owner_name,
+          COALESCE(item_stats.item_count, 0) AS item_count,
+          COALESCE(item_stats.item_total, 0) AS item_total,
+          COALESCE(payment_stats.paid_total, 0) AS paid_total
+        FROM custom_orders co
+        LEFT JOIN employees eo ON eo.id = co.owner_employee_id
+        LEFT JOIN (
+          SELECT
+            custom_order_id,
+            COUNT(*) AS item_count,
+            SUM(qty * unit_price) AS item_total
+          FROM custom_order_items
+          GROUP BY custom_order_id
+        ) item_stats ON item_stats.custom_order_id = co.id
+        LEFT JOIN (
+          SELECT
+            custom_order_id,
+            SUM(CASE WHEN payment_kind = 'REFUND' THEN -amount ELSE amount END) AS paid_total
+          FROM custom_order_payments
+          GROUP BY custom_order_id
+        ) payment_stats ON payment_stats.custom_order_id = co.id
+        WHERE (" . implode(' OR ', $relatedWhere) . ")
+        ORDER BY co.updated_at DESC, co.id DESC
+        LIMIT 25
+      ";
+      $res = $conn->query($relatedSql);
+      if ($res) {
+        while ($row = $res->fetch_assoc()) {
+          $relatedOrders[] = $row;
+        }
+      }
+    }
+  }
 } catch (Throwable $e) {
   $moduleLoadError = $e->getMessage();
 }
@@ -156,6 +225,37 @@ function h($value): string
 function selectedText(array $map, string $key): string
 {
   return $map[$key] ?? $key;
+}
+
+function customOrderBuildUrl(?int $orderId = null, array $extraParams = [], bool $includeOrder = true): string
+{
+  global $statusFilter, $query, $customOrderHelpLang, $editItemId;
+
+  $params = ['page' => 'custom_orders'];
+  if ($statusFilter !== '') {
+    $params['status'] = $statusFilter;
+  }
+  if ($query !== '') {
+    $params['q'] = $query;
+  }
+  if ($customOrderHelpLang !== '') {
+    $params['help_lang'] = $customOrderHelpLang;
+  }
+  if ($includeOrder && $orderId !== null && $orderId > 0) {
+    $params['custom_order_id'] = $orderId;
+  }
+  if ($includeOrder && $editItemId > 0 && !array_key_exists('edit_item_id', $extraParams) && $orderId !== null && $orderId > 0) {
+    $params['edit_item_id'] = $editItemId;
+  }
+  foreach ($extraParams as $key => $value) {
+    if ($value === null || $value === '') {
+      unset($params[$key]);
+      continue;
+    }
+    $params[$key] = (string) $value;
+  }
+
+  return 'index.php?' . http_build_query($params);
 }
 
 function customOrderResolveHelpLanguage(): string
@@ -613,6 +713,14 @@ if (!isset(customOrdersAllowedItemTypes()[$builderType])) {
   .custom-order-meta {
     font-size: 12px;
     color: #adb5bd;
+  }
+
+  .custom-order-table-row {
+    cursor: pointer;
+  }
+
+  .custom-order-table-row:hover td {
+    background: rgba(60, 141, 188, .12);
   }
 
   .custom-status-tabs {
@@ -1417,11 +1525,11 @@ if (!isset(customOrdersAllowedItemTypes()[$builderType])) {
     <div class="d-flex align-items-center">
       <h3 class="mb-0 mr-3">Custom Orders</h3>
       <div class="btn-group btn-group-sm" role="group" aria-label="Tooltip language">
-        <a href="index.php?page=custom_orders<?= $selectedOrderId > 0 ? '&custom_order_id=' . (int) $selectedOrderId : '' ?><?= $editItemId > 0 ? '&edit_item_id=' . (int) $editItemId : '' ?><?= $statusFilter !== '' ? '&status=' . urlencode($statusFilter) : '' ?><?= $query !== '' ? '&q=' . urlencode($query) : '' ?>&help_lang=sk"
+        <a href="<?= h(customOrderBuildUrl($selectedOrderId > 0 ? $selectedOrderId : null, ['help_lang' => 'sk'])) ?>"
           class="btn <?= $customOrderHelpLang === 'sk' ? 'btn-info' : 'btn-outline-light' ?>">
           <span class="custom-help-lang-btn"><?= customOrderFlagIcon('sk', 'Slovakia') ?><span>SK Help</span></span>
         </a>
-        <a href="index.php?page=custom_orders<?= $selectedOrderId > 0 ? '&custom_order_id=' . (int) $selectedOrderId : '' ?><?= $editItemId > 0 ? '&edit_item_id=' . (int) $editItemId : '' ?><?= $statusFilter !== '' ? '&status=' . urlencode($statusFilter) : '' ?><?= $query !== '' ? '&q=' . urlencode($query) : '' ?>&help_lang=en"
+        <a href="<?= h(customOrderBuildUrl($selectedOrderId > 0 ? $selectedOrderId : null, ['help_lang' => 'en'])) ?>"
           class="btn <?= $customOrderHelpLang === 'en' ? 'btn-info' : 'btn-outline-light' ?>">
           <span class="custom-help-lang-btn"><?= customOrderFlagIcon('gb', 'United Kingdom') ?><span>EN
               Help</span></span>
@@ -1434,12 +1542,12 @@ if (!isset(customOrdersAllowedItemTypes()[$builderType])) {
   </div>
 
   <div class="custom-status-tabs">
-    <a href="index.php?page=custom_orders<?= $query !== '' ? '&q=' . urlencode($query) : '' ?>"
+    <a href="<?= h(customOrderBuildUrl(null, ['status' => null, 'custom_order_id' => null, 'edit_item_id' => null], false)) ?>"
       class="custom-status-tab <?= $statusFilter === '' ? 'active' : '' ?>">
       <span>All</span><span class="custom-status-tab-count"><?= (int) ($statusCounts['_all'] ?? 0) ?></span>
     </a>
     <?php foreach ($statuses as $code => $label): ?>
-      <a href="index.php?page=custom_orders&status=<?= urlencode($code) ?><?= $query !== '' ? '&q=' . urlencode($query) : '' ?>"
+      <a href="<?= h(customOrderBuildUrl(null, ['status' => $code, 'custom_order_id' => null, 'edit_item_id' => null], false)) ?>"
         class="custom-status-tab <?= $statusFilter === $code ? 'active' : '' ?>">
         <span><?= h($label) ?></span><span class="custom-status-tab-count"><?= (int) ($statusCounts[$code] ?? 0) ?></span>
       </a>
@@ -1452,6 +1560,7 @@ if (!isset(customOrdersAllowedItemTypes()[$builderType])) {
         <form method="get" class="mb-3">
           <input type="hidden" name="page" value="custom_orders">
           <?php if ($statusFilter !== ''): ?><input type="hidden" name="status" value="<?= h($statusFilter) ?>"><?php endif; ?>
+          <?php if ($customOrderHelpLang !== ''): ?><input type="hidden" name="help_lang" value="<?= h($customOrderHelpLang) ?>"><?php endif; ?>
           <div class="form-group">
             <label>Search<?= customOrderHelp('search') ?></label>
             <input type="text" name="q" class="form-control form-control-sm" value="<?= h($query) ?>"
@@ -1476,6 +1585,19 @@ if (!isset(customOrdersAllowedItemTypes()[$builderType])) {
         </form>
 
         <?php if ($selectedOrder): ?>
+          <a href="<?= h(customOrderBuildUrl(null, ['custom_order_id' => null, 'edit_item_id' => null], false)) ?>"
+            class="btn btn-outline-light btn-sm btn-block mb-3">Back To Orders List</a>
+          <div class="custom-order-section-title">Customer Context</div>
+          <div class="custom-field-cluster mb-3">
+            <div class="custom-summary-list">
+              <div class="custom-summary-row"><strong>Customer</strong><span><?= h($selectedOrder['customer_name'] ?: 'Unnamed lead') ?></span></div>
+              <div class="custom-summary-row"><strong>Handle</strong><span><?= h($selectedOrder['social_handle'] ?: '-') ?></span></div>
+              <div class="custom-summary-row"><strong>Email</strong><span><?= h($selectedOrder['customer_email'] ?: '-') ?></span></div>
+              <div class="custom-summary-row"><strong>Phone</strong><span><?= h($selectedOrder['customer_phone'] ?: '-') ?></span></div>
+              <div class="custom-summary-row"><strong>Country</strong><span><?= h($selectedOrder['customer_country'] ?: $selectedOrder['shipping_country'] ?: '-') ?></span></div>
+            </div>
+          </div>
+
           <div class="custom-order-section-title">Lead Actions</div>
           <div class="custom-field-cluster mb-3">
             <div class="custom-summary-list mb-3">
@@ -1514,41 +1636,97 @@ if (!isset(customOrdersAllowedItemTypes()[$builderType])) {
               <a class="btn btn-outline-success btn-sm btn-block" href="index.php?page=orders&q=<?= urlencode((string) $selectedOrder['official_order_number']) ?>">Open Production Order</a>
             <?php endif; ?>
           </div>
+          <div class="custom-order-section-title">Related Orders</div>
+          <div style="max-height: 46vh; overflow:auto;">
+            <?php foreach ($relatedOrders as $row): ?>
+              <?php $isActive = (int) $row['id'] === $selectedOrderId; ?>
+              <a class="custom-order-list-row <?= $isActive ? 'active' : '' ?>"
+                href="<?= h(customOrderBuildUrl((int) $row['id'], ['edit_item_id' => null])) ?>">
+                <div class="d-flex justify-content-between">
+                  <strong><?= h($row['official_order_number'] ?: $row['internal_code']) ?></strong>
+                  <span
+                    class="badge badge-<?= $row['status'] === 'EXPORTED' ? 'success' : ($row['status'] === 'DEAD' ? 'danger' : 'warning') ?>"><?= h(selectedText($statuses, (string) $row['status'])) ?></span>
+                </div>
+                <div><?= h($row['customer_name'] ?: $row['social_handle'] ?: 'Unnamed lead') ?></div>
+                <div class="custom-order-meta">
+                  Owner <?= h($row['owner_name'] ?: '-') ?> | Updated <?= h(date('d.m.Y H:i', strtotime((string) $row['updated_at']))) ?>
+                </div>
+                <div class="custom-order-meta">
+                  Items <?= (int) $row['item_count'] ?> | Total
+                  <?= number_format((float) (($row['item_total'] ?? 0) + ($row['shipping_price'] ?? 0)), 2) ?>
+                  <?= h($row['currency'] ?: '') ?>
+                </div>
+              </a>
+            <?php endforeach; ?>
+            <?php if (!$relatedOrders): ?>
+              <div class="text-muted">No related orders found for this customer yet.</div>
+            <?php endif; ?>
+          </div>
+        <?php else: ?>
+          <div class="custom-order-section-title">Workspace Mode</div>
+          <div class="custom-field-cluster">
+            <div class="text-muted small mb-2">List view is now the default landing mode for browsing all leads.</div>
+            <div class="custom-summary-list">
+              <div class="custom-summary-row"><strong>Filtered rows</strong><span><?= count($listRows) ?></span></div>
+              <div class="custom-summary-row"><strong>Status scope</strong><span><?= h($statusFilter !== '' ? selectedText($statuses, $statusFilter) : 'All') ?></span></div>
+              <div class="custom-summary-row"><strong>Search</strong><span><?= h($query !== '' ? $query : 'None') ?></span></div>
+            </div>
+          </div>
         <?php endif; ?>
-
-        <div class="custom-order-section-title">Pipeline</div>
-        <div style="max-height: 70vh; overflow:auto;">
-          <?php foreach ($listRows as $row): ?>
-            <?php $isActive = (int) $row['id'] === $selectedOrderId; ?>
-            <a class="custom-order-list-row <?= $isActive ? 'active' : '' ?>"
-              href="index.php?page=custom_orders&custom_order_id=<?= (int) $row['id'] ?>">
-              <div class="d-flex justify-content-between">
-                <strong><?= h($row['official_order_number'] ?: $row['internal_code']) ?></strong>
-                <span
-                  class="badge badge-<?= $row['status'] === 'EXPORTED' ? 'success' : ($row['status'] === 'DEAD' ? 'danger' : 'warning') ?>"><?= h(selectedText($statuses, (string) $row['status'])) ?></span>
-              </div>
-              <div><?= h($row['customer_name'] ?: $row['social_handle'] ?: 'Unnamed lead') ?></div>
-              <div class="custom-order-meta">
-                <?= h($row['source_channel'] ?: '-') ?> | <?= h($row['social_platform'] ?: '-') ?> |
-                C<?= (int) $row['complexity_level'] ?> | Owner <?= h($row['owner_name'] ?: '-') ?>
-              </div>
-              <div class="custom-order-meta">
-                Items <?= (int) $row['item_count'] ?> | Paid
-                <?= number_format((float) ($row['paid_total'] ?? 0), 2) ?> | Upsell
-                <?= number_format((float) ($row['upsell_total'] ?? 0), 2) ?>
-              </div>
-            </a>
-          <?php endforeach; ?>
-          <?php if (!$listRows): ?>
-            <div class="text-muted">No custom orders yet.</div>
-          <?php endif; ?>
-        </div>
       </div>
     </div>
 
     <div>
       <?php if (!$selectedOrder): ?>
-        <div class="alert alert-secondary">Create a custom lead to start.</div>
+        <div class="custom-orders-panel">
+          <div class="panel-body">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+              <div class="custom-order-section-title mb-0">Orders List</div>
+              <div class="text-muted small">Showing up to 300 most recently updated rows</div>
+            </div>
+            <div class="table-responsive">
+              <table class="table table-sm table-dark table-striped custom-mini-table mb-0">
+                <thead>
+                  <tr>
+                    <th>Official / Internal</th>
+                    <th>Customer</th>
+                    <th>Handle</th>
+                    <th>Country</th>
+                    <th>Status</th>
+                    <th>Owner</th>
+                    <th>Items</th>
+                    <th>Total</th>
+                    <th>Updated</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <?php foreach ($listRows as $row): ?>
+                    <?php $rowUrl = customOrderBuildUrl((int) $row['id'], ['edit_item_id' => null]); ?>
+                    <tr class="custom-order-table-row" data-href="<?= h($rowUrl) ?>">
+                      <td>
+                        <div><strong><?= h($row['official_order_number'] ?: $row['internal_code']) ?></strong></div>
+                        <div class="custom-order-meta"><?= h($row['official_order_number'] ? $row['internal_code'] : 'No official number yet') ?></div>
+                      </td>
+                      <td><?= h($row['customer_name'] ?: 'Unnamed lead') ?></td>
+                      <td><?= h($row['social_handle'] ?: '-') ?></td>
+                      <td><?= h($row['customer_country'] ?: $row['shipping_country'] ?: '-') ?></td>
+                      <td><?= h(selectedText($statuses, (string) $row['status'])) ?></td>
+                      <td><?= h($row['owner_name'] ?: '-') ?></td>
+                      <td><?= (int) $row['item_count'] ?></td>
+                      <td><?= number_format((float) (($row['item_total'] ?? 0) + ($row['shipping_price'] ?? 0)), 2) ?> <?= h($row['currency'] ?: '') ?></td>
+                      <td><?= h(date('d.m.Y H:i', strtotime((string) $row['updated_at']))) ?></td>
+                    </tr>
+                  <?php endforeach; ?>
+                  <?php if (!$listRows): ?>
+                    <tr>
+                      <td colspan="9" class="text-muted">No custom orders found for the current filter.</td>
+                    </tr>
+                  <?php endif; ?>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
       <?php else: ?>
         <?php $summary = $selectedOrder['summary']; ?>
         <?php $productionOverview = $selectedOrder['production_overview'] ?? ['order' => null, 'billing' => null, 'shipping' => null, 'invoices' => [], 'tracking' => []]; ?>
@@ -2035,7 +2213,7 @@ if (!isset(customOrdersAllowedItemTypes()[$builderType])) {
               <button type="submit" data-builder-body <?= $currentBuilderType === '' ? 'hidden' : '' ?>
                 class="btn btn-success btn-sm mt-2"><?= $editItem ? 'Update Item' : 'Add Item' ?></button>
               <?php if ($editItem): ?>
-                <a href="index.php?page=custom_orders&custom_order_id=<?= (int) $selectedOrder['id'] ?>"
+                <a href="<?= h(customOrderBuildUrl((int) $selectedOrder['id'], ['edit_item_id' => null])) ?>"
                   class="btn btn-secondary btn-sm mt-2 custom-order-remember-position" data-scroll-target="#custom-order-builder-panel">Cancel Edit</a>
               <?php endif; ?>
             </form>
@@ -2073,7 +2251,7 @@ if (!isset(customOrdersAllowedItemTypes()[$builderType])) {
                     <td class="text-right">
                       <button type="button" class="btn btn-info btn-xs" data-toggle="modal"
                         data-target="#<?= h($itemModalId) ?>">View</button>
-                      <a href="index.php?page=custom_orders&custom_order_id=<?= (int) $selectedOrder['id'] ?>&edit_item_id=<?= (int) $item['id'] ?>"
+                      <a href="<?= h(customOrderBuildUrl((int) $selectedOrder['id'], ['edit_item_id' => (int) $item['id']])) ?>"
                         class="btn btn-secondary btn-xs custom-order-remember-position" data-scroll-target="#custom-order-builder-panel">Edit</a>
                       <form method="post" action="scripts/custom_orders/delete_item.php" style="display:inline-block;" data-scroll-target="#custom-order-builder-panel">
                         <input type="hidden" name="custom_order_id" value="<?= (int) $selectedOrder['id'] ?>">
@@ -2440,6 +2618,19 @@ if (!isset(customOrdersAllowedItemTypes()[$builderType])) {
     document.querySelectorAll('a.custom-order-remember-position').forEach(function (link) {
       link.addEventListener('click', function () {
         rememberCustomOrdersScroll(link);
+      });
+    });
+
+    document.querySelectorAll('.custom-order-table-row[data-href]').forEach(function (row) {
+      row.addEventListener('click', function (event) {
+        var target = event.target;
+        if (target && target.closest('a, button, input, select, textarea, label')) {
+          return;
+        }
+        var href = row.getAttribute('data-href');
+        if (href) {
+          window.location.href = href;
+        }
       });
     });
 
