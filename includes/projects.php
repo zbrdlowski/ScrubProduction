@@ -2123,7 +2123,7 @@ if ($viewId > 0) {
               </div>
             </div>
             <div class="card-footer bg-transparent border-0 pt-0">
-              <a href="?page=projects&view=<?= $p['id'] ?>" class="btn btn-sm btn-outline-primary w-100">
+              <a href="?page=projects&view=<?= $p['id'] ?>" class="btn btn-sm btn-primary w-100">
                 <i class="fas fa-folder-open"></i> Open
               </a>
               <?php if ($isAdmin): ?>

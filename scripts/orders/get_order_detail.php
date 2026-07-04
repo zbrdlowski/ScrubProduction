@@ -4057,7 +4057,7 @@ ob_start();
 
                       $isUserEditableTextField = (
                         $itemSpecField['field_type'] === 'text'
-                        && in_array($fieldSourceKeyNormalized, ['note', 'my-item-note'], true)
+                        && in_array($fieldSourceKeyNormalized, ['note'], true)
                       );
 
                       $isAdminTextEditor = (

@@ -1,4 +1,4 @@
-Jasné — do includes/profile_projects.php vlož úplne hore pred PHP alebo do <style>
+<style>
   sekcie toto CSS: <style>.project-user-line {
     display: flex;
     align-items: center;
@@ -228,7 +228,7 @@ if ($userId > 0) {
     <span class="badge badge-warning ml-1"><?= count($projects) ?></span>
   </h5>
 
-  <a href="?page=projects" class="btn btn-sm btn-outline-primary">
+  <a href="?page=projects" class="btn btn-sm btn-primary">
     <i class="fas fa-folder-open"></i> Open Projects
   </a>
 </div>
@@ -355,7 +355,7 @@ if ($userId > 0) {
         </div>
 
         <div class="card-footer bg-transparent border-0 pt-0">
-          <a href="?page=projects&view=<?= intval($p['id']) ?>" class="btn btn-sm btn-outline-primary w-100">
+          <a href="?page=projects&view=<?= intval($p['id']) ?>" class="btn btn-sm btn-primary w-100">
             <i class="fas fa-folder-open"></i> Open
           </a>
         </div>

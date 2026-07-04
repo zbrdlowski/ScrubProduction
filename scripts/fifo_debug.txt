@@ -198,3 +198,13 @@
 [2026-06-26 09:58:05] DB connected
 [2026-06-26 09:58:05] Log dir: /volume1/web/darkscrub/scripts/../logs/receiving/fifo, writable: YES
 [2026-06-26 09:58:05] Log file: /volume1/web/darkscrub/scripts/../logs/receiving/fifo/fifo_20260626_095805.log
+[2026-06-29 09:08:41] Script STARTED
+[2026-06-29 09:08:41] Session started
+[2026-06-29 09:08:41] DB connected
+[2026-06-29 09:08:41] Log dir: /volume1/web/darkscrub/scripts/../logs/receiving/fifo, writable: YES
+[2026-06-29 09:08:41] Log file: /volume1/web/darkscrub/scripts/../logs/receiving/fifo/fifo_20260629_090841.log
+[2026-07-03 11:04:56] Script STARTED
+[2026-07-03 11:04:56] Session started
+[2026-07-03 11:04:56] DB connected
+[2026-07-03 11:04:56] Log dir: /volume1/web/darkscrub/scripts/../logs/receiving/fifo, writable: YES
+[2026-07-03 11:04:56] Log file: /volume1/web/darkscrub/scripts/../logs/receiving/fifo/fifo_20260703_110456.log

@@ -222,6 +222,13 @@ function h($value): string
   return htmlspecialchars((string) $value, ENT_QUOTES, 'UTF-8');
 }
 
+function customOrderFormatMultiline(string $value): string
+{
+  $normalized = str_replace(["\r\n", "\r"], "\n", $value);
+  $lines = array_map('trim', explode("\n", $normalized));
+  return h(trim(implode("\n", $lines)));
+}
+
 function selectedText(array $map, string $key): string
 {
   return $map[$key] ?? $key;
@@ -1471,7 +1478,7 @@ if (!isset(customOrdersAllowedItemTypes()[$builderType])) {
     background: rgba(17, 24, 39, .16);
     color: #f8f9fa;
     line-height: 1.45;
-    white-space: pre-wrap;
+    white-space: pre-line;
   }
 
   @media (max-width: 1200px) {
@@ -1593,7 +1600,7 @@ if (!isset(customOrdersAllowedItemTypes()[$builderType])) {
               <div class="custom-summary-row"><strong>Customer</strong><span><?= h($selectedOrder['customer_name'] ?: 'Unnamed lead') ?></span></div>
               <div class="custom-summary-row"><strong>Handle</strong><span><?= h($selectedOrder['social_handle'] ?: '-') ?></span></div>
               <div class="custom-summary-row"><strong>Email</strong><span><?= h($selectedOrder['customer_email'] ?: '-') ?></span></div>
-              <div class="custom-summary-row"><strong>Phone</strong><span><?= h($selectedOrder['customer_phone'] ?: '-') ?></span></div>
+              <div class="custom-summary-row"><strong>Phone</strong><span><?= h($selectedOrder['customer_phone'] ?: $selectedOrder['shipping_phone'] ?: $selectedOrder['billing_phone'] ?: '-') ?></span></div>
               <div class="custom-summary-row"><strong>Country</strong><span><?= h($selectedOrder['customer_country'] ?: $selectedOrder['shipping_country'] ?: '-') ?></span></div>
             </div>
           </div>
@@ -1797,6 +1804,7 @@ if (!isset(customOrdersAllowedItemTypes()[$builderType])) {
                     <div><label class="<?= trim(customOrderInvalid($invalidFields, 'social_handle')) ?>">Social handle<?= customOrderHelp('social_handle') ?></label><input type="text" name="social_handle" class="form-control form-control-sm<?= customOrderInvalid($invalidFields, 'social_handle') ?>" value="<?= h($selectedOrder['social_handle']) ?>" list="custom-contact-suggestions"></div>
                     <div><label class="<?= trim(customOrderInvalid($invalidFields, 'customer_name')) ?>">Customer name<?= customOrderHelp('customer_name') ?></label><input type="text" name="customer_name" class="form-control form-control-sm<?= customOrderInvalid($invalidFields, 'customer_name') ?>" value="<?= h($selectedOrder['customer_name']) ?>" list="custom-contact-suggestions"></div>
                     <div><label class="<?= trim(customOrderInvalid($invalidFields, 'customer_email')) ?>">Customer email<?= customOrderHelp('customer_email') ?></label><input type="text" name="customer_email" class="form-control form-control-sm<?= customOrderInvalid($invalidFields, 'customer_email') ?>" value="<?= h($selectedOrder['customer_email']) ?>"></div>
+                    <div><label class="<?= trim(customOrderInvalid($invalidFields, 'customer_phone')) ?>">Customer phone<?= customOrderHelp('customer_phone') ?></label><input type="text" name="customer_phone" class="form-control form-control-sm<?= customOrderInvalid($invalidFields, 'customer_phone') ?>" value="<?= h($selectedOrder['customer_phone'] ?? '') ?>"></div>
                   </div>
                 </fieldset>
 
@@ -2366,7 +2374,7 @@ if (!isset(customOrdersAllowedItemTypes()[$builderType])) {
                             <?php foreach ($itemOptionGroups['note_rows'] as $noteRow): ?>
                               <div class="custom-item-note-box mb-2">
                                 <strong><?= h((string) ($noteRow['label'] ?? '')) ?>:</strong><br>
-                                <?= nl2br(h((string) ($noteRow['value'] ?? '-'))) ?>
+                                <?= customOrderFormatMultiline((string) ($noteRow['value'] ?? '-')) ?>
                               </div>
                             <?php endforeach; ?>
                           <?php else: ?>
