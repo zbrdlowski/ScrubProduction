@@ -1707,6 +1707,19 @@ $deptOptions = [
       .active-filter-pill .pill-value {
         font-weight: 600;
       }
+      .active-filter-pill.pill-action {
+  background: rgba(40, 167, 69, .15);
+  border: 1px solid rgba(40, 167, 69, .5);
+  color: #28a745;
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.active-filter-pill.pill-action:hover {
+  background: rgba(40, 167, 69, .28);
+  color: #34d058;
+  text-decoration: none;
+}
     </style>
 
     <?php
@@ -1767,6 +1780,14 @@ $deptOptions = [
               <span class="pill-value"><?= htmlspecialchars((string) $af['display']) ?></span>
             </span>
           <?php endforeach; ?>
+          <?php if (strtoupper($fStatus) === 'READY_TO_SHIP'): ?>
+  <a href="export_fedex_ready_to_ship.php" target="_blank" rel="noopener"
+     class="active-filter-pill pill-action"
+     title="Stiahnuť FedEx export CSV pre Ready to Ship objednávky">
+    <i class="fas fa-file-csv mr-1"></i>
+    <span class="pill-value">Download CSV</span>
+  </a>
+<?php endif; ?>
         <?php else: ?>
           <span class="text-muted small">No filters active</span>
         <?php endif; ?>

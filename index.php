@@ -1,5 +1,7 @@
 <?php
 
+ob_start(); // buffer output, aby header() fungoval aj z page-includov po navbari
+
 // pred session_start()
 ini_set('session.gc_maxlifetime', 60 * 60 * 24 * 7); // 7 dní
 //session_save_path('volume1/homes/admin/sessions'); // ← pridaj toto
@@ -322,5 +324,5 @@ $pageLabels = [
 
   });
 </script>
-
+<?php ob_end_flush(); ?>
 </html>
