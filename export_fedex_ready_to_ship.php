@@ -1,23 +1,6 @@
 <?php
 declare(strict_types=1);
 
-/**
- * Export FedEx Stratus CSV pre objednavky v stave READY_TO_SHIP.
- *
- * Pouzitie:
- *  - polozit tento subor do rovnakeho adresara ako orders.php (aby fungoval require_once __DIR__.'/conn.php')
- *  - otvorit v prehliadaci: export_fedex_ready_to_ship.php
- *    -> stiahne sa CSV subor pripraveny na import do FedEx Stratus
- *
- * DOPLNIT / SKONTROLOVAT PRED PRVYM POUZITIM:
- *  1) $WEIGHT_MAP nizsie - mam len par hodnot z tvojho priloheneho priesladu (GFP=6, TFP=5, P=5).
- *     Ostatne kombinacie (S, G, F, GFS, GPS, FPS, GFPS, TFPS, M, ...) su TODO - doplnit realnu hmotnost v kg.
- *  2) Stlpec "kod statu US+CA" (US-state, napr. KY, MI, WI) - v order_addresses som nenasiel
- *     samostatny stlpec pre stat/region. Necham prazdne (viz funkcia resolveUsState nizsie) -
- *     ak mate tento udaj niekde inde v DB, treba doplnit tu.
- *  3) "servis" je fixne "economy" - ak sa niekedy meni, treba doplnit logiku (napr. podla shipping_method).
- */
-
 require_once __DIR__ . '/includes/conn.php';
 
 if (!isset($conn) || !$conn instanceof mysqli) {
@@ -25,50 +8,36 @@ if (!isset($conn) || !$conn instanceof mysqli) {
   die('Database connection error.');
 }
 
-// ---------------------------------------------------------------------
-// 1) Mapovanie item_types (normalizovane G,F,P,S poradie + T,M na konci)
-//    -> Material composition text (podla tvojej SWITCH funkcie v Sheets)
-// ---------------------------------------------------------------------
 $MATERIAL_MAP = [
-  'G'    => 'Polepy / Graphics kit (Stickers) for motorcycles made of vinyl film',
-  'S'    => 'Potah sedadla / Seat cover for motorcycles produced of rubberized vinyl',
-  'P'    => 'Plasty / Plastics kit (set of plastic parts) for motorcycle produced of Polypropylene (PP)',
-  'GFP'  => 'GFP / PP Plastics kit with applied Stickers for motorcycles',
-  'TFP'  => 'TFP / PP Plastics kit with applied Stickers for motorcycles',
+  'G' => 'Polepy / Graphics kit (Stickers) for motorcycles made of vinyl film',
+  'S' => 'Potah sedadla / Seat cover for motorcycles produced of rubberized vinyl',
+  'P' => 'Plasty / Plastics kit (set of plastic parts) for motorcycle produced of Polypropylene (PP)',
+  'GFP' => 'GFP / PP Plastics kit with applied Stickers for motorcycles',
+  'TFP' => 'TFP / PP Plastics kit with applied Stickers for motorcycles',
   'GFPS' => 'GFPS / PP Plastics kit with applied Stickers for motorcycles with seat cover in the same design',
   'TFPS' => 'GFPS / PP Plastics kit with applied Stickers for motorcycles with seat cover in the same design',
-  'M'    => 'Koberec / Carpet - motorcycle mat 100% Nylon - Velours',
+  'M' => 'Koberec / Carpet - motorcycle mat 100% Nylon - Velours',
 ];
-// Fallback pre kombinacie, ktore nie su vyssie (podla tvojho SWITCH defaultu)
 $MATERIAL_DEFAULT = 'Plasty / Plastics kit (set of plastic parts) for motorcycle produced of Polypropylene (PP)';
 
-// ---------------------------------------------------------------------
-// 2) Hmotnost (kg) podla item_types - TODO: doplnit chybajuce hodnoty
-// ---------------------------------------------------------------------
 $WEIGHT_MAP = [
-  'GFP'  => 6,
-  'TFP'  => 5,
-  'P'    => 5,
-  'G'    => 1, // TODO
-  'F'    => 0, // TODO
-  'S'    => 0.5, // TODO
-  'M'    => 6, // TODO
-  'GFS'  => 3, // TODO
-  'GPS'  => 6, // TODO
-  'FPS'  => 6, // TODO
-  'GFPS' => 6, // TODO
-  'TFPS' => 6, // TODO
+  'GFP' => 6,
+  'TFP' => 5,
+  'P' => 5,
+  'G' => 1,
+  'F' => 0,
+  'S' => 0.5,
+  'M' => 6,
+  'GFS' => 3,
+  'GPS' => 6,
+  'FPS' => 6,
+  'GFPS' => 6,
+  'TFPS' => 6,
 ];
-$WEIGHT_DEFAULT = 5; // pouzije sa, ak kombinacia chyba alebo je null - uprav podla potreby
+$WEIGHT_DEFAULT = 5;
 
-// ---------------------------------------------------------------------
-// 3) HS Code - konstantny pre vsetok tovar (podla priloheneho priesladu)
-// ---------------------------------------------------------------------
 const HS_CODE = '8714109000';
 
-// ---------------------------------------------------------------------
-// 4) Poistna hodnota - replika Google Sheets schodovej funkcie
-// ---------------------------------------------------------------------
 function calcInsuredValue(float $value): float
 {
   $breakpoints = [164, 246, 328, 410, 492, 574, 656, 738, 820, 902, 984];
@@ -85,30 +54,24 @@ function calcInsuredValue(float $value): float
       break;
     }
   }
+
   return (float) $insured;
 }
 
-// ---------------------------------------------------------------------
-// 5) Normalizacia poradia item_types (rovnaka logika ako v orders.php)
-// ---------------------------------------------------------------------
 function normalizeTypesOrder(string $types): string
 {
   $weights = ['G' => 1, 'F' => 2, 'P' => 3, 'S' => 4];
   $typesArr = str_split(strtoupper($types));
+
   usort($typesArr, function ($a, $b) use ($weights) {
     $wa = $weights[$a] ?? 99;
     $wb = $weights[$b] ?? 99;
     return $wa <=> $wb;
   });
+
   return implode('', $typesArr);
 }
 
-// ---------------------------------------------------------------------
-// 6) US / CA - kod statu/provincie
-//    US cast je 1:1 skopirovana z get_order_detail.php (funkcia usStateFromZip).
-//    CA cast (podla prveho pismena postal code) som doplnil ja, kedze v projekte
-//    som ziadnu existujucu funkciu pre Kanadu nenasiel - over si prosim spravnost.
-// ---------------------------------------------------------------------
 function usStateFromZip(string $zip): string
 {
   $zip = preg_replace('/\D+/', '', $zip);
@@ -147,18 +110,16 @@ function usStateFromZip(string $zip): string
       }
     }
   }
+
   return '';
 }
 
-// TODO: over spravnost - v projekte som ekvivalent pre Kanadu nenasiel,
-// toto je standardna mapa podla prveho pismena postal code.
 function caProvinceFromPostal(string $postal): string
 {
   $postal = strtoupper(preg_replace('/[^A-Z0-9]/i', '', $postal));
   if ($postal === '') {
     return '';
   }
-  $firstLetter = substr($postal, 0, 1);
 
   $map = [
     'A' => 'NL', 'B' => 'NS', 'C' => 'PE', 'E' => 'NB',
@@ -168,13 +129,13 @@ function caProvinceFromPostal(string $postal): string
     'X' => 'NT', 'Y' => 'YT',
   ];
 
-  return $map[$firstLetter] ?? '';
+  return $map[substr($postal, 0, 1)] ?? '';
 }
 
 function resolveUsState(array $row): string
 {
   $country = strtoupper(trim((string) ($row['ship_country'] ?? '')));
-  $zip     = (string) ($row['ship_zip'] ?? '');
+  $zip = (string) ($row['ship_zip'] ?? '');
 
   if ($country === 'US' || $country === 'USA') {
     return usStateFromZip($zip);
@@ -182,113 +143,248 @@ function resolveUsState(array $row): string
   if ($country === 'CA' || $country === 'CAN') {
     return caProvinceFromPostal($zip);
   }
+
   return '';
 }
 
-// ---------------------------------------------------------------------
-// Query: vsetky objednavky READY_TO_SHIP s dorucovacou adresou
-// ---------------------------------------------------------------------
-$sql = "SELECT
-  o.id,
-  o.order_number,
-  o.external_order_id,
-  o.total AS order_total,
+function fetchReadyToShipOrders(mysqli $conn): array
+{
+  $sql = "SELECT
+    o.id,
+    o.order_number,
+    o.external_order_id,
+    o.total AS order_total,
 
-  cu.name  AS customer_name,
-  cu.email AS customer_email,
+    cu.name AS customer_name,
+    cu.email AS customer_email,
 
-  COALESCE(oa_ship.name, cu.name)       AS ship_name,
-  COALESCE(oa_ship.company, '')         AS ship_company,
-  COALESCE(oa_ship.street, '')          AS ship_street,
-  COALESCE(oa_ship.city, '')            AS ship_city,
-  COALESCE(oa_ship.zip, '')             AS ship_zip,
-  COALESCE(oa_ship.country, '')         AS ship_country,
-  COALESCE(oa_ship.phone, '')           AS ship_phone,
-  COALESCE(oa_ship.email, cu.email, '') AS ship_email,
+    COALESCE(oa_ship.name, cu.name) AS ship_name,
+    COALESCE(oa_ship.company, '') AS ship_company,
+    COALESCE(oa_ship.street, '') AS ship_street,
+    COALESCE(oa_ship.city, '') AS ship_city,
+    COALESCE(oa_ship.zip, '') AS ship_zip,
+    COALESCE(oa_ship.country, '') AS ship_country,
+    COALESCE(oa_ship.phone, '') AS ship_phone,
+    COALESCE(oa_ship.email, cu.email, '') AS ship_email,
 
-  (
-    SELECT GROUP_CONCAT(DISTINCT oi.item_type_code ORDER BY oi.item_type_code SEPARATOR '')
-    FROM order_items oi
-    WHERE oi.order_id = o.id
-      AND oi.item_type_code IS NOT NULL
-      AND oi.item_type_code <> ''
-  ) AS item_types,
+    (
+      SELECT GROUP_CONCAT(DISTINCT oi.item_type_code ORDER BY oi.item_type_code SEPARATOR '')
+      FROM order_items oi
+      WHERE oi.order_id = o.id
+        AND oi.item_type_code IS NOT NULL
+        AND oi.item_type_code <> ''
+    ) AS item_types,
 
-  (
-    SELECT oinv.invoice_number
-    FROM order_invoices oinv
-    WHERE oinv.order_id = o.id
-    ORDER BY oinv.id DESC
-    LIMIT 1
-  ) AS invoice_number
+    (
+      SELECT oinv.invoice_number
+      FROM order_invoices oinv
+      WHERE oinv.order_id = o.id
+      ORDER BY oinv.id DESC
+      LIMIT 1
+    ) AS invoice_number
 
-FROM orders o
-LEFT JOIN customers cu ON cu.id = o.customer_id
-LEFT JOIN order_addresses oa_ship
-  ON oa_ship.order_id = o.id AND UPPER(oa_ship.type) = 'SHIPPING'
-WHERE o.status = 'READY_TO_SHIP'
-ORDER BY o.id ASC";
+  FROM orders o
+  LEFT JOIN customers cu ON cu.id = o.customer_id
+  LEFT JOIN order_addresses oa_ship
+    ON oa_ship.order_id = o.id AND UPPER(oa_ship.type) = 'SHIPPING'
+  WHERE o.status = 'READY_TO_SHIP'
+  ORDER BY o.id ASC";
 
-$res = $conn->query($sql);
-if (!$res) {
-  http_response_code(500);
-  die('Query error: ' . $conn->error);
+  $res = $conn->query($sql);
+  if (!$res) {
+    http_response_code(500);
+    die('Query error: ' . $conn->error);
+  }
+
+  $rows = [];
+  while ($row = $res->fetch_assoc()) {
+    $rows[] = $row;
+  }
+
+  return $rows;
 }
 
-// ---------------------------------------------------------------------
-// CSV output
-// ---------------------------------------------------------------------
+function buildExportRows(array $orders, array $materialMap, string $materialDefault, array $weightMap, float $weightDefault): array
+{
+  $exportRows = [];
+
+  foreach ($orders as $row) {
+    $typesRaw = (string) ($row['item_types'] ?? '');
+    $typesNorm = normalizeTypesOrder($typesRaw);
+    $orderTotal = (float) ($row['order_total'] ?? 0);
+
+    $orderNumber = trim((string) ($row['order_number'] ?? ''));
+    $externalOrderId = trim((string) ($row['external_order_id'] ?? ''));
+    $refNumber = trim($typesNorm . ' - ' . ($orderNumber !== '' ? $orderNumber : $externalOrderId), ' -');
+
+    $invoiceName = trim((string) ($row['invoice_number'] ?? ''));
+    if ($invoiceName === '') {
+      $invoiceName = 'Invoice';
+    }
+
+    $material = $materialMap[$typesNorm] ?? $materialDefault;
+    $weight = $weightMap[$typesNorm] ?? $weightDefault;
+    if ($weight === null || $weight === '') {
+      $weight = $weightDefault;
+    }
+
+    $exportRows[(int) $row['id']] = [
+      'order_id' => (int) $row['id'],
+      'order_number' => $orderNumber,
+      'external_order_id' => $externalOrderId,
+      'types' => $typesNorm,
+      'company' => (string) ($row['ship_company'] ?? ''),
+      'name' => (string) ($row['ship_name'] ?? ''),
+      'address' => (string) ($row['ship_street'] ?? ''),
+      'city' => (string) ($row['ship_city'] ?? ''),
+      'zip' => (string) ($row['ship_zip'] ?? ''),
+      'country' => (string) ($row['ship_country'] ?? ''),
+      'state_code' => resolveUsState($row),
+      'phone' => (string) ($row['ship_phone'] ?? ''),
+      'email' => (string) ($row['ship_email'] ?? ''),
+      'ref_number' => $refNumber,
+      'invoice_name' => $invoiceName,
+      'customs_value' => number_format($orderTotal, 2, '.', ''),
+      'service' => 'economy',
+      'duty_payer' => '2',
+      'insured_value' => number_format(calcInsuredValue($orderTotal), 2, '.', ''),
+      'hs_code' => HS_CODE,
+      'material' => $material,
+      'weight' => is_numeric((string) $weight) ? number_format((float) $weight, 2, '.', '') : (string) $weight,
+    ];
+  }
+
+  return $exportRows;
+}
+
+function applyOverrides(array $defaultRows, array $submittedRows): array
+{
+  $allowedFields = [
+    'company', 'name', 'address', 'city', 'zip', 'country', 'state_code', 'phone', 'email',
+    'ref_number', 'invoice_name', 'customs_value', 'service', 'duty_payer', 'insured_value',
+    'hs_code', 'material', 'weight',
+  ];
+
+  $rows = [];
+  foreach ($defaultRows as $orderId => $row) {
+    $overrides = $submittedRows[$orderId] ?? [];
+    if (!is_array($overrides)) {
+      $overrides = [];
+    }
+
+    foreach ($allowedFields as $field) {
+      if (array_key_exists($field, $overrides)) {
+        $row[$field] = trim((string) $overrides[$field]);
+      }
+    }
+
+    $rows[$orderId] = $row;
+  }
+
+  return $rows;
+}
+
+function renderPreviewRows(array $rows): void
+{
+  if (!$rows) {
+    echo '<div class="alert alert-warning mb-0">No READY_TO_SHIP orders found.</div>';
+    return;
+  }
+
+  echo '<div class="alert alert-info py-2 px-3 mb-3">';
+  echo 'Uprav hodnoty podla potreby a potom klikni na <strong>Generate CSV</strong>.';
+  echo '</div>';
+  echo '<div class="table-responsive">';
+  echo '<table class="table table-dark table-sm table-bordered fedex-preview-table mb-0">';
+  echo '<thead><tr>';
+  echo '<th style="min-width:110px;">Order</th>';
+  echo '<th style="min-width:90px;">Types</th>';
+  echo '<th style="min-width:150px;">Company</th>';
+  echo '<th style="min-width:150px;">Name</th>';
+  echo '<th style="min-width:180px;">Address</th>';
+  echo '<th style="min-width:140px;">City</th>';
+  echo '<th style="min-width:100px;">ZIP</th>';
+  echo '<th style="min-width:90px;">Country</th>';
+  echo '<th style="min-width:90px;">State</th>';
+  echo '<th style="min-width:130px;">Phone</th>';
+  echo '<th style="min-width:170px;">E-mail</th>';
+  echo '<th style="min-width:160px;">Reference</th>';
+  echo '<th style="min-width:140px;">Invoice</th>';
+  echo '<th style="min-width:110px;">Customs</th>';
+  echo '<th style="min-width:100px;">Service</th>';
+  echo '<th style="min-width:95px;">Duty Payer</th>';
+  echo '<th style="min-width:110px;">Insurance</th>';
+  echo '<th style="min-width:120px;">HS Code</th>';
+  echo '<th style="min-width:280px;">Material</th>';
+  echo '<th style="min-width:90px;">Weight</th>';
+  echo '</tr></thead><tbody>';
+
+  foreach ($rows as $row) {
+    $orderId = (int) $row['order_id'];
+    $orderLabel = $row['order_number'] !== '' ? $row['order_number'] : $row['external_order_id'];
+    echo '<tr>';
+    echo '<td><strong>' . htmlspecialchars($orderLabel) . '</strong><br><small class="text-muted">#' . $orderId . '</small></td>';
+    echo '<td>' . htmlspecialchars((string) $row['types']) . '</td>';
+
+    foreach ([
+      'company', 'name', 'address', 'city', 'zip', 'country', 'state_code', 'phone', 'email',
+      'ref_number', 'invoice_name', 'customs_value', 'service', 'duty_payer', 'insured_value',
+      'hs_code', 'material', 'weight',
+    ] as $field) {
+      echo '<td>';
+      echo '<input type="text" class="form-control form-control-sm bg-dark text-light border-secondary" name="rows[' . $orderId . '][' . $field . ']" value="' . htmlspecialchars((string) $row[$field]) . '">';
+      echo '</td>';
+    }
+
+    echo '</tr>';
+  }
+
+  echo '</tbody></table></div>';
+}
+
+$orders = fetchReadyToShipOrders($conn);
+$defaultRows = buildExportRows($orders, $MATERIAL_MAP, $MATERIAL_DEFAULT, $WEIGHT_MAP, $WEIGHT_DEFAULT);
+
+if (isset($_GET['preview'])) {
+  renderPreviewRows($defaultRows);
+  $conn->close();
+  exit;
+}
+
+$submittedRows = isset($_POST['rows']) && is_array($_POST['rows']) ? $_POST['rows'] : [];
+$exportRows = applyOverrides($defaultRows, $submittedRows);
+
 $filename = 'fedex_export_' . date('Y-m-d_His') . '.csv';
 header('Content-Type: text/csv; charset=utf-8');
 header('Content-Disposition: attachment; filename="' . $filename . '"');
 
 $out = fopen('php://output', 'w');
-
 fputcsv($out, [
   'nazov firmy', 'meno', 'adresa', 'mesto', 'psc', 'stat', 'kod statu US+CA',
   'tel', 'e-mail', 'referencne_cislo', 'nazov faktury', 'colna hodnota',
   'servis', 'platca cla', 'poistit', 'HS Code', 'Material composition', 'Weight',
 ]);
 
-while ($row = $res->fetch_assoc()) {
-  $typesRaw   = (string) ($row['item_types'] ?? '');
-  $typesNorm  = normalizeTypesOrder($typesRaw);
-  $orderTotal = (float) ($row['order_total'] ?? 0);
-
-  $refNumber = trim($typesNorm . ' - ' . ((string) ($row['order_number'] ?? '') !== ''
-    ? $row['order_number']
-    : $row['external_order_id']));
-
-  $invoiceName = trim((string) ($row['invoice_number'] ?? ''));
-  if ($invoiceName === '') {
-    $invoiceName = 'Invoice';
-  }
-
-  $material = $MATERIAL_MAP[$typesNorm] ?? $MATERIAL_DEFAULT;
-  $weight   = $WEIGHT_MAP[$typesNorm] ?? $WEIGHT_DEFAULT;
-  if ($weight === null) {
-    $weight = $WEIGHT_DEFAULT;
-  }
-
+foreach ($exportRows as $row) {
   fputcsv($out, [
-    $row['ship_company'],                 // nazov firmy
-    $row['ship_name'],                    // meno
-    $row['ship_street'],                  // adresa
-    $row['ship_city'],                    // mesto
-    $row['ship_zip'],                     // psc
-    $row['ship_country'],                 // stat
-    resolveUsState($row),                 // kod statu US+CA (TODO)
-    $row['ship_phone'],                   // tel
-    $row['ship_email'],                   // e-mail
-    $refNumber,                           // referencne_cislo
-    $invoiceName,                         // nazov faktury
-    number_format($orderTotal, 2, '.', ''), // colna hodnota
-    'economy',                            // servis
-    2,                                    // platca cla (2 = prijemca)
-    number_format(calcInsuredValue($orderTotal), 2, '.', ''), // poistit
-    HS_CODE,                              // HS Code
-    $material,                            // Material composition
-    $weight,                              // Weight
+    $row['company'],
+    $row['name'],
+    $row['address'],
+    $row['city'],
+    $row['zip'],
+    $row['country'],
+    $row['state_code'],
+    $row['phone'],
+    $row['email'],
+    $row['ref_number'],
+    $row['invoice_name'],
+    $row['customs_value'],
+    $row['service'],
+    $row['duty_payer'],
+    $row['insured_value'],
+    $row['hs_code'],
+    $row['material'],
+    $row['weight'],
   ]);
 }
 

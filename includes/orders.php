@@ -1720,6 +1720,57 @@ $deptOptions = [
   color: #34d058;
   text-decoration: none;
 }
+
+.active-filter-pill.pill-action:focus {
+  outline: none;
+  box-shadow: 0 0 0 0.15rem rgba(40, 167, 69, .25);
+}
+
+.fedex-export-loader {
+  min-height: 120px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.fedex-preview-table input.form-control {
+  min-width: 100%;
+}
+
+#fedexExportModal .modal-dialog {
+  width: min(95vw, 1400px);
+  max-width: none;
+}
+
+#fedexExportModal .modal-content {
+  position: relative;
+  overflow: hidden;
+}
+
+#fedexExportModal .modal-body {
+  max-height: calc(100vh - 180px);
+  overflow: auto;
+}
+
+#fedexExportModal .modal-content.ui-resizable {
+  width: min(95vw, 1400px);
+}
+
+#fedexExportModal .fedex-resize-handle {
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  width: 18px;
+  height: 18px;
+  background:
+    linear-gradient(135deg, transparent 0 45%, rgba(255,255,255,.28) 45% 55%, transparent 55% 100%),
+    linear-gradient(135deg, transparent 0 62%, rgba(255,255,255,.45) 62% 72%, transparent 72% 100%);
+  background-repeat: no-repeat;
+  background-position: center;
+  cursor: se-resize;
+  opacity: .9;
+  z-index: 20;
+}
     </style>
 
     <?php
@@ -1781,13 +1832,12 @@ $deptOptions = [
             </span>
           <?php endforeach; ?>
           <?php if (strtoupper($fStatus) === 'READY_TO_SHIP'): ?>
-  <a href="export_fedex_ready_to_ship.php" target="_blank" rel="noopener"
-     class="active-filter-pill pill-action"
-     title="Stiahnuť FedEx export CSV pre Ready to Ship objednávky">
-    <i class="fas fa-file-csv mr-1"></i>
-    <span class="pill-value">Download CSV</span>
-  </a>
-<?php endif; ?>
+            <button type="button" class="active-filter-pill pill-action border-0 js-open-fedex-export-modal"
+              title="Otvoriť FedEx export CSV pre Ready to Ship objednávky">
+              <i class="fas fa-file-csv mr-1"></i>
+              <span class="pill-value">Download CSV</span>
+            </button>
+          <?php endif; ?>
         <?php else: ?>
           <span class="text-muted small">No filters active</span>
         <?php endif; ?>
@@ -4120,8 +4170,96 @@ $deptOptions = [
   </div>
 </div>
 
+<div class="modal fade" id="fedexExportModal" tabindex="-1" role="dialog" aria-hidden="true">
+  <div class="modal-dialog modal-xl" role="document">
+    <div class="modal-content bg-dark text-light">
+      <form method="post" action="export_fedex_ready_to_ship.php" target="_blank">
+        <div class="modal-header border-secondary">
+          <h5 class="modal-title">
+            <i class="fas fa-file-csv mr-2"></i>FedEx CSV Preview
+          </h5>
+          <button type="button" class="close text-light" data-dismiss="modal" data-bs-dismiss="modal" aria-label="Close">
+            <span aria-hidden="true">&times;</span>
+          </button>
+        </div>
+        <div class="modal-body">
+          <div id="fedexExportModalBody" class="fedex-export-loader text-muted">
+            <div><span class="spinner-border spinner-border-sm mr-2"></span>Loading export preview...</div>
+          </div>
+        </div>
+        <div class="modal-footer border-secondary">
+          <button type="button" class="btn btn-secondary btn-sm" data-dismiss="modal" data-bs-dismiss="modal">
+            Cancel
+          </button>
+          <button type="submit" class="btn btn-success btn-sm" id="fedexExportSubmitBtn" disabled>
+            <i class="fas fa-download mr-1"></i>Generate CSV
+          </button>
+        </div>
+      </form>
+      <div class="fedex-resize-handle" aria-hidden="true"></div>
+    </div>
+  </div>
+</div>
+
 <script>
   $(function () {
+    const $fedexExportModal = $('#fedexExportModal');
+    const $fedexExportDialog = $fedexExportModal.find('.modal-dialog');
+    const $fedexExportContent = $fedexExportModal.find('.modal-content');
+    const $fedexExportModalBody = $('#fedexExportModalBody');
+    const $fedexExportSubmitBtn = $('#fedexExportSubmitBtn');
+    let fedexExportResizableInit = false;
+
+    function initFedexExportResizable() {
+      if (fedexExportResizableInit || typeof $fedexExportContent.resizable !== 'function') {
+        return;
+      }
+
+      $fedexExportContent.resizable({
+        handles: {
+          se: '.fedex-resize-handle'
+        },
+        minWidth: 900,
+        minHeight: 500,
+        maxWidth: Math.floor(window.innerWidth * 0.97),
+        maxHeight: Math.floor(window.innerHeight * 0.92),
+        resize: function (event, ui) {
+          ui.element.css({ width: ui.size.width + 'px', height: ui.size.height + 'px' });
+        }
+      });
+
+      fedexExportResizableInit = true;
+    }
+
+    function loadFedexExportPreview() {
+      $fedexExportSubmitBtn.prop('disabled', true);
+      $fedexExportModalBody
+        .removeClass('alert alert-danger')
+        .addClass('fedex-export-loader text-muted')
+        .html('<div><span class="spinner-border spinner-border-sm mr-2"></span>Loading export preview...</div>');
+
+      $.ajax({
+        url: 'export_fedex_ready_to_ship.php',
+        method: 'GET',
+        data: { preview: 1 },
+        cache: false,
+        success: function (html) {
+          $fedexExportModalBody
+            .removeClass('fedex-export-loader text-muted')
+            .html(html);
+          $fedexExportSubmitBtn.prop('disabled', false);
+        },
+        error: function (xhr) {
+          const msg = xhr && xhr.responseText
+            ? xhr.responseText.substring(0, 400)
+            : 'Failed to load export preview.';
+          $fedexExportModalBody
+            .removeClass('fedex-export-loader text-muted')
+            .addClass('alert alert-danger mb-0')
+            .text(msg);
+        }
+      });
+    }
 
     $(document).on('click', '.priority-badge-clickable', function (e) {
       e.preventDefault();
@@ -4175,6 +4313,23 @@ $deptOptions = [
           $btn.prop('disabled', false).html('<i class="fas fa-save mr-1"></i>Save');
         }
       });
+    });
+
+    $(document).on('click', '.js-open-fedex-export-modal', function (e) {
+      e.preventDefault();
+      e.stopPropagation();
+      $fedexExportModal.modal('show');
+      loadFedexExportPreview();
+    });
+
+    $fedexExportModal.on('shown.bs.modal', function () {
+      initFedexExportResizable();
+      if (fedexExportResizableInit) {
+        $fedexExportContent.resizable('option', {
+          maxWidth: Math.floor(window.innerWidth * 0.97),
+          maxHeight: Math.floor(window.innerHeight * 0.92)
+        });
+      }
     });
 
   });
