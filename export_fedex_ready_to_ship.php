@@ -1,11 +1,151 @@
 <?php
 declare(strict_types=1);
 
+// Tento skript bezi mimo index.php routera (kvoli CSV/http headers),
+// takze si musi session a auth nastartovat sam - rovnaky pattern ako
+// napr. v get_order_detail.php.
+if (session_status() === PHP_SESSION_NONE) {
+  session_start();
+}
+
+if (!isset($_SESSION['permission'])) {
+  http_response_code(403);
+  die('Not logged in.');
+}
+
 require_once __DIR__ . '/includes/conn.php';
 
 if (!isset($conn) || !$conn instanceof mysqli) {
   http_response_code(500);
   die('Database connection error.');
+}
+
+// ---------------------------------------------------------------------
+// Department ACL - 1:1 skopirovane z orders.php, aby export ukazoval
+// presne tie objednavky, ktore by dany pouzivatel videl aj v zozname.
+//
+// dept=-1  => "All Orders" - vedome obchadza ACL pre kohokolvek
+//             (napr. telefonat od zakaznika mimo vlastneho oddelenia,
+//             alebo hromadny export pre cely tim).
+// dept=0   => Auto, podla vlastneho oddelenia pouzivatela
+// dept=N   => konkretne oddelenie - respektuje sa pre kohokolvek (rovnako ako
+//             v orders.php), kedze detail objednavky uz tiez nie je blokovany
+//             podla oddelenia.
+// ---------------------------------------------------------------------
+$dpt = (int) ($_SESSION['dpt'] ?? 0);
+$allAccess = in_array($dpt, [1, 3, 4, 5, 7], true);
+
+if (isset($_GET['dept'])) {
+  // Explicitny parameter (najspolahlivejsi zdroj) - toto by mal posielat JS modal.
+  $fDept = (int) $_GET['dept'];
+} else {
+  // FALLBACK: ?dept= nebolo poslane (JS modal ho zatial neposiela).
+  // Skusime ho vytiahnut z Referer hlavicky - teda z URL zoznamu objednavok,
+  // odkial sa export otvoril (napr. .../index.php?page=orders&status=READY_TO_SHIP&dept=-1).
+  // Pozor: Referer nemusi byt vzdy dostupny (blokovany prehliadacom/rozsirenim),
+  // takze toto je len docasna berlicka - spravne riesenie je poslat dept explicitne z JS.
+  $fDept = 0;
+  $referer = $_SERVER['HTTP_REFERER'] ?? '';
+  if ($referer !== '') {
+    $refQuery = parse_url($referer, PHP_URL_QUERY);
+    if ($refQuery) {
+      parse_str($refQuery, $refParams);
+      if (isset($refParams['dept'])) {
+        $fDept = (int) $refParams['dept'];
+      }
+    }
+  }
+}
+
+$deptFilter = [
+  2 => ['GRAPHICS'],
+  6 => ['PLASTICS'],
+  8 => ['SEATCOVER'],
+];
+$deptTypeFilter = [
+  9 => ['F'],
+];
+
+$effectiveDept = ($fDept !== 0) ? $fDept : $dpt;
+
+if ($fDept === -1) {
+  $aclCats = [];
+  $aclTypes = [];
+} elseif ($fDept > 0) {
+  $aclCats = $deptFilter[$fDept] ?? [];
+  $aclTypes = $deptTypeFilter[$fDept] ?? [];
+} else {
+  $aclCats = $deptFilter[$dpt] ?? [];
+  $aclTypes = $deptTypeFilter[$dpt] ?? [];
+}
+
+// Debug: otvor export_fedex_ready_to_ship.php?debug_acl=1 (pripadne aj &dept=-1)
+// - vypise, co presne skript vyhodnotil, bez generovania CSV. Uzitocne na overenie,
+// ci sa dept parameter spravne prenasa z JS modalu / Refereru.
+// Pristupne len pre superadmina (permission === 900).
+if (isset($_GET['debug_acl'])) {
+  if ((int) ($_SESSION['permission'] ?? 0) !== 900) {
+    http_response_code(403);
+    die('Forbidden.');
+  }
+  header('Content-Type: text/plain; charset=utf-8');
+  echo "session dpt: $dpt\n";
+  echo "allAccess: " . ($allAccess ? 'true' : 'false') . "\n";
+  echo "GET dept: " . (isset($_GET['dept']) ? $_GET['dept'] : '(nenastavene)') . "\n";
+  echo "Referer: " . ($_SERVER['HTTP_REFERER'] ?? '(ziadny)') . "\n";
+  echo "resolved fDept: $fDept\n";
+  echo "effectiveDept: $effectiveDept\n";
+  echo "aclCats: " . json_encode($aclCats) . "\n";
+  echo "aclTypes: " . json_encode($aclTypes) . "\n";
+  $conn->close();
+  exit;
+}
+
+// Rovnaka FITTING detekcia ako v orders.php (typ F cez viacero moznych zdrojov)
+$fitWhere = "EXISTS (
+  SELECT 1
+  FROM order_items oifit
+  WHERE oifit.order_id = o.id
+    AND (
+      UPPER(TRIM(COALESCE(oifit.item_type_code, ''))) = 'F'
+      OR UPPER(COALESCE(oifit.sku, '')) LIKE 'GFP%'
+      OR UPPER(COALESCE(oifit.custom_label, '')) LIKE 'GFP%'
+      OR LOWER(COALESCE(oifit.options_json, '')) LIKE CONCAT('%applyinggraphics', CHAR(34), ':', CHAR(34), 'y%')
+      OR LOWER(COALESCE(oifit.options_json, '')) LIKE CONCAT('%applyinggraphics', CHAR(34), ':', CHAR(34), 'o%')
+      OR LOWER(COALESCE(oifit.options_json, '')) LIKE CONCAT('%applyinggraphics', CHAR(34), ':', CHAR(34), 'j%')
+      OR LOWER(COALESCE(oifit.options_json, '')) LIKE CONCAT('%applyinggraphics', CHAR(34), ':', CHAR(34), 's%')
+      OR LOWER(COALESCE(oifit.options_json, '')) LIKE CONCAT('%fitting', CHAR(34), ':', CHAR(34), 'y%')
+      OR LOWER(COALESCE(oifit.options_json, '')) LIKE CONCAT('%fitting', CHAR(34), ':', CHAR(34), 'o%')
+      OR LOWER(COALESCE(oifit.options_json, '')) LIKE CONCAT('%fitting', CHAR(34), ':', CHAR(34), 'j%')
+      OR LOWER(COALESCE(oifit.options_json, '')) LIKE CONCAT('%fitting', CHAR(34), ':', CHAR(34), 's%')
+    )
+)";
+
+function buildAclWhere(mysqli $conn, array $aclCats, array $aclTypes, string $fitWhere): array
+{
+  $clauses = [];
+  $types = '';
+  $params = [];
+
+  if (!empty($aclCats)) {
+    $ph = implode(',', array_fill(0, count($aclCats), '?'));
+    $clauses[] = "EXISTS (
+      SELECT 1
+      FROM order_categories ocx
+      JOIN categories cx ON cx.id = ocx.category_id
+      WHERE ocx.order_id = o.id AND cx.code IN ($ph)
+    )";
+    $types .= str_repeat('s', count($aclCats));
+    foreach ($aclCats as $c) {
+      $params[] = $c;
+    }
+  }
+
+  if (!empty($aclTypes) && in_array('F', $aclTypes, true)) {
+    $clauses[] = $fitWhere;
+  }
+
+  return [$clauses, $types, $params];
 }
 
 $MATERIAL_MAP = [
@@ -147,8 +287,16 @@ function resolveUsState(array $row): string
   return '';
 }
 
-function fetchReadyToShipOrders(mysqli $conn): array
+function fetchReadyToShipOrders(mysqli $conn, array $aclCats, array $aclTypes, string $fitWhere): array
 {
+  [$aclClauses, $aclTypesStr, $aclParams] = buildAclWhere($conn, $aclCats, $aclTypes, $fitWhere);
+
+  $where = ["o.status = 'READY_TO_SHIP'"];
+  foreach ($aclClauses as $c) {
+    $where[] = $c;
+  }
+  $whereSql = implode(' AND ', $where);
+
   $sql = "SELECT
     o.id,
     o.order_number,
@@ -187,13 +335,24 @@ function fetchReadyToShipOrders(mysqli $conn): array
   LEFT JOIN customers cu ON cu.id = o.customer_id
   LEFT JOIN order_addresses oa_ship
     ON oa_ship.order_id = o.id AND UPPER(oa_ship.type) = 'SHIPPING'
-  WHERE o.status = 'READY_TO_SHIP'
+  WHERE $whereSql
   ORDER BY o.id ASC";
 
-  $res = $conn->query($sql);
-  if (!$res) {
-    http_response_code(500);
-    die('Query error: ' . $conn->error);
+  if (empty($aclParams)) {
+    $res = $conn->query($sql);
+    if (!$res) {
+      http_response_code(500);
+      die('Query error: ' . $conn->error);
+    }
+  } else {
+    $stmt = $conn->prepare($sql);
+    if (!$stmt) {
+      http_response_code(500);
+      die('Prepare error: ' . $conn->error);
+    }
+    $stmt->bind_param($aclTypesStr, ...$aclParams);
+    $stmt->execute();
+    $res = $stmt->get_result();
   }
 
   $rows = [];
@@ -342,7 +501,7 @@ function renderPreviewRows(array $rows): void
   echo '</tbody></table></div>';
 }
 
-$orders = fetchReadyToShipOrders($conn);
+$orders = fetchReadyToShipOrders($conn, $aclCats, $aclTypes, $fitWhere);
 $defaultRows = buildExportRows($orders, $MATERIAL_MAP, $MATERIAL_DEFAULT, $WEIGHT_MAP, $WEIGHT_DEFAULT);
 
 if (isset($_GET['preview'])) {
@@ -354,19 +513,34 @@ if (isset($_GET['preview'])) {
 $submittedRows = isset($_POST['rows']) && is_array($_POST['rows']) ? $_POST['rows'] : [];
 $exportRows = applyOverrides($defaultRows, $submittedRows);
 
+// FedEx Stratus vie robit problemy s diakritikou/cudzimi znakmi v UTF-8,
+// preto vystup konvertujeme do Windows-1252 ("ANSI"). //TRANSLIT skusi znak
+// nahradit najblizsim ekvivalentom (napr. e -> e), //IGNORE zahodi znaky,
+// ktore sa vobec nedaju previest (namiesto padu skriptu).
+function toAnsi(string $value): string
+{
+  $converted = @iconv('UTF-8', 'Windows-1252//TRANSLIT//IGNORE', $value);
+  return $converted === false ? $value : $converted;
+}
+
+function ansiRow(array $fields): array
+{
+  return array_map('toAnsi', $fields);
+}
+
 $filename = 'fedex_export_' . date('Y-m-d_His') . '.csv';
-header('Content-Type: text/csv; charset=utf-8');
+header('Content-Type: text/csv; charset=windows-1252');
 header('Content-Disposition: attachment; filename="' . $filename . '"');
 
 $out = fopen('php://output', 'w');
-fputcsv($out, [
+fputcsv($out, ansiRow([
   'nazov firmy', 'meno', 'adresa', 'mesto', 'psc', 'stat', 'kod statu US+CA',
   'tel', 'e-mail', 'referencne_cislo', 'nazov faktury', 'colna hodnota',
   'servis', 'platca cla', 'poistit', 'HS Code', 'Material composition', 'Weight',
-]);
+]));
 
 foreach ($exportRows as $row) {
-  fputcsv($out, [
+  fputcsv($out, ansiRow([
     $row['company'],
     $row['name'],
     $row['address'],
@@ -385,7 +559,7 @@ foreach ($exportRows as $row) {
     $row['hs_code'],
     $row['material'],
     $row['weight'],
-  ]);
+  ]));
 }
 
 fclose($out);

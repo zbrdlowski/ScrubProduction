@@ -541,12 +541,21 @@ $isSuperAdmin = $perm >= 900;
 $aclCats = [];
 $aclTypes = [];
 
-if (!$allAccess) {
+if ($fDept === -1) {
+  // "All Orders" — vedomé obídenie department ACL (napr. telefonát od zákazníka
+  // mimo vlastného oddelenia, alebo hromadný export naprieč departmentmi).
+  $aclCats = [];
+  $aclTypes = [];
+} elseif ($fDept > 0) {
+  // Konkretny vyber z dropdownu (napr. "Seat Covers") - respektuje sa pre kohokolvek,
+  // rovnako ako "All Orders". Detail objednavky uz tiez nie je blokovany podla dept,
+  // takze niet dovodu blokovat ani tento explicitny filter.
+  $aclCats = $deptFilter[$fDept] ?? [];
+  $aclTypes = $deptTypeFilter[$fDept] ?? [];
+} else {
+  // Auto (dept=0) - podla vlastneho oddelenia prihlaseneho usera.
   $aclCats = $deptFilter[$dpt] ?? [];
   $aclTypes = $deptTypeFilter[$dpt] ?? [];
-} else {
-  $aclCats = $deptFilter[$effectiveDept] ?? [];
-  $aclTypes = $deptTypeFilter[$effectiveDept] ?? [];
 }
 $fitWhere = "EXISTS (
   SELECT 1
@@ -1011,6 +1020,7 @@ if ($orderIds) {
 
 $deptOptions = [
   0 => 'Auto (By my department)',
+  -1 => '🌐 All Orders',
   2 => 'Graphics',
   6 => 'Plastics',
   8 => 'Seat Covers',
@@ -1425,6 +1435,17 @@ $deptOptions = [
     --orders-table-head-top: calc(var(--orders-sticky-top) + var(--orders-tabs-h) + var(--orders-toolbar-h));
   }
 
+  /* Vypnute scroll anchoring - prehliadac by inak pri zbaleni/rozbaleni
+     filtra sam potichu upravoval scroll poziciu (aby "vizualne" nic neskoclo),
+     co v kombinacii so sticky theadom sposobovalo, ze hlavicka skoncila
+     na nespravnom mieste (napr. medzi riadkami tabulky). */
+  .orders-quicktabs,
+  .orders-toolbar,
+  #ordersFilterCollapse,
+  #ordersTableWrap {
+    overflow-anchor: none;
+  }
+
   /* Quick tabs sticky */
   .orders-quicktabs {
     position: sticky;
@@ -1622,7 +1643,9 @@ $deptOptions = [
       $activeFilterBadges[] = ['label' => 'From', 'display' => $fDateFrom];
     if ($fDateTo !== '')
       $activeFilterBadges[] = ['label' => 'To', 'display' => $fDateTo];
-    if ($fDept > 0 && $allAccess)
+    if ($fDept === -1)
+      $activeFilterBadges[] = ['label' => 'Dept', 'display' => 'All Orders'];
+    elseif ($fDept > 0)
       $activeFilterBadges[] = ['label' => 'Dept', 'display' => ($deptOptions[$fDept] ?? $fDept)];
     if ($fPrinter !== '')
       $activeFilterBadges[] = ['label' => '🖨️ Printer', 'display' => $fPrinter];
@@ -1639,7 +1662,7 @@ $deptOptions = [
     }
     function fActiveDept(int $val): string
     {
-      return $val > 0 ? 'filter-active' : '';
+      return $val !== 0 ? 'filter-active' : '';
     }
     ?>
 
@@ -1811,7 +1834,7 @@ $deptOptions = [
       && $fShipping === ''
       && $fDateFrom === ''
       && $fDateTo === ''
-      && $fDept <= 0
+      && $fDept === 0
       && $fPrinter === ''
       && $fPrintMat === ''
       && $fPrintFin === ''
@@ -1833,6 +1856,7 @@ $deptOptions = [
           <?php endforeach; ?>
           <?php if (strtoupper($fStatus) === 'READY_TO_SHIP'): ?>
             <button type="button" class="active-filter-pill pill-action border-0 js-open-fedex-export-modal"
+              data-dept="<?= (int) $fDept ?>"
               title="Otvoriť FedEx export CSV pre Ready to Ship objednávky">
               <i class="fas fa-file-csv mr-1"></i>
               <span class="pill-value">Download CSV</span>
@@ -4000,11 +4024,46 @@ $deptOptions = [
     );
   }
 
+  // Prehliadace prepocitavaju "prilepenu" poziciu position:sticky prvkov
+  // hlavne pri scroll evente. Ked sa filter panel otvori/zatvori a stranka
+  // je pritom prilis kratka na scrollovanie (malo vysledkov), ziadny scroll
+  // event nenastane a hlavicka tabulky ostane vizualne "zamrznuta" na starom
+  // offsete, aj ked CSS premenna --orders-table-head-top je uz spravna.
+  // Kratke prepnutie position: static -> sticky vynuti reflow a donuti
+  // prehliadac si stickiness prepocitat aj bez scrollu.
+  function forceOrdersTheadReflow() {
+    const $ths = $('#ordersTableWrap > table#ordersTable > thead > tr > th');
+    if (!$ths.length) return;
+    $ths.css('position', 'static');
+    void document.body.offsetHeight; // vynuti reflow
+    $ths.css('position', 'sticky');
+  }
+
   function refreshOrdersStickySoon() {
     updateOrdersStickyOffsets();
-    setTimeout(updateOrdersStickyOffsets, 50);
-    setTimeout(updateOrdersStickyOffsets, 180);
-    setTimeout(updateOrdersStickyOffsets, 360);
+    forceOrdersTheadReflow();
+    // Zalozne aj na nizsom ResizeObserveri, ale tento fallback nechavame
+    // pre pripad, ze by observer nestihol prvy frame (napr. tesne po load).
+    [50, 180, 360].forEach(function (delay) {
+      setTimeout(function () {
+        updateOrdersStickyOffsets();
+        forceOrdersTheadReflow();
+      }, delay);
+    });
+  }
+
+  // ResizeObserver sleduje realnu vysku tabs/toolbar/filter panelu a prepocita
+  // offset presne v momente, ked sa (aj priebezne pocas bootstrap collapse
+  // animacie) skutocne zmeni - namiesto hadania cez pevne casove oneskorenia.
+  if (typeof ResizeObserver !== 'undefined') {
+    const ordersStickyResizeObserver = new ResizeObserver(function () {
+      updateOrdersStickyOffsets();
+      forceOrdersTheadReflow();
+    });
+    ['.orders-quicktabs', '.orders-toolbar', '#ordersFilterCollapse'].forEach(function (sel) {
+      const el = document.querySelector(sel);
+      if (el) ordersStickyResizeObserver.observe(el);
+    });
   }
 
   $(document).ready(refreshOrdersStickySoon);
