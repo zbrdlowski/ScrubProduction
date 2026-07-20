@@ -1564,10 +1564,10 @@ $deptOptions = [
     $qs = http_build_query(array_merge($current, $tabParams));
     return '?' . ($qs ?: '');
   }
-
+  // taby v hornej časti
   $quickTabs = [
     /*['id' => 'all',         'label' => 'Všetky objednávky', 'params' => []],*/
-    ['id' => 'open_orders', 'label' => 'Open Orders', 'params' => ['exclude_status' => 'PENDING,SHIPPED'], 'badge_key' => 'open_orders'],
+    ['id' => 'open_orders', 'label' => 'Open Orders', 'params' => ['exclude_status' => 'CANCELLED,PENDING,SHIPPED'], 'badge_key' => 'open_orders'],
     ['id' => 'need_info', 'label' => 'Need Info', 'params' => ['status' => 'NEED_INFO'], 'badge_key' => 'need_info'],
     [
       'id' => 'draft_ready',
@@ -1744,9 +1744,26 @@ $deptOptions = [
   text-decoration: none;
 }
 
+.active-filter-pill.pill-upload {
+  background: rgba(23, 162, 184, .15);
+  border: 1px solid rgba(23, 162, 184, .45);
+  color: #4dc7dc;
+}
+
+.active-filter-pill.pill-upload:hover {
+  background: rgba(23, 162, 184, .26);
+  color: #7ddff0;
+  text-decoration: none;
+}
+
 .active-filter-pill.pill-action:focus {
   outline: none;
   box-shadow: 0 0 0 0.15rem rgba(40, 167, 69, .25);
+}
+
+.active-filter-pill.pill-upload:focus {
+  outline: none;
+  box-shadow: 0 0 0 0.15rem rgba(23, 162, 184, .22);
 }
 
 .fedex-export-loader {
@@ -1793,6 +1810,22 @@ $deptOptions = [
   cursor: se-resize;
   opacity: .9;
   z-index: 20;
+}
+
+#fedexEodImportModal .modal-body {
+  max-height: calc(100vh - 220px);
+  overflow: auto;
+}
+
+.fedex-eod-dropzone {
+  border: 1px dashed rgba(255, 255, 255, .25);
+  border-radius: 8px;
+  padding: 18px;
+  background: rgba(255, 255, 255, .02);
+}
+
+.fedex-eod-result .badge {
+  font-size: .72rem;
 }
     </style>
 
@@ -1860,6 +1893,11 @@ $deptOptions = [
               title="Otvoriť FedEx export CSV pre Ready to Ship objednávky">
               <i class="fas fa-file-csv mr-1"></i>
               <span class="pill-value">Download CSV</span>
+            </button>
+            <button type="button" class="active-filter-pill pill-upload border-0 js-open-fedex-eod-import-modal"
+              title="Import FedEx EOD">
+              <i class="fas fa-file-upload mr-1"></i>
+              <span class="pill-value">Import EOD</span>
             </button>
           <?php endif; ?>
         <?php else: ?>
@@ -2110,7 +2148,7 @@ $deptOptions = [
               <i class="fas fa-search mr-1"></i>Search
             </button>
 
-            <a class="btn btn-secondary btn-sm" href="index.php?page=orders">
+            <a class="btn btn-secondary btn-sm" href="?page=orders&exclude_status=CANCELLED%2CPENDING%2CSHIPPED">
               <i class="fas fa-times mr-1"></i>Reset
             </a>
 
@@ -4260,6 +4298,45 @@ $deptOptions = [
   </div>
 </div>
 
+<div class="modal fade" id="fedexEodImportModal" tabindex="-1" role="dialog" aria-hidden="true">
+  <div class="modal-dialog modal-lg" role="document">
+    <div class="modal-content bg-dark text-light">
+      <div class="modal-header border-secondary">
+        <h5 class="modal-title">
+          <i class="fas fa-file-upload mr-2"></i>FedEx EOD Import
+        </h5>
+        <button type="button" class="close text-light" data-dismiss="modal" data-bs-dismiss="modal" aria-label="Close">
+          <span aria-hidden="true">&times;</span>
+        </button>
+      </div>
+      <div class="modal-body">
+        <form id="fedexEodImportForm" enctype="multipart/form-data">
+          <div class="fedex-eod-dropzone mb-3">
+            <div class="font-weight-bold mb-2">Upload EOD report (.xlsx)</div>
+            <div class="text-muted small mb-3">
+              Použijú sa stĺpce <code>Reference Notes</code>, <code>Shipping Date</code>,
+              <code>Master Tracking Number</code> a <code>Service Type</code>.
+            </div>
+            <div class="custom-file">
+              <input type="file" class="custom-file-input" id="fedexEodFile" name="file" accept=".xlsx,.xls">
+              <label class="custom-file-label" for="fedexEodFile">Choose EOD file</label>
+            </div>
+          </div>
+        </form>
+        <div id="fedexEodImportResult" class="fedex-eod-result"></div>
+      </div>
+      <div class="modal-footer border-secondary">
+        <button type="button" class="btn btn-secondary btn-sm" data-dismiss="modal" data-bs-dismiss="modal">
+          Close
+        </button>
+        <button type="button" class="btn btn-info btn-sm" id="fedexEodImportSubmitBtn">
+          <i class="fas fa-upload mr-1"></i>Import Tracking
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <script>
   $(function () {
     const $fedexExportModal = $('#fedexExportModal');
@@ -4267,6 +4344,11 @@ $deptOptions = [
     const $fedexExportContent = $fedexExportModal.find('.modal-content');
     const $fedexExportModalBody = $('#fedexExportModalBody');
     const $fedexExportSubmitBtn = $('#fedexExportSubmitBtn');
+    const $fedexEodImportModal = $('#fedexEodImportModal');
+    const $fedexEodFile = $('#fedexEodFile');
+    const $fedexEodImportResult = $('#fedexEodImportResult');
+    const $fedexEodImportSubmitBtn = $('#fedexEodImportSubmitBtn');
+    let fedexEodImportShouldReload = false;
     let fedexExportResizableInit = false;
 
     function initFedexExportResizable() {
@@ -4318,6 +4400,13 @@ $deptOptions = [
             .text(msg);
         }
       });
+    }
+
+    function resetFedexEodImportModal() {
+      $('#fedexEodImportForm')[0].reset();
+      $fedexEodImportResult.html('');
+      $fedexEodImportSubmitBtn.prop('disabled', false).html('<i class="fas fa-upload mr-1"></i>Import Tracking');
+      $fedexEodImportModal.find('.custom-file-label').text('Choose EOD file');
     }
 
     $(document).on('click', '.priority-badge-clickable', function (e) {
@@ -4379,6 +4468,61 @@ $deptOptions = [
       e.stopPropagation();
       $fedexExportModal.modal('show');
       loadFedexExportPreview();
+    });
+
+    $(document).on('click', '.js-open-fedex-eod-import-modal', function (e) {
+      e.preventDefault();
+      e.stopPropagation();
+      resetFedexEodImportModal();
+      $fedexEodImportModal.modal('show');
+    });
+
+    $fedexEodFile.on('change', function () {
+      const fileName = this.files && this.files.length ? this.files[0].name : 'Choose EOD file';
+      $fedexEodImportModal.find('.custom-file-label').text(fileName);
+    });
+
+    $fedexEodImportSubmitBtn.on('click', function () {
+      if (!$fedexEodFile[0].files || !$fedexEodFile[0].files.length) {
+        alert('Please choose an EOD XLSX file first.');
+        return;
+      }
+
+      const formData = new FormData();
+      formData.append('file', $fedexEodFile[0].files[0]);
+
+      $fedexEodImportSubmitBtn.prop('disabled', true).html('Importing...');
+      fedexEodImportShouldReload = false;
+      $fedexEodImportResult.html(
+        '<div class="alert alert-secondary mb-0"><span class="spinner-border spinner-border-sm mr-2"></span>Processing uploaded EOD report...</div>'
+      );
+
+      $.ajax({
+        url: 'scripts/orders/import_fedex_eod.php',
+        method: 'POST',
+        data: formData,
+        processData: false,
+        contentType: false,
+        cache: false,
+        success: function (html) {
+          $fedexEodImportResult.html(html);
+          $fedexEodImportSubmitBtn.prop('disabled', false).html('<i class="fas fa-upload mr-1"></i>Import Tracking');
+          fedexEodImportShouldReload = $fedexEodImportResult.find('.alert-info').length > 0;
+        },
+        error: function (xhr) {
+          const html = xhr && xhr.responseText
+            ? xhr.responseText
+            : '<div class="alert alert-danger mb-0">Import failed.</div>';
+          $fedexEodImportResult.html(html);
+          $fedexEodImportSubmitBtn.prop('disabled', false).html('<i class="fas fa-upload mr-1"></i>Import Tracking');
+        }
+      });
+    });
+
+    $fedexEodImportModal.on('hidden.bs.modal', function () {
+      if (fedexEodImportShouldReload) {
+        window.location.reload();
+      }
     });
 
     $fedexExportModal.on('shown.bs.modal', function () {

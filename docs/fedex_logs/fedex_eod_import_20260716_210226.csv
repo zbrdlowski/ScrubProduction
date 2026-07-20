@@ -1,0 +1,2 @@
+row,reference_notes,order_key,tracking_number,shipping_date,service_type,result,message
+2,"GFP - 27-14724-50231",27-14724-50231,874468279055,"2026-07-16 21:02:26",3,success,"Tracking already existed. Order was already SHIPPED."

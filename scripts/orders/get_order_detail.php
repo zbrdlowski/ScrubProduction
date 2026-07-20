@@ -884,37 +884,6 @@ $followupParentOrderNumber = trim((string) ($followupMeta['parent_order_number']
 $followupReason = trim((string) ($followupMeta['reason'] ?? ''));
 $followupDoNotInvoice = !empty($followupMeta['do_not_invoice']);
 
-// --- ACL (dept) ---
-if (!$allAccess) {
-  $deptFilter = [
-    2 => ['GRAPHICS'],
-    6 => ['PLASTICS'],
-    8 => ['SEATCOVER'],
-    9 => ['FITTING'],
-  ];
-  $cats = $deptFilter[$dpt] ?? ['__NONE__'];
-
-  $ph = implode(',', array_fill(0, count($cats), '?'));
-  $types = 'i' . str_repeat('s', count($cats));
-  $params = array_merge([$orderId], $cats);
-
-  $q = $conn->prepare("SELECT 1
-    FROM order_categories oc
-    JOIN categories c ON c.id=oc.category_id
-    WHERE oc.order_id=? AND c.code IN ($ph)
-    LIMIT 1
-  ");
-  if (!$q)
-    out(500, ['ok' => false, 'error' => 'ACL prepare failed: ' . mysqli_error($conn)]);
-  $q->bind_param($types, ...$params);
-  $q->execute();
-  $ok = (bool) $q->get_result()->fetch_row();
-  $q->close();
-
-  if (!$ok)
-    out(403, ['ok' => false, 'error' => 'Forbidden']);
-}
-
 // --- categories ---
 $stmt = $conn->prepare("SELECT c.code
   FROM order_categories oc
@@ -3124,7 +3093,7 @@ ob_start();
 
                 <?php
                 $trackingStmt = $conn->prepare("
-                SELECT id, tracking_number, carrier
+                SELECT id, tracking_number, carrier, created_at
                 FROM order_tracking_numbers
                 WHERE order_id = ? AND deleted_at IS NULL
                 ORDER BY id DESC
@@ -3141,6 +3110,9 @@ ob_start();
                       <b><?php echo h($t['tracking_number']); ?></b>
                       <?php if (!empty($t['carrier'])): ?>
                         <span class="text-muted">(<?php echo h($t['carrier']); ?>)</span>
+                      <?php endif; ?>
+                      <?php if (!empty($t['created_at'])): ?>
+                        <span class="text-muted ml-2">| Shipped: <?php echo h(date('d.m.Y H:i', strtotime((string) $t['created_at']))); ?></span>
                       <?php endif; ?>
                     </div>
 
