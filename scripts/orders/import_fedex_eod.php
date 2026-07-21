@@ -36,7 +36,7 @@ if (!in_array($ext, ['xlsx', 'xls'], true)) {
 $hasPhpSpreadsheet = false;
 if (file_exists(dirname(__DIR__, 2) . '/vendor/autoload.php')) {
   require_once dirname(__DIR__, 2) . '/vendor/autoload.php';
-  $hasPhpSpreadsheet = class_exists('\PhpOffice\PhpSpreadsheet\IOFactory');
+  $hasPhpSpreadsheet = class_exists('PhpOffice\\PhpSpreadsheet\\IOFactory');
 }
 
 /*
@@ -53,6 +53,18 @@ $SERVICE_TYPE_MAP = [
   'FEDEX EXPRESS' => 'FedEx Express',
 ];
 $SERVICE_TYPE_DEFAULT = 'FedEx';
+
+/*
+|--------------------------------------------------------------------------
+| eBay tracking upload CSV
+|--------------------------------------------------------------------------
+| Po importe EOD reportu sa pre objednavky so zdrojom EBAY vygeneruje CSV
+| v tvare, aky ocakava eBay bulk upload (Shipping Status, Order Number,
+| Item Number, Item Title, Custom Label, Transaction ID,
+| Shipping Carrier Used, Tracking Number). Hodnota nizsie je text, ktory
+| eBay pozna ako nazov dopravcu (nie interny nazov sluzby z FedEx EOD).
+*/
+$EBAY_CARRIER_LABEL = 'FedEx';
 
 function h(string $value): string
 {
@@ -112,13 +124,121 @@ function columnLettersToIndex(string $letters): int
   return $num;
 }
 
+function resolveXlsxWorksheetTarget(?string $workbookXml, ?string $relsXml): ?string
+{
+  if ($workbookXml === null || $workbookXml === '' || $relsXml === null || $relsXml === '') {
+    return null;
+  }
+
+  $workbookXml = (string) stripBom($workbookXml);
+  $relsXml = (string) stripBom($relsXml);
+
+  libxml_clear_errors();
+  $prevSetting = libxml_use_internal_errors(true);
+
+  $workbookDoc = new DOMDocument();
+  $workbookLoaded = @$workbookDoc->loadXML($workbookXml);
+  $relsDoc = new DOMDocument();
+  $relsLoaded = @$relsDoc->loadXML($relsXml);
+
+  libxml_clear_errors();
+  libxml_use_internal_errors($prevSetting);
+
+  if (!$workbookLoaded || !$relsLoaded) {
+    return null;
+  }
+
+  $workbookXPath = new DOMXPath($workbookDoc);
+  $sheetNodes = $workbookXPath->query('//*[local-name()="sheets"]/*[local-name()="sheet"]');
+  if ($sheetNodes === false || $sheetNodes->length === 0) {
+    return null;
+  }
+
+  $firstSheetNode = $sheetNodes->item(0);
+  $firstRid = null;
+  foreach ($firstSheetNode->attributes as $attr) {
+    if ($attr->localName === 'id') {
+      $firstRid = $attr->nodeValue;
+      break;
+    }
+  }
+  if ($firstRid === null || $firstRid === '') {
+    return null;
+  }
+
+  $relsXPath = new DOMXPath($relsDoc);
+  $relNodes = $relsXPath->query('//*[local-name()="Relationship"][@Id="' . $firstRid . '"]');
+  if ($relNodes === false || $relNodes->length === 0) {
+    return null;
+  }
+
+  $target = ltrim((string) $relNodes->item(0)->getAttribute('Target'), '/');
+  if ($target === '') {
+    return null;
+  }
+  if (strpos($target, 'worksheets/') !== 0) {
+    $target = 'worksheets/' . basename($target);
+  }
+
+  return 'xl/' . $target;
+}
+
+function listXlsxWorksheetEntriesViaShell(string $xlsxPath): array
+{
+  $pathArg = escapeshellarg($xlsxPath);
+  $commands = [
+    'unzip -Z1 ' . $pathArg,
+    'bsdtar -tf ' . $pathArg,
+    'tar -tf ' . $pathArg,
+  ];
+
+  foreach ($commands as $command) {
+    $exitCode = 1;
+    $output = runExternalCommand($command, $exitCode);
+    if ($exitCode !== 0 || $output === '') {
+      continue;
+    }
+    $lines = preg_split('/\r\n|\r|\n/', trim($output)) ?: [];
+    $entries = array_values(array_filter($lines, function ($line) {
+      return (bool) preg_match('#^xl/worksheets/sheet\d+\.xml$#', trim($line));
+    }));
+    if ($entries) {
+      return $entries;
+    }
+  }
+
+  return [];
+}
+
 function parseXlsxFallback(string $xlsxPath): array
 {
   if (class_exists('ZipArchive')) {
     $zip = new ZipArchive();
     if ($zip->open($xlsxPath) === true) {
+      $workbookXml = $zip->getFromName('xl/workbook.xml');
+      $relsXml = $zip->getFromName('xl/_rels/workbook.xml.rels');
+      $entryName = resolveXlsxWorksheetTarget(
+        $workbookXml !== false ? (string) $workbookXml : null,
+        $relsXml !== false ? (string) $relsXml : null
+      ) ?? 'xl/worksheets/sheet1.xml';
+
       $sharedXml = $zip->getFromName('xl/sharedStrings.xml');
-      $sheetXml = $zip->getFromName('xl/worksheets/sheet1.xml');
+      $sheetXml = $zip->getFromName($entryName);
+
+      if ($sheetXml === false) {
+        // Posledny pokus - najdi akykolvek worksheet v archive priamym vypisom entries.
+        for ($i = 0; $i < $zip->numFiles; $i++) {
+          $name = $zip->getNameIndex($i);
+          if ($name !== false && preg_match('#^xl/worksheets/sheet\d+\.xml$#', $name)) {
+            $candidate = $zip->getFromName($name);
+            if ($candidate !== false) {
+              $sheetXml = $candidate;
+              break;
+            }
+          }
+        }
+      }
+
       $zip->close();
 
       if ($sheetXml !== false) {
@@ -127,8 +247,23 @@ function parseXlsxFallback(string $xlsxPath): array
     }
   }
 
+  $workbookXml = readZipEntryViaShell($xlsxPath, 'xl/workbook.xml');
+  $relsXml = readZipEntryViaShell($xlsxPath, 'xl/_rels/workbook.xml.rels');
+  $entryName = resolveXlsxWorksheetTarget($workbookXml, $relsXml) ?? 'xl/worksheets/sheet1.xml';
+
   $sharedXml = readZipEntryViaShell($xlsxPath, 'xl/sharedStrings.xml');
-  $sheetXml = readZipEntryViaShell($xlsxPath, 'xl/worksheets/sheet1.xml');
+  $sheetXml = readZipEntryViaShell($xlsxPath, $entryName);
+
+  if ($sheetXml === null || $sheetXml === '') {
+    foreach (listXlsxWorksheetEntriesViaShell($xlsxPath) as $candidateName) {
+      $candidate = readZipEntryViaShell($xlsxPath, $candidateName);
+      if ($candidate !== null && $candidate !== '') {
+        $sheetXml = $candidate;
+        break;
+      }
+    }
+  }
+
   if ($sheetXml !== null && $sheetXml !== '') {
     return parseXlsxFromXmlStrings($sharedXml, $sheetXml);
   }
@@ -140,53 +275,123 @@ function parseXlsxFallback(string $xlsxPath): array
   throw new RuntimeException('Unable to parse XLSX: ZipArchive and shell unzip methods are unavailable.');
 }
 
+function stripBom(?string $value): ?string
+{
+  if ($value === null) {
+    return null;
+  }
+  if (substr($value, 0, 3) === "\xEF\xBB\xBF") {
+    return substr($value, 3);
+  }
+  return $value;
+}
+
 function parseXlsxFromXmlStrings(?string $sharedXml, string $sheetXml): array
 {
+  $sharedXml = stripBom($sharedXml);
+  $sheetXml = (string) stripBom($sheetXml);
+
   $sharedStrings = [];
   if ($sharedXml !== null && $sharedXml !== '') {
-    $shared = @simplexml_load_string($sharedXml);
-    if ($shared !== false && isset($shared->si)) {
-      foreach ($shared->si as $item) {
-        if (isset($item->t)) {
-          $sharedStrings[] = (string) $item->t;
-          continue;
-        }
+    $sharedDoc = new DOMDocument();
+    libxml_clear_errors();
+    $prevSetting = libxml_use_internal_errors(true);
+    $sharedLoaded = @$sharedDoc->loadXML($sharedXml);
+    libxml_clear_errors();
+    libxml_use_internal_errors($prevSetting);
 
-        $text = '';
-        if (isset($item->r)) {
-          foreach ($item->r as $run) {
-            $text .= (string) ($run->t ?? '');
+    if ($sharedLoaded) {
+      $sharedXPath = new DOMXPath($sharedDoc);
+      $siNodes = $sharedXPath->query('//*[local-name()="si"]');
+      if ($siNodes !== false) {
+        foreach ($siNodes as $siNode) {
+          $tNodes = $sharedXPath->query('.//*[local-name()="t"]', $siNode);
+          $text = '';
+          if ($tNodes !== false) {
+            foreach ($tNodes as $tNode) {
+              $text .= $tNode->textContent;
+            }
           }
+          $sharedStrings[] = $text;
         }
-        $sharedStrings[] = $text;
       }
     }
   }
 
-  $sheet = @simplexml_load_string($sheetXml);
-  if ($sheet === false || !isset($sheet->sheetData)) {
-    throw new RuntimeException('Unable to parse worksheet XML.');
+  libxml_clear_errors();
+  $previousLibxmlSetting = libxml_use_internal_errors(true);
+  $sheetDoc = new DOMDocument();
+  $sheetLoaded = @$sheetDoc->loadXML($sheetXml);
+  $libxmlErrors = libxml_get_errors();
+  libxml_clear_errors();
+  libxml_use_internal_errors($previousLibxmlSetting);
+
+  if (!$sheetLoaded) {
+    $errorMessages = array_map(function ($e) {
+      return trim((string) $e->message);
+    }, $libxmlErrors);
+    $errorSummary = $errorMessages ? implode(' | ', array_slice($errorMessages, 0, 3)) : 'no libxml error reported';
+    throw new RuntimeException(sprintf(
+      'Unable to parse worksheet XML (bytes=%d, libxml=%s, preview=%s).',
+      strlen($sheetXml),
+      $errorSummary,
+      substr($sheetXml, 0, 150)
+    ));
+  }
+
+  $xpath = new DOMXPath($sheetDoc);
+  $rowNodes = $xpath->query('//*[local-name()="sheetData"]/*[local-name()="row"]');
+
+  if ($rowNodes === false) {
+    throw new RuntimeException(sprintf(
+      'Unable to parse worksheet XML: XPath query failed (bytes=%d, preview=%s).',
+      strlen($sheetXml),
+      substr($sheetXml, 0, 150)
+    ));
+  }
+
+  if ($rowNodes->length === 0) {
+    $sheetDataNodes = $xpath->query('//*[local-name()="sheetData"]');
+    if ($sheetDataNodes === false || $sheetDataNodes->length === 0) {
+      throw new RuntimeException(sprintf(
+        'Unable to parse worksheet XML: <sheetData> element not found (bytes=%d, preview=%s).',
+        strlen($sheetXml),
+        substr($sheetXml, 0, 150)
+      ));
+    }
+    // <sheetData> existuje, ale je prazdne - hárok naozaj neobsahuje žiadne riadky.
+    return [];
   }
 
   $rows = [];
-  foreach ($sheet->sheetData->row as $rowNode) {
-    $rowIndex = (int) ($rowNode['r'] ?? 0);
+  foreach ($rowNodes as $rowNode) {
+    $rowIndex = (int) $rowNode->getAttribute('r');
     $rowData = [];
 
-    foreach ($rowNode->c as $cell) {
-      $cellRef = (string) ($cell['r'] ?? '');
+    foreach ($rowNode->childNodes as $cell) {
+      if (!($cell instanceof DOMElement) || $cell->localName !== 'c') {
+        continue;
+      }
+
+      $cellRef = $cell->getAttribute('r');
       if ($cellRef === '' || !preg_match('/^([A-Z]+)\d+$/', $cellRef, $m)) {
         continue;
       }
 
       $colIndex = columnLettersToIndex($m[1]);
-      $type = (string) ($cell['t'] ?? '');
+      $type = $cell->getAttribute('t');
       $value = '';
 
       if ($type === 'inlineStr') {
-        $value = (string) ($cell->is->t ?? '');
+        $isTextNodes = $xpath->query('.//*[local-name()="is"]/*[local-name()="t"]', $cell);
+        if ($isTextNodes !== false) {
+          foreach ($isTextNodes as $isTextNode) {
+            $value .= $isTextNode->textContent;
+          }
+        }
       } else {
-        $raw = isset($cell->v) ? (string) $cell->v : '';
+        $vNodes = $xpath->query('./*[local-name()="v"]', $cell);
+        $raw = ($vNodes !== false && $vNodes->length > 0) ? $vNodes->item(0)->textContent : '';
         if ($type === 's') {
           $sharedIndex = (int) $raw;
           $value = $sharedStrings[$sharedIndex] ?? '';
@@ -208,15 +413,39 @@ function parseXlsxFromXmlStrings(?string $sharedXml, string $sheetXml): array
 
 function runExternalCommand(string $command, ?int &$exitCode = null): string
 {
-  $output = [];
   $exitCode = 1;
-  @exec($command . ' 2>&1', $output, $exitCode);
-  return implode("\n", $output);
+
+  if (!function_exists('proc_open')) {
+    return '';
+  }
+
+  $descriptors = [
+    0 => ['pipe', 'r'],
+    1 => ['pipe', 'w'],
+    2 => ['pipe', 'w'],
+  ];
+
+  $process = @proc_open($command, $descriptors, $pipes);
+  if (!is_resource($process)) {
+    return '';
+  }
+
+  fclose($pipes[0]);
+  $stdout = stream_get_contents($pipes[1]);
+  fclose($pipes[1]);
+  // stderr sa musí vyčítať (inak sa proces môže zaseknúť pri väčšom výstupe),
+  // ale obsah sa vedome zahadzuje - nesmie sa miešať do parsovaného súboru
+  stream_get_contents($pipes[2]);
+  fclose($pipes[2]);
+
+  $exitCode = proc_close($process);
+
+  return $stdout === false ? '' : $stdout;
 }
 
 function readZipEntryViaShell(string $xlsxPath, string $entryName): ?string
 {
-  if (!function_exists('exec')) {
+  if (!function_exists('proc_open')) {
     return null;
   }
 
@@ -381,10 +610,10 @@ function parseShippingDateValue($value): ?string
   }
 
   if (is_numeric($value)) {
-    if (class_exists('PhpOffice\\PhpSpreadsheet\\Shared\\Date')) {
+    $phpSpreadsheetDateClass = 'PhpOffice\\PhpSpreadsheet\\Shared\\Date';
+    if (class_exists($phpSpreadsheetDateClass)) {
       try {
-        $dtObj = forward_static_call(['PhpOffice\\PhpSpreadsheet\\Shared\\Date', 'excelToDateTimeObject'], (float) $value);
-        return $dtObj->format('Y-m-d H:i:s');
+        return call_user_func([$phpSpreadsheetDateClass, 'excelToDateTimeObject'], (float) $value)->format('Y-m-d H:i:s');
       } catch (Throwable $e) {
       }
     }
@@ -636,6 +865,139 @@ function logTrackingImported(mysqli $conn, int $orderId, int $userId, ?int $trac
   );
 }
 
+function getOrderEbaySourceMeta(mysqli $conn, int $orderId): array
+{
+  $result = ['source_code' => '', 'transaction_id' => ''];
+
+  if (!tableExists($conn, 'order_sources')) {
+    return $result;
+  }
+
+  $sql = "SELECT os.code AS source_code, o.source_meta
+          FROM orders o
+          JOIN order_sources os ON os.id = o.source_id
+          WHERE o.id = ?
+          LIMIT 1";
+  $stmt = $conn->prepare($sql);
+  if (!$stmt) {
+    return $result;
+  }
+  $stmt->bind_param('i', $orderId);
+  $stmt->execute();
+  $row = $stmt->get_result()->fetch_assoc();
+  $stmt->close();
+
+  if (!$row) {
+    return $result;
+  }
+
+  $result['source_code'] = strtoupper(trim((string) ($row['source_code'] ?? '')));
+
+  $meta = json_decode((string) ($row['source_meta'] ?? ''), true);
+  if (is_array($meta) && !empty($meta['transaction_id'])) {
+    $result['transaction_id'] = trim((string) $meta['transaction_id']);
+  }
+
+  return $result;
+}
+
+function getOrderEbayItemNumber(mysqli $conn, int $orderId): string
+{
+  if (!tableExists($conn, 'order_items')) {
+    return '';
+  }
+
+  $itemColumns = getTableColumns($conn, 'order_items');
+  if (!in_array('options_json', $itemColumns, true)) {
+    return '';
+  }
+
+  $hasDeletedAt = in_array('deleted_at', $itemColumns, true);
+  $sql = "SELECT options_json FROM order_items WHERE order_id = ?"
+    . ($hasDeletedAt ? " AND deleted_at IS NULL" : "")
+    . " ORDER BY id ASC";
+  $stmt = $conn->prepare($sql);
+  if (!$stmt) {
+    return '';
+  }
+  $stmt->bind_param('i', $orderId);
+  $stmt->execute();
+  $res = $stmt->get_result();
+
+  while ($row = $res->fetch_assoc()) {
+    $options = json_decode((string) ($row['options_json'] ?? ''), true);
+    if (!is_array($options)) {
+      continue;
+    }
+    foreach ($options as $key => $value) {
+      if (strcasecmp(trim((string) $key), 'Item number') === 0) {
+        $value = trim((string) $value);
+        if ($value !== '') {
+          $stmt->close();
+          return $value;
+        }
+      }
+    }
+  }
+  $stmt->close();
+
+  return '';
+}
+
+function csvEscapeField(string $value): string
+{
+  if (preg_match('/[",\r\n]/', $value)) {
+    return '"' . str_replace('"', '""', $value) . '"';
+  }
+  return $value;
+}
+
+function writeEbayExportCsvFile(array $rows): ?string
+{
+  $dir = dirname(__DIR__, 2) . '/docs/ebay_exports';
+  if (!is_dir($dir) && !mkdir($dir, 0777, true) && !is_dir($dir)) {
+    return null;
+  }
+
+  $filename = 'ebay_tracking_upload_' . date('Ymd_His') . '.csv';
+  $path = $dir . '/' . $filename;
+  $fh = fopen($path, 'wb');
+  if ($fh === false) {
+    return null;
+  }
+
+  $header = [
+    'Shipping Status',
+    'Order Number',
+    'Item Number',
+    'Item Title',
+    'Custom Label',
+    'Transaction ID',
+    'Shipping Carrier Used',
+    'Tracking Number',
+  ];
+  fwrite($fh, implode(',', $header) . "\r\n");
+
+  foreach ($rows as $row) {
+    $line = [
+      '', // Shipping Status - necháme prazdne, eBay to doplní samo
+      (string) $row['order_number'],
+      (string) $row['item_number'],
+      '', // Item Title - nepovinné, necháme prazdne
+      '', // Custom Label - nepovinné, necháme prazdne
+      (string) $row['transaction_id'],
+      (string) $row['carrier'],
+      (string) $row['tracking_number'],
+    ];
+    $line = array_map('csvEscapeField', $line);
+    fwrite($fh, implode(',', $line) . "\r\n");
+  }
+
+  fclose($fh);
+
+  return 'docs/ebay_exports/' . $filename;
+}
+
 function writeImportLogFile(array $logRows): ?string
 {
   $dir = dirname(__DIR__, 2) . '/docs/fedex_logs';
@@ -674,12 +1036,14 @@ $headerMap = [];
 $highestRow = 0;
 
 if ($hasPhpSpreadsheet) {
-  $reader = forward_static_call(['PhpOffice\\PhpSpreadsheet\\IOFactory', 'createReaderForFile'], $tmpPath);
+  $phpSpreadsheetIoFactory = 'PhpOffice\\PhpSpreadsheet\\IOFactory';
+  $reader = call_user_func([$phpSpreadsheetIoFactory, 'createReaderForFile'], $tmpPath);
   $reader->setReadDataOnly(true);
   $sheet = $reader->load($tmpPath)->getActiveSheet();
 
   $highestRow = (int) $sheet->getHighestDataRow();
-  $highestCol = forward_static_call(['PhpOffice\\PhpSpreadsheet\\Cell\\Coordinate', 'columnIndexFromString'], $sheet->getHighestDataColumn());
+  $phpSpreadsheetCoordinate = 'PhpOffice\\PhpSpreadsheet\\Cell\\Coordinate';
+  $highestCol = call_user_func([$phpSpreadsheetCoordinate, 'columnIndexFromString'], $sheet->getHighestDataColumn());
 
   for ($col = 1; $col <= $highestCol; $col++) {
     $header = normalizeHeader((string) getCellValue($sheet, 1, $col));
@@ -725,6 +1089,8 @@ $logRows = [];
 $successCount = 0;
 $skipCount = 0;
 $errorCount = 0;
+$ebayExportRows = [];
+$ebaySkippedRows = [];
 
 for ($rowNo = 2; $rowNo <= $highestRow; $rowNo++) {
   $referenceValue = $hasPhpSpreadsheet
@@ -812,6 +1178,27 @@ for ($rowNo = 2; $rowNo <= $highestRow; $rowNo++) {
 
     $result = 'success';
     $successCount++;
+
+    $ebaySourceMeta = getOrderEbaySourceMeta($conn, $orderId);
+    if ($ebaySourceMeta['source_code'] === 'EBAY') {
+      $ebayItemNumber = getOrderEbayItemNumber($conn, $orderId);
+      $ebayTransactionId = $ebaySourceMeta['transaction_id'];
+
+      if ($ebayTransactionId !== '' && $ebayItemNumber !== '') {
+        $ebayExportRows[] = [
+          'order_number' => (string) ($order['order_number'] ?? $orderKey),
+          'item_number' => $ebayItemNumber,
+          'transaction_id' => $ebayTransactionId,
+          'carrier' => $EBAY_CARRIER_LABEL,
+          'tracking_number' => $trackingNumber,
+        ];
+      } else {
+        $ebaySkippedRows[] = [
+          'order_number' => (string) ($order['order_number'] ?? $orderKey),
+          'reason' => $ebayTransactionId === '' ? 'Missing Transaction ID' : 'Missing Item Number',
+        ];
+      }
+    }
   } catch (Throwable $e) {
     $message = $e->getMessage();
     if (stripos($message, 'already existed') !== false) {
@@ -835,6 +1222,7 @@ for ($rowNo = 2; $rowNo <= $highestRow; $rowNo++) {
 }
 
 $logPath = writeImportLogFile($logRows);
+$ebayExportPath = $ebayExportRows ? writeEbayExportCsvFile($ebayExportRows) : null;
 
 ?>
 <div class="alert alert-info py-2 px-3">
@@ -846,6 +1234,31 @@ $logPath = writeImportLogFile($logRows);
     | <a href="<?= h(str_replace('\\', '/', $logPath)) ?>" target="_blank" rel="noopener">Download log</a>
   <?php endif; ?>
 </div>
+
+<?php if ($ebayExportPath !== null): ?>
+  <div class="alert alert-success py-2 px-3">
+    <strong>eBay tracking CSV pripravené.</strong>
+    <?= count($ebayExportRows) ?> objednávka(-ok) pripravená(-ých) na upload trackingu do eBay.
+    <a href="<?= h(str_replace('\\', '/', $ebayExportPath)) ?>" target="_blank" rel="noopener" class="alert-link">
+      <i class="fas fa-file-csv mr-1"></i>Download eBay CSV
+    </a>
+  </div>
+<?php elseif ($ebayExportRows): ?>
+  <div class="alert alert-warning py-2 px-3">
+    eBay tracking CSV sa nepodarilo uložiť na disk (skontroluj práva k priečinku <code>docs/ebay_exports</code>).
+  </div>
+<?php endif; ?>
+
+<?php if ($ebaySkippedRows): ?>
+  <div class="alert alert-warning py-2 px-3 mb-0">
+    <strong>Pre tieto eBay objednávky sa nepridal riadok do eBay CSV (chýba Transaction ID alebo Item Number):</strong>
+    <ul class="mb-0">
+      <?php foreach ($ebaySkippedRows as $s): ?>
+        <li><?= h($s['order_number']) ?> — <?= h($s['reason']) ?></li>
+      <?php endforeach; ?>
+    </ul>
+  </div>
+<?php endif; ?>
 
 <?php if (!$logRows): ?>
   <div class="alert alert-warning mb-0">No data rows were found in the uploaded file.</div>
