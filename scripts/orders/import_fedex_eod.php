@@ -36,7 +36,7 @@ if (!in_array($ext, ['xlsx', 'xls'], true)) {
 $hasPhpSpreadsheet = false;
 if (file_exists(dirname(__DIR__, 2) . '/vendor/autoload.php')) {
   require_once dirname(__DIR__, 2) . '/vendor/autoload.php';
-  $hasPhpSpreadsheet = class_exists('\PhpOffice\PhpSpreadsheet\IOFactory');
+  $hasPhpSpreadsheet = class_exists('PhpOffice\\PhpSpreadsheet\\IOFactory');
 }
 
 /*
@@ -381,9 +381,10 @@ function parseShippingDateValue($value): ?string
   }
 
   if (is_numeric($value)) {
-    if (class_exists('\PhpOffice\PhpSpreadsheet\Shared\Date')) {
+    $phpSpreadsheetDateClass = 'PhpOffice\\PhpSpreadsheet\\Shared\\Date';
+    if (class_exists($phpSpreadsheetDateClass)) {
       try {
-        return \PhpOffice\PhpSpreadsheet\Shared\Date::excelToDateTimeObject((float) $value)->format('Y-m-d H:i:s');
+        return call_user_func([$phpSpreadsheetDateClass, 'excelToDateTimeObject'], (float) $value)->format('Y-m-d H:i:s');
       } catch (Throwable $e) {
       }
     }
@@ -673,12 +674,14 @@ $headerMap = [];
 $highestRow = 0;
 
 if ($hasPhpSpreadsheet) {
-  $reader = \PhpOffice\PhpSpreadsheet\IOFactory::createReaderForFile($tmpPath);
+  $phpSpreadsheetIoFactory = 'PhpOffice\\PhpSpreadsheet\\IOFactory';
+  $reader = call_user_func([$phpSpreadsheetIoFactory, 'createReaderForFile'], $tmpPath);
   $reader->setReadDataOnly(true);
   $sheet = $reader->load($tmpPath)->getActiveSheet();
 
   $highestRow = (int) $sheet->getHighestDataRow();
-  $highestCol = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::columnIndexFromString($sheet->getHighestDataColumn());
+  $phpSpreadsheetCoordinate = 'PhpOffice\\PhpSpreadsheet\\Cell\\Coordinate';
+  $highestCol = call_user_func([$phpSpreadsheetCoordinate, 'columnIndexFromString'], $sheet->getHighestDataColumn());
 
   for ($col = 1; $col <= $highestCol; $col++) {
     $header = normalizeHeader((string) getCellValue($sheet, 1, $col));

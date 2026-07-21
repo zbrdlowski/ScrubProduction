@@ -282,6 +282,8 @@ function import_darkscrub_unified_csv(mysqli $conn, string $csvPath): array {
       $first['phone'] ?? null
     );
 
+    $shippingPrice = oi_extract_shipping_price_from_rows($itemRows);
+    $transactionIds = $sourceCode === 'EBAY' ? oi_extract_ebay_transaction_ids($itemRows) : [];
     $sourceMeta = [
       'status' => $first['status'] ?? null,
       'exchange_rate' => $first['exchange_rate'] ?? null,
@@ -299,7 +301,12 @@ function import_darkscrub_unified_csv(mysqli $conn, string $csvPath): array {
       'paid' => $first['paid'] ?? null,
       'sales_channel' => $first['sales_channel'] ?? null,
       'source_name' => $first['source_name'] ?? null,
+      'shipping_price' => $shippingPrice,
     ];
+    if ($transactionIds) {
+      $sourceMeta['transaction_id'] = $transactionIds[0];
+      $sourceMeta['transaction_ids'] = $transactionIds;
+    }
 
     $existingOrderId = oi_find_order_id($conn, $sourceId, $externalOrderId);
     $beforeExists = $existingOrderId !== null;
@@ -311,6 +318,13 @@ function import_darkscrub_unified_csv(mysqli $conn, string $csvPath): array {
         $stats['skipped_locked_order_refs'][] = $sourceCode . ':' . $externalOrderId;
         continue;
       }
+
+      $existingSourceMeta = oi_get_order_source_meta($conn, (int) $existingOrderId);
+      $incomingSourceMeta = array_filter(
+        $sourceMeta,
+        static fn($value) => $value !== null && $value !== '' && $value !== []
+      );
+      $sourceMeta = array_replace($existingSourceMeta, $incomingSourceMeta);
     }
 
     $shippingMethod = oi_extract_shipping_method_from_rows($itemRows);
@@ -584,6 +598,16 @@ function oi_find_order_id(mysqli $conn, int $sourceId, string $externalOrderId):
   return $row ? (int)$row['id'] : null;
 }
 
+function oi_get_order_source_meta(mysqli $conn, int $orderId): array {
+  $stmt = $conn->prepare('SELECT source_meta FROM orders WHERE id=? LIMIT 1');
+  $stmt->bind_param('i', $orderId);
+  $stmt->execute();
+  $row = $stmt->get_result()->fetch_assoc();
+  $stmt->close();
+
+  return oi_json_decode_assoc_safe((string)($row['source_meta'] ?? ''));
+}
+
 function oi_ensure_order_source(mysqli $conn, string $code): int {
   try {
     return oi_db_get_id_by_code($conn, 'order_sources', $code);
@@ -852,6 +876,41 @@ function oi_extract_shipping_method_from_rows(array $rows): ?string {
     }
   }
   return oi_trim($rows[0]['shipping_method'] ?? null);
+}
+
+function oi_extract_shipping_price_from_rows(array $rows): ?float {
+  foreach ($rows as $r) {
+    $shippingPrice = oi_parse_money($r['shipping_price'] ?? null);
+    if ($shippingPrice !== null) {
+      return $shippingPrice;
+    }
+
+    $sku = strtoupper((string)oi_trim($r['item_sku'] ?? null));
+    if (str_starts_with($sku, 'SHIPPING')) {
+      return oi_parse_money($r['item_total_price_with_vat'] ?? null)
+        ?? oi_parse_money($r['item_unit_price_with_vat'] ?? null);
+    }
+  }
+
+  return null;
+}
+
+function oi_extract_ebay_transaction_ids(array $rows): array {
+  $ids = [];
+  foreach ($rows as $r) {
+    $raw = oi_json_decode_assoc_safe(oi_trim($r['source_raw_json'] ?? null));
+    $transactionId = oi_first_nonempty(
+      $r['transaction_id'] ?? null,
+      $r['Transaction ID'] ?? null,
+      $raw['transaction_id'] ?? null,
+      $raw['Transaction ID'] ?? null
+    );
+    if ($transactionId !== null) {
+      $ids[$transactionId] = true;
+    }
+  }
+
+  return array_keys($ids);
 }
 
 function oi_extract_payment_method_from_rows(array $rows): ?string {

@@ -508,7 +508,7 @@ function oi_upsert_order_header_mysqli(mysqli $conn, int $sourceId, string $exte
           payment_method = COALESCE(payment_method, ?),
           shipping_method = COALESCE(shipping_method, ?),
           note = COALESCE(note, ?),
-          source_meta = COALESCE(source_meta, ?),
+          source_meta = COALESCE(?, source_meta),
           customer_id = COALESCE(customer_id, ?)
       WHERE id = ?
     ");

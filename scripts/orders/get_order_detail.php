@@ -36,6 +36,100 @@ function seatCoverOptionIsFilled($value): bool
   return !in_array(mb_strtolower($value), $negativeValues, true);
 }
 
+function orderDetailMoneyValue($value): ?float
+{
+  if ($value === null || is_array($value) || is_object($value)) {
+    return null;
+  }
+
+  $value = trim(str_replace(["\u{00A0}", ' '], '', (string) $value));
+  $value = preg_replace('/[^\d.,\-]/', '', $value) ?? '';
+  if ($value === '') {
+    return null;
+  }
+
+  if (substr_count($value, ',') === 1 && substr_count($value, '.') === 0) {
+    $value = str_replace(',', '.', $value);
+  } elseif (substr_count($value, ',') > 0 && substr_count($value, '.') === 1) {
+    $value = str_replace(',', '', $value);
+  }
+
+  return is_numeric($value) ? (float) $value : null;
+}
+
+/**
+ * odhadované rozdelenie nákladov pre jednotlivé dpt....
+ * Hodnoty sú v percentách a mali by sa sčítať na 100 pre každý zdroj.
+ */
+/**
+ * Percentuálne rozdelenie hodnoty objednávky podľa zdroja a kombinácie typov.
+ *
+ * Štruktúra: [ 'ZDROJ' => [ 'TYPY' => [ 'kategoria' => %, ... ], ... ], ... ]
+ *
+ * TYPY sú vždy zoradené ako G, F, P, S (napr. GFP, GPS, GFPS).
+ * Percentá v každom riadku sa MUSIA sčítať na 100.
+ * Kategórie s 0% vynechaj — nezobrazujú sa v breakdownu.
+ * Shipping je vždy prítomný (okrem prípadov kde je reálne 0).
+ *
+ * Dostupné kľúče: graphics | plastics | seat_covers | fitting | shipping | other
+ */
+function orderDetailPercentageBreakdownBySource(): array
+{
+  $ebay = [
+    // ── Iba grafika ──────────────────────────────────────── súčet = 100
+    'G' => [
+      'graphics' => 90,
+      'shipping' => 10,
+    ],
+    // ── Grafika + Plasty ─────────────────────────────────── súčet = 100
+    'GP' => [
+      'graphics' => 45,
+      'plastics' => 45,
+      'shipping' => 10,
+    ],
+    // ── Grafika + Fitting + Plasty ───────────────────────── súčet = 100
+    'GFP' => [
+      'graphics' => 40,
+      'fitting'  => 10,
+      'plastics' => 40,
+      'shipping' => 10,
+    ],
+    // ── Grafika + Fitting + Plasty + Seat Cover ──────────── súčet = 100
+    'GFPS' => [
+      'graphics'    => 35,
+      'fitting'     => 10,
+      'plastics'    => 35,
+      'seat_covers' => 10,
+      'shipping'    => 10,
+    ],
+    // ── Grafika + Plasty + Seat Cover ────────────────────── súčet = 100
+    'GPS' => [
+      'graphics'    => 40,
+      'plastics'    => 40,
+      'seat_covers' => 10,
+      'shipping'    => 10,
+    ],
+    // ── Iba Plasty ───────────────────────────────────────── súčet = 100
+    'P' => [
+      'plastics' => 90,
+      'shipping' => 10,
+    ],
+    // ── Iba Seat Cover ───────────────────────────────────── súčet = 100
+    'S' => [
+      'seat_covers' => 90,
+      'shipping'    => 10,
+    ],
+  ];
+
+  // MX Locker — uprav podľa potreby (zatiaľ rovnaké ako eBay)
+  $mxLocker = $ebay;
+
+  return [
+    'EBAY'      => $ebay,
+    'MX_LOCKER' => $mxLocker,
+  ];
+}
+
 function productSpecDepartmentForItemType(string $itemTypeCode): string
 {
   $itemTypeCode = strtoupper(trim($itemTypeCode));
@@ -1097,7 +1191,189 @@ usort($items, function (array $a, array $b) use ($deptOrder): int {
   return (int) ($a['id'] ?? 0) <=> (int) ($b['id'] ?? 0);
 });
 
+$orderValueBreakdown = [
+  'graphics' => 0.0,
+  'plastics' => 0.0,
+  'seat_covers' => 0.0,
+  'fitting' => 0.0,
+  'other' => 0.0,
+];
+foreach ($items as $breakdownItem) {
+  $lineValue = (float) ($breakdownItem['unit_price'] ?? 0) * max(1, (int) ($breakdownItem['qty'] ?? 1));
+  $itemDepartment = productSpecDepartmentForItemType((string) ($breakdownItem['item_type_code'] ?? ''));
+  if ($itemDepartment === 'G') {
+    $orderValueBreakdown['graphics'] += $lineValue;
+  } elseif ($itemDepartment === 'P') {
+    $orderValueBreakdown['plastics'] += $lineValue;
+  } elseif ($itemDepartment === 'S') {
+    $orderValueBreakdown['seat_covers'] += $lineValue;
+  } elseif ($itemDepartment === 'F') {
+    $orderValueBreakdown['fitting'] += $lineValue;
+  } else {
+    $orderValueBreakdown['other'] += $lineValue;
+  }
+}
+$orderValueBreakdown['shipping'] = orderDetailMoneyValue($sourceMeta['shipping_price'] ?? null) ?? 0.0;
+$orderValueBreakdown['total'] = orderDetailMoneyValue($sourceMeta['total_price_with_vat'] ?? null)
+  ?? orderDetailMoneyValue($order['total'] ?? null)
+  ?? array_sum($orderValueBreakdown);
+
+$percentageBreakdownConfig = orderDetailPercentageBreakdownBySource();
+$breakdownSourceCode = strtoupper(trim((string) ($order['source_code'] ?? '')));
+
+// ── SHOPTET: breakdown podľa skutočných položiek s podkategóriami grafiky ──
+$isShoptetOrder = (strpos($breakdownSourceCode, 'SHOPTET') !== false);
+$shoptetBreakdown = []; // [['label' => string, 'value' => float], ...]
+
+if ($isShoptetOrder) {
+  // Fitting fee je vždy zahrnutý v cene hlavnej grafickej položky (G_).
+  // Na Shoptete ide o checkbox "+39.90 €" pri grafike — cena fitting sa nikdy
+  // neviaže na podkategórie (G_RT, G_MF...), iba na hlavné G položky.
+  // Zistime, či objednávka obsahuje fitting, priamo z item_type_code položiek.
+  $shoptetFittingFee = 39.90;
+
+  $shoptetGraphicsSubcats = [];
+  $shoptetMainGCount      = 0;   // počet hlavných G položiek (nie podkategórie)
+  $shoptetHasFitting      = false;
+  $shoptetPlastics        = 0.0;
+  $shoptetSeatCovers      = 0.0;
+  $shoptetOther           = 0.0;
+
+  foreach ($items as $shoptetItem) {
+    $lineValue   = (float) ($shoptetItem['unit_price'] ?? 0) * max(1, (int) ($shoptetItem['qty'] ?? 1));
+    $rawTypeCode = strtoupper(trim((string) ($shoptetItem['item_type_code'] ?? '')));
+    $itemDept    = productSpecDepartmentForItemType($rawTypeCode);
+
+    if ($rawTypeCode === 'F') {
+      // F položka = fitting service — cena je fyzicky v grafike, tu ju ignorujeme
+      $shoptetHasFitting = true;
+      continue;
+    }
+
+    if ($itemDept === 'G') {
+      $subcat    = productSpecGraphicsSubcategoryFromItemData(
+        $shoptetItem['graphics_subcat'] ?? null,
+        $shoptetItem['custom_label']    ?? null,
+        $shoptetItem['sku']             ?? null
+      );
+
+      if ($subcat === '') {
+        // Hlavná G položka (nie podkategória) — fitting sa viaže práve k nej
+        $shoptetMainGCount++;
+        $subcatKey = 'G_MAIN';
+      } else {
+        $subcatKey = $subcat;
+      }
+
+      $shoptetGraphicsSubcats[$subcatKey] = ($shoptetGraphicsSubcats[$subcatKey] ?? 0.0) + $lineValue;
+    } elseif ($itemDept === 'P') {
+      $shoptetPlastics += $lineValue;
+    } elseif ($itemDept === 'S') {
+      $shoptetSeatCovers += $lineValue;
+    } else {
+      $shoptetOther += $lineValue;
+    }
+  }
+
+  // Fitting: vypočítame sumu a odrátime ju od hlavných G položiek
+  $shoptetFittingTotal = 0.0;
+  if ($shoptetHasFitting && $shoptetMainGCount > 0) {
+    $shoptetFittingTotal = $shoptetFittingFee * $shoptetMainGCount;
+    // Odrátime fitting z hlavných G položiek (hodnota nesmie ísť pod 0)
+    $shoptetGraphicsSubcats['G_MAIN'] = max(
+      0.0,
+      ($shoptetGraphicsSubcats['G_MAIN'] ?? 0.0) - $shoptetFittingTotal
+    );
+  }
+
+  // Grafické položky — výpis (G_MAIN ako "Graphics", podkategórie s vlastným labelom)
+  foreach ($shoptetGraphicsSubcats as $subcatCode => $subcatValue) {
+    if ($subcatValue <= 0.0) continue;
+    if ($subcatCode === 'G_MAIN') {
+      $subcatLabel = 'Graphics';
+    } elseif (defined('GRAPHICS_SUBCAT_LABELS') && isset(GRAPHICS_SUBCAT_LABELS[$subcatCode])) {
+      $subcatLabel = GRAPHICS_SUBCAT_LABELS[$subcatCode];
+    } else {
+      $subcatLabel = $subcatCode;
+    }
+    $shoptetBreakdown[] = ['label' => $subcatLabel, 'value' => $subcatValue];
+  }
+
+  // Fitting — len ak existuje
+  if ($shoptetFittingTotal > 0.0) {
+    $shoptetBreakdown[] = ['label' => 'Fitting', 'value' => $shoptetFittingTotal];
+  }
+
+  // Ostatné departmenty — len ak nenulové
+  if ($shoptetPlastics   > 0.0) $shoptetBreakdown[] = ['label' => 'Plastics',    'value' => $shoptetPlastics];
+  if ($shoptetSeatCovers > 0.0) $shoptetBreakdown[] = ['label' => 'Seat Covers', 'value' => $shoptetSeatCovers];
+
+  $shoptetShipping = orderDetailMoneyValue($sourceMeta['shipping_price'] ?? null) ?? 0.0;
+  if ($shoptetShipping   > 0.0) $shoptetBreakdown[] = ['label' => 'Shipping',    'value' => $shoptetShipping];
+  if ($shoptetOther      > 0.0) $shoptetBreakdown[] = ['label' => 'Other',        'value' => $shoptetOther];
+}
+// ── koniec SHOPTET breakdown ──
+
+// Typ objednávky potrebujeme aj pre lookup percentuálneho breakdownu (EBAY/MX_LOCKER).
+// trafficTypesStringFromOrder() vracia zoradený reťazec napr. "GFP", "GPS", "G"...
+// Definujeme ho tu skôr, aby bol dostupný pre percentage lookup nižšie.
 $orderTrafficTypes = trafficTypesStringFromOrder($order, $items);
+
+// ── EBAY / MX_LOCKER: percentuálny breakdown podľa zdroja + kombinácie typov ──
+// Lookup: $percentageBreakdownConfig['EBAY']['GFP'] = ['graphics' => 35, ...]
+// Typy normalizujeme do kanonického poradia G→F→P→S (rovnako ako normalizeTypesOrder()
+// v orders.php), pretože trafficTypesStringFromOrder() vracia poradie podľa položiek.
+$activePercentageBreakdown = null;
+if (!$isShoptetOrder && isset($percentageBreakdownConfig[$breakdownSourceCode])) {
+  $sourceTypeMap = $percentageBreakdownConfig[$breakdownSourceCode];
+
+  // Zoradíme znaky podľa kanonického poradia G=1, F=2, P=3, S=4
+  $typeWeights  = ['G' => 1, 'F' => 2, 'P' => 3, 'S' => 4];
+  $typeChars    = str_split(strtoupper($orderTrafficTypes));
+  usort($typeChars, static fn($a, $b) => ($typeWeights[$a] ?? 99) <=> ($typeWeights[$b] ?? 99));
+  $orderTypeKey = implode('', $typeChars); // napr. "GFPS", "GFP", "G"...
+
+  if (isset($sourceTypeMap[$orderTypeKey])) {
+    $activePercentageBreakdown = $sourceTypeMap[$orderTypeKey];
+  }
+}
+
+if ($activePercentageBreakdown !== null) {
+  $pricedItemsTotal = $orderValueBreakdown['graphics']
+    + $orderValueBreakdown['plastics']
+    + $orderValueBreakdown['seat_covers']
+    + $orderValueBreakdown['fitting']
+    + $orderValueBreakdown['other'];
+  $storedOrderTotal = orderDetailMoneyValue($order['total'] ?? null);
+  $percentageTotal  = ($storedOrderTotal !== null && $storedOrderTotal > 0)
+    ? $storedOrderTotal
+    : ($pricedItemsTotal > 0 ? $pricedItemsTotal : $orderValueBreakdown['total']);
+  $totalCents       = (int) round($percentageTotal * 100);
+  $allocatedCents   = 0;
+
+  $nonZeroPercentageKeys = array_keys(array_filter(
+    $activePercentageBreakdown,
+    static fn($pct) => (float) $pct > 0
+  ));
+  $lastPercentageKey = end($nonZeroPercentageKeys);
+
+  // Vynulujeme všetky breakdown kľúče — zobrazíme len tie, čo sú v konfigu
+  foreach (['graphics', 'plastics', 'seat_covers', 'fitting', 'shipping', 'other'] as $resetKey) {
+    $orderValueBreakdown[$resetKey] = 0.0;
+  }
+
+  foreach ($activePercentageBreakdown as $breakdownKey => $percentage) {
+    $valueCents = $breakdownKey === $lastPercentageKey
+      ? $totalCents - $allocatedCents
+      : (int) round($totalCents * ((float) $percentage / 100));
+    $orderValueBreakdown[$breakdownKey] = $valueCents / 100;
+    $allocatedCents += $valueCents;
+  }
+  $orderValueBreakdown['total'] = $totalCents / 100;
+}
+
+$orderCurrency = strtoupper(trim((string) ($order['currency'] ?? 'EUR')));
+$orderCurrencySuffix = $orderCurrency === 'EUR' ? ' €' : ($orderCurrency !== '' ? ' ' . $orderCurrency : '');
 
 $status = (string) ($order['status'] ?? '');
 $badgeClass = status_badge_class($status);
@@ -2485,9 +2761,29 @@ ob_start();
 
   .order-photo-thumb-grid {
     align-content: flex-start;
-    overflow-y: auto;
-    max-height: none;
     padding-right: 2px;
+  }
+
+  .order-value-breakdown-card {
+    width: 100%;
+    border: 1px solid rgba(23, 162, 184, .45);
+    border-radius: 10px;
+    background: rgba(23, 162, 184, .06);
+    padding: 14px;
+  }
+
+  .order-value-breakdown-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 4px 0;
+  }
+
+  .order-value-breakdown-total {
+    margin-bottom: 6px;
+    padding-bottom: 9px;
+    border-bottom: 1px solid rgba(255, 255, 255, .14);
+    font-weight: 700;
   }
 
   @media (max-width: 991.98px) {
@@ -2796,106 +3092,6 @@ ob_start();
             </div>
           <?php endif; ?>
 
-          <?php if ((int) ($_SESSION['permission'] ?? 0) >= 300 && !empty($items)): ?>
-            <div class="order-followup-panel mt-3">
-              <div class="card bg-dark border-info">
-                <div class="card-header d-flex align-items-center justify-content-between">
-                  <div>
-                    <b>Create Follow-up Order</b>
-                    <div class="small text-muted">Repeat, warranty claim or crash replacement from selected items.</div>
-                  </div>
-                  <button type="button" class="btn btn-sm btn-outline-info btn-toggle-followup-panel">
-                    Open
-                  </button>
-                </div>
-                <div class="card-body order-followup-form" style="display:none;">
-                  <input type="hidden" class="followup-order-id" value="<?php echo (int) $orderId; ?>">
-
-                  <div class="form-row">
-                    <div class="form-group col-md-4">
-                      <label>Type</label>
-                      <select class="form-control form-control-sm followup-type-select">
-                        <option value="REPEAT">Repeat Order</option>
-                        <option value="WARRANTY">Warranty Claim</option>
-                        <option value="CRASH">Crash Replacement</option>
-                      </select>
-                    </div>
-                    <div class="form-group col-md-4">
-                      <label>Billing</label>
-                      <div class="form-control form-control-sm bg-secondary followup-invoice-state">Standard invoicing</div>
-                    </div>
-                    <div class="form-group col-md-4">
-                      <label>&nbsp;</label>
-                      <div class="form-check mt-1">
-                        <input class="form-check-input followup-do-not-invoice" type="checkbox" value="1" id="followup-do-not-invoice-<?php echo (int) $orderId; ?>">
-                        <label class="form-check-label" for="followup-do-not-invoice-<?php echo (int) $orderId; ?>">
-                          Do not invoice
-                        </label>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div class="form-group">
-                    <label>Reason / note</label>
-                    <textarea class="form-control form-control-sm followup-reason" rows="2" placeholder="Why are we creating this follow-up order?"></textarea>
-                  </div>
-
-                  <div class="d-flex align-items-center justify-content-between mb-2">
-                    <div class="small text-muted">Select items and quantities for the new order.</div>
-                    <button type="button" class="btn btn-xs btn-outline-light btn-followup-select-all">Select all</button>
-                  </div>
-
-                  <div class="table-responsive">
-                    <table class="table table-sm table-bordered table-dark mb-0">
-                      <thead>
-                        <tr>
-                          <th style="width:50px;">Use</th>
-                          <th style="width:70px;">Type</th>
-                          <th>Item</th>
-                          <th style="width:90px;">Orig. Qty</th>
-                          <th style="width:90px;">New Qty</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        <?php foreach ($items as $followupItem): ?>
-                          <tr>
-                            <td class="text-center">
-                              <input type="checkbox" class="followup-item-check" data-item-id="<?php echo (int) $followupItem['id']; ?>" checked>
-                            </td>
-                            <td><?php echo h((string) ($followupItem['item_type_code'] ?? '')); ?></td>
-                            <td>
-                              <?php echo h((string) ($followupItem['title'] ?? '')); ?>
-                              <?php if (!empty($followupItem['sku']) || !empty($followupItem['custom_label'])): ?>
-                                <div class="small text-muted">
-                                  <?php echo h(trim((string) ($followupItem['sku'] ?? ''))); ?>
-                                  <?php if (!empty($followupItem['custom_label'])): ?>
-                                    <span class="ml-1"><?php echo h((string) $followupItem['custom_label']); ?></span>
-                                  <?php endif; ?>
-                                </div>
-                              <?php endif; ?>
-                            </td>
-                            <td><?php echo (int) ($followupItem['qty'] ?? 0); ?></td>
-                            <td>
-                              <input type="number" min="1" max="<?php echo (int) ($followupItem['qty'] ?? 1); ?>"
-                                value="<?php echo (int) ($followupItem['qty'] ?? 1); ?>"
-                                class="form-control form-control-sm followup-item-qty"
-                                data-item-id="<?php echo (int) $followupItem['id']; ?>">
-                            </td>
-                          </tr>
-                        <?php endforeach; ?>
-                      </tbody>
-                    </table>
-                  </div>
-
-                  <div class="mt-3 d-flex align-items-center justify-content-between">
-                    <div class="small text-muted followup-hint">Repeat order will copy selected items into a new production order.</div>
-                    <button type="button" class="btn btn-success btn-sm btn-create-followup-order">Create Follow-up</button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          <?php endif; ?>
-
           <hr class="my-3 order-header-split-line">
 
           <div class="row order-header-extra-row align-items-stretch">
@@ -3141,44 +3337,50 @@ ob_start();
           </div>
         </div>
 
-        <div class="col-lg-4 mt-3 mt-lg-0 d-flex order-photos-span-col">
-          <div class="order-photos-panel w-100 d-flex flex-column">
-            <div
-              class="order-photos-card <?php echo ((int) ($_SESSION['permission'] ?? 0) > 300) ? 'order-photos-card-admin flex-fill' : 'order-photos-card-user'; ?>"
-              data-order-id="<?php echo (int) $orderId; ?>">
-              <?php if ((int) ($_SESSION['permission'] ?? 0) > 300): ?>
-                <div class="order-photo-dropzone" data-order-id="<?php echo (int) $orderId; ?>">
-                  <input type="file" class="order-photo-input d-none" accept="image/jpeg,image/png,image/webp,image/gif"
-                    multiple>
-                  <div>
-                    <i class="fas fa-cloud-upload-alt d-block mb-1"></i>
-                    <b>Drag & drop photos</b>
-                    <div class="small text-muted">alebo klikni pre výber · resize na max 1500 px</div>
-                  </div>
-                </div>
-                <div class="order-photo-upload-progress mt-2"><span></span></div>
-              <?php endif; ?>
-
-              <div
-                class="order-photo-thumb-grid mt-2 <?php echo ((int) ($_SESSION['permission'] ?? 0) > 300) ? 'flex-fill' : ''; ?>">
-                <?php if (!empty($orderPhotos)): ?>
-                  <?php foreach ($orderPhotos as $photo): ?>
-                    <?php $photoUrl = (string) ($photo['file_path'] ?? ''); ?>
-                    <div class="order-photo-thumb-wrap" data-photo-id="<?php echo (int) $photo['id']; ?>">
-                      <img src="<?php echo h($photoUrl); ?>" class="order-photo-thumb"
-                        data-full-src="<?php echo h($photoUrl); ?>"
-                        alt="<?php echo h($photo['original_name'] ?? 'Order photo'); ?>">
-                      <?php if ((int) ($_SESSION['permission'] ?? 0) > 300): ?>
-                        <button type="button" class="btn btn-xs btn-danger btn-delete-order-photo"
-                          data-photo-id="<?php echo (int) $photo['id']; ?>" title="Delete photo">×</button>
-                      <?php endif; ?>
-                    </div>
-                  <?php endforeach; ?>
-                <?php else: ?>
-                  <div class="text-muted small order-photo-empty">Žiadne fotky.</div>
-                <?php endif; ?>
-              </div>
+        <div class="col-lg-4 mt-3 mt-lg-0 d-flex">
+          <div class="order-value-breakdown-card">
+            <div class="order-value-breakdown-row order-value-breakdown-total">
+              <span>Total Order Value:</span>
+              <span><?php echo number_format($orderValueBreakdown['total'], 2, '.', ''); ?><?php echo h($orderCurrencySuffix); ?></span>
             </div>
+            <?php if ($isShoptetOrder && !empty($shoptetBreakdown)): ?>
+              <?php foreach ($shoptetBreakdown as $shoptetRow): ?>
+                <div class="order-value-breakdown-row">
+                  <span><?php echo h($shoptetRow['label']); ?>:</span>
+                  <span><?php echo number_format($shoptetRow['value'], 2, '.', ''); ?><?php echo h($orderCurrencySuffix); ?></span>
+                </div>
+              <?php endforeach; ?>
+            <?php elseif ($activePercentageBreakdown !== null): ?>
+              <?php foreach ([
+                'graphics'    => 'Graphics',
+                'plastics'    => 'Plastics',
+                'seat_covers' => 'Seat Covers',
+                'fitting'     => 'Fitting',
+                'shipping'    => 'Shipping',
+                'other'       => 'Other',
+              ] as $breakdownKey => $breakdownLabel): ?>
+                <?php if (($orderValueBreakdown[$breakdownKey] ?? 0.0) > 0.0): ?>
+                  <div class="order-value-breakdown-row">
+                    <span><?php echo h($breakdownLabel); ?>:</span>
+                    <span><?php echo number_format($orderValueBreakdown[$breakdownKey], 2, '.', ''); ?><?php echo h($orderCurrencySuffix); ?></span>
+                  </div>
+                <?php endif; ?>
+              <?php endforeach; ?>
+            <?php else: ?>
+              <?php foreach ([
+                'graphics'    => 'Graphics',
+                'plastics'    => 'Plastics',
+                'seat_covers' => 'Seat Covers',
+                'fitting'     => 'Fitting',
+                'shipping'    => 'Shipping',
+                'other'       => 'Other',
+              ] as $breakdownKey => $breakdownLabel): ?>
+                <div class="order-value-breakdown-row">
+                  <span><?php echo h($breakdownLabel); ?>:</span>
+                  <span><?php echo number_format($orderValueBreakdown[$breakdownKey], 2, '.', ''); ?><?php echo h($orderCurrencySuffix); ?></span>
+                </div>
+              <?php endforeach; ?>
+            <?php endif; ?>
           </div>
         </div>
       </div>
@@ -3247,56 +3449,144 @@ ob_start();
         </div>
 
       </div>
-      <?php if ((int) ($_SESSION['permission'] ?? 0) >= 300): ?>
 
-        <h6 class="text-muted mb-2">Položky </h6>
-        <?php if ((int) ($_SESSION['permission'] ?? 0) >= 300): ?>
-          <div class="card bg-dark border-info p-2 mb-3 manual-item-box manual-item-type-neutral">
-            <div class="d-flex justify-content-between align-items-center">
-              <b class="text-info">Add manual item</b>
-            </div>
-          <?php endif; ?>
-          <div class="form-row mt-2">
-            <div class="col-md-2">
-              <select class="form-control form-control-sm manual-item-type">
-                <option value="">Select type...</option>
-                <option value="G">G - Graphics</option>
-                <option value="P">P - Plastics</option>
-                <option value="S">S - Seat Cover</option>
-                <option value="F">F - Fitting</option>
-                <option value="T">T - Trim Kit</option>
-                <option value="M">M - Bike Mats</option>
-              </select>
-            </div>
-
-            <div class="col-md-1">
-              <input type="number" class="form-control form-control-sm manual-item-qty" value="1" min="1"
-                placeholder="Qty">
-            </div>
-
-            <div class="col-md-3">
-              <input class="form-control form-control-sm manual-item-sku" placeholder="SKU" value="MANUAL">
-            </div>
-
-            <div class="col-md-4">
-              <input class="form-control form-control-sm manual-item-title" placeholder="Item title / service name">
-            </div>
-
-            <div class="col-md-2">
-              <button type="button" class="btn btn-sm btn-info btn-block btn-add-manual-item"
-                data-order-id="<?php echo (int) $orderId; ?>">
-                Add item
+      <?php if ((int) ($_SESSION['permission'] ?? 0) >= 300 && !empty($items)): ?>
+        <div class="order-followup-panel mt-3">
+          <div class="card bg-dark border-info">
+            <div class="card-header d-flex align-items-center justify-content-between">
+              <div>
+                <b>Create Follow-up Order</b>
+                <div class="small text-muted">Repeat, warranty claim or crash replacement from selected items.</div>
+              </div>
+              <button type="button" class="btn btn-sm btn-outline-info btn-toggle-followup-panel">
+                Open
               </button>
             </div>
-          </div>
+            <div class="card-body order-followup-form" style="display:none;">
+              <input type="hidden" class="followup-order-id" value="<?php echo (int) $orderId; ?>">
 
-          <div class="mt-2">
-            <input class="form-control form-control-sm manual-item-reason" placeholder="Reason / customer request note">
-          </div>
+              <div class="form-row">
+                <div class="form-group col-md-4">
+                  <label>Type</label>
+                  <select class="form-control form-control-sm followup-type-select">
+                    <option value="REPEAT">Repeat Order</option>
+                    <option value="WARRANTY">Warranty Claim</option>
+                    <option value="CRASH">Crash Replacement</option>
+                  </select>
+                </div>
+                <div class="form-group col-md-4">
+                  <label>Billing</label>
+                  <div class="form-control form-control-sm bg-secondary followup-invoice-state">Standard invoicing</div>
+                </div>
+                <div class="form-group col-md-4">
+                  <label>&nbsp;</label>
+                  <div class="form-check mt-1">
+                    <input class="form-check-input followup-do-not-invoice" type="checkbox" value="1" id="followup-do-not-invoice-<?php echo (int) $orderId; ?>">
+                    <label class="form-check-label" for="followup-do-not-invoice-<?php echo (int) $orderId; ?>">
+                      Do not invoice
+                    </label>
+                  </div>
+                </div>
+              </div>
 
-          <div class="manual-item-generated-fields mt-2"></div>
+              <div class="form-group">
+                <label>Reason / note</label>
+                <textarea class="form-control form-control-sm followup-reason" rows="2" placeholder="Why are we creating this follow-up order?"></textarea>
+              </div>
+
+              <div class="d-flex align-items-center justify-content-between mb-2">
+                <div class="small text-muted">Select items and quantities for the new order.</div>
+                <button type="button" class="btn btn-xs btn-outline-light btn-followup-select-all">Select all</button>
+              </div>
+
+              <div class="table-responsive">
+                <table class="table table-sm table-bordered table-dark mb-0">
+                  <thead>
+                    <tr>
+                      <th style="width:50px;">Use</th>
+                      <th style="width:70px;">Type</th>
+                      <th>Item</th>
+                      <th style="width:90px;">Orig. Qty</th>
+                      <th style="width:90px;">New Qty</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <?php foreach ($items as $followupItem): ?>
+                      <tr>
+                        <td class="text-center">
+                          <input type="checkbox" class="followup-item-check" data-item-id="<?php echo (int) $followupItem['id']; ?>" checked>
+                        </td>
+                        <td><?php echo h((string) ($followupItem['item_type_code'] ?? '')); ?></td>
+                        <td>
+                          <?php echo h((string) ($followupItem['title'] ?? '')); ?>
+                          <?php if (!empty($followupItem['sku']) || !empty($followupItem['custom_label'])): ?>
+                            <div class="small text-muted">
+                              <?php echo h(trim((string) ($followupItem['sku'] ?? ''))); ?>
+                              <?php if (!empty($followupItem['custom_label'])): ?>
+                                <span class="ml-1"><?php echo h((string) $followupItem['custom_label']); ?></span>
+                              <?php endif; ?>
+                            </div>
+                          <?php endif; ?>
+                        </td>
+                        <td><?php echo (int) ($followupItem['qty'] ?? 0); ?></td>
+                        <td>
+                          <input type="number" min="1" max="<?php echo (int) ($followupItem['qty'] ?? 1); ?>"
+                            value="<?php echo (int) ($followupItem['qty'] ?? 1); ?>"
+                            class="form-control form-control-sm followup-item-qty"
+                            data-item-id="<?php echo (int) $followupItem['id']; ?>">
+                        </td>
+                      </tr>
+                    <?php endforeach; ?>
+                  </tbody>
+                </table>
+              </div>
+
+              <div class="mt-3 d-flex align-items-center justify-content-between">
+                <div class="small text-muted followup-hint">Repeat order will copy selected items into a new production order.</div>
+                <button type="button" class="btn btn-success btn-sm btn-create-followup-order">Create Follow-up</button>
+              </div>
+            </div>
+          </div>
         </div>
       <?php endif; ?>
+
+      <div class="order-photos-panel w-100 mt-3">
+        <div
+          class="order-photos-card <?php echo ((int) ($_SESSION['permission'] ?? 0) > 300) ? 'order-photos-card-admin' : 'order-photos-card-user'; ?>"
+          data-order-id="<?php echo (int) $orderId; ?>">
+          <?php if ((int) ($_SESSION['permission'] ?? 0) > 300): ?>
+            <div class="order-photo-dropzone" data-order-id="<?php echo (int) $orderId; ?>">
+              <input type="file" class="order-photo-input d-none" accept="image/jpeg,image/png,image/webp,image/gif" multiple>
+              <div>
+                <i class="fas fa-cloud-upload-alt d-block mb-1"></i>
+                <b>Drag & drop photos</b>
+                <div class="small text-muted">alebo klikni pre výber · resize na max 1500 px</div>
+              </div>
+            </div>
+            <div class="order-photo-upload-progress mt-2"><span></span></div>
+          <?php endif; ?>
+
+          <div class="order-photo-thumb-grid mt-2">
+            <?php if (!empty($orderPhotos)): ?>
+              <?php foreach ($orderPhotos as $photo): ?>
+                <?php $photoUrl = (string) ($photo['file_path'] ?? ''); ?>
+                <div class="order-photo-thumb-wrap" data-photo-id="<?php echo (int) $photo['id']; ?>">
+                  <img src="<?php echo h($photoUrl); ?>" class="order-photo-thumb"
+                    data-full-src="<?php echo h($photoUrl); ?>"
+                    alt="<?php echo h($photo['original_name'] ?? 'Order photo'); ?>">
+                  <?php if ((int) ($_SESSION['permission'] ?? 0) > 300): ?>
+                    <button type="button" class="btn btn-xs btn-danger btn-delete-order-photo"
+                      data-photo-id="<?php echo (int) $photo['id']; ?>" title="Delete photo">×</button>
+                  <?php endif; ?>
+                </div>
+              <?php endforeach; ?>
+            <?php else: ?>
+              <div class="text-muted small order-photo-empty">Žiadne fotky.</div>
+            <?php endif; ?>
+          </div>
+        </div>
+      </div>
+
       <div class="table-responsive">
         <table class="table table-sm table-bordered mb-0 order-detail-table">
           <tbody>
@@ -4109,6 +4399,53 @@ ob_start();
           </tbody>
         </table>
         <?php if ((int) ($_SESSION['permission'] ?? 0) >= 300): ?>
+          <h6 class="text-muted mb-2 mt-3">Položky</h6>
+          <div class="card bg-dark border-info p-2 mb-3 manual-item-box manual-item-type-neutral">
+            <div class="d-flex justify-content-between align-items-center">
+              <b class="text-info">Add manual item</b>
+            </div>
+
+            <div class="form-row mt-2">
+              <div class="col-md-2">
+                <select class="form-control form-control-sm manual-item-type">
+                  <option value="">Select type...</option>
+                  <option value="G">G - Graphics</option>
+                  <option value="P">P - Plastics</option>
+                  <option value="S">S - Seat Cover</option>
+                  <option value="F">F - Fitting</option>
+                  <option value="T">T - Trim Kit</option>
+                  <option value="M">M - Bike Mats</option>
+                </select>
+              </div>
+
+              <div class="col-md-1">
+                <input type="number" class="form-control form-control-sm manual-item-qty" value="1" min="1"
+                  placeholder="Qty">
+              </div>
+
+              <div class="col-md-3">
+                <input class="form-control form-control-sm manual-item-sku" placeholder="SKU" value="MANUAL">
+              </div>
+
+              <div class="col-md-4">
+                <input class="form-control form-control-sm manual-item-title" placeholder="Item title / service name">
+              </div>
+
+              <div class="col-md-2">
+                <button type="button" class="btn btn-sm btn-info btn-block btn-add-manual-item"
+                  data-order-id="<?php echo (int) $orderId; ?>">
+                  Add item
+                </button>
+              </div>
+            </div>
+
+            <div class="mt-2">
+              <input class="form-control form-control-sm manual-item-reason" placeholder="Reason / customer request note">
+            </div>
+
+            <div class="manual-item-generated-fields mt-2"></div>
+          </div>
+
           <hr />
 
           <button type="button" class="btn btn-sm btn-outline-info btn-toggle-activity"
