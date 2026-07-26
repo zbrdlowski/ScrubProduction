@@ -228,9 +228,21 @@ function oi_normalize_unified_import_row(array $r): array {
   return $normalized;
 }
 
-function import_darkscrub_unified_csv(mysqli $conn, string $csvPath): array {
+function import_darkscrub_unified_csv(mysqli $conn, string $csvPath, string $mode = 'skip'): array {
   if (!function_exists('oi_csv_read_assoc')) {
     throw new RuntimeException('Missing order import library. Require order_import_lib.php first.');
+  }
+
+  // 'skip'   (default) => existing orders (matched by source + external_order_id) are left
+  //                        completely untouched; only brand-new orders get created.
+  //                        This is what you want for the daily eBay "Orders Awaiting
+  //                        Dispatch" export: new orders get added, already-imported ones
+  //                        are never overwritten back to their original CSV values.
+  // 'update'            => existing orders get fully refreshed (header, addresses, items)
+  //                        just like the previous behaviour, still respecting the reimport lock.
+  $mode = strtolower(trim($mode));
+  if (!in_array($mode, ['skip', 'update'], true)) {
+    $mode = 'skip';
   }
 
   $rows = array_map('oi_normalize_unified_import_row', oi_csv_read_assoc($csvPath));
@@ -262,6 +274,9 @@ function import_darkscrub_unified_csv(mysqli $conn, string $csvPath): array {
     'skipped_rows' => count($rows) - array_sum(array_map('count', $byOrder)),
     'skipped_locked_orders' => 0,
     'skipped_locked_order_refs' => [],
+    'skipped_existing_orders' => 0,
+    'skipped_existing_order_refs' => [],
+    'mode' => $mode,
   ];
 
   foreach ($byOrder as $groupKey => $itemRows) {
@@ -310,6 +325,14 @@ function import_darkscrub_unified_csv(mysqli $conn, string $csvPath): array {
 
     $existingOrderId = oi_find_order_id($conn, $sourceId, $externalOrderId);
     $beforeExists = $existingOrderId !== null;
+
+    if ($beforeExists && $mode === 'skip') {
+      // Order already exists in the system and caller asked to skip existing orders:
+      // leave it completely untouched (header, addresses, items, shipment all left as-is).
+      $stats['skipped_existing_orders']++;
+      $stats['skipped_existing_order_refs'][] = $sourceCode . ':' . $externalOrderId;
+      continue;
+    }
 
     if ($beforeExists) {
       $lockInfo = oi_get_order_reimport_lock_info($conn, (int) $existingOrderId);
@@ -554,9 +577,14 @@ function import_darkscrub_unified_csv(mysqli $conn, string $csvPath): array {
     $stats['orders']++;
   }
 
-  $stats['note'] = 'DARKSCRUB unified add/update import completed';
+  $stats['note'] = $mode === 'update'
+    ? 'DARKSCRUB unified add/update import completed'
+    : 'DARKSCRUB unified import completed (existing orders skipped)';
   if (!empty($stats['skipped_locked_orders'])) {
     $stats['note'] .= '; skipped locked orders: ' . (int) $stats['skipped_locked_orders'];
+  }
+  if (!empty($stats['skipped_existing_orders'])) {
+    $stats['note'] .= '; skipped existing orders: ' . (int) $stats['skipped_existing_orders'];
   }
   return $stats;
 }
@@ -1020,7 +1048,7 @@ function oi_extract_shoptet_variant_items(array $r, int $qty, int &$startLineNo)
   }
 /*
   // --- grip → GRAPHICS ---
-  //Gip sa uz načítava ako dropdown do grafiky a už nie je treba aby to bola samostatna polozka
+  //Grip sa uz načítava ako dropdown do grafiky a už nie je treba aby to bola samostatna polozka
   $gripVal = oi_trim($raw['grip'] ?? null);
   if ($isPositive($gripVal)) {
     $items[] = [

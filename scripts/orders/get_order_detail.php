@@ -10,8 +10,8 @@ register_shutdown_function(function () {
     echo json_encode(['ok' => false, 'error' => 'PHP Fatal: ' . $err['message'] . ' in ' . $err['file'] . ':' . $err['line']]);
   }
 });
-// pozor, odskoky v textarea sposobuje <div class="g-opt-note-display"> Ak dáš formatovať dokument
-// DOČASNE — zmaž po diagnostike
+// pozor, odskoky v textarea sposobuje <div class="g-opt-note-display"> Ak dám formatovať dokument
+// DOČASNE — zmažať po diagnostike
 file_put_contents(
   __DIR__ . '/debug.txt',
   '__DIR__=' . __DIR__ . "\n" .
@@ -68,7 +68,7 @@ function orderDetailMoneyValue($value): ?float
  *
  * TYPY sú vždy zoradené ako G, F, P, S (napr. GFP, GPS, GFPS).
  * Percentá v každom riadku sa MUSIA sčítať na 100.
- * Kategórie s 0% vynechaj — nezobrazujú sa v breakdownu.
+ * Kategórie s 0% vynechať — nezobrazujú sa v breakdowne.
  * Shipping je vždy prítomný (okrem prípadov kde je reálne 0).
  *
  * Dostupné kľúče: graphics | plastics | seat_covers | fitting | shipping | other
@@ -940,14 +940,10 @@ $stmt = $conn->prepare(" SELECT
     os.code AS source_code,
     cu.name AS customer_name,
     cu.email AS customer_email,
-    cu.phone AS customer_phone,
-    pn.firstname AS production_note_firstname,
-    pn.lastname AS production_note_lastname,
-    pn.photo AS production_note_photo
+    cu.phone AS customer_phone
   FROM orders o
   JOIN order_sources os ON os.id = o.source_id
   LEFT JOIN customers cu ON cu.id = o.customer_id
-  LEFT JOIN employees pn ON pn.id = o.production_note_updated_by
   WHERE o.id = ?
   LIMIT 1
 ");
@@ -957,6 +953,33 @@ $stmt->bind_param('i', $orderId);
 $stmt->execute();
 $order = $stmt->get_result()->fetch_assoc();
 $stmt->close();
+
+// --- production note thread ---
+$stmt = $conn->prepare("
+  SELECT
+    n.id,
+    n.note,
+    n.created_at,
+    e.firstname,
+    e.lastname,
+    e.photo
+  FROM order_production_notes n
+  LEFT JOIN employees e ON e.id = n.user_id
+  WHERE n.order_id = ?
+  ORDER BY n.created_at ASC, n.id ASC
+");
+$stmt->bind_param('i', $orderId);
+$stmt->execute();
+$productionNotes = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+$stmt->close();
+
+// item_type_category_badge() and the RTP label params below still read
+// $order['production_note'] directly (they print the latest note on labels),
+// so keep it pointed at the most recent thread entry instead of the stale
+// orders.production_note column.
+$order['production_note'] = !empty($productionNotes)
+  ? (string) (end($productionNotes)['note'] ?? '')
+  : '';
 
 if (!$order)
   out(404, ['ok' => false, 'error' => 'Order not found']);
@@ -970,6 +993,7 @@ $followupTypeLabels = [
   'REPEAT' => 'Repeat Order',
   'WARRANTY' => 'Warranty Claim',
   'CRASH' => 'Crash Replacement',
+  'SPLIT' => 'Order Split',
 ];
 $followupTypeCode = strtoupper(trim((string) ($followupMeta['type'] ?? '')));
 $followupLabel = $followupTypeLabels[$followupTypeCode] ?? trim((string) ($followupMeta['label'] ?? ''));
@@ -1191,6 +1215,65 @@ usort($items, function (array $a, array $b) use ($deptOrder): int {
   return (int) ($a['id'] ?? 0) <=> (int) ($b['id'] ?? 0);
 });
 
+// ── Zoskupenie Seat Cover položky s jej auto-generovaným Patch (aby boli v tabuľke hneď pri sebe) ──
+// Nemáme priamy prepojovací kľúč medzi Patch položkou a jej Seat Cover položkou,
+// preto párujeme podľa poradia výskytu (v praxi je v objednávke jeden Seat Cover a jeden Patch).
+$seatCoverPatchGroups = []; // seatItemId => patchItemId
+{
+  $seatItemIdsForGrouping = [];
+  $patchItemIdsForGrouping = [];
+  foreach ($items as $groupCandidateItem) {
+    $groupCandidateType = strtoupper(trim((string) ($groupCandidateItem['item_type_code'] ?? '')));
+    if ($groupCandidateType === 'S') {
+      $seatItemIdsForGrouping[] = (int) ($groupCandidateItem['id'] ?? 0);
+      continue;
+    }
+    $groupCandidateOpts = jsonDecodeAssocSafe((string) ($groupCandidateItem['options_json'] ?? '{}'));
+    if (($groupCandidateOpts['_auto_generated'] ?? '') === 'SEAT_PATCH_AUTO_GRAPHICS') {
+      $patchItemIdsForGrouping[] = (int) ($groupCandidateItem['id'] ?? 0);
+    }
+  }
+
+  $seatPatchPairCount = min(count($seatItemIdsForGrouping), count($patchItemIdsForGrouping));
+  for ($seatPatchPairIndex = 0; $seatPatchPairIndex < $seatPatchPairCount; $seatPatchPairIndex++) {
+    $seatCoverPatchGroups[$seatItemIdsForGrouping[$seatPatchPairIndex]] = $patchItemIdsForGrouping[$seatPatchPairIndex];
+  }
+}
+$patchToSeatCoverGroup = array_flip($seatCoverPatchGroups); // patchItemId => seatItemId
+
+if ($seatCoverPatchGroups) {
+  $itemsReorderedForGrouping = [];
+  $pendingPatchItemsById = [];
+
+  foreach ($items as $orderedGroupItem) {
+    $orderedGroupItemId = (int) ($orderedGroupItem['id'] ?? 0);
+
+    // Patch položku odložíme nabok a vložíme ju hneď za jej párovú Seat Cover položku.
+    if (isset($patchToSeatCoverGroup[$orderedGroupItemId])) {
+      $pendingPatchItemsById[$orderedGroupItemId] = $orderedGroupItem;
+      continue;
+    }
+
+    $itemsReorderedForGrouping[] = $orderedGroupItem;
+
+    if (
+      isset($seatCoverPatchGroups[$orderedGroupItemId])
+      && isset($pendingPatchItemsById[$seatCoverPatchGroups[$orderedGroupItemId]])
+    ) {
+      $itemsReorderedForGrouping[] = $pendingPatchItemsById[$seatCoverPatchGroups[$orderedGroupItemId]];
+      unset($pendingPatchItemsById[$seatCoverPatchGroups[$orderedGroupItemId]]);
+    }
+  }
+
+  // Poistka: ak by Patch položka predsa len predbehla svoju Seat Cover položku
+  // (za bežných okolností sa nestane, dept order dáva G pred S), doplníme na koniec.
+  foreach ($pendingPatchItemsById as $leftoverPatchItem) {
+    $itemsReorderedForGrouping[] = $leftoverPatchItem;
+  }
+
+  $items = $itemsReorderedForGrouping;
+}
+
 $orderValueBreakdown = [
   'graphics' => 0.0,
   'plastics' => 0.0,
@@ -1376,7 +1459,6 @@ $orderCurrency = strtoupper(trim((string) ($order['currency'] ?? 'EUR')));
 $orderCurrencySuffix = $orderCurrency === 'EUR' ? ' €' : ($orderCurrency !== '' ? ' ' . $orderCurrency : '');
 
 $status = (string) ($order['status'] ?? '');
-$badgeClass = status_badge_class($status);
 $detailAccentColor = status_accent_color($status);
 
 $priorityOptions = [
@@ -1399,8 +1481,6 @@ if ($currentStatus === '') {
 if (!in_array($currentStatus, $statusOptions, true)) {
   $statusOptions[] = $currentStatus;
 }
-
-$currentStatusLabel = $statusLabels[$currentStatus] ?? str_replace('_', ' ', $currentStatus);
 
 $manualTypes = strtoupper((string) ($order['manual_types_override'] ?? ''));
 $hasManualTypes = $manualTypes !== '';
@@ -1809,6 +1889,17 @@ ob_start();
   tr.item-type-F.item-info-row>td,
   tr.item-type-F.g-item-options-row>td {
     background: rgba(253, 126, 20, .05) !important;
+  }
+
+  /* ── Seat Cover + auto-generovaný Patch — banner nad skupinou ── */
+  .seat-patch-group-label>td {
+    background: rgba(232, 62, 140, 0.14) !important;
+    color: #e83e8c;
+    font-weight: 700;
+    font-size: 11px;
+    letter-spacing: .02em;
+    padding: 3px 8px !important;
+    border: none !important;
   }
 
   .order-detail-table tbody tr.qty-warning-row>td {
@@ -2514,10 +2605,10 @@ ob_start();
     --item-bg: rgba(255, 193, 7, .13);
   }
 
-  /* Ak je qty warning, nech nezabije ľavý department pásik a nech nerobí ďalšie pásiky */
+  /* Ak je qty warning, nech je vidieť silná žltá navyše nad department pozadím, ale nech nezabije ľavý department pásik */
   .order-detail-table tbody tr.qty-warning-row>td {
-    background: var(--item-bg, rgba(255, 193, 7, .16)) !important;
-    box-shadow: none !important;
+    background: linear-gradient(rgba(255, 193, 7, .28), rgba(255, 193, 7, .28)), var(--item-bg, rgba(255, 193, 7, .16)) !important;
+    box-shadow: inset 4px 0 0 rgba(255, 193, 7, .9) !important;
   }
 
   .order-detail-table tbody tr.qty-warning-row>td:first-child {
@@ -2745,6 +2836,36 @@ ob_start();
     flex-direction: column;
   }
 
+  .order-detail-secondary-row>[class*="col-"] {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .order-detail-secondary-row .production-note-box,
+  .order-detail-secondary-row .order-followup-panel,
+  .order-detail-secondary-row .order-followup-panel>.card,
+  .order-detail-secondary-row .order-photos-panel,
+  .order-detail-secondary-row .order-photos-card {
+    flex: 1 1 auto;
+  }
+
+  .order-detail-secondary-row .order-followup-panel {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .order-detail-secondary-row .production-note-box,
+  .order-detail-secondary-row .order-followup-panel,
+  .order-detail-secondary-row .order-photos-panel {
+    width: 100%;
+    height: 100%;
+  }
+
+  .order-detail-secondary-row .production-note-box,
+  .order-detail-secondary-row .order-followup-panel>.card {
+    margin-bottom: 0;
+  }
+
   .order-photos-card {
     display: flex;
     flex-direction: column;
@@ -2787,6 +2908,10 @@ ob_start();
   }
 
   @media (max-width: 991.98px) {
+    .order-detail-secondary-row>[class*="col-"]:not(:last-child) {
+      margin-bottom: 1rem;
+    }
+
     .order-photos-card-admin {
       min-height: 220px;
     }
@@ -2819,6 +2944,18 @@ ob_start();
     flex: 0 0 auto;
     white-space: nowrap;
   }
+
+  /* ── Seat Cover + Patch — spoločný ružový pásik (rovnaký mechanizmus ako
+     department farebný pásik vyššie, len prepísaná farba). Selektor je
+     zámerne plne kvalifikovaný, aby mal istú prioritu nad "FINAL OVERRIDE"
+     blokom vyššie bez ohľadu na poradie. */
+  .order-detail-table tbody tr.seat-patch-group-row {
+    --item-accent: #e83e8c;
+  }
+
+  .order-detail-table tbody tr.item-repeat-header-row.seat-patch-group-row th:first-child {
+    border-left: 10px solid #e83e8c !important;
+  }
 </style>
 <div class="p-3">
   <div class="card card-dark order-detail-card mb-0"
@@ -2830,11 +2967,6 @@ ob_start();
             data-copy="<?php echo h($order['order_number'] ?? $order['external_order_id'] ?? $orderId); ?>"
             title="Click to copy order number"
             style="cursor:pointer;">#<?php echo h($order['order_number'] ?? $order['external_order_id'] ?? $orderId); ?></b>
-          <span class="ml-2 badge badge-light"><?php echo h($order['source_code'] ?? ''); ?></span>
-          <?php if (!empty($cats)): ?>
-            <span class="ml-2 text-dark badge badge-dark"><?php echo h(implode(' · ', $cats)); ?></span>
-          <?php endif; ?>
-          <span class="ml-2 badge <?php echo h($badgeClass); ?>"><?php echo h($currentStatusLabel); ?></span>
         </div>
         <?php if ((int) ($_SESSION['permission'] ?? 0) >= 300): ?>
           <button type="button" class="btn btn-sm btn-light ml-2 btn-edit-order-header"
@@ -2915,10 +3047,7 @@ ob_start();
               </select>
             <?php endif; ?>
           </div>
-          <button type="button" class="btn btn-sm btn-outline-light btn-close-order-detail"
-            data-order-id="<?php echo (int) $orderId; ?>" title="Close detail">
-            <i class="fas fa-chevron-up"></i> Close
-          </button>
+
         </div>
       </div>
     </div>
@@ -3387,78 +3516,81 @@ ob_start();
 
       <hr />
       <?php
-      $noteAuthor = trim((string) ($order['production_note_firstname'] ?? '') . ' ' . (string) ($order['production_note_lastname'] ?? ''));
-      $notePhoto = trim((string) ($order['production_note_photo'] ?? ''));
-      $noteAt = trim((string) ($order['production_note_updated_at'] ?? ''));
+      $showFollowupPanel = (int) ($_SESSION['permission'] ?? 0) >= 300 && !empty($items);
+      $productionNoteColClass = $showFollowupPanel ? 'col-lg-4' : 'col-lg-8';
       ?>
 
-      <h6 class="text-muted mb-2">Production note</h6>
+      <div class="row order-detail-secondary-row align-items-stretch mb-3">
+        <div class="<?php echo $productionNoteColClass; ?>">
+          <div class="card bg-dark border-info production-note-box">
+            <div class="card-header d-flex align-items-start justify-content-between">
+              <b>Production Note</b>
+              <button type="button" class="btn btn-sm btn-outline-info ml-auto btn-edit-production-note">
+                Add note
+              </button>
+            </div>
 
-      <div class="card bg-dark border-info p-2 production-note-box">
-        <?php if ($noteAuthor !== ''): ?>
-          <div class="d-flex align-items-center mb-2 text-muted">
-            <?php if ($notePhoto !== ''): ?>
-              <img src="images/<?= h($notePhoto) ?>" class="img-circle mr-2"
-                style="width:24px; height:24px; object-fit:cover;" alt="<?= h($noteAuthor) ?>">
-            <?php else: ?>
-              <i class="fas fa-user-circle mr-2"></i>
-            <?php endif; ?>
+            <div class="card-body">
+              <div class="production-note-thread" style="max-height:260px; overflow-y:auto;">
+                <?php if (empty($productionNotes)): ?>
+                  <span class="text-muted production-note-empty">No production notes yet.</span>
+                <?php else: ?>
+                  <?php foreach ($productionNotes as $noteRow): ?>
+                    <?php
+                    $noteAuthor = trim((string) ($noteRow['firstname'] ?? '') . ' ' . (string) ($noteRow['lastname'] ?? ''));
+                    $notePhoto = trim((string) ($noteRow['photo'] ?? ''));
+                    $noteAt = trim((string) ($noteRow['created_at'] ?? ''));
+                    ?>
+                    <div class="production-note-entry mb-2 pb-2 border-bottom border-secondary">
+                      <div class="d-flex align-items-center mb-1 text-muted">
+                        <?php if ($notePhoto !== ''): ?>
+                          <img src="images/<?= h($notePhoto) ?>" class="img-circle mr-2"
+                            style="width:20px; height:20px; object-fit:cover;" alt="<?= h($noteAuthor) ?>">
+                        <?php else: ?>
+                          <i class="fas fa-user-circle mr-2"></i>
+                        <?php endif; ?>
 
-            <small>
-              Note by <b>
-                <?= h($noteAuthor) ?>
-              </b>
-              <?php if ($noteAt !== ''): ?>
-                ·
-                <?= h($noteAt) ?>
-              <?php endif; ?>
-            </small>
+                        <small>
+                          <b><?= h($noteAuthor !== '' ? $noteAuthor : 'Unknown') ?></b>
+                          <?php if ($noteAt !== ''): ?>
+                            · <?= h($noteAt) ?>
+                          <?php endif; ?>
+                        </small>
+                      </div>
+                      <div class="production-note-display text-light" style="white-space:pre-wrap;"><?php echo h($noteRow['note'] ?? ''); ?></div>
+                    </div>
+                  <?php endforeach; ?>
+                <?php endif; ?>
+              </div>
+
+              <div class="production-note-editor mt-2" style="display:none;"><textarea
+                  class="form-control form-control-sm production-note-input production-note-textarea" rows="2"
+                  placeholder="Customer changes / production instructions..."></textarea>
+
+                <div class="mt-2">
+                  <button class="btn btn-sm btn-info btn-save-production-note" data-order-id="<?php echo (int) $orderId; ?>">
+                    Save
+                  </button>
+
+                  <button type="button" class="btn btn-sm btn-secondary btn-cancel-production-note">
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            </div>
           </div>
-        <?php endif; ?>
-
-        <div class="d-flex justify-content-between align-items-start">
-          <div class="production-note-display text-light" style="white-space:pre-wrap; flex:1;">
-            <?php if (trim((string) ($order['production_note'] ?? '')) !== ''): ?>
-              <?php echo h($order['production_note'] ?? ''); ?>
-            <?php else: ?>
-              <span class="text-muted">No production note.</span>
-            <?php endif; ?>
-          </div>
-
-
-          <button type="button" class="btn btn-xs btn-outline-info ml-2 btn-edit-production-note">
-            Edit
-          </button>
-
         </div>
 
-
-        <div class="production-note-editor mt-2" style="display:none;"><textarea
-            class="form-control form-control-sm production-note-input production-note-textarea" rows="2"
-            placeholder="Customer changes / production instructions..."><?php echo h($order['production_note'] ?? ''); ?></textarea>
-
-          <div class="mt-2">
-            <button class="btn btn-sm btn-info btn-save-production-note" data-order-id="<?php echo (int) $orderId; ?>">
-              Save
-            </button>
-
-            <button type="button" class="btn btn-sm btn-secondary btn-cancel-production-note">
-              Cancel
-            </button>
-          </div>
-        </div>
-
-      </div>
-
-      <?php if ((int) ($_SESSION['permission'] ?? 0) >= 300 && !empty($items)): ?>
-        <div class="order-followup-panel mt-3">
-          <div class="card bg-dark border-info">
-            <div class="card-header d-flex align-items-center justify-content-between">
+        <?php if ($showFollowupPanel): ?>
+        <div class="col-lg-4">
+            <div class="order-followup-panel">
+              <div class="card bg-dark border-info">
+            <div class="card-header d-flex align-items-start justify-content-between">
               <div>
                 <b>Create Follow-up Order</b>
-                <div class="small text-muted">Repeat, warranty claim or crash replacement from selected items.</div>
+                <div class="small text-muted">Repeat, warranty claim, crash replacement or split from selected items.</div>
               </div>
-              <button type="button" class="btn btn-sm btn-outline-info btn-toggle-followup-panel">
+              <button type="button" class="btn btn-sm btn-outline-info ml-auto btn-toggle-followup-panel">
                 Open
               </button>
             </div>
@@ -3472,6 +3604,7 @@ ob_start();
                     <option value="REPEAT">Repeat Order</option>
                     <option value="WARRANTY">Warranty Claim</option>
                     <option value="CRASH">Crash Replacement</option>
+                    <option value="SPLIT">Order Split</option>
                   </select>
                 </div>
                 <div class="form-group col-md-4">
@@ -3546,14 +3679,16 @@ ob_start();
                 <button type="button" class="btn btn-success btn-sm btn-create-followup-order">Create Follow-up</button>
               </div>
             </div>
+              </div>
           </div>
         </div>
-      <?php endif; ?>
+        <?php endif; ?>
 
-      <div class="order-photos-panel w-100 mt-3">
-        <div
-          class="order-photos-card <?php echo ((int) ($_SESSION['permission'] ?? 0) > 300) ? 'order-photos-card-admin' : 'order-photos-card-user'; ?>"
-          data-order-id="<?php echo (int) $orderId; ?>">
+        <div class="col-lg-4">
+          <div class="order-photos-panel w-100">
+            <div
+              class="order-photos-card <?php echo ((int) ($_SESSION['permission'] ?? 0) > 300) ? 'order-photos-card-admin' : 'order-photos-card-user'; ?>"
+              data-order-id="<?php echo (int) $orderId; ?>">
           <?php if ((int) ($_SESSION['permission'] ?? 0) > 300): ?>
             <div class="order-photo-dropzone" data-order-id="<?php echo (int) $orderId; ?>">
               <input type="file" class="order-photo-input d-none" accept="image/jpeg,image/png,image/webp,image/gif" multiple>
@@ -3566,7 +3701,7 @@ ob_start();
             <div class="order-photo-upload-progress mt-2"><span></span></div>
           <?php endif; ?>
 
-          <div class="order-photo-thumb-grid mt-2">
+              <div class="order-photo-thumb-grid mt-2">
             <?php if (!empty($orderPhotos)): ?>
               <?php foreach ($orderPhotos as $photo): ?>
                 <?php $photoUrl = (string) ($photo['file_path'] ?? ''); ?>
@@ -3583,6 +3718,8 @@ ob_start();
             <?php else: ?>
               <div class="text-muted small order-photo-empty">Žiadne fotky.</div>
             <?php endif; ?>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -3592,7 +3729,22 @@ ob_start();
           <tbody>
 
             <?php foreach ($items as $it): ?>
-              <tr class="item-repeat-header-row">
+              <?php
+              $seatPatchGroupItemId = (int) ($it['id'] ?? 0);
+              $isSeatPatchGroupStart = isset($seatCoverPatchGroups[$seatPatchGroupItemId]);
+              $isSeatPatchGroupEnd = isset($patchToSeatCoverGroup[$seatPatchGroupItemId]);
+              $seatPatchGroupClass = ($isSeatPatchGroupStart || $isSeatPatchGroupEnd) ? 'seat-patch-group-row' : '';
+              if ($isSeatPatchGroupStart)
+                $seatPatchGroupClass .= ' seat-patch-group-first';
+              if ($isSeatPatchGroupEnd)
+                $seatPatchGroupClass .= ' seat-patch-group-last';
+              ?>
+              <?php if ($isSeatPatchGroupStart || $isSeatPatchGroupEnd): ?>
+                <tr class="seat-patch-group-label" aria-hidden="true">
+                  <td colspan="99">🪑📎 Seat Cover + Patch</td>
+                </tr>
+              <?php endif; ?>
+              <tr class="item-repeat-header-row <?= $seatPatchGroupClass ?>">
                 <th class="text-center">Assigned</th>
                 <th>Type</th>
                 <th class="text-center">Názov</th>
@@ -3653,7 +3805,7 @@ ob_start();
               $noOptionsClass = (strtoupper(trim((string) ($it['item_type_code'] ?? ''))) === 'G') ? '' : 'item-no-options';
               ?>
               <tr
-                class="<?php echo ((int) $it['qty'] > 1 ? 'qty-warning-row' : ''); ?> item-info-row <?= $itemTypeClass ?> <?= $noOptionsClass ?>"
+                class="<?php echo ((int) $it['qty'] > 1 ? 'qty-warning-row' : ''); ?> item-info-row <?= $itemTypeClass ?> <?= $noOptionsClass ?> <?= $seatPatchGroupClass ?>"
                 data-item-type="<?php echo h($it['item_type_code'] ?? ''); ?>">
                 <td class="text-center" style="width:50px;">
                   <?php
@@ -4370,7 +4522,7 @@ ob_start();
                 ?>
 
                 <?php if (!empty($itemProductSpecMainFields)): ?>
-                  <tr class="g-item-options-row <?= $itemTypeClass ?>" data-item-id="<?= (int) $it['id'] ?>">
+                  <tr class="g-item-options-row <?= $itemTypeClass ?> <?= $seatPatchGroupClass ?>" data-item-id="<?= (int) $it['id'] ?>">
                     <td colspan="99" style="padding:5px 8px 7px; border-top:none !important;">
                       <div class="g-options-bar">
                         <?php $renderProductSpecFieldsRow($itemProductSpecMainFields); ?>
@@ -4380,7 +4532,7 @@ ob_start();
                 <?php endif; ?>
 
                 <?php if (!empty($itemProductSpecTextFields)): ?>
-                  <tr class="g-item-options-row g-item-text-options-row <?= $itemTypeClass ?>"
+                  <tr class="g-item-options-row g-item-text-options-row <?= $itemTypeClass ?> <?= $seatPatchGroupClass ?>"
                     data-item-id="<?= (int) $it['id'] ?>">
                     <td colspan="99" style="padding:5px 8px 7px; border-top:none !important;">
                       <div class="g-options-bar g-text-options-bar">

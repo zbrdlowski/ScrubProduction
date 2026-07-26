@@ -50,6 +50,46 @@ function Convert-ColumnReferenceToIndex {
     return $sum
 }
 
+
+function Get-CellText {
+    param(
+        [Parameter(Mandatory = $true)]
+        [System.Xml.XmlElement]$Cell,
+
+        [object[]]$SharedStrings = @()
+    )
+
+    $type = [string]$Cell.GetAttribute('t')
+    $valueNode = $Cell.ChildNodes | Where-Object { $_.LocalName -eq 'v' } | Select-Object -First 1
+
+    if ($type -eq 's') {
+        if ($valueNode -and $valueNode.InnerText -match '^\d+$') {
+            $sharedIndex = [int]$valueNode.InnerText
+
+            if ($SharedStrings -and $sharedIndex -ge 0 -and $sharedIndex -lt $SharedStrings.Count) {
+                return [string]$SharedStrings[$sharedIndex]
+            }
+        }
+
+        return ''
+    }
+
+    if ($type -eq 'inlineStr') {
+        $textNodes = $Cell.SelectNodes('.//*[local-name()="t"]')
+if ($textNodes -and $textNodes.Count -gt 0) {
+    return [string](($textNodes | ForEach-Object { $_.InnerText }) -join '')
+}
+
+        return ''
+    }
+
+    if ($valueNode) {
+        return [string]$valueNode.InnerText
+    }
+
+    return ''
+}
+
 function Get-ProductTypeFromCode {
     param(
         [Parameter(Mandatory = $true)]
@@ -67,15 +107,16 @@ if (-not (Test-Path -LiteralPath $InputPath)) {
     throw "Input file not found: $InputPath"
 }
 
+$inputItem = Get-Item -LiteralPath $InputPath
+
 if ([string]::IsNullOrWhiteSpace($OutputPath)) {
-    $inputItem = Get-Item -LiteralPath $InputPath
     $OutputPath = Join-Path $inputItem.DirectoryName ($inputItem.BaseName + '_product_listing_catalog.csv')
 }
 
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 
 $tempPath = Join-Path $env:TEMP ('shoptet_' + [Guid]::NewGuid().ToString() + '.xlsx')
-$sourceStream = [System.IO.File]::Open($InputPath, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite)
+$sourceStream = [System.IO.File]::Open($inputItem.FullName, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite)
 try {
     $tempStream = [System.IO.File]::Open($tempPath, [System.IO.FileMode]::CreateNew, [System.IO.FileAccess]::Write, [System.IO.FileShare]::None)
     try {
@@ -149,13 +190,7 @@ try {
     $headerMap = @{}
     foreach ($cell in @($sheetRows[0].c)) {
         $columnIndex = Convert-ColumnReferenceToIndex -CellReference ([string]$cell.GetAttribute('r'))
-        $headerValue = ''
-        if ([string]$cell.GetAttribute('t') -eq 's') {
-            $headerValue = $sharedStrings[[int]$cell.v]
-        }
-        else {
-            $headerValue = [string]$cell.v
-        }
+        $headerValue = Get-CellText -Cell $cell -SharedStrings $sharedStrings
         $headerMap[$columnIndex] = $headerValue
     }
 
@@ -172,6 +207,10 @@ try {
         ) {
             $selectedColumns[$index] = $headerName
         }
+    }
+
+    if ($selectedColumns.Count -eq 0) {
+        throw "No supported columns were detected. Expected headers: code, name, itemType, externalCode, categoryText*."
     }
 
     $outputRows = New-Object System.Collections.Generic.List[object]
@@ -193,17 +232,7 @@ try {
                 continue
             }
 
-            $value = ''
-            $type = [string]$cell.GetAttribute('t')
-            if ($type -eq 's') {
-                $value = $sharedStrings[[int]$cell.v]
-            }
-            elseif ($type -eq 'inlineStr') {
-                $value = [string]$cell.is.t
-            }
-            else {
-                $value = [string]$cell.v
-            }
+            $value = Get-CellText -Cell $cell -SharedStrings $sharedStrings
 
             $rowData[$selectedColumns[$columnIndex]] = $value
         }

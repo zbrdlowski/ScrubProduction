@@ -101,11 +101,19 @@ function isOrderItemReady(string $type, string $status, ?string $optionsJson = n
     $status = strtoupper($status);
 
     if ($type === 'G') {
-        return in_array($status, ['PRINTED', 'CUT', 'READY'], true);
+        // POZN.: CUT a PRINTED su medzikroky pred READY (pozri status_definitions,
+        // sort_order 40/50 vs READY=60). Kedysi tu boli natvrdo zapisane ako
+        // "hotovo" ekvivalentne s READY, co sposobovalo, ze polozka so statusom
+        // Printed/Cut bola vyhodnotena ako READY aj v semafore aj v recalculateOrderWorkflow()
+        // (viedlo to k nespravnemu Ready To Invoice namiesto In Progress).
+        return $status === 'READY';
     }
 
     if ($type === 'F') {
-        return in_array($status, ['DONE', 'READY'], true);
+        // Fitting ma iba New / Ready / Reprint - DONE tu nikdy nebol realny
+        // status, takze ho tu netreba (bol to rovnaky typ hardcoded skratu
+        // ako predtym CUT/PRINTED pri Graphics).
+        return $status === 'READY';
     }
 
     if ($type === 'S') {
@@ -466,6 +474,8 @@ function ordersResolveStatusFromRules(mysqli $conn, array $departmentStatuses, s
         }
     }
 
+    $resolvedStatus = null;
+
     foreach ($rules as $rule) {
         if ($scopeAvailable) {
             $allowedStatuses = $rule['allowed_statuses'] ?? [];
@@ -487,12 +497,26 @@ function ordersResolveStatusFromRules(mysqli $conn, array $departmentStatuses, s
             }
         }
 
-        if ($matched) {
-            return $rule['result_order_status_code'];
+        if (!$matched) {
+            continue;
         }
+
+        // Kazda zhoda prepise predchadzajucu (poradie je podla priority ASC,
+        // takze pravidlo s vyssim cislom priority - teda nizsou prioritou -
+        // moze prepisat vysledok skoreho, vseobecnejsieho pravidla).
+        $resolvedStatus = $rule['result_order_status_code'];
+
+        if ($rule['stop_on_match']) {
+            // Stop On Match = Yes - toto je definitivny vysledok, dalej sa
+            // uz nepokracuje.
+            return $resolvedStatus;
+        }
+
+        // Stop On Match = No - berieme tento vysledok len ako "zatial platny"
+        // a pokracujeme dalej, ci nesedi este presnejsie (nizsia priorita) pravidlo.
     }
 
-    return null;
+    return $resolvedStatus;
 }
 
 function ordersOrderSourceMeta(mysqli $conn, int $orderId): array
@@ -529,26 +553,6 @@ function ordersOrderDoNotInvoice(mysqli $conn, int $orderId): bool
     return !empty($followupMeta['do_not_invoice']);
 }
 
-function ordersResolveFallbackOrderStatus(mysqli $conn, int $orderId, array $groups, bool $allGreen, bool $hasOrange, bool $hasGreen): array
-{
-    if (!$groups) {
-        return ['NEW', 'RED'];
-    }
-
-    if ($allGreen) {
-        if (ordersOrderDoNotInvoice($conn, $orderId)) {
-            return ['READY', 'GREEN'];
-        }
-
-        return ['READY_TO_INVOICE', 'GREEN'];
-    }
-
-    if ($hasOrange || $hasGreen) {
-        return ['IN_PROGRESS', 'ORANGE'];
-    }
-
-    return ['NEW', 'RED'];
-}
 function ordersHasManualStatusOverride(mysqli $conn, int $orderId): bool
 {
     $stmt = $conn->prepare("
@@ -652,12 +656,52 @@ function recalculateOrderWorkflow(mysqli $conn, int $orderId): void
     }
 
     $departmentStatuses = ordersResolveDepartmentStatusesFromGroups($conn, $groups);
-    [$fallbackOrderStatus, $traffic] = ordersResolveFallbackOrderStatus($conn, $orderId, $groups, $allGreen, $hasOrange, $hasGreen);
+
+    // Semafor (traffic light) na urovni celej objednavky je iba vizualny
+    // indikator a pocita sa vzdy nezavisle od toho, aky overall status
+    // objednavka nakoniec dostane - nesuvisi s dynamickymi status policies.
+    if (!$groups) {
+        $traffic = 'RED';
+    } elseif ($allGreen) {
+        $traffic = 'GREEN';
+    } elseif ($hasOrange || $hasGreen) {
+        $traffic = 'ORANGE';
+    } else {
+        $traffic = 'RED';
+    }
+
     $currentStatusIsWorkflowScoped = ordersWorkflowCurrentStatusIsAllowedByAnyRule($conn, $currentOrderStatus);
-    $ruleBasedOrderStatus = ordersResolveStatusFromRules($conn, $departmentStatuses, $currentOrderStatus);
-    $orderStatus = $currentStatusIsWorkflowScoped
-        ? ($ruleBasedOrderStatus ?: $fallbackOrderStatus)
-        : ($currentOrderStatus !== '' ? $currentOrderStatus : $fallbackOrderStatus);
+    $ruleBasedOrderStatus = $currentStatusIsWorkflowScoped
+        ? ordersResolveStatusFromRules($conn, $departmentStatuses, $currentOrderStatus)
+        : null;
+
+    if ($ruleBasedOrderStatus !== null) {
+        // Niektora aktivna status policy sedi na aktualnu kombinaciu
+        // department statusov - jej vysledok je zdrojom pravdy.
+        $orderStatus = $ruleBasedOrderStatus;
+    } elseif ($currentOrderStatus !== '') {
+        // Ziadna status policy nesedi na aktualnu kombinaciu department
+        // statusov (alebo current status nie je v scope ziadnej policy).
+        // Povodne tu bol stary hardcoded fallback (all green => Ready To
+        // Invoice / nejaky orange => In Progress), ktory vedel ticho
+        // prepisat status aj bez zodpovedajucej policy. Namiesto toho
+        // status objednavky teraz jednoducho ostava nezmeneny - treba
+        // doplnit chybajucu policy pre danu kombinaciu.
+        $orderStatus = $currentOrderStatus;
+    } else {
+        // Objednavka bez akehokolvek doterajsieho statusu (edge-case,
+        // typicky len tesne po importe) - bezpecny minimalny default.
+        $orderStatus = 'NEW';
+    }
+
+    // Warranty / no-invoice production objednavky nikdy nemaju skoncit v
+    // Ready To Invoice (nie je co fakturovat) - bez ohladu na to, ci tento
+    // status prisiel z policy alebo ostal nezmeneny. Predtym bola tato
+    // kontrola iba vnutri stareho hardcoded fallbacku a teraz by inak tichoo
+    // prestala fungovat.
+    if ($orderStatus === 'READY_TO_INVOICE' && ordersOrderDoNotInvoice($conn, $orderId)) {
+        $orderStatus = 'READY';
+    }
 
     $summaryJson = json_encode($summary, JSON_UNESCAPED_UNICODE);
 

@@ -3,9 +3,10 @@ require_once __DIR__ . '/helpers.php';
 
 chat_require_login();
 
-$userId = (int) ($_SESSION['user_id'] ?? 0);
+$userId = (int)($_SESSION['user_id'] ?? 0);
 
-$sql = "SELECT
+$sql = "
+    SELECT
         ct.id AS thread_id,
         ct.thread_type,
         MAX(cm.id) AS last_message_id,
@@ -97,14 +98,14 @@ $threads = [];
 
 while ($row = $result->fetch_assoc()) {
     $threads[] = [
-        'thread_id' => (int) ($row['thread_id'] ?? 0),
+        'thread_id' => (int)($row['thread_id'] ?? 0),
         'thread_type' => $row['thread_type'] ?? 'dm',
-        'last_message_id' => (int) ($row['last_message_id'] ?? 0),
-        'last_sender_id' => (int) ($row['last_sender_id'] ?? 0),
+        'last_message_id' => (int)($row['last_message_id'] ?? 0),
+        'last_sender_id' => (int)($row['last_sender_id'] ?? 0),
         'sender_name' => $row['sender_name'] ?? '',
         'sender_photo' => $row['sender_photo'] ?? '',
         'last_message_text' => $row['last_message_text'] ?? '',
-        'unread_count' => (int) ($row['unread_count'] ?? 0)
+        'unread_count' => (int)($row['unread_count'] ?? 0)
     ];
 }
 

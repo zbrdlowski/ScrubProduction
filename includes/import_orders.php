@@ -11,6 +11,20 @@
 
     <input id="sourceSelect" type="hidden" value="DARKSCRUB" />
 
+    <div class="mb-3" style="border:1px solid rgba(255,255,255,.2); border-radius:10px; padding:14px 16px; background:rgba(255,255,255,.03);">
+      <label for="modeSelect" style="font-weight:600; margin-bottom:8px; display:block;">
+        <i class="fas fa-toggle-on" style="opacity:.8;"></i>
+        Ak objedn&aacute;vka u&#382; existuje (rovnak&yacute; source + external_order_id):
+      </label>
+      <select id="modeSelect" class="form-control" style="max-width:420px; font-weight:600;">
+        <option value="skip" selected>Presko&#269;i&#357; existuj&uacute;ce (odpor&uacute;&#269;an&eacute;)</option>
+        <option value="update">Prep&iacute;sa&#357; existuj&uacute;ce (re-import)</option>
+      </select>
+      <div id="modeHint" class="text-muted" style="margin-top:8px; font-size:13px;">
+        Existuj&uacute;ca objedn&aacute;vka ostane bez zmeny &ndash; vhodn&eacute; pre denn&yacute; eBay export, kde chce&scaron; len prid&aacute;va&#357; nov&eacute; objedn&aacute;vky.
+      </div>
+    </div>
+
     <div id="dropzone"
          style="border:2px dashed rgba(255,255,255,.3); border-radius:12px; padding:28px; text-align:center; cursor:pointer;">
       <div style="font-size:40px; opacity:.7;">
@@ -47,9 +61,19 @@
   const btnUpload = document.getElementById('btnUpload');
   const selectedFile = document.getElementById('selectedFile');
   const sourceSelect = document.getElementById('sourceSelect');
+  const modeSelect = document.getElementById('modeSelect');
+  const modeHint = document.getElementById('modeHint');
   const result = document.getElementById('result');
   const spinner = document.getElementById('spinner');
   let file = null;
+
+  const modeHints = {
+    skip: 'Existuj&uacute;ca objedn&aacute;vka ostane bez zmeny &ndash; vhodn&eacute; pre denn&yacute; eBay export, kde chce&scaron; len prid&aacute;va&#357; nov&eacute; objedn&aacute;vky.',
+    update: 'Pozor: existuj&uacute;ca objedn&aacute;vka aj jej polo&#382;ky sa prep&iacute;&scaron;u aktu&aacute;lnymi hodnotami z CSV (re-import).'
+  };
+  modeSelect.addEventListener('change', () => {
+    modeHint.innerHTML = modeHints[modeSelect.value] || '';
+  });
 
   function escapeHtml(value) {
     return String(value || '').replace(/[&<>'"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
@@ -81,6 +105,7 @@
 
     const form = new FormData();
     form.append('source', sourceSelect.value);
+    form.append('mode', modeSelect.value);
     form.append('file', file);
 
     try {
@@ -100,11 +125,16 @@
           <div class="alert alert-success">
             <b>Import OK</b><br>
             S&uacute;bor: ${escapeHtml(data.filename)}<br>
+            M&oacute;d: ${data.mode === 'update' ? 'Prep&iacute;sa&#357; existuj&uacute;ce' : 'Presko&#269;i&#357; existuj&uacute;ce'}<br>
             Objedn&aacute;vky: ${data.orders}<br>
             Nov&eacute;: ${data.created}<br>
             Aktualizovan&eacute;: ${data.updated}<br>
             V&yacute;robn&eacute; polo&#382;ky: ${data.items}<br>
             Presko&#269;en&eacute; shipping/payment polo&#382;ky: ${data.skipped_shipping_items}<br>
+            Presko&#269;en&eacute; existuj&uacute;ce objedn&aacute;vky: ${data.skipped_existing_orders || 0}<br>
+            ${(data.skipped_existing_order_refs && data.skipped_existing_order_refs.length)
+              ? `Existuj&uacute;ce (nezmenen&eacute;) ordery: ${escapeHtml(data.skipped_existing_order_refs.join(', '))}<br>`
+              : ''}
             Presko&#269;en&eacute; zamknut&eacute; objedn&aacute;vky: ${data.skipped_locked_orders || 0}<br>
             ${(data.skipped_locked_order_refs && data.skipped_locked_order_refs.length)
               ? `Zamknut&eacute; ordery: ${escapeHtml(data.skipped_locked_order_refs.join(', '))}<br>`

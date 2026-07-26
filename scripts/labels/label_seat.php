@@ -11,8 +11,17 @@
       margin: 0;
       padding: 10px;
     }
-    table { border: 2px solid black; border-collapse: collapse; }
-    td    { border: 2px solid black; }
+    table {
+    border: 3px solid black;
+    border-collapse: separate;
+    border-spacing: 3px;
+    /*background: black;    vyplní medzery medzi bunkami */
+}
+
+td {
+    border: 1px solid black;
+    /*background: white;*/
+}
     #name  { text-align: center; font-size: 40px; padding: 6px; }
     #order { text-align: center; font-size: 50px; padding: 6px; }
     #country, #ship {
@@ -63,7 +72,7 @@ if ($stickers) $sc = false;
 ?>
 
 <div align="center">
-  <table width="800" border="0">
+  <table width="800" border="0" cellpadding="1" cellspacing="1">
 
     <!-- Meno + QR (rowspan 4) -->
     <tr>

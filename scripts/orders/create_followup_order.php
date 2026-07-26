@@ -72,6 +72,7 @@ $allowedTypes = [
   'REPEAT' => 'R',
   'WARRANTY' => 'W',
   'CRASH' => 'C',
+  'SPLIT' => 'Q',
 ];
 
 if ($orderId <= 0 || !isset($allowedTypes[$followupType])) {
@@ -79,6 +80,10 @@ if ($orderId <= 0 || !isset($allowedTypes[$followupType])) {
 }
 
 if ($followupType === 'WARRANTY' && $doNotInvoice !== 1) {
+  $doNotInvoice = 1;
+}
+
+if ($followupType === 'SPLIT' && $doNotInvoice !== 1) {
   $doNotInvoice = 1;
 }
 
@@ -180,6 +185,7 @@ $followupLabelMap = [
   'REPEAT' => 'Repeat Order',
   'WARRANTY' => 'Warranty Claim',
   'CRASH' => 'Crash Replacement',
+  'SPLIT' => 'Order Split',
 ];
 $followupLabel = $followupLabelMap[$followupType] ?? $followupType;
 
@@ -225,14 +231,28 @@ if ($baseNote !== '') {
 }
 $newNote = implode(' | ', $newNoteParts);
 
+// Order Split: keep the child order right under the parent in the list —
+// same order_date + same priority/priority_date, so the existing ORDER BY
+// (priority -> priority_date/order_date -> order_date -> id ASC) naturally
+// places it directly after the parent (higher id, same date).
+if ($followupType === 'SPLIT') {
+  $newOrderDate = (string) ($sourceOrder['order_date'] ?? date('Y-m-d H:i:s'));
+  $newPriority = (int) ($sourceOrder['priority'] ?? 0);
+  $newPriorityDate = $sourceOrder['priority_date'] ?? null;
+} else {
+  $newOrderDate = date('Y-m-d H:i:s');
+  $newPriority = 0;
+  $newPriorityDate = null;
+}
+
 $conn->begin_transaction();
 
 try {
   $stmt = $conn->prepare("
     INSERT INTO orders
-      (source_id, external_order_id, order_number, imported_at, order_date, status, currency, total, payment_method, shipping_method, note, source_meta, customer_id, manual_types_override)
+      (source_id, external_order_id, order_number, imported_at, order_date, status, currency, total, payment_method, shipping_method, note, source_meta, customer_id, manual_types_override, priority, priority_date)
     VALUES
-      (?, ?, ?, NOW(), NOW(), 'NEW', ?, ?, ?, ?, ?, ?, ?, ?)
+      (?, ?, ?, NOW(), ?, 'NEW', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   ");
   if (!$stmt) {
     throw new RuntimeException($conn->error);
@@ -247,10 +267,11 @@ try {
     : null;
 
   $stmt->bind_param(
-    'isssdssssis',
+    'issssdssssisis',
     $sourceId,
     $newExternalOrderId,
     $newOrderNumber,
+    $newOrderDate,
     $currency,
     $newTotal,
     $paymentMethod,
@@ -258,7 +279,9 @@ try {
     $newNote,
     $sourceMetaJson,
     $customerIdDb,
-    $manualTypes
+    $manualTypes,
+    $newPriority,
+    $newPriorityDate
   );
   $stmt->execute();
   $newOrderId = (int) $stmt->insert_id;

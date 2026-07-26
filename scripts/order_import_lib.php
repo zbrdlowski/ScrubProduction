@@ -48,13 +48,24 @@ function oi_csv_read_assoc(string $path, string $encodingHint = 'UTF-8'): array 
   $fh = fopen($path, 'r');
   if (!$fh) throw new RuntimeException("Cannot open CSV: $path");
 
-  $rawHeaders = fgetcsv($fh);
+  // Autodetekcia oddeľovača — čítame prvý riadok ako raw text a porovnáme
+  // počet čiarok vs bodkočiarok. Rieši problém US locale (Excel exportuje `;`
+  // keď je systémový desatinný oddeľovač bodka, alebo `,` ked je čiarka).
+  $firstLine = fgets($fh);
+  if ($firstLine === false) throw new RuntimeException("Empty CSV: $path");
+  rewind($fh);
+
+  $commaCount     = substr_count($firstLine, ',');
+  $semicolonCount = substr_count($firstLine, ';');
+  $delimiter      = $semicolonCount > $commaCount ? ';' : ',';
+
+  $rawHeaders = fgetcsv($fh, 0, $delimiter);
   if (!$rawHeaders) throw new RuntimeException("Empty CSV: $path");
   $headers = oi_normalize_headers($rawHeaders);
 
   $rows = [];
   $line = 1;
-  while (($row = fgetcsv($fh)) !== false) {
+  while (($row = fgetcsv($fh, 0, $delimiter)) !== false) {
     $line++;
     if (count($row) === 1 && trim((string)$row[0]) === '') continue;
 

@@ -30,6 +30,15 @@ try {
     exit;
   }
 
+  // Import mode: 'skip' (default) leaves already-imported orders untouched,
+  // 'update' fully overwrites them from the CSV (still respecting the reimport lock).
+  $mode = strtolower(trim((string)($_POST['mode'] ?? 'skip')));
+  if (!in_array($mode, ['skip', 'update'], true)) {
+    http_response_code(400);
+    echo json_encode(['ok' => false, 'error' => 'Invalid mode. Use "skip" or "update".']);
+    exit;
+  }
+
   if (!isset($_FILES['file']) || ($_FILES['file']['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
     http_response_code(400);
     echo json_encode(['ok' => false, 'error' => 'File upload error']);
@@ -59,12 +68,13 @@ try {
   }
 
   $conn->begin_transaction();
-  $stats = import_darkscrub_unified_csv($conn, $dest);
+  $stats = import_darkscrub_unified_csv($conn, $dest, $mode);
   $conn->commit();
 
   echo json_encode([
     'ok' => true,
     'source' => 'DARKSCRUB',
+    'mode' => $stats['mode'] ?? $mode,
     'filename' => $filename,
     'orders' => $stats['orders'] ?? 0,
     'created' => $stats['created'] ?? 0,
@@ -73,6 +83,8 @@ try {
     'skipped_shipping_items' => $stats['skipped_shipping_items'] ?? 0,
     'skipped_locked_orders' => $stats['skipped_locked_orders'] ?? 0,
     'skipped_locked_order_refs' => $stats['skipped_locked_order_refs'] ?? [],
+    'skipped_existing_orders' => $stats['skipped_existing_orders'] ?? 0,
+    'skipped_existing_order_refs' => $stats['skipped_existing_order_refs'] ?? [],
     'note' => $stats['note'] ?? null,
   ], JSON_UNESCAPED_UNICODE);
 

@@ -63,7 +63,7 @@ if ($stickers) $sc = false;
 ?>
 
 <div align="center">
-  <table width="800" border="0">
+  <table width="800" border="1" cellpadding="2" cellspacing="2">
 
     <!-- Meno + QR -->
     <tr>

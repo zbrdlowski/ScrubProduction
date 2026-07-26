@@ -1,8 +1,20 @@
 <?php
 declare(strict_types=1);
+ob_start();
 session_start();
 
 header('Content-Type: application/json; charset=utf-8');
+
+register_shutdown_function(function () {
+  $err = error_get_last();
+  if ($err && in_array($err['type'], [E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR], true)) {
+    while (ob_get_level() > 0) ob_end_clean();
+    http_response_code(500);
+    echo json_encode(['ok' => false, 'error' => 'PHP Fatal: ' . $err['message']]);
+  } else {
+    ob_end_flush();
+  }
+});
 
 require_once __DIR__ . '/../../includes/conn.php';
 require_once __DIR__ . '/activity_helper.php';
@@ -43,9 +55,6 @@ $stmt->execute();
 
 // testujemee, jestli se nám vrátil řádek, a pokud ano, načteme z něj order_id a internal_options_json do proměnných $oldOrderId a $oldInternalOptionsJson
 
-$affected = $stmt->affected_rows;
-$error = $stmt->error;
-
 $stmt->bind_result($oldOrderId, $oldInternalOptionsJson);
 
 $old = null;
@@ -72,6 +81,8 @@ $stmt = $conn->prepare("
 ");
 $stmt->bind_param('sii', $normalizedJson, $userId, $itemId);
 $stmt->execute();
+$affected = $stmt->affected_rows;
+$error = $stmt->error;
 $stmt->close();
 
 log_order_activity(
@@ -88,7 +99,12 @@ log_order_activity(
   'Internal product options updated'
 );
 
-recalculateOrderWorkflow($conn, (int)$old['order_id']);
+try {
+  recalculateOrderWorkflow($conn, (int)$old['order_id']);
+} catch (\Throwable $e) {
+  // Neblokuj odpoveď — workflow chyba nie je fatálna pre save
+  error_log('recalculateOrderWorkflow error: ' . $e->getMessage());
+}
 
 echo json_encode([
   'ok' => true,

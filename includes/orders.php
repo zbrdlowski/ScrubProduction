@@ -49,6 +49,7 @@ function ordersFollowupTypeLabel(string $type): string
     'REPEAT' => 'Repeat Order',
     'WARRANTY' => 'Warranty Claim',
     'CRASH' => 'Crash Replacement',
+    'SPLIT' => 'Order Split',
   ];
 
   return $map[$type] ?? $type;
@@ -963,6 +964,50 @@ while ($row = $res->fetch_assoc()) {
   $orderIds[] = (int) ($row['id'] ?? 0);
 }
 
+// Order Split grouping: force SPLIT follow-up rows (Q1, Q2, ...) to sit directly
+// under their parent order in the rendered list, regardless of where date/id-based
+// sorting would otherwise place other unrelated orders in between.
+$existingOrderIds = [];
+foreach ($orderRows as $row) {
+  $existingOrderIds[(int) ($row['id'] ?? 0)] = true;
+}
+
+$splitChildrenByParent = [];
+$movedSplitChildIds = [];
+foreach ($orderRows as $row) {
+  $rowMeta = json_decode((string) ($row['source_meta'] ?? ''), true);
+  $rowFollowupMeta = (is_array($rowMeta) && !empty($rowMeta['_followup']) && is_array($rowMeta['_followup']))
+    ? $rowMeta['_followup']
+    : null;
+  if (!$rowFollowupMeta || strtoupper((string) ($rowFollowupMeta['type'] ?? '')) !== 'SPLIT') {
+    continue;
+  }
+
+  $parentId = (int) ($rowFollowupMeta['parent_order_id'] ?? 0);
+  if ($parentId > 0 && isset($existingOrderIds[$parentId])) {
+    $splitChildrenByParent[$parentId][] = $row;
+    $movedSplitChildIds[(int) ($row['id'] ?? 0)] = true;
+  }
+}
+
+if ($movedSplitChildIds) {
+  $groupedOrderRows = [];
+  foreach ($orderRows as $row) {
+    $rowId = (int) ($row['id'] ?? 0);
+    if (isset($movedSplitChildIds[$rowId])) {
+      continue; // re-inserted right after its parent below
+    }
+
+    $groupedOrderRows[] = $row;
+    if (isset($splitChildrenByParent[$rowId])) {
+      foreach ($splitChildrenByParent[$rowId] as $childRow) {
+        $groupedOrderRows[] = $childRow;
+      }
+    }
+  }
+  $orderRows = $groupedOrderRows;
+}
+
 $detailStatusDateRule = $statusDateDetailRules[$detailStatusCode] ?? null;
 $detailStatusDates = $detailStatusDateRule
   ? ordersFetchStatusEventDates($conn, $orderIds, [$detailStatusCode])
@@ -1235,6 +1280,22 @@ $deptOptions = [
     opacity: 0.82;
   }
 
+  /* Order Split (Q1, Q2, ...) child rows: visually attach to the parent order above them */
+  .order-split-child-row {
+    background: rgba(255, 193, 7, 0.07) !important;
+    box-shadow: inset 4px 0 0 rgba(255, 193, 7, 0.55);
+  }
+
+  .order-split-child-row>td {
+    border-top: none !important;
+  }
+
+  .order-split-arrow {
+    color: #ffc107;
+    font-weight: 700;
+    margin-right: 4px;
+  }
+
   .btn-outline-pending {
     color: #a78bfa;
     border-color: #6f42c1;
@@ -1430,15 +1491,17 @@ $deptOptions = [
   /* ── Sticky thead ───────────────────────────────────────────────────── */
   :root {
     --orders-sticky-top: 50px;
+    --orders-header-h: 58px;
     --orders-tabs-h: 42px;
     --orders-toolbar-h: 38px;
-    --orders-table-head-top: calc(var(--orders-sticky-top) + var(--orders-tabs-h) + var(--orders-toolbar-h));
+    --orders-table-head-top: calc(var(--orders-sticky-top) + var(--orders-header-h) + var(--orders-tabs-h) + var(--orders-toolbar-h));
   }
 
   /* Vypnute scroll anchoring - prehliadac by inak pri zbaleni/rozbaleni
      filtra sam potichu upravoval scroll poziciu (aby "vizualne" nic neskoclo),
      co v kombinacii so sticky theadom sposobovalo, ze hlavicka skoncila
      na nespravnom mieste (napr. medzi riadkami tabulky). */
+  .orders-search-header,
   .orders-quicktabs,
   .orders-toolbar,
   #ordersFilterCollapse,
@@ -1446,10 +1509,18 @@ $deptOptions = [
     overflow-anchor: none;
   }
 
-  /* Quick tabs sticky */
-  .orders-quicktabs {
+  /* Search header (hore, nad quick tabs) sticky */
+  .orders-search-header {
     position: sticky;
     top: var(--orders-sticky-top);
+    z-index: 1001;
+    background: #343a40;
+  }
+
+  /* Quick tabs sticky pod search headerom */
+  .orders-quicktabs {
+    position: sticky;
+    top: calc(var(--orders-sticky-top) + var(--orders-header-h));
     z-index: 1000;
     background: #343a40;
   }
@@ -1457,16 +1528,14 @@ $deptOptions = [
   /* Filter toolbar sticky pod tabs */
   .orders-toolbar {
     position: sticky;
-    top: calc(var(--orders-sticky-top) + var(--orders-tabs-h));
+    top: calc(var(--orders-sticky-top) + var(--orders-header-h) + var(--orders-tabs-h));
     z-index: 999;
     background: #2f343a;
   }
 
-  /* Rozbalený filter sticky pod toolbar */
+  /* Rozbalený filter - NIE je sticky, scrolluje sa spolu s tabuľkou.
+     Prilepené (sticky) ostávajú len search header, quick tabs a toolbar. */
   #ordersFilterCollapse {
-    position: sticky;
-    top: calc(var(--orders-sticky-top) + var(--orders-tabs-h) + var(--orders-toolbar-h));
-    z-index: 998;
     background: #2f343a;
   }
 
@@ -1479,7 +1548,7 @@ $deptOptions = [
   }
 
   /* Table header sticky pod tabs + toolbar.
-   Keď je filter collapse otvorený, JS nižšie posunie top dynamicky. */
+   Rozbalený filter už nie je sticky, takže neovplyvňuje offset thead-u. */
   #ordersTableWrap>table#ordersTable>thead>tr>th {
     position: sticky;
     top: var(--orders-table-head-top);
@@ -1493,7 +1562,7 @@ $deptOptions = [
 </style>
 
 <div class="card card-dark">
-  <div class="card-header d-flex align-items-center justify-content-between flex-wrap" style="gap:10px;">
+  <div class="card-header orders-search-header d-flex align-items-center justify-content-between flex-wrap" style="gap:10px;">
     <h3 class="card-title mb-0">
       Orders
       <?php if ($dpt === 6): ?><span class="badge badge-warning ml-2">T/M highlighted</span><?php endif; ?>
@@ -1983,8 +2052,8 @@ $deptOptions = [
                 <option value="">— All —</option>
                 <?php foreach ([
                   '20' => '🔴 Priority',
-                  '10' => '🟠 Deadline',
-                  '0' => '⚫ Normal',
+                  '10' => '🟡 Deadline',
+                   '0' => '⚫ Normal',
                   // ── sem pridaj ──
                 ] as $val => $lbl): ?>
                   <?= fOpt((string) $val, $lbl, $fPriority) ?>
@@ -2165,7 +2234,7 @@ $deptOptions = [
           <tr style="background:#343a40;color:#fff;">
             <th class="text-center" width="5%">Date</th>
             <th class="text-center" width="5%">Source</th>
-            <th class="text-center" width="8%">Order #</th>
+            <th class="text-center" width="11%">Order #</th>
             <th>Customer</th>
             <th class="text-center" width="4%">Country</th>
             <?php if ($isSuperAdmin): ?>
@@ -2202,6 +2271,16 @@ $deptOptions = [
               $rowClasses[] = 'order-priority-high';
             }
 
+            $rowSourceMeta = json_decode((string) ($row['source_meta'] ?? ''), true);
+            $rowFollowup = (is_array($rowSourceMeta) && !empty($rowSourceMeta['_followup']) && is_array($rowSourceMeta['_followup']))
+              ? $rowSourceMeta['_followup']
+              : null;
+            $isFollowupRow = (bool) $rowFollowup;
+            $isSplitChildRow = $rowFollowup && strtoupper((string) ($rowFollowup['type'] ?? '')) === 'SPLIT';
+            if ($isSplitChildRow) {
+              $rowClasses[] = 'order-split-child-row';
+            }
+
             $rowClass = implode(' ', $rowClasses);
 
             $typesStr = normalizeTypesOrder((string) ($row['manual_types_override'] ?: ($row['item_types'] ?? '')));
@@ -2221,6 +2300,7 @@ $deptOptions = [
             );
             ?>
             <tr class="<?= $rowClass ?> order-row" data-order-id="<?= $orderId ?>"
+              data-split-parent-id="<?= $isSplitChildRow ? (int) ($rowFollowup['parent_order_id'] ?? 0) : 0 ?>"
               data-priority-sort="<?= ($priorityValue >= 20 ? 0 : ($priorityValue >= 10 ? 1 : 2)) ?>" data-date-sort="<?= htmlspecialchars((string) (
                               ($priorityValue > 0 && !empty($row['priority_date']))
                               ? $row['priority_date']
@@ -2239,10 +2319,10 @@ $deptOptions = [
               </td>
               <td class="text-center"><?= htmlspecialchars((string) $row['source_code']) ?></td>
               <td class="text-center">
-                <div><b><?= htmlspecialchars((string) ($row['order_number'] ?? $row['external_order_id'] ?? '')) ?></b>
+                <div><?php if ($isSplitChildRow): ?><span class="order-split-arrow">↳</span><?php endif; ?><b><?= htmlspecialchars((string) ($row['order_number'] ?? $row['external_order_id'] ?? '')) ?></b>
                 </div>
 
-                <?php if (!empty($row['external_order_id']) && $row['external_order_id'] !== $row['order_number']): ?>
+                <?php if (!empty($row['external_order_id']) && $row['external_order_id'] !== $row['order_number'] && !$isFollowupRow): ?>
                   <small class="text-muted"><?= htmlspecialchars($externalOrderDisplay) ?></small>
 
                 <?php endif; ?>
@@ -2373,7 +2453,7 @@ $deptOptions = [
                   }
                   ?>
                   <span class="badge mr-1" style="<?= $badgeStyle ?>"
-                    title="<?= htmlspecialchars($type . ' - ' . $departmentLabel . ($departmentStatus !== '' ? ' (' . $departmentStatus . ')' : '')) ?>">
+                    title="<?= htmlspecialchars($type . ' - ' . $departmentLabel) ?>">
                     <?= htmlspecialchars($type) ?>
                   </span>
                 <?php endforeach; ?>
@@ -2392,7 +2472,7 @@ $deptOptions = [
                   $priorityEmoji = '🔴';
                 } elseif ($priorityValue >= 10) {
                   $priorityBadge = 'badge-warning';
-                  $priorityEmoji = '🟠';
+                  $priorityEmoji = '🟡';
                 } else {
                   $priorityBadge = 'badge-success';
                   $priorityEmoji = '⚫';
@@ -3370,6 +3450,13 @@ $deptOptions = [
       return;
     }
 
+    if (type === 'SPLIT') {
+      $checkbox.prop('checked', true).prop('disabled', true);
+      $state.text('Do not invoice').removeClass('bg-secondary').addClass('bg-danger');
+      $hint.text('Order split moves selected items into a separate order for their own box and tracking number (Q1, Q2, ...).');
+      return;
+    }
+
     $checkbox.prop('disabled', false);
     if (wasLockedByWarranty) {
       $checkbox.prop('checked', false);
@@ -4047,18 +4134,16 @@ $deptOptions = [
   function updateOrdersStickyOffsets() {
     const baseTop = 50;
 
+    const headerH = $('.orders-search-header').outerHeight() || 58;
     const tabsH = $('.orders-quicktabs').outerHeight() || 42;
     const toolbarH = $('.orders-toolbar').outerHeight() || 38;
 
-    const $collapse = $('#ordersFilterCollapse');
-    const filterIsOpen = $collapse.hasClass('show');
-    const filterH = filterIsOpen ? ($collapse.outerHeight(true) || 0) : 0;
-
+    document.documentElement.style.setProperty('--orders-header-h', headerH + 'px');
     document.documentElement.style.setProperty('--orders-tabs-h', tabsH + 'px');
     document.documentElement.style.setProperty('--orders-toolbar-h', toolbarH + 'px');
     document.documentElement.style.setProperty(
       '--orders-table-head-top',
-      (baseTop + tabsH + toolbarH + filterH) + 'px'
+      (baseTop + headerH + tabsH + toolbarH) + 'px'
     );
   }
 
@@ -4098,7 +4183,7 @@ $deptOptions = [
       updateOrdersStickyOffsets();
       forceOrdersTheadReflow();
     });
-    ['.orders-quicktabs', '.orders-toolbar', '#ordersFilterCollapse'].forEach(function (sel) {
+    ['.orders-search-header', '.orders-quicktabs', '.orders-toolbar'].forEach(function (sel) {
       const el = document.querySelector(sel);
       if (el) ordersStickyResizeObserver.observe(el);
     });
@@ -4107,10 +4192,6 @@ $deptOptions = [
   $(document).ready(refreshOrdersStickySoon);
   $(window).on('resize scroll', updateOrdersStickyOffsets);
 
-  $('#ordersFilterCollapse').on(
-    'show.bs.collapse shown.bs.collapse hide.bs.collapse hidden.bs.collapse',
-    refreshOrdersStickySoon
-  );
   $(window).on('resize', updateOrdersStickyOffsets);
   function sortOrdersByPriorityAndDate() {
     const $tbody = $('#ordersTable tbody');
@@ -4125,6 +4206,7 @@ $deptOptions = [
         priority: parseInt($orderRow.data('priority-sort'), 10),
         date: String($orderRow.data('date-sort') || '9999-12-31'),
         id: parseInt($orderRow.data('order-id'), 10),
+        splitParentId: parseInt($orderRow.data('split-parent-id'), 10) || 0,
         orderRow: $orderRow,
         detailRow: $detailRow
       });
@@ -4136,7 +4218,36 @@ $deptOptions = [
       return a.id - b.id;
     });
 
+    // Order Split grouping: pull SPLIT rows (Q1, Q2, ...) out of the sorted list
+    // and reinsert each directly after its parent order, so an unrelated order
+    // sorting in between (same date/priority) can never split them apart.
+    const byId = new Map();
+    pairs.forEach(function (p) { byId.set(p.id, p); });
+
+    const splitChildrenByParent = new Map();
+    const topLevel = [];
     pairs.forEach(function (p) {
+      if (p.splitParentId && byId.has(p.splitParentId)) {
+        if (!splitChildrenByParent.has(p.splitParentId)) {
+          splitChildrenByParent.set(p.splitParentId, []);
+        }
+        splitChildrenByParent.get(p.splitParentId).push(p);
+      } else {
+        topLevel.push(p);
+      }
+    });
+
+    const grouped = [];
+    topLevel.forEach(function (p) {
+      grouped.push(p);
+      if (splitChildrenByParent.has(p.id)) {
+        splitChildrenByParent.get(p.id).forEach(function (child) {
+          grouped.push(child);
+        });
+      }
+    });
+
+    grouped.forEach(function (p) {
       $tbody.append(p.orderRow);
       $tbody.append(p.detailRow);
     });
@@ -4245,7 +4356,7 @@ $deptOptions = [
           <label class="text-muted small mb-1">Priority level</label>
           <select id="priorityModalLevel" class="form-control form-control-sm bg-dark text-white border-secondary">
             <option value="0">⚫ Normal</option>
-            <option value="10">🟠 Deadline</option>
+            <option value="10">🟡 Deadline</option>
             <option value="20">🔴 Priority</option>
           </select>
         </div>
