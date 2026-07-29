@@ -525,8 +525,11 @@ function import_darkscrub_unified_csv(mysqli $conn, string $csvPath, string $mod
         $stats['items']++;
       }
 
-      // --- Seat Cover patch auto-item (zachovaná pôvodná logika) ---
-      if ($primaryDept === 'S' && oi_has_positive_option_value(oi_json_option_value($optionsJson, 'patch-style'))) {
+      // --- Seat Cover patch auto-item ---
+      // patch-style is not reliable because localized negative values such as
+      // "No Patch" / "Kein Patch" still contain the word "Patch". A graphics
+      // item is needed only when the customer supplied patch text or a font.
+      if ($primaryDept === 'S' && oi_should_create_seat_patch($customLabel, $optionsJson)) {
         $patchItemId = oi_insert_item_unified_with_internal(
           $conn, $orderId, $autoLineNo++,
           $sku, 'Patch', $customLabel,
@@ -837,6 +840,17 @@ function oi_json_option_value(?string $json, string $key): ?string {
   if (is_array($value)) return null;
 
   return oi_trim((string)$value);
+}
+
+function oi_should_create_seat_patch(?string $customLabel, ?string $optionsJson): bool {
+  $customLabel = strtoupper((string)oi_trim($customLabel));
+  if (!str_starts_with($customLabel, 'S_')) return false;
+
+  foreach (['number', 'number-font', 'name', 'name-font'] as $key) {
+    if (oi_json_option_value($optionsJson, $key) !== null) return true;
+  }
+
+  return false;
 }
 
 function oi_has_positive_option_value(?string $value): bool {

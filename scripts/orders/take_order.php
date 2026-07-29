@@ -10,6 +10,7 @@ if (!isset($_SESSION['permission'])) {
 }
 
 require_once __DIR__ . '/../../includes/conn.php';
+require_once __DIR__ . '/../../includes/render_assigned_users.php';
 require_once __DIR__ . '/activity_helper.php';
 
 $orderId = (int)($_POST['order_id'] ?? 0);
@@ -242,7 +243,14 @@ log_order_activity(
 );
 
   $conn->commit();
-  echo json_encode(['ok'=>true,'role'=>$rolePrimary], JSON_UNESCAPED_UNICODE);
+  echo json_encode([
+    'ok' => true,
+    'role' => $rolePrimary,
+    'order_id' => $orderId,
+    'dept_code' => $deptCode,
+    'avatars_html' => render_assigned_users_html($conn, $orderId),
+    'take_assign_html' => render_order_take_assign_html($conn, $orderId, $deptCode, $perm, $userId),
+  ], JSON_UNESCAPED_UNICODE);
 
 } catch (Throwable $e) {
   $conn->rollback();

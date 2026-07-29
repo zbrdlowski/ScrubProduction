@@ -37,6 +37,18 @@ $(document)
           return;
         }
 
+        if (resp.avatars_html !== undefined && resp.order_id) {
+          $('[data-assigned-cell="' + resp.order_id + '"]').html(resp.avatars_html);
+
+          if (resp.take_assign_html !== undefined) {
+            $('[data-take-assign-cell="' + resp.order_id + '"]').html(resp.take_assign_html);
+          } else {
+            // Fallback, keby take_assign_html z nejakého dôvodu chýbal.
+            $btn.remove();
+          }
+          return;
+        }
+
         location.reload();
       },
       error: function (xhr) {
@@ -1372,10 +1384,22 @@ $(document)
             return;
           }
 
+          if (resp.avatars_html !== undefined && resp.order_id) {
+            $('[data-assigned-cell="' + resp.order_id + '"]').html(resp.avatars_html);
+          }
+
+          if (resp.take_assign_html !== undefined && resp.order_id) {
+            $('[data-take-assign-cell="' + resp.order_id + '"]').html(resp.take_assign_html);
+          }
+
           const orderId = findOpenOrderIdFromElement($btn);
 
           if (orderId) {
             refreshOrderDetail(orderId);
+            return;
+          }
+
+          if (resp.avatars_html !== undefined && resp.order_id) {
             return;
           }
 

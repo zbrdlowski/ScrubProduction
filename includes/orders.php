@@ -2,6 +2,7 @@
 declare(strict_types=1);
 /** @var mysqli $conn */
 require_once __DIR__ . '/conn.php';
+require_once __DIR__ . '/render_assigned_users.php';
 require_once __DIR__ . '/orders_status_helpers.php';
 require_once __DIR__ . '/orders_workflow_helpers.php';
 
@@ -2514,112 +2515,8 @@ $deptOptions = [
                   <?= htmlspecialchars($statusLabel ?: '-') ?>
                 </button>
               </td>
-              <td>
+              <td data-assigned-cell="<?= $orderId ?>"><?= render_assigned_users_html($conn, $orderId, (string) ($row['assigned_users'] ?? '')) ?></td>
 
-                <?php
-                $assignedRaw = (string) ($row['assigned_users'] ?? '');
-                // debug: zobrazit surová data v title pro případ problémů s parsováním
-                htmlspecialchars($assignedRaw);
-                $assigned = [];
-
-                if ($assignedRaw !== '') {
-                  foreach (explode(';;', $assignedRaw) as $part) {
-                    $bits = explode('|', $part);
-                    if (count($bits) >= 6) {
-                      $assigned[] = [
-                        'assignment_id' => (int) $bits[0],
-                        'id' => (int) $bits[1],
-                        'name' => $bits[2],
-                        'role' => $bits[3],
-                        'state' => $bits[4],
-                        'photo' => $bits[5],
-                      ];
-                    }
-                  }
-                }
-
-                $maxVisible = 12;
-                $visible = array_slice($assigned, 0, $maxVisible);
-                $hiddenCount = max(0, count($assigned) - $maxVisible);
-                ?>
-
-                <?php if (!$assigned): ?>
-                  <span class="text-muted"></span>
-                <?php else: ?>
-                  <div class="assigned-users">
-                    <?php foreach ($visible as $a): ?>
-                      <?php
-                      $name = trim((string) $a['name']);
-                      $role = trim((string) $a['role']);
-                      $photo = trim((string) ($a['photo'] ?? ''));
-
-                      $initials = '';
-                      foreach (preg_split('/\s+/', $name) as $p) {
-                        if ($p !== '') {
-                          $initials .= mb_strtoupper(mb_substr($p, 0, 1));
-                        }
-                      }
-                      $initials = mb_substr($initials, 0, 2);
-
-                      $roleLabel = str_replace(
-                        ['PRIMARY_', 'COLLAB_', '_'],
-                        ['', 'Collab ', ' '],
-                        $role
-                      );
-
-                      $roleClass = (strpos($role, 'PRIMARY_') === 0) ? 'assigned-primary' : 'assigned-collab';
-                      ?>
-
-                      <?php if ($photo !== ''): ?>
-                        <span class="assigned-avatar-wrap">
-
-                          <?php if ($photo !== ''): ?>
-                            <img src="images/<?= htmlspecialchars($photo) ?>"
-                              class="assigned-photo <?= htmlspecialchars($roleClass) ?>"
-                              title="<?= htmlspecialchars($name . ' — ' . $roleLabel) ?>">
-                          <?php else: ?>
-                            <span class="assigned-avatar <?= htmlspecialchars($roleClass) ?>"
-                              title="<?= htmlspecialchars($name . ' — ' . $roleLabel) ?>">
-                              <?= htmlspecialchars($initials ?: '?') ?>
-                            </span>
-                          <?php endif; ?>
-
-                          <?php
-                          $canRemoveThisAssignment = (
-                            !empty($a['assignment_id'])
-                            && (
-                              $perm >= 300
-                              || (int) $a['id'] === $meUserId
-                            )
-                          );
-                          ?>
-
-                          <?php if ($canRemoveThisAssignment): ?>
-                            <button type="button" class="btn-remove-assignment"
-                              data-assignment-id="<?= (int) $a['assignment_id'] ?>"
-                              title="<?= ((int) $a['id'] === $meUserId ? 'Remove my assignment' : 'Remove assignment') ?>">
-                              ×
-                            </button>
-                          <?php endif; ?>
-
-                        </span>
-                      <?php else: ?>
-                        <span class="assigned-avatar <?= htmlspecialchars($roleClass) ?>"
-                          title="<?= htmlspecialchars($name . ' — ' . $roleLabel) ?>">
-                          <?= htmlspecialchars($initials ?: '?') ?>
-                        </span>
-                      <?php endif; ?>
-                    <?php endforeach; ?>
-
-                    <?php if ($hiddenCount > 0): ?>
-                      <span class="assigned-more" title="<?= htmlspecialchars($assignedRaw) ?>">
-                        +<?= (int) $hiddenCount ?>
-                      </span>
-                    <?php endif; ?>
-                  </div>
-                <?php endif; ?>
-
-              </td>
 
               <td class="text-nowrap">
                 <span style="padding-left:5px;"></span>
@@ -2642,84 +2539,16 @@ $deptOptions = [
                     </span>
                   <?php endif; ?>
                 <?php else: ?>
-                <?php if ($perm >= 400 && empty($uiDeptCode)): ?>
-                  <span class="badge badge-info ml-2" title="Select department filter first">
-                    Select dept
-                  </span>
-                <?php endif; ?>
-                <?php
-                $primaryId = isset($row['primary_emp_id']) ? (int) $row['primary_emp_id'] : 0;
-                $primaryName = (string) ($row['primary_emp_name'] ?? '');
-                $canUseDeptButtons = !empty($uiDeptCode);
-                if ($perm >= 400 && empty($uiDeptCode)) {
-                  $canUseDeptButtons = false;
-                }
-                $currentPrimaryRole = $uiDeptCode ? ('PRIMARY_' . $uiDeptCode) : '';
-
-                $isTakenForDept = false;
-                $takenByMeForDept = false;
-                $takenNameForDept = '';
-
-                foreach ($assigned as $a) {
-                  if ($currentPrimaryRole !== '' && $a['role'] === $currentPrimaryRole) {
-                    $isTakenForDept = true;
-
-                    if ((int) $a['id'] === $meUserId) {
-                      $takenByMeForDept = true;
-                    }
-
-                    if ($takenNameForDept === '') {
-                      $takenNameForDept = $a['name'];
-                    }
-                  }
-                }
-                ?>
-
-                <?php if ($canUseDeptButtons): ?>
-
-                  <?php if (!$isTakenForDept): ?>
-
-                    <button type="button" class="btn btn-sm btn-success btn-take-order mr-1" data-order-id="<?= $orderId ?>"
-                      data-dept-code="<?= htmlspecialchars((string) $uiDeptCode) ?>" title="Take order">
-                      TAKE
-                    </button>
-                    <!-- Assign To (len admin/mod) -->
-                    <?php if ($perm >= 400): ?>
-                      <button type="button" class="btn btn-sm btn-info btn-invite-collab" data-order-id="<?= $orderId ?>"
-                        data-dept-code="<?= htmlspecialchars((string) $uiDeptCode) ?>" data-mode="assign">
-                        Assign To
-                      </button>
-                    <?php endif; ?>
-
-                  <?php else: ?>
-
-                    <button type="button" class="btn btn-sm btn-secondary btn-take-order mr-1" data-order-id="<?= $orderId ?>"
-                      data-dept-code="<?= htmlspecialchars((string) $uiDeptCode) ?>" disabled title="Already assigned">
-                      TAKE
-                    </button>
-
-                    <?php if ($takenByMeForDept): ?>
-                      <span class="badge badge-warning mr-1 px-3 py-2" style="font-size:0.85rem;">
-                        MINE
-                      </span>
-                    <?php else: ?>
-                      <span class="badge badge-warning mr-1">
-                        Taken<?= $takenNameForDept ? ': ' . htmlspecialchars($takenNameForDept) : '' ?>
-                      </span>
-                    <?php endif; ?>
-
-                    <?php
-                    $canInvite = ($perm >= 400) || ($primaryId === $meUserId);
-                    ?>
-                    <button type="button" class="btn btn-sm btn-info btn-invite-collab" data-order-id="<?= $orderId ?>"
-                      data-dept-code="<?= htmlspecialchars((string) $uiDeptCode) ?>"
-                      data-mode="<?= ($perm >= 400 ? 'assign' : 'invite') ?>" <?= $canInvite ? '' : 'disabled' ?>>
-                      <?= ($perm >= 400 ? 'Assign To' : 'INVITE') ?>
-                    </button>
-
-                  <?php endif; ?>
-
-                <?php endif; ?>
+                <span data-take-assign-cell="<?= $orderId ?>" data-dept-code="<?= htmlspecialchars((string) $uiDeptCode) ?>">
+                  <?= render_order_take_assign_html(
+                    $conn,
+                    $orderId,
+                    (string) $uiDeptCode,
+                    $perm,
+                    $meUserId,
+                    (string) ($row['assigned_users'] ?? '')
+                  ) ?>
+                </span>
                 <?php endif; ?>
               </td>
             </tr>
@@ -2960,6 +2789,21 @@ $deptOptions = [
           return;
         }
         $('#inviteModal').modal('hide');
+
+        if (resp.avatars_html !== undefined && resp.order_id) {
+          $('[data-assigned-cell="' + resp.order_id + '"]').html(resp.avatars_html);
+
+          if (resp.take_assign_html !== undefined) {
+            $('[data-take-assign-cell="' + resp.order_id + '"]').html(resp.take_assign_html);
+          }
+
+          const $wrap = $('#detail-' + resp.order_id);
+          if ($wrap.length && $wrap.data('loaded')) {
+            reloadOrderDetail(resp.order_id);
+          }
+          return;
+        }
+
         location.reload();
       },
       error: function () {
@@ -3349,10 +3193,7 @@ $deptOptions = [
           .removeClass('btn-warning').addClass('btn-light')
           .html('✏️ Edit header');
 
-        const $wrap = $('#detail-' + orderId);
-        $wrap.removeData('loaded');
-        $wrap.html('');
-        $('.btn-toggle-detail[data-order-id="' + orderId + '"]').trigger('click');
+        reloadOrderDetail(orderId);
       },
       error: function () {
         alert('Save request failed');
@@ -3423,17 +3264,59 @@ $deptOptions = [
       // clear input
       $box.find('.invoice-number').val('');
 
-      // reload detail
-      const $wrap = $('#detail-' + orderId);
-      $wrap.removeData('loaded').html('');
-      $('.btn-toggle-detail[data-order-id="' + orderId + '"]').click();
+      reloadOrderDetail(orderId);
 
     }, 'json');
   });
   function reloadOrderDetail(orderId) {
     const $wrap = $('#detail-' + orderId);
-    $wrap.removeData('loaded').html('');
-    $('.btn-toggle-detail[data-order-id="' + orderId + '"]').click();
+    if (!$wrap.length) return;
+
+    // Zapamätaj si presnú scroll pozíciu PRED akoukoľvek manipuláciou s DOM.
+    const scrollX = window.scrollX;
+    const scrollY = window.scrollY;
+
+    // Ak je práve fokusovaný input/select vnútri detailu (napr. rozeditovaný
+    // riadok položky), odfokusuj ho skôr než ho zmažeme z DOM. Inak prehliadač
+    // stráca focus target a niektoré browsery na to reagujú skokom scrollu
+    // na začiatok stránky / na <body>.
+    const activeEl = document.activeElement;
+    if (activeEl && $wrap.find(activeEl).length) {
+      $(activeEl).trigger('blur');
+    }
+
+    $wrap.removeData('loaded');
+    $wrap.html('<div class="p-3 text-muted"><span class="spinner-border spinner-border-sm"></span> Načítavam detail…</div>');
+
+    // Vynútený "open" stav — nikdy netogglujeme cez .btn-toggle-detail click,
+    // lebo ten je toggle (open/close) a pri pretrvávajúcom data('loaded')=true
+    // by mohol detail namiesto refreshu rovno zavrieť.
+    openOrderDetailState(orderId);
+    $wrap.stop(true, true).show();
+    window.scrollTo(scrollX, scrollY);
+
+    $.ajax({
+      url: 'scripts/orders/get_order_detail.php',
+      method: 'POST',
+      dataType: 'json',
+      data: { order_id: orderId },
+      success: function (resp) {
+        if (!resp || !resp.ok) {
+          $wrap.html('<div class="p-3"><div class="alert alert-danger mb-0">Chyba: ' +
+            (resp && resp.error ? resp.error : 'unknown') + '</div></div>');
+          return;
+        }
+        $wrap.html(resp.html);
+        $wrap.data('loaded', true);
+
+        // Výška detailu sa po naplnení obsahu zmenila — vráť scroll presne
+        // tam, kde bol pred refreshom.
+        window.scrollTo(scrollX, scrollY);
+      },
+      error: function () {
+        $wrap.html('<div class="p-3"><div class="alert alert-danger mb-0">Chyba pri refreshi detailu</div></div>');
+      }
+    });
   }
 
   function applyFollowupTypeState($panel) {
@@ -3724,9 +3607,7 @@ $deptOptions = [
         return;
       }
 
-      const $wrap = $('#detail-' + orderId);
-      $wrap.removeData('loaded').html('');
-      $('.btn-toggle-detail[data-order-id="' + orderId + '"]').click();
+      reloadOrderDetail(orderId);
 
     }, 'json').fail(function () {
       alert('Delete item request failed');
@@ -3757,9 +3638,7 @@ $deptOptions = [
         return;
       }
 
-      const $wrap = $('#detail-' + orderId);
-      $wrap.removeData('loaded').html('');
-      $('.btn-toggle-detail[data-order-id="' + orderId + '"]').click();
+      reloadOrderDetail(orderId);
 
     }, 'json').fail(() => {
       alert('Update request failed');
@@ -3800,13 +3679,9 @@ $deptOptions = [
 
         // Refreshneme len otvorený detail panel
         const orderId = resp.order_id || 0;
-        if (orderId) {
-          const $wrap = $('#detail-' + orderId);
-          if ($wrap.length) {
-            $wrap.removeData('loaded').html('');
-            $('.btn-toggle-detail[data-order-id="' + orderId + '"]').click();
-            return;
-          }
+        if (orderId && $('#detail-' + orderId).length) {
+          reloadOrderDetail(orderId);
+          return;
         }
 
         location.reload();
@@ -3963,6 +3838,21 @@ $deptOptions = [
         }
 
         $('#inviteModal').modal('hide');
+
+        if (resp.avatars_html !== undefined && resp.order_id) {
+          $('[data-assigned-cell="' + resp.order_id + '"]').html(resp.avatars_html);
+
+          if (resp.take_assign_html !== undefined) {
+            $('[data-take-assign-cell="' + resp.order_id + '"]').html(resp.take_assign_html);
+          }
+
+          const $wrap = $('#detail-' + resp.order_id);
+          if ($wrap.length && $wrap.data('loaded')) {
+            reloadOrderDetail(resp.order_id);
+          }
+          return;
+        }
+
         location.reload();
       },
       error: function (xhr) {

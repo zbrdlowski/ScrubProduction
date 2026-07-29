@@ -4,6 +4,7 @@ session_start();
 header('Content-Type: application/json; charset=utf-8');
 
 require_once __DIR__ . '/../../includes/conn.php';
+require_once __DIR__ . '/../../includes/render_assigned_users.php';
 require_once __DIR__ . '/activity_helper.php';
 
 $perm = (int)($_SESSION['permission'] ?? 0);
@@ -79,4 +80,12 @@ log_order_activity(
   'Assignment removed'
 );
 
-echo json_encode(['ok' => true]);
+$deptCode = (string) preg_replace('/^(PRIMARY_|COLLAB_)/', '', (string) $a['role']);
+
+echo json_encode([
+  'ok' => true,
+  'order_id' => $orderId,
+  'dept_code' => $deptCode,
+  'avatars_html' => render_assigned_users_html($conn, $orderId),
+  'take_assign_html' => render_order_take_assign_html($conn, $orderId, $deptCode, $perm, $userId),
+], JSON_UNESCAPED_UNICODE);
