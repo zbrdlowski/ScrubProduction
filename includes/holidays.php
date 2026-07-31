@@ -3,7 +3,10 @@
 // includes/holidays.php
 // Six-month holiday / time off planning grid.
 
-$holidayIsAdmin = isset($_SESSION['permission']) && intval($_SESSION['permission']) >= 400;
+$holidayPermission = intval($_SESSION['permission'] ?? 0);
+$holidayDepartmentId = intval($_SESSION['dpt'] ?? 0);
+$holidayCanManage = $holidayPermission === 900
+  || ($holidayPermission === 500 && $holidayDepartmentId === 3);
 $holidayEmpId = intval($_SESSION['user_id'] ?? 0);
 
 function holidayTableExists(mysqli $conn, string $table): bool
@@ -110,6 +113,17 @@ function holidayNextWorkingDate(string $date, array $publicHolidays): string
   $dt = new DateTime($date);
   do {
     $dt->modify('+1 day');
+    $candidate = $dt->format('Y-m-d');
+  } while (holidayIsNonWorkingDate($candidate, $publicHolidays));
+
+  return $candidate;
+}
+
+function holidayPreviousWorkingDate(string $date, array $publicHolidays): string
+{
+  $dt = new DateTime($date);
+  do {
+    $dt->modify('-1 day');
     $candidate = $dt->format('Y-m-d');
   } while (holidayIsNonWorkingDate($candidate, $publicHolidays));
 
@@ -242,7 +256,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $holidayHasTable) {
   $returnUrl = $_SERVER['PHP_SELF'] . '?page=holidays' . ($returnStart !== '' ? '&start=' . urlencode($returnStart) : '');
 
   if ($action === 'create_holiday_request') {
-    $employeeId = $holidayIsAdmin ? (intval($_POST['employee_id'] ?? 0) ?: $holidayEmpId) : $holidayEmpId;
+    $employeeId = $holidayCanManage ? (intval($_POST['employee_id'] ?? 0) ?: $holidayEmpId) : $holidayEmpId;
     $type = $_POST['request_type'] ?? 'holiday';
     $allowedTypes = ['holiday', 'toil', 'doctor', 'sick', 'other'];
     if (!in_array($type, $allowedTypes, true)) {
@@ -280,7 +294,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $holidayHasTable) {
     holidayRedirect($returnUrl);
   }
 
-  if ($action === 'review_holiday_request' && $holidayIsAdmin) {
+  if ($action === 'review_holiday_request' && $holidayCanManage) {
     $newStatus = $_POST['status'] ?? '';
     if (empty($requestIds)) {
       $singleRequestId = intval($_POST['request_id'] ?? 0);
@@ -303,6 +317,109 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $holidayHasTable) {
     holidayRedirect($returnUrl);
   }
 
+  if ($action === 'delete_approved_holiday_day' && $holidayCanManage) {
+    $requestId = intval($_POST['request_id'] ?? 0);
+    $deleteDate = trim($_POST['delete_date'] ?? '');
+
+    if ($requestId > 0 && holidayValidDate($deleteDate)) {
+      $conn->begin_transaction();
+      $operationOk = true;
+
+      $stmt = $conn->prepare("SELECT id, start_date, end_date
+          FROM holiday_requests
+          WHERE id=? AND status='approved'
+          FOR UPDATE");
+      if (!$stmt) {
+        $operationOk = false;
+      } else {
+        $stmt->bind_param('i', $requestId);
+        $operationOk = $stmt->execute();
+        $request = $operationOk ? $stmt->get_result()->fetch_assoc() : null;
+        $stmt->close();
+
+        if (
+          !$request
+          || $deleteDate < $request['start_date']
+          || $deleteDate > $request['end_date']
+          || holidayIsNonWorkingDate($deleteDate, $holidayPublicHolidays)
+        ) {
+          $operationOk = false;
+        }
+      }
+
+      if ($operationOk) {
+        $startDate = $request['start_date'];
+        $endDate = $request['end_date'];
+
+        if ($startDate === $endDate) {
+          $stmt = $conn->prepare("DELETE FROM holiday_requests WHERE id=? AND status='approved'");
+          if ($stmt) {
+            $stmt->bind_param('i', $requestId);
+            $operationOk = $stmt->execute() && $stmt->affected_rows === 1;
+            $stmt->close();
+          } else {
+            $operationOk = false;
+          }
+        } elseif ($deleteDate === $startDate) {
+          $newStart = holidayNextWorkingDate($deleteDate, $holidayPublicHolidays);
+          $stmt = $conn->prepare("UPDATE holiday_requests SET start_date=? WHERE id=? AND status='approved'");
+          if ($stmt) {
+            $stmt->bind_param('si', $newStart, $requestId);
+            $operationOk = $stmt->execute() && $stmt->affected_rows === 1;
+            $stmt->close();
+          } else {
+            $operationOk = false;
+          }
+        } elseif ($deleteDate === $endDate) {
+          $newEnd = holidayPreviousWorkingDate($deleteDate, $holidayPublicHolidays);
+          $stmt = $conn->prepare("UPDATE holiday_requests SET end_date=? WHERE id=? AND status='approved'");
+          if ($stmt) {
+            $stmt->bind_param('si', $newEnd, $requestId);
+            $operationOk = $stmt->execute() && $stmt->affected_rows === 1;
+            $stmt->close();
+          } else {
+            $operationOk = false;
+          }
+        } else {
+          $newRightStart = holidayNextWorkingDate($deleteDate, $holidayPublicHolidays);
+          $newLeftEnd = holidayPreviousWorkingDate($deleteDate, $holidayPublicHolidays);
+          $stmt = $conn->prepare("INSERT INTO holiday_requests
+              (employee_id, request_type, status, start_date, end_date, note, admin_note,
+               requested_by, reviewed_by, reviewed_at, employee_seen_at, created_at)
+              SELECT employee_id, request_type, status, ?, end_date, note, admin_note,
+                     requested_by, reviewed_by, reviewed_at, employee_seen_at, created_at
+              FROM holiday_requests
+              WHERE id=? AND status='approved'");
+          if ($stmt) {
+            $stmt->bind_param('si', $newRightStart, $requestId);
+            $operationOk = $stmt->execute() && $stmt->affected_rows === 1;
+            $stmt->close();
+          } else {
+            $operationOk = false;
+          }
+
+          if ($operationOk) {
+            $stmt = $conn->prepare("UPDATE holiday_requests SET end_date=? WHERE id=? AND status='approved'");
+            if ($stmt) {
+              $stmt->bind_param('si', $newLeftEnd, $requestId);
+              $operationOk = $stmt->execute() && $stmt->affected_rows === 1;
+              $stmt->close();
+            } else {
+              $operationOk = false;
+            }
+          }
+        }
+      }
+
+      if ($operationOk) {
+        $conn->commit();
+      } else {
+        $conn->rollback();
+      }
+    }
+    holidayRedirect($returnUrl);
+  }
+
   if ($action === 'cancel_holiday_request') {
     if (empty($requestIds)) {
       $singleRequestId = intval($_POST['request_id'] ?? 0);
@@ -312,7 +429,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $holidayHasTable) {
     }
     if (!empty($requestIds)) {
       $placeholders = implode(',', array_fill(0, count($requestIds), '?'));
-      if ($holidayIsAdmin) {
+      if ($holidayCanManage) {
         $stmt = $conn->prepare("UPDATE holiday_requests
             SET status='cancelled'
             WHERE id IN ({$placeholders}) AND status='pending'");
@@ -408,7 +525,7 @@ if ($holidayHasTable) {
   }
   $stmt->close();
 
-  if ($holidayIsAdmin) {
+  if ($holidayCanManage) {
     $res = $conn->query("SELECT hr.*, CONCAT_WS(' ', e.firstname, e.lastname) AS employee_name
         FROM holiday_requests hr
         LEFT JOIN employees e ON e.id = hr.employee_id
@@ -593,6 +710,26 @@ for ($i = 0; $i < 6; $i++) {
     border: 1px solid rgba(255, 255, 255, .28);
   }
 
+  .holiday-delete-day-form {
+    display: inline-block;
+    margin: 0;
+  }
+
+  .holiday-delete-day {
+    cursor: pointer;
+    padding: 0 3px;
+  }
+
+  .holiday-delete-day:hover {
+    border-color: #dc3545;
+    box-shadow: inset 0 0 0 1px #dc3545;
+  }
+
+  .holiday-delete-day .holiday-delete-mark {
+    color: #ffb3bb;
+    margin-left: 2px;
+  }
+
   .holiday-pill-pending {
     background: rgba(255, 193, 7, .32);
     color: #ffe8a1;
@@ -656,9 +793,12 @@ for ($i = 0; $i < 6; $i++) {
     <span class="holiday-pill holiday-pill-approved">At</span><span class="text-muted mr-2">Approved TOIL</span>
     <span class="holiday-pill holiday-pill-doctor">D</span><span class="text-muted mr-2">Doctor</span>
     <span class="holiday-pill holiday-pill-sick">S</span><span class="text-muted mr-2">Sick</span>
+    <?php if ($holidayCanManage): ?>
+      <span class="text-muted"><span class="text-danger">&times;</span> Delete an approved individual day</span>
+    <?php endif; ?>
   </div>
 
-  <?php if ($holidayIsAdmin && !empty($pendingRequests)): ?>
+  <?php if ($holidayCanManage && !empty($pendingRequests)): ?>
     <div class="card card-warning card-outline">
       <div class="card-header">
         <h5 class="card-title mb-0"><i class="fas fa-bell mr-1"></i> Pending approval</h5>
@@ -802,10 +942,27 @@ for ($i = 0; $i < 6; $i++) {
                           ? implode(' | ', $tooltipParts)
                           : holidayTypeLabel($request['request_type']) . ' - ' . $request['status'];
                         ?>
-                        <span class="holiday-pill <?= $pillClass ?>" title="<?= htmlspecialchars($title, ENT_QUOTES, 'UTF-8') ?>"
-                          data-toggle="tooltip">
-                          <?= htmlspecialchars(holidayCellCode($request['request_type'], $request['status'])) ?>
-                        </span>
+                        <?php if ($holidayCanManage && $request['status'] === 'approved'): ?>
+                          <form method="POST" class="holiday-delete-day-form"
+                            onsubmit="return confirm('Delete this approved day?');">
+                            <input type="hidden" name="action" value="delete_approved_holiday_day">
+                            <input type="hidden" name="request_id" value="<?= intval($request['id']) ?>">
+                            <input type="hidden" name="delete_date" value="<?= htmlspecialchars($date) ?>">
+                            <input type="hidden" name="return_start"
+                              value="<?= htmlspecialchars($windowStart->format('Y-m-01')) ?>">
+                            <button type="submit" class="holiday-pill <?= $pillClass ?> holiday-delete-day"
+                              title="<?= htmlspecialchars($title . ' | Delete this approved day', ENT_QUOTES, 'UTF-8') ?>"
+                              data-toggle="tooltip">
+                              <?= htmlspecialchars(holidayCellCode($request['request_type'], $request['status'])) ?><span
+                                class="holiday-delete-mark">&times;</span>
+                            </button>
+                          </form>
+                        <?php else: ?>
+                          <span class="holiday-pill <?= $pillClass ?>"
+                            title="<?= htmlspecialchars($title, ENT_QUOTES, 'UTF-8') ?>" data-toggle="tooltip">
+                            <?= htmlspecialchars(holidayCellCode($request['request_type'], $request['status'])) ?>
+                          </span>
+                        <?php endif; ?>
                       <?php endforeach; ?>
                     </td>
                   <?php endforeach; ?>
@@ -882,9 +1039,9 @@ for ($i = 0; $i < 6; $i++) {
           <button type="button" class="close text-white" data-dismiss="modal">&times;</button>
         </div>
         <div class="modal-body">
-          <?php if ($holidayIsAdmin): ?>
-            <div class="form-group">
-              <label>Employee</label>
+          <div class="form-group">
+            <label>Employee</label>
+            <?php if ($holidayCanManage): ?>
               <select name="employee_id" id="holidayEmployeeId" class="form-control">
                 <?php foreach ($employees as $employee): ?>
                   <option value="<?= intval($employee['id']) ?>" <?= intval($employee['id']) === $holidayEmpId ? 'selected' : '' ?>>
@@ -892,8 +1049,13 @@ for ($i = 0; $i < 6; $i++) {
                   </option>
                 <?php endforeach; ?>
               </select>
-            </div>
-          <?php endif; ?>
+            <?php else: ?>
+              <input type="text" class="form-control"
+                value="<?= htmlspecialchars($_SESSION['name'] ?? ('Employee #' . $holidayEmpId), ENT_QUOTES, 'UTF-8') ?>"
+                readonly>
+              <input type="hidden" name="employee_id" value="<?= $holidayEmpId ?>">
+            <?php endif; ?>
+          </div>
           <div class="form-row">
             <div class="form-group col-md-6">
               <label>From</label>

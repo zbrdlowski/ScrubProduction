@@ -6,8 +6,11 @@ if (isset($conn) && $conn instanceof mysqli) {
     $holidayTableCheck = $conn->query("SHOW TABLES LIKE 'holiday_requests'");
     if ($holidayTableCheck && $holidayTableCheck->num_rows > 0) {
         $holidayUserId = intval($_SESSION['user_id'] ?? 0);
-        $holidayIsAdmin = isset($_SESSION['permission']) && intval($_SESSION['permission']) >= 400;
-        if ($holidayIsAdmin) {
+        $holidayPermission = intval($_SESSION['permission'] ?? 0);
+        $holidayDepartmentId = intval($_SESSION['dpt'] ?? 0);
+        $holidayCanManage = $holidayPermission === 900
+            || ($holidayPermission === 500 && $holidayDepartmentId === 3);
+        if ($holidayCanManage) {
             $holidayCountRes = $conn->query("SELECT COUNT(*) AS c FROM holiday_requests WHERE status='pending'");
             if ($holidayCountRes && ($holidayCountRow = $holidayCountRes->fetch_assoc())) {
                 $holidayNotifCount = intval($holidayCountRow['c']);
