@@ -89,7 +89,8 @@ function isMenuOpen($pages = []) {
             'controlls',
             'calendar',
             'import_orders',
-            'status_policies'
+            'status_policies',
+            'vykaz_prace'
           ]) ? 'menu-open' : '' ?>">    
           <?
            echo ' <a href="#" class="nav-link"style="background-color:#2a3036;">';
@@ -142,6 +143,14 @@ function isMenuOpen($pages = []) {
               echo '</p>';
             echo '</a>';
           echo '</li>'; 
+          echo '<li class="nav-item active">';
+            echo '<a href="'.basename($_SERVER['PHP_SELF']).'?page=vykaz_prace" class="nav-link  '.isActive('vykaz_prace').'">';
+            echo '<i class="fas fa-file-invoice nav-icon"></i>';
+              echo '<p>';
+                echo 'Job Reports';
+              echo '</p>';
+            echo '</a>';
+          echo '</li>';
           echo ' </ul>';  
           echo '</li>'; 
           //echo ' </ul>';      

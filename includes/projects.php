@@ -831,6 +831,58 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   .project-activity-hidden {
     display: none;
   }
+
+  /* ── Row-based project list (table) ─────────────────────────────── */
+  #projectsTable td,
+  #projectsTable th {
+    vertical-align: middle !important;
+  }
+
+  .project-row {
+    cursor: pointer;
+  }
+
+  .project-row-urgent {
+    background: rgba(220, 53, 69, 0.10) !important;
+    box-shadow: inset 4px 0 0 rgba(220, 53, 69, 0.65);
+  }
+
+  .project-row-stuck {
+    background: rgba(220, 53, 69, 0.14) !important;
+  }
+
+  .project-row-done {
+    opacity: 0.72;
+  }
+
+  .project-avatar-group {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .project-avatar-stacked {
+    margin-left: -10px;
+    box-shadow: 0 0 0 2px #23272b;
+  }
+
+  .project-avatar-stacked:first-child {
+    margin-left: 0;
+  }
+
+  .project-avatar-more-count {
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 10px;
+    font-weight: 700;
+    background: rgba(255, 255, 255, .12);
+    color: #ddd;
+    border: 1px solid rgba(255, 255, 255, .2);
+  }
 </style>
 <?php
 
@@ -2002,133 +2054,148 @@ if ($viewId > 0) {
         </div>
       </div>
 
-    <!-- Cards grid -->
-    <div class="row" id="projectsGrid">
-      <?php if (empty($projects)): ?>
-        <div class="col-12">
-          <div class="alert alert-info">No projects yet. Click "New Project" to create the first one.</div>
-        </div>
-      <?php endif; ?>
-      <?php foreach ($projects as $p):
-        $total = intval($p['total_tasks']);
-        $done = intval($p['done_tasks']);
-        $pct = $total > 0 ? round(($done / $total) * 100) : 0;
-        switch ($p['status']) {
-          case 'done':
-            $barCls = 'bg-success';
-            break;
+    <!-- Projects table -->
+    <div id="projectsTableWrap">
+      <table id="projectsTable" class="table table-bordered table-hover table-sm">
+        <thead>
+          <tr style="background:#343a40;color:#fff;">
+            <th>Project</th>
+            <th class="text-center" width="13%">Responsible</th>
+            <th class="text-center" width="12%">Team</th>
+            <th class="text-center" width="8%">Priority</th>
+            <th class="text-center" width="8%">Status</th>
+            <th width="15%">Progress</th>
+            <th class="text-center" width="7%">Due</th>
+            <th class="text-center" width="6%">Hours</th>
+            <th class="text-center" width="11%">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          <?php if (empty($projects)): ?>
+            <tr>
+              <td colspan="9">
+                <div class="alert alert-info mb-0">No projects yet. Click "New Project" to create the first one.
+                </div>
+              </td>
+            </tr>
+          <?php endif; ?>
+          <?php foreach ($projects as $p):
+            $total = intval($p['total_tasks']);
+            $done = intval($p['done_tasks']);
+            $pct = $total > 0 ? round(($done / $total) * 100) : 0;
+            switch ($p['status']) {
+              case 'done':
+                $barCls = 'bg-success';
+                break;
 
-          case 'in_progress':
-            $barCls = 'bg-primary';
-            break;
+              case 'in_progress':
+                $barCls = 'bg-primary';
+                break;
 
-          case 'stuck':
-            $barCls = 'bg-danger';
-            break;
+              case 'stuck':
+                $barCls = 'bg-danger';
+                break;
 
-          case 'cancelled':
-            $barCls = 'bg-dark';
-            break;
+              case 'cancelled':
+                $barCls = 'bg-dark';
+                break;
 
-          default:
-            $barCls = 'bg-secondary';
-            break;
-        }
-        $dueStr = $p['due_date'] ? date('d.m.Y', strtotime($p['due_date'])) : null;
-        $isOverdue = $p['due_date'] && $p['status'] !== 'done' && strtotime($p['due_date']) < time();
-        $participants = $p['_participants'] ?? [];
-        $employeeIdsAttr = implode(',', array_map('intval', $p['_filter_employee_ids'] ?? []));
-        $peopleSearch = strtolower(trim(($p['assigned_name'] ?? '') . ' ' . ($p['_participant_names'] ?? '')));
-        ?>
-        <div class="col-md-4 col-sm-6 mb-4 project-card-wrap" data-status="<?= $p['status'] ?>"
-          data-employees="<?= htmlspecialchars($employeeIdsAttr, ENT_QUOTES, 'UTF-8') ?>"
-          data-title="<?= strtolower(htmlspecialchars($p['title'])) ?>"
-          data-people="<?= htmlspecialchars($peopleSearch, ENT_QUOTES, 'UTF-8') ?>">
-          <div class="card h-100 shadow-sm" style="border-top: 4px solid <?= htmlspecialchars($p['color']) ?>;">
-            <div class="card-body">
-              <!-- Title row -->
-              <div class="d-flex justify-content-between align-items-start mb-1">
-                <h6 class="card-title mb-0" style="color:#e4e6eb;font-size:15px;font-weight:600;">
+              default:
+                $barCls = 'bg-secondary';
+                break;
+            }
+            $dueStr = $p['due_date'] ? date('d.m.Y', strtotime($p['due_date'])) : null;
+            $isOverdue = $p['due_date'] && $p['status'] !== 'done' && strtotime($p['due_date']) < time();
+            $participants = $p['_participants'] ?? [];
+            $employeeIdsAttr = implode(',', array_map('intval', $p['_filter_employee_ids'] ?? []));
+            $peopleSearch = strtolower(trim(($p['assigned_name'] ?? '') . ' ' . ($p['_participant_names'] ?? '')));
+            $rowClasses = ['project-row'];
+            if ($p['status'] === 'stuck') {
+              $rowClasses[] = 'project-row-stuck';
+            } elseif ($p['status'] === 'done') {
+              $rowClasses[] = 'project-row-done';
+            } elseif ($p['priority'] === 'urgent') {
+              $rowClasses[] = 'project-row-urgent';
+            }
+            ?>
+            <tr class="<?= implode(' ', $rowClasses) ?>" data-status="<?= $p['status'] ?>"
+              data-employees="<?= htmlspecialchars($employeeIdsAttr, ENT_QUOTES, 'UTF-8') ?>"
+              data-title="<?= strtolower(htmlspecialchars($p['title'])) ?>"
+              data-people="<?= htmlspecialchars($peopleSearch, ENT_QUOTES, 'UTF-8') ?>"
+              data-href="?page=projects&view=<?= $p['id'] ?>">
+              <td style="border-left:4px solid <?= htmlspecialchars($p['color']) ?>;">
+                <a href="?page=projects&view=<?= $p['id'] ?>" class="d-block" style="color:#e4e6eb;font-weight:600;font-size:14px;text-decoration:none;">
                   <?= htmlspecialchars($p['title']) ?>
-                </h6>
-                <?= priorityBadge($p['priority']) ?>
-              </div>
-              <div class="mb-2"><?= projectStatusBadge($p['status']) ?></div>
-              <?php if (intval($p['assigned_to'] ?? 0) > 0 && !empty($p['assigned_name'])): ?>
-                <div class="project-user-line text-muted mb-2" style="font-size:12px;">
-                  <?= projectAvatarImg($p['assigned_photo'] ?? '', $p['assigned_name'], 'project-avatar') ?>
-                  <span class="project-user-text">Responsible: <?= htmlspecialchars($p['assigned_name']) ?></span>
-                </div>
-              <?php else: ?>
-                <div class="project-user-line text-muted mb-2" style="font-size:12px;">
-                  <span class="project-general-icon"><i class="fas fa-layer-group"></i></span>
-                  <span class="project-user-text">General project</span>
-                </div>
-              <?php endif; ?>
-
-              <?php if ($p['description']): ?>
-                <p class="text-muted mb-2" style="font-size:12px;">
-                  <?= htmlspecialchars(mb_strimwidth($p['description'], 0, 90, '…')) ?>
-                </p>
-              <?php endif; ?>
-
-              <?php if (!empty($participants)): ?>
-                <div class="project-participants">
-                  <?php foreach (array_slice($participants, 0, 4) as $participant):
-                    $participantPct = intval($participant['progress']);
-                    ?>
-                    <div class="project-participant-row">
-                      <?= projectAvatarImg($participant['photo'] ?? '', $participant['name'], 'project-avatar-sm') ?>
-                      <div class="min-w-0">
-                        <div class="project-participant-name"><?= htmlspecialchars($participant['name']) ?></div>
-                        <div class="progress project-participant-progress">
-                          <div class="progress-bar bg-success" style="width:<?= $participantPct ?>%;"></div>
-                        </div>
-                      </div>
-                      <div class="project-participant-count">
-                        <?= intval($participant['done_tasks']) ?>/<?= intval($participant['total_tasks']) ?>
-                      </div>
-                    </div>
-                  <?php endforeach; ?>
-                  <?php if (count($participants) > 4): ?>
-                    <div class="project-participant-empty">+<?= count($participants) - 4 ?> more people</div>
-                  <?php endif; ?>
-                </div>
-              <?php else: ?>
-                <div class="project-participant-empty">No assigned task users yet</div>
-              <?php endif; ?>
-
-              <!-- Progress -->
-              <div class="mb-1 d-flex justify-content-between" style="font-size:12px;">
-                <span class="text-muted"><?= $done ?>/<?= $total ?> tasks</span>
-                <span style="color:#e4e6eb;font-weight:600;"><?= $pct ?>%</span>
-              </div>
-              <div class="progress mb-2" style="height:8px;border-radius:4px;">
-                <div class="progress-bar <?= $barCls ?>" role="progressbar"
-                  style="width:<?= $pct ?>%;transition:width 0.6s ease;" data-target="<?= $pct ?>">
-                </div>
-              </div>
-
-              <!-- Meta row -->
-              <div class="d-flex justify-content-between" style="font-size:11px;color:#888;">
-                <span>
-                  <?php if ($dueStr): ?>
-                    <i class="far fa-calendar-alt"></i>
-                    <span class="<?= $isOverdue ? 'text-danger font-weight-bold' : '' ?>">
-                      <?= $isOverdue ? '⚠ ' : '' ?>     <?= $dueStr ?>
+                </a>
+                <?php if ($p['description']): ?>
+                  <div class="text-muted" style="font-size:12px;">
+                    <?= htmlspecialchars(mb_strimwidth($p['description'], 0, 90, '…')) ?>
+                  </div>
+                <?php endif; ?>
+              </td>
+              <td class="text-center">
+                <?php if (intval($p['assigned_to'] ?? 0) > 0 && !empty($p['assigned_name'])): ?>
+                  <div class="project-user-line text-muted justify-content-center" style="font-size:12px;">
+                    <?= projectAvatarImg($p['assigned_photo'] ?? '', $p['assigned_name'], 'project-avatar-sm') ?>
+                    <span class="project-user-text"><?= htmlspecialchars($p['assigned_name']) ?></span>
+                  </div>
+                <?php else: ?>
+                  <div class="project-user-line text-muted justify-content-center" style="font-size:12px;">
+                    <span class="project-general-icon" style="width:24px;height:24px;font-size:11px;">
+                      <i class="fas fa-layer-group"></i>
                     </span>
-                  <?php endif; ?>
-                </span>
-                <span><i class="fas fa-clock"></i> <?= number_format(floatval($p['total_hours']), 1) ?>h logged</span>
-              </div>
-            </div>
-            <div class="card-footer bg-transparent border-0 pt-0">
-              <a href="?page=projects&view=<?= $p['id'] ?>" class="btn btn-sm btn-primary w-100">
-                <i class="fas fa-folder-open"></i> Open
-              </a>
-              <?php if ($isAdmin): ?>
-                <div class="mt-1 d-flex" style="gap:4px;">
-                  <button class="btn btn-xs btn-warning flex-fill" onclick="openEditProject(<?= $p['id'] ?>, <?= htmlspecialchars(json_encode([
+                    <span class="project-user-text">General</span>
+                  </div>
+                <?php endif; ?>
+              </td>
+              <td class="text-center">
+                <?php if (!empty($participants)): ?>
+                  <div class="project-avatar-group">
+                    <?php foreach (array_slice($participants, 0, 5) as $participant):
+                      $pTitle = htmlspecialchars($participant['name'] . ' — ' . intval($participant['done_tasks']) . '/' . intval($participant['total_tasks']) . ' tasks', ENT_QUOTES, 'UTF-8');
+                      ?>
+                      <?= projectAvatarImg($participant['photo'] ?? '', $participant['name'], 'project-avatar-sm project-avatar-stacked') ?>
+                    <?php endforeach; ?>
+                    <?php if (count($participants) > 5): ?>
+                      <span class="project-avatar-sm project-avatar-stacked project-avatar-more-count"
+                        title="+<?= count($participants) - 5 ?> more people">+<?= count($participants) - 5 ?></span>
+                    <?php endif; ?>
+                  </div>
+                <?php else: ?>
+                  <span class="project-participant-empty">—</span>
+                <?php endif; ?>
+              </td>
+              <td class="text-center"><?= priorityBadge($p['priority']) ?></td>
+              <td class="text-center"><?= projectStatusBadge($p['status']) ?></td>
+              <td>
+                <div class="d-flex justify-content-between mb-1" style="font-size:11px;">
+                  <span class="text-muted"><?= $done ?>/<?= $total ?> tasks</span>
+                  <span style="color:#e4e6eb;font-weight:600;"><?= $pct ?>%</span>
+                </div>
+                <div class="progress" style="height:7px;border-radius:4px;">
+                  <div class="progress-bar <?= $barCls ?>" role="progressbar"
+                    style="width:<?= $pct ?>%;transition:width 0.6s ease;" data-target="<?= $pct ?>">
+                  </div>
+                </div>
+              </td>
+              <td class="text-center" style="font-size:12px;">
+                <?php if ($dueStr): ?>
+                  <span class="<?= $isOverdue ? 'text-danger font-weight-bold' : 'text-muted' ?>">
+                    <?= $isOverdue ? '⚠ ' : '' ?><?= $dueStr ?>
+                  </span>
+                <?php else: ?>
+                  <span class="text-muted">—</span>
+                <?php endif; ?>
+              </td>
+              <td class="text-center text-muted" style="font-size:12px;">
+                <?= number_format(floatval($p['total_hours']), 1) ?>h
+              </td>
+              <td class="text-nowrap text-center">
+                <a href="?page=projects&view=<?= $p['id'] ?>" class="btn btn-xs btn-primary" title="Open">
+                  <i class="fas fa-folder-open"></i>
+                </a>
+                <?php if ($isAdmin): ?>
+                  <button class="btn btn-xs btn-warning" title="Edit" onclick="openEditProject(<?= $p['id'] ?>, <?= htmlspecialchars(json_encode([
                       'title' => $p['title'],
                       'description' => $p['description'],
                       'status' => $p['status'],
@@ -2139,19 +2206,19 @@ if ($viewId > 0) {
                       'notes' => $p['notes'],
                       'color' => $p['color'],
                     ]), ENT_QUOTES) ?>)">
-                    <i class="fas fa-pencil-alt"></i> Edit
+                    <i class="fas fa-pencil-alt"></i>
                   </button>
-                  <button class="btn btn-xs btn-danger flex-fill"
+                  <button class="btn btn-xs btn-danger" title="Delete"
                     onclick="confirmDelete(<?= $p['id'] ?>, '<?= addslashes($p['title']) ?>')">
-                    <i class="fas fa-trash"></i> Delete
+                    <i class="fas fa-trash"></i>
                   </button>
-                </div>
-              <?php endif; ?>
-            </div>
-          </div>
-        </div>
-      <?php endforeach; ?>
-    </div><!-- /projectsGrid -->
+                <?php endif; ?>
+              </td>
+            </tr>
+          <?php endforeach; ?>
+        </tbody>
+      </table>
+    </div><!-- /projectsTableWrap -->
   </div>
 
   <!-- ===== Create Project Modal ===== -->
@@ -2338,6 +2405,19 @@ if ($viewId > 0) {
       filterProjects();
     });
 
+    // klik na celý riadok otvorí detail projektu
+    $(document).on('click', '.project-row', function (e) {
+      // ak klikol na tlačidlo, link alebo ikonku → ignoruj
+      if ($(e.target).closest('button, a, .btn').length) {
+        return;
+      }
+
+      var href = $(this).data('href');
+      if (href) {
+        window.location.href = href;
+      }
+    });
+
     $('#projectSearch').on('input', filterProjects);
     $('#employeeFilter').on('change', filterProjects);
 
@@ -2361,7 +2441,7 @@ if ($viewId > 0) {
       var filter = $('#statusFilter .btn.active').data('filter');
       var employee = $('#employeeFilter').val() || 'all';
       var search = $('#projectSearch').val().toLowerCase();
-      $('.project-card-wrap').each(function () {
+      $('.project-row').each(function () {
         var statusMatch = filter === 'all' || $(this).data('status') === filter;
         var employees = String($(this).data('employees') || '');
         var employeeMatch = employee === 'all' || employees.split(',').indexOf(employee) !== -1;

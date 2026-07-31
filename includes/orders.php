@@ -334,19 +334,20 @@ $fSource = isset($_GET['source']) ? trim((string) $_GET['source']) : '';
 // Hodnoty oddelené čiarkou, napr. "PENDING,SHIPPED"
 $fExcludeStatuses = isset($_GET['exclude_status']) ? trim((string) $_GET['exclude_status']) : '';
 
-// Ak nie je nastavený žiadny filter a ani žiadny status filter → defaultne zapni "Open Orders"
-$noFiltersSet = (
-  empty($_GET['status']) && empty($_GET['exclude_status']) &&
-  empty($_GET['source']) && empty($_GET['country']) &&
-  empty($_GET['payment']) && empty($_GET['shipping']) &&
-  empty($_GET['priority']) && empty($_GET['date_from']) &&
-  empty($_GET['date_to']) && empty($_GET['worker']) &&
-  empty($_GET['dept']) && empty($_GET['cat']) &&
-  empty($_GET['type']) && empty($_GET['q']) &&
-  empty($_GET['print_printer']) && empty($_GET['print_material']) && empty($_GET['print_finish'])
+// Defaultný "Open Orders" exclude (PENDING, SHIPPED) má platiť takmer vždy —
+// aj keď si niekto zvolí department/cat/source/country/... filter. Zrušiť ho
+// má iba explicitný status filter, explicitný exclude_status, alebo fulltext
+// search (ten má hľadať naprieč úplne všetkým). Predtým stačilo nastaviť
+// hocijaký iný filter (napr. len prepnúť department select) a exclude sa
+// vôbec nezapol → natiahli sa všetky objednávky vrátane rokmi nazbieraných
+// SHIPPED/PENDING (rádovo desaťtisíce záznamov).
+$noStatusFilterSet = (
+  empty($_GET['status']) &&
+  empty($_GET['exclude_status']) &&
+  empty($_GET['q'])
 );
-if ($noFiltersSet) {
-  $fExcludeStatuses = 'PENDING,SHIPPED';
+if ($noStatusFilterSet) {
+  $fExcludeStatuses = 'CANCELLED,PENDING,SHIPPED';
 }
 $fCountry = isset($_GET['country']) ? strtoupper(trim((string) $_GET['country'])) : '';
 $fPayment = isset($_GET['payment']) ? trim((string) $_GET['payment']) : '';
@@ -940,7 +941,7 @@ ORDER BY
 
   o.order_date ASC,
   o.id ASC
-LIMIT 500";
+LIMIT 1000";
 
 $stmt = $conn->prepare($sql);
 if (!$stmt) {

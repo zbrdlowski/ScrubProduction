@@ -259,8 +259,9 @@ function render_order_take_assign_html(
     ?>
     <button type="button" class="btn btn-sm btn-info btn-invite-collab" data-order-id="<?= $orderId ?>"
       data-dept-code="<?= htmlspecialchars($uiDeptCode) ?>"
-      data-mode="<?= ($perm >= 400 ? 'assign' : 'invite') ?>" <?= $canInvite ? '' : 'disabled' ?>>
-      <?= ($perm >= 400 ? 'Assign To' : 'INVITE') ?>
+      data-mode="<?= ($perm >= 400 ? 'assign' : 'invite') ?>" <?= $canInvite ? '' : 'disabled' ?>
+      title="<?= ($perm >= 400 ? 'Zmeniť primary priradenie' : 'Pozvať kolaboranta') ?>">
+      <?= ($perm >= 400 ? 'Reassign' : 'Invite') ?>
     </button>
 
   <?php endif; ?>
