@@ -121,7 +121,7 @@ function orderDetailPercentageBreakdownBySource(): array
     ],
   ];
 
-  // MX Locker — uprav podľa potreby (zatiaľ rovnaké ako eBay)
+  // MX Locker — upraviť podľa potreby (zatiaľ rovnaké ako eBay)
   $mxLocker = $ebay;
 
   return [
