@@ -64,7 +64,8 @@ $pageLabels = [
   'chat' => 'Interný chat',
   'shoptet_order_download' => 'Shoptet Order Download',
   'status_policies' => 'Status Policies',
-  'product_listing_catalog' => 'Product Listing Catalog'
+  'product_listing_catalog' => 'Product Listing Catalog',
+  'vykaz_prace' => 'Activity Report',
 
   // Add more as needed
 ];
@@ -106,6 +107,35 @@ $pageLabels = [
 
     .dataTables_filter {
       text-align: right !important;
+    }
+
+    /* ── Globálna oprava: Chrome/Edge autofill/"Last used" ignoruje dark-mode
+       farby a vnucuje biele pozadie + biely text. Platí naprieč celým projektom,
+       keďže tento súbor sa includuje do každej stránky. ────────────────────── */
+    input:-webkit-autofill,
+    input:-webkit-autofill:hover,
+    input:-webkit-autofill:focus,
+    input:-webkit-autofill:active,
+    select:-webkit-autofill,
+    select:-webkit-autofill:hover,
+    select:-webkit-autofill:focus,
+    textarea:-webkit-autofill,
+    textarea:-webkit-autofill:hover,
+    textarea:-webkit-autofill:focus {
+      -webkit-text-fill-color: #e0eaf4 !important;
+      -webkit-box-shadow: 0 0 0 1000px #243447 inset !important;
+      box-shadow: 0 0 0 1000px #243447 inset !important;
+      caret-color: #e0eaf4;
+      transition: background-color 9999s ease-out 0s;
+    }
+
+    /* Firefox */
+    input:-moz-autofill,
+    textarea:-moz-autofill,
+    select:-moz-autofill {
+      filter: none;
+      background-color: #243447 !important;
+      color: #e0eaf4 !important;
     }
   </style>
 </head>

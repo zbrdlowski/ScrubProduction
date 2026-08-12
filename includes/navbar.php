@@ -81,6 +81,9 @@ if (isset($conn) && $conn instanceof mysqli) {
           <a href="?page=chat" class="dropdown-item dropdown-footer">Otvoriť chat</a>
         </div>
       </li>
+
+      <!-- Len Žbrdlo a admini z managementu -->
+      <?php if ($holidayCanManage): ?>
       <li class="nav-item dropdown">
         <a class="nav-link" data-toggle="dropdown" href="#" id="holidayNotifToggle" title="Holiday requests">
           <i class="far fa-calendar-check"></i>
@@ -103,7 +106,9 @@ if (isset($conn) && $conn instanceof mysqli) {
           <a href="?page=holidays" class="dropdown-item dropdown-footer"><?= htmlspecialchars($holidayNotifFooter, ENT_QUOTES, 'UTF-8') ?></a>
         </div>
       </li>
-      
+      <?php endif; ?>
+
+
       <li class="nav-item">
         <a class="nav-link" data-widget="fullscreen" href="#" role="button">
           <i class="fas fa-expand-arrows-alt"></i>

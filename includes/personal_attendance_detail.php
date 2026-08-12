@@ -108,7 +108,7 @@ include 'sviatky.php';
 // ================================
 // GO-HOME TIME WIDGET (for the selected day)
 // Uses schedules + attendance movements
-// movements: 1=work, 3=break, 4=lunch
+// movements: 1=work, 3=break, 4=lunch, 6=doctor (counts as work)
 // ================================
 date_default_timezone_set('Europe/Bratislava');
 
@@ -200,13 +200,13 @@ $runningMovement = function(int $movement) use ($conn, $attdn_table, $eno, $dayY
   return 0;
 };
 
-  // 3) First WORK in time (movement=1)
+  // 3) First counted work in time (movement=1 or doctor movement=6)
   $firstWorkIn = '';
   $qFirst = $conn->query("SELECT MIN(time_in) AS first_in
     FROM {$attdn_table}
     WHERE employee_id = '{$eno}'
       AND date = '{$dayYmd}'
-      AND movement = 1
+      AND movement IN (1, 6)
       AND time_in IS NOT NULL
   ");
   if ($qFirst && $qFirst->num_rows) {
@@ -219,6 +219,8 @@ $runningMovement = function(int $movement) use ($conn, $attdn_table, $eno, $dayY
 
     // Collect day totals (+ running if open)
     $workSec  = $sumMovement(1) + $runningMovement(1);
+    $doctorSec = $sumMovement(6) + $runningMovement(6);
+    $countedWorkSec = $workSec + $doctorSec;
     $breakSec = $sumMovement(3) + $runningMovement(3);
     $lunchSec = $sumMovement(4) + $runningMovement(4);
 
@@ -242,8 +244,8 @@ $runningMovement = function(int $movement) use ($conn, $attdn_table, $eno, $dayY
     $leaveTsEpoch = (int)$leaveTs;
 $isToday = ($dayYmd === date('Y-m-d'));
 
-// Missing net work (work only counts!)
-$missingNetWorkSec = max(0, $requiredNetWork - $workSec);
+// Missing net work (work + doctor count as worked)
+$missingNetWorkSec = max(0, $requiredNetWork - $countedWorkSec);
 
 // For TODAY: consider “done” if current time is past leaveTs even if the last segment is still open etc.
 if ($isToday) {
@@ -275,6 +277,7 @@ $remainingSec = max(0, $leaveTsEpoch - time());
 
     $breakdownStr =
       'Práca: '.gmdate('H:i', $workSec).
+      (($doctorSec > 0) ? ' • Lekár: '.gmdate('H:i', $doctorSec) : '').
       ' • Obed: '.gmdate('H:i', $effectiveLunch).
       ' • Prestávky: '.gmdate('H:i', $breakSec).
       ' • Čistý fond: '.gmdate('H:i', $requiredNetWork);

@@ -67,6 +67,7 @@ if (!is_file($connFile)) {
   out(500, ['ok' => false, 'error' => 'conn.php not found: ' . $connFile]);
 }
 require_once $connFile;
+require_once $base . '/includes/orders_status_helpers.php';
 
 $orderId = (int) ($_POST['order_id'] ?? 0);
 if ($orderId <= 0)
@@ -2208,13 +2209,8 @@ ob_start();
                   <?php
                   $type = strtoupper((string) ($it['item_type_code'] ?? ''));
 
-                  if ($type === 'G') {
-                    $statuses = ['NEW', 'RTP', 'PRINT_QUEUE', 'PRINTED', 'CUT', 'READY', 'WAITING'];
-                  } elseif ($type === 'F') {
-                    $statuses = ['NEW', 'PROCESSING', 'DONE', 'READY', 'WAITING'];
-                  } else {
-                    $statuses = ['NEW', 'PROCESSING', 'READY', 'WAITING'];
-                  }
+                  $statusLabels = ordersGetItemStatusLabelsForItem($conn, $it, true);
+                  $statuses = array_keys($statusLabels);
 
                   $currentStatus = strtoupper(trim((string) ($it['item_status'] ?? 'NEW')));
                   if ($currentStatus === '') {
@@ -2229,7 +2225,7 @@ ob_start();
                   <select class="form-control form-control-sm item-status-select" data-item-id="<?= (int) $it['id'] ?>">
                     <?php foreach ($statuses as $s): ?>
                       <option value="<?= h($s) ?>" <?= ($currentStatus === $s ? 'selected' : '') ?>>
-                        <?= h(str_replace('_', ' ', $s)) ?>
+                        <?= h($statusLabels[$s] ?? str_replace('_', ' ', $s)) ?>
                       </option>
                     <?php endforeach; ?>
                   </select>
@@ -2408,13 +2404,8 @@ ob_start();
                   <?php
                   $type = strtoupper((string) ($it['item_type_code'] ?? ''));
 
-                  if ($type === 'G') {
-                    $statuses = ['NEW', 'RTP', 'PRINT_QUEUE', 'PRINTED', 'CUT', 'READY', 'WAITING'];
-                  } elseif ($type === 'F') {
-                    $statuses = ['NEW', 'PROCESSING', 'DONE', 'READY', 'WAITING'];
-                  } else {
-                    $statuses = ['NEW', 'PROCESSING', 'READY', 'WAITING'];
-                  }
+                  $statusLabels = ordersGetItemStatusLabelsForItem($conn, $it, true);
+                  $statuses = array_keys($statusLabels);
 
                   $currentStatus = strtoupper(trim((string) ($it['item_status'] ?? 'NEW')));
                   if ($currentStatus === '') {
@@ -2429,7 +2420,7 @@ ob_start();
                   <select class="form-control form-control-sm item-status-select" data-item-id="<?= (int) $it['id'] ?>">
                     <?php foreach ($statuses as $s): ?>
                       <option value="<?= h($s) ?>" <?= ($currentStatus === $s ? 'selected' : '') ?>>
-                        <?= h(str_replace('_', ' ', $s)) ?>
+                        <?= h($statusLabels[$s] ?? str_replace('_', ' ', $s)) ?>
                       </option>
                     <?php endforeach; ?>
                   </select>
@@ -2833,6 +2824,5 @@ function saveSeatCoverOps($select) {
 $html = ob_get_clean();
 out(200, ['ok' => true, 'html' => $html]);
 ?>
-
 
 

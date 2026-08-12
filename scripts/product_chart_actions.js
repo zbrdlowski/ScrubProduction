@@ -59,7 +59,7 @@ function renderMetaView(code, meta) {
         });
 
         html += `
-            <div class="col-md-4 mb-3">
+            <div class="col-md-3 mb-3">
                 <div class="block-card card">
                     <div class="card-header text-light">${pcEscHtml(blockName)}</div>
                     <div class="card-body">${fieldsHtml || '<span class="text-muted">Prázdny blok</span>'}</div>
@@ -234,6 +234,7 @@ $(document)
     .on('click.scrubExpand', 'tr.model-row', function (e) {
         if ($(e.target).closest('a, button').length) return;
 
+        const $row = $(this);
         const rowkey = $(this).data('rowkey');
         const code = $(this).data('modelcode');
         const meta = $(this).data('meta') || {};
@@ -268,7 +269,11 @@ $(document)
             renderMetaView(rowkey, meta);
 
             // Obal panel do tr/td aby bol validný v tbody
-            const $wrapper = $('<tr class="scrub-detail-wrapper"><td colspan="9" style="padding:0; border-top:none;"></td></tr>');
+            // Počet stĺpcov sa môže meniť alebo byť používateľsky preskupený.
+            // Neudržiavaj preto colspan ako pevnú hodnotu.
+            const columnCount = $row.children('td').length || $('#scrubTable thead th').length || 1;
+            const $wrapper = $('<tr class="scrub-detail-wrapper"><td style="padding:0; border-top:none;"></td></tr>');
+            $wrapper.children('td').attr('colspan', columnCount);
             $wrapper.find('td').append($panel);
             $panel.css('display', 'none');
             $(this).after($wrapper);
@@ -457,12 +462,10 @@ $(document)
                 };
 
                 const plasticsHref = 'index.php?page=scrublistings&modelcode=' + encodeURIComponent(code);
-                const $cells = $row.find('td');
-
-                $cells.eq(5).html(makeConfigBadges(metaData));
-                $cells.eq(6).html(makeBadgePair(getVal('Graphics', 'Available'), getVal('Graphics', 'Web'), '#'));
-                $cells.eq(7).html(makeBadgePair(getVal('Plastics', 'Available'), getVal('Plastics', 'Web'), plasticsHref));
-                $cells.eq(8).html(makeBadgePair(getVal('Seat Cover', 'Available'), getVal('Seat Cover', 'Web'), '#'));
+                $row.find('.config-status-cell').html(makeConfigBadges(metaData));
+                $row.find('.graphics-status-cell').html(makeBadgePair(getVal('Graphics', 'Available'), getVal('Graphics', 'Web'), '#'));
+                $row.find('.plastics-status-cell').html(makeBadgePair(getVal('Plastics', 'Available'), getVal('Plastics', 'Web'), plasticsHref));
+                $row.find('.seatcover-status-cell').html(makeBadgePair(getVal('Seat Cover', 'Available'), getVal('Seat Cover', 'Web'), '#'));
 
                 // Prepni späť na view
                 $('#edit-' + rowkey).hide();

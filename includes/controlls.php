@@ -231,7 +231,8 @@
 
 
   <?php
-  require_once __DIR__ . '/../scripts/orders/department_config.php';
+  require_once __DIR__ . '/status_definition_extensions.php';
+  statusDefinitionEnsureExtensions($conn);
 
   $departmentNames = [
     'G' => 'Graphics',
@@ -573,6 +574,20 @@
   }
   [$currentStatusScope, $currentStatusDepartment] = array_pad(explode('|', $currentStatusGroup, 2), 2, '');
   $currentStatusDepartmentOrNull = $currentStatusDepartment !== '' ? $currentStatusDepartment : null;
+  $statusTargetOptions = statusDefinitionAllowedTargetKeys($currentStatusDepartmentOrNull);
+  $statusTargetsByDefinition = [];
+  $statusTargetResult = $conn->query("SELECT status_definition_id, target_type, subcategory_code FROM status_definition_targets ORDER BY target_type, subcategory_code");
+  if ($statusTargetResult instanceof mysqli_result) {
+    while ($targetRow = $statusTargetResult->fetch_assoc()) {
+      $targetKey = strtoupper((string)($targetRow['target_type'] ?? ''));
+      $subcategoryCode = strtoupper((string)($targetRow['subcategory_code'] ?? ''));
+      if ($targetKey === 'SUBCATEGORY' && $subcategoryCode !== '') {
+        $targetKey .= ':' . $subcategoryCode;
+      }
+      $statusTargetsByDefinition[(int)$targetRow['status_definition_id']][] = $targetKey;
+    }
+    $statusTargetResult->free();
+  }
   ?>
 
   <hr class="my-4">
@@ -773,6 +788,7 @@
                 <th style="background-color:gray;">Label</th>
                 <th style="background-color:gray; width:110px;">Color</th>
                 <th style="background-color:gray; width:85px;">Order</th>
+                <th style="background-color:gray; min-width:180px;">Applies To</th>
                 <th style="background-color:gray; width:75px;">Active</th>
                 <th style="background-color:gray; width:180px;">Tools</th>
               </tr>
@@ -792,6 +808,13 @@
                 $result = $stmt->get_result();
                 while ($row = $result->fetch_assoc()):
                   $color = trim((string) ($row['color'] ?? ''));
+                  $rowTargets = $row['scope'] === 'item'
+                    ? statusDefinitionNormalizeTargetKeys($statusTargetsByDefinition[(int)$row['id']] ?? ['ALL'], $row['department'])
+                    : [];
+                  $rowTargetLabels = [];
+                  foreach ($rowTargets as $targetKey) {
+                    $rowTargetLabels[] = $statusTargetOptions[$targetKey] ?? $targetKey;
+                  }
                   ?>
                   <tr data-id="<?= (int) $row['id']; ?>"
                     data-group-key="<?= htmlspecialchars($currentStatusGroup, ENT_QUOTES, 'UTF-8'); ?>">
@@ -807,6 +830,9 @@
                       <span class="status-color-text"><?= htmlspecialchars($color, ENT_QUOTES, 'UTF-8'); ?></span>
                     </td>
                     <td class="status-sort-cell"><?= (int) $row['sort_order']; ?></td>
+                    <td class="status-targets-cell" data-targets="<?= htmlspecialchars(json_encode($rowTargets, JSON_UNESCAPED_UNICODE), ENT_QUOTES, 'UTF-8'); ?>">
+                      <?= $row['scope'] === 'item' ? htmlspecialchars(implode(', ', $rowTargetLabels), ENT_QUOTES, 'UTF-8') : '&mdash;'; ?>
+                    </td>
                     <td class="status-active-cell"><?= ((int) $row['active'] === 1 ? 'Yes' : 'No'); ?></td>
                     <td>
                       <button class="btn bg-gradient-primary btn-sm edit-status-definition"><i class="fa fa-edit"></i>
@@ -1671,6 +1697,7 @@
       'use strict';
 
       const statusGroupLabels = <?= json_encode($statusDropdownGroups, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES); ?>;
+      const statusTargetLabels = <?= json_encode($statusTargetOptions, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES); ?>;
 
       function escapeHtml(value) {
         return String(value || '')
@@ -1692,6 +1719,28 @@
         return /^#[0-9a-f]{6}$/i.test(safeColor) ? safeColor : '#28a745';
       }
 
+      function isItemStatusGroup(groupKey) {
+        return String(groupKey || '').indexOf('item|') === 0;
+      }
+
+      function buildStatusTargetOptions(selected) {
+        const selectedSet = new Set(Array.isArray(selected) && selected.length ? selected : ['ALL']);
+        return Object.keys(statusTargetLabels).map(function (key) {
+          return `<option value="${escapeHtml(key)}" ${selectedSet.has(key) ? 'selected' : ''}>${escapeHtml(statusTargetLabels[key])}</option>`;
+        }).join('');
+      }
+
+      function normalizeSelectedTargets($select) {
+        const selected = ($select.val() || []).map(String);
+        return selected.includes('ALL') || selected.length === 0 ? ['ALL'] : selected;
+      }
+
+      function renderStatusTargetsCell(targets, isItem) {
+        if (!isItem) return '&mdash;';
+        const normalized = Array.isArray(targets) && targets.length ? targets : ['ALL'];
+        return normalized.map(function (key) { return statusTargetLabels[key] || key; }).join(', ');
+      }
+
       $('.status-definition-group-filter').on('change', function () {
         const url = new URL(window.location.href);
         url.searchParams.set('status_group', $(this).val());
@@ -1704,6 +1753,7 @@
       $('.add-status-definition').on('click', function () {
         const groupKey = $('.status-definitions-table').data('group-key');
         const groupName = statusGroupLabels[groupKey] || groupKey;
+        const isItem = isItemStatusGroup(groupKey);
 
         const newRow = `
           <tr class="new-status-definition-row" data-group-key="${escapeHtml(groupKey)}">
@@ -1713,6 +1763,7 @@
             <td><input type="text" class="form-control form-control-sm new-status-label" placeholder="Ready to Ship"></td>
             <td><input type="color" class="form-control form-control-sm new-status-color" value="#28a745" title="Choose color"></td>
             <td><input type="number" class="form-control form-control-sm new-status-sort" value="0" step="1"></td>
+            <td>${isItem ? `<select multiple size="4" class="form-control form-control-sm new-status-targets">${buildStatusTargetOptions(['ALL'])}</select>` : '&mdash;'}</td>
             <td>
               <select class="form-control form-control-sm new-status-active">
                 <option value="1" selected>Yes</option>
@@ -1740,6 +1791,8 @@
         const color = $row.find('.new-status-color').val().trim();
         const sortOrder = parseInt($row.find('.new-status-sort').val(), 10) || 0;
         const active = parseInt($row.find('.new-status-active').val(), 10) || 0;
+        const isItem = isItemStatusGroup(groupKey);
+        const targets = isItem ? normalizeSelectedTargets($row.find('.new-status-targets')) : [];
 
         if (code === '' || label === '') {
           alert('Code and label are required.');
@@ -1750,7 +1803,7 @@
           url: 'scripts/settings/insert_status_definition.php',
           method: 'POST',
           dataType: 'json',
-          data: { group_key: groupKey, code: code, label: label, color: color, sort_order: sortOrder, active: active },
+          data: { group_key: groupKey, code: code, label: label, color: color, sort_order: sortOrder, targets: targets, active: active },
           success: function (data) {
             if (!data || !data.ok) {
               alert(data && data.error ? data.error : 'Insert failed.');
@@ -1765,6 +1818,7 @@
                 <td class="status-label-cell">${escapeHtml(label)}</td>
                 <td class="status-color-cell">${renderStatusColorCell(color)}</td>
                 <td class="status-sort-cell">${sortOrder}</td>
+                <td class="status-targets-cell" data-targets="${escapeHtml(JSON.stringify(targets))}">${escapeHtml(renderStatusTargetsCell(targets, isItem))}</td>
                 <td class="status-active-cell">${active === 1 ? 'Yes' : 'No'}</td>
                 <td>
                   <button class="btn bg-gradient-primary btn-sm edit-status-definition"><i class="fa fa-edit"></i> Edit</button>
@@ -1784,11 +1838,21 @@
         const pickerColor = normalizeStatusColorValue(color);
         const sortOrder = $row.find('.status-sort-cell').text().trim();
         const active = $row.find('.status-active-cell').text().trim() === 'Yes' ? '1' : '0';
+        const groupKey = String($row.data('group-key') || '');
+        const isItem = isItemStatusGroup(groupKey);
+        let targets = $row.find('.status-targets-cell').data('targets');
+        if (typeof targets === 'string') {
+          try { targets = JSON.parse(targets); } catch (e) { targets = ['ALL']; }
+        }
+        if (!Array.isArray(targets) || !targets.length) targets = ['ALL'];
 
         $row.find('.status-code-cell').html(`<input type="text" class="form-control form-control-sm status-code-input" value="${escapeHtml(code)}">`);
         $row.find('.status-label-cell').html(`<input type="text" class="form-control form-control-sm status-label-input" value="${escapeHtml(label)}">`);
         $row.find('.status-color-cell').html(`<input type="color" class="form-control form-control-sm status-color-input" value="${escapeHtml(pickerColor)}" title="Choose color">`);
         $row.find('.status-sort-cell').html(`<input type="number" class="form-control form-control-sm status-sort-input" value="${escapeHtml(sortOrder)}" step="1">`);
+        if (isItem) {
+          $row.find('.status-targets-cell').html(`<select multiple size="4" class="form-control form-control-sm status-targets-input">${buildStatusTargetOptions(targets)}</select>`);
+        }
         $row.find('.status-active-cell').html(`
           <select class="form-control form-control-sm status-active-input">
             <option value="1" ${active === '1' ? 'selected' : ''}>Yes</option>
@@ -1807,6 +1871,9 @@
         const color = $row.find('.status-color-input').val().trim();
         const sortOrder = parseInt($row.find('.status-sort-input').val(), 10) || 0;
         const active = parseInt($row.find('.status-active-input').val(), 10) || 0;
+        const groupKey = String($row.data('group-key') || '');
+        const isItem = isItemStatusGroup(groupKey);
+        const targets = isItem ? normalizeSelectedTargets($row.find('.status-targets-input')) : [];
 
         if (!id || code === '' || label === '') {
           alert('Code and label are required.');
@@ -1817,7 +1884,7 @@
           url: 'scripts/settings/update_status_definition.php',
           method: 'POST',
           dataType: 'json',
-          data: { id: id, code: code, label: label, color: color, sort_order: sortOrder, active: active },
+          data: { id: id, code: code, label: label, color: color, sort_order: sortOrder, targets: targets, active: active },
           success: function (data) {
             if (!data || !data.ok) {
               alert(data && data.error ? data.error : 'Save failed.');
@@ -1827,6 +1894,7 @@
             $row.find('.status-label-cell').text(label);
             $row.find('.status-color-cell').html(renderStatusColorCell(color));
             $row.find('.status-sort-cell').text(sortOrder);
+            $row.find('.status-targets-cell').attr('data-targets', JSON.stringify(targets)).data('targets', targets).text(renderStatusTargetsCell(targets, isItem));
             $row.find('.status-active-cell').text(active === 1 ? 'Yes' : 'No');
             $row.find('.save-status-definition').hide();
             $row.find('.edit-status-definition').show();

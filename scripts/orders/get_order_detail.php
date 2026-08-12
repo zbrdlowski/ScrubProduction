@@ -2013,6 +2013,10 @@ ob_start();
 
   .order-detail-header-title {
     min-width: 220px;
+    display: inline-flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
   }
 
   .order-detail-header-actions {
@@ -2967,13 +2971,13 @@ ob_start();
             data-copy="<?php echo h($order['order_number'] ?? $order['external_order_id'] ?? $orderId); ?>"
             title="Click to copy order number"
             style="cursor:pointer;">#<?php echo h($order['order_number'] ?? $order['external_order_id'] ?? $orderId); ?></b>
+          <?php if ((int) ($_SESSION['permission'] ?? 0) >= 300): ?>
+            <button type="button" class="btn btn-sm btn-light btn-edit-order-header"
+              data-order-id="<?php echo (int) $orderId; ?>" data-mode="edit">
+              ✏️ Edit header
+            </button>
+          <?php endif; ?>
         </div>
-        <?php if ((int) ($_SESSION['permission'] ?? 0) >= 300): ?>
-          <button type="button" class="btn btn-sm btn-light ml-2 btn-edit-order-header"
-            data-order-id="<?php echo (int) $orderId; ?>" data-mode="edit">
-            ✏️ Edit header
-          </button>
-        <?php endif; ?>
         <div class="d-flex justify-content-end align-items-center flex-wrap order-detail-header-actions">
           <?php
           $priorityOptions = [
@@ -4067,13 +4071,15 @@ ob_start();
                   <?php
                   $type = strtoupper((string) ($it['item_type_code'] ?? ''));
 
-                  $statusLabels = ordersGetItemStatusLabels($conn, $type, true);
+                  $statusLabels = ordersGetItemStatusLabelsForItem($conn, $it, true);
                   $statuses = array_keys($statusLabels);
 
-                  $currentStatus = strtoupper(trim((string) ($it['item_status'] ?? 'NEW')));
-                  if ($currentStatus === '') {
-                    $currentStatus = 'NEW';
-                  }
+                  // Prazdny/legacy 'NEW' status uz nie je definovany v controlls.php.
+                  // Namiesto pevneho stringu 'NEW' pouzijeme prvy (najnizsi sort_order)
+                  // aktivny status pre dany department ako default.
+                  $defaultStatus = $statuses[0] ?? 'NEW';
+                  $rawStatus = strtoupper(trim((string) ($it['item_status'] ?? '')));
+                  $currentStatus = ($rawStatus !== '' && $rawStatus !== 'NEW') ? $rawStatus : $defaultStatus;
 
                   if (!in_array($currentStatus, $statuses, true)) {
                     $statuses[] = $currentStatus;
@@ -4118,6 +4124,11 @@ ob_start();
                 );
                 if ($itemSubcat === '' && strtoupper(trim((string) ($it['item_type_code'] ?? ''))) === 'M') {
                   $itemSubcat = 'MOTO_CARPET';
+                }
+                // Patch je auto-generated grafika zo Seat Cover — nedá sa poznať
+                // podľa custom_label prefixu, preto sa priraďuje natvrdo podľa tagu.
+                if ($isPatchItem) {
+                  $itemSubcat = 'SEAT_PATCH';
                 }
                 // editaciu môže urobiť ktokoľvek z grafiky alebo admin, aby sa dali nastaviť tlačiarne aj pre iné oddelenia.
                 $canEditPrint = ((int) ($_SESSION['permission'] ?? 0) >= 0);
@@ -4354,13 +4365,15 @@ ob_start();
                   <?php
                   $type = strtoupper((string) ($it['item_type_code'] ?? ''));
 
-                  $statusLabels = ordersGetItemStatusLabels($conn, $type, true);
+                  $statusLabels = ordersGetItemStatusLabelsForItem($conn, $it, true);
                   $statuses = array_keys($statusLabels);
 
-                  $currentStatus = strtoupper(trim((string) ($it['item_status'] ?? 'NEW')));
-                  if ($currentStatus === '') {
-                    $currentStatus = 'NEW';
-                  }
+                  // Prazdny/legacy 'NEW' status uz nie je definovany v controlls.php.
+                  // Namiesto pevneho stringu 'NEW' pouzijeme prvy (najnizsi sort_order)
+                  // aktivny status pre dany department ako default.
+                  $defaultStatus = $statuses[0] ?? 'NEW';
+                  $rawStatus = strtoupper(trim((string) ($it['item_status'] ?? '')));
+                  $currentStatus = ($rawStatus !== '' && $rawStatus !== 'NEW') ? $rawStatus : $defaultStatus;
 
                   if (!in_array($currentStatus, $statuses, true)) {
                     $statuses[] = $currentStatus;

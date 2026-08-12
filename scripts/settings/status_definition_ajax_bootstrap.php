@@ -38,6 +38,11 @@ if (!isset($conn) || !($conn instanceof mysqli)) {
   status_out_json(500, ['ok' => false, 'error' => 'Database connection not available']);
 }
 
+require_once dirname(__DIR__, 2) . '/includes/status_definition_extensions.php';
+if (!statusDefinitionEnsureExtensions($conn)) {
+  status_out_json(500, ['ok' => false, 'error' => 'Status definition extensions could not be installed']);
+}
+
 function status_post_string(string $key, int $max = 120, bool $required = true): string
 {
   $value = trim((string) ($_POST[$key] ?? ''));

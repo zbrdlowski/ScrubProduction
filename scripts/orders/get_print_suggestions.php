@@ -33,7 +33,7 @@ if (!isset($keyMap[$key])) {
 $jsonKey = $keyMap[$key];
 $qLike   = '%' . $q . '%';
 
-// Extract values from internal_options_json where the key exists and matches the query
+// Vytiahne hodnoty z internal_options_json, kde kľúč existuje a zodpovedá dotazu
 $stmt = $conn->prepare("
   SELECT DISTINCT JSON_UNQUOTE(JSON_EXTRACT(internal_options_json, ?)) AS val
   FROM order_items
@@ -60,7 +60,7 @@ while ($row = $res->fetch_assoc()) {
 }
 $stmt->close();
 
-// Also pull base-material / graphics-finish from options_json for material/finish suggestions
+// Pre návrhy materiálu a finišu dotiahne aj base-material / graphics-finish z options_json
 if ($key === 'material') {
   $extKey = 'base-material';
   $stmt2 = $conn->prepare("

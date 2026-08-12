@@ -1,5 +1,7 @@
 <?php
 
+require_once __DIR__ . '/status_definition_extensions.php';
+
 function ordersStatusTableExists(mysqli $conn, string $tableName): bool
 {
     static $cache = [];
@@ -103,8 +105,10 @@ function ordersLoadStatusDefinitions(mysqli $conn): array
         return $cache;
     }
 
+    $extensionsAvailable = statusDefinitionEnsureExtensions($conn);
+
     $sql = "
-        SELECT scope, department, code, label, color, sort_order, active
+        SELECT id, scope, department, code, label, color, sort_order, active
         FROM status_definitions
         ORDER BY scope ASC, department ASC, sort_order ASC, id ASC
     ";
@@ -131,12 +135,14 @@ function ordersLoadStatusDefinitions(mysqli $conn): array
         }
 
         $meta = [
+            'id' => (int)($row['id'] ?? 0),
             'code' => $code,
             'label' => trim((string)($row['label'] ?? '')) !== '' ? trim((string)$row['label']) : str_replace('_', ' ', $code),
             'color' => trim((string)($row['color'] ?? '')) ?: null,
             'sort_order' => (int)($row['sort_order'] ?? 0),
             'active' => (int)($row['active'] ?? 1),
             'department' => ordersNormalizeDepartmentCode($row['department'] ?? null),
+            'targets' => ['ALL'],
         ];
 
         if ($scope === 'order') {
@@ -157,6 +163,41 @@ function ordersLoadStatusDefinitions(mysqli $conn): array
     }
 
     $result->free();
+
+    if ($extensionsAvailable) {
+        $targetResult = $conn->query("
+            SELECT status_definition_id, target_type, subcategory_code
+            FROM status_definition_targets
+            ORDER BY status_definition_id, target_type, subcategory_code
+        ");
+        if ($targetResult instanceof mysqli_result) {
+            $targetsByDefinition = [];
+            while ($targetRow = $targetResult->fetch_assoc()) {
+                $definitionId = (int)($targetRow['status_definition_id'] ?? 0);
+                $targetType = strtoupper(trim((string)($targetRow['target_type'] ?? '')));
+                $subcategory = strtoupper(trim((string)($targetRow['subcategory_code'] ?? '')));
+                if ($definitionId <= 0 || $targetType === '') {
+                    continue;
+                }
+                $targetKey = $targetType === 'SUBCATEGORY' && $subcategory !== ''
+                    ? 'SUBCATEGORY:' . $subcategory
+                    : $targetType;
+                $targetsByDefinition[$definitionId][$targetKey] = true;
+            }
+            $targetResult->free();
+
+            foreach ($cache['item'] as &$departmentStatuses) {
+                foreach ($departmentStatuses as &$statusMeta) {
+                    $definitionId = (int)($statusMeta['id'] ?? 0);
+                    $statusMeta['targets'] = !empty($targetsByDefinition[$definitionId])
+                        ? array_keys($targetsByDefinition[$definitionId])
+                        : ['ALL'];
+                }
+                unset($statusMeta);
+            }
+            unset($departmentStatuses);
+        }
+    }
 
     foreach (['G', 'S', 'P', 'F'] as $department) {
         if (empty($cache['item'][$department])) {
@@ -198,6 +239,63 @@ function ordersGetItemStatusDefinitions(mysqli $conn, string $itemType, bool $ac
     return array_filter($statuses, static function (array $meta): bool {
         return (int)($meta['active'] ?? 1) === 1;
     });
+}
+
+function ordersResolveGraphicsSubcategory(array $item): string
+{
+    $internal = json_decode((string)($item['internal_options_json'] ?? ''), true);
+    $stored = is_array($internal) ? strtoupper(trim((string)($internal['_subcat'] ?? ''))) : '';
+    if ($stored !== '' && isset(GRAPHICS_SUBCAT_LABELS[$stored])) {
+        return $stored;
+    }
+
+    return strtoupper(trim((string)dept_get_graphics_subcat(
+        (string)($item['custom_label'] ?? ''),
+        (string)($item['sku'] ?? '')
+    )));
+}
+
+function ordersStatusDefinitionAppliesToItem(array $definition, array $item): bool
+{
+    $department = ordersNormalizeDepartmentCode((string)($item['item_type_code'] ?? ''));
+    if ($department !== 'G') {
+        return true;
+    }
+
+    $targets = $definition['targets'] ?? ['ALL'];
+    if (!is_array($targets) || !$targets || in_array('ALL', $targets, true)) {
+        return true;
+    }
+
+    $subcategory = ordersResolveGraphicsSubcategory($item);
+    if ($subcategory === '') {
+        return in_array('MAIN', $targets, true);
+    }
+
+    return in_array('SUBCATEGORY:' . $subcategory, $targets, true);
+}
+
+function ordersGetItemStatusDefinitionsForItem(mysqli $conn, array $item, bool $activeOnly = true): array
+{
+    $department = ordersNormalizeDepartmentCode((string)($item['item_type_code'] ?? ''));
+    $definitions = ordersGetItemStatusDefinitions($conn, $department, $activeOnly);
+    return array_filter($definitions, static function (array $definition) use ($item): bool {
+        return ordersStatusDefinitionAppliesToItem($definition, $item);
+    });
+}
+
+function ordersGetItemStatusLabelsForItem(mysqli $conn, array $item, bool $activeOnly = true): array
+{
+    $labels = [];
+    foreach (ordersGetItemStatusDefinitionsForItem($conn, $item, $activeOnly) as $code => $meta) {
+        $labels[$code] = (string)($meta['label'] ?? $code);
+    }
+    return $labels;
+}
+
+function ordersGetItemStatusCodesForItem(mysqli $conn, array $item, bool $activeOnly = true): array
+{
+    return array_keys(ordersGetItemStatusDefinitionsForItem($conn, $item, $activeOnly));
 }
 
 function ordersGetOrderStatusCodes(mysqli $conn, bool $activeOnly = true): array

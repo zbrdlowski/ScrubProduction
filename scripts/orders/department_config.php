@@ -94,6 +94,11 @@ const GRAPHICS_SUBCAT_LABELS = [
   'T_SHIRT' => 'T-Shirt',
   'HAT' => 'Hat',
   'HOODIE' => 'Hoodie',
+  // "Virtuálna" subcategory — NEMÁ prefix v GRAPHICS_SUBCAT_PREFIX_MAP, lebo
+  // Patch položka nevzniká podľa custom_label prefixu, ale je auto-generovaná
+  // pri importe (options_json._auto_generated === 'SEAT_PATCH_AUTO_GRAPHICS').
+  // Priradenie k tejto subcategory sa preto deje manuálne v get_order_detail.php.
+  'SEAT_PATCH'  => 'Seat Patch',
 ];
 
 // ---------------------------------------------------------------------------
@@ -180,13 +185,31 @@ function dept_get_departments(?string $customLabel, ?string $sku = null): array 
 /**
  * Vráti subcategory kód pre Graphics položky, alebo null.
  * Používa GRAPHICS_SUBCAT_PREFIX_MAP.
+ *
+ * POZOR: Zámerne NEPOUŽÍVA dept_extract_prefix() — tá funkcia vyžaduje
+ * druhé podtržítko hneď za prefixom (napr. "G_MF_123"), čo v realite
+ * nesedí s formátmi ako "G_MC-CUSTOM", "G_MC001" alebo "G_SPOKE/GRE".
+ * Namiesto toho porovnávame priamo proti kľúčom v GRAPHICS_SUBCAT_PREFIX_MAP
+ * (najdlhší kľúč prvý, aby sa predišlo kolíznym prefixom).
  */
 function dept_get_graphics_subcat(?string $customLabel, ?string $sku = null): ?string {
+  static $sortedKeys = null;
+  if ($sortedKeys === null) {
+    $sortedKeys = array_keys(GRAPHICS_SUBCAT_PREFIX_MAP);
+    usort($sortedKeys, static fn($a, $b) => strlen($b) <=> strlen($a));
+  }
+
   foreach ([$customLabel, $sku] as $candidate) {
-    $fullPrefix = dept_extract_prefix($candidate);
-    if ($fullPrefix === null) continue;
-    if (isset(GRAPHICS_SUBCAT_PREFIX_MAP[$fullPrefix])) {
-      return GRAPHICS_SUBCAT_PREFIX_MAP[$fullPrefix];
+    if ($candidate === null) continue;
+    $value = trim((string)$candidate);
+    if ($value === '') continue;
+    // Ebay môže mať "GFP_SE1086_R3 | EXACT YEAR W" — vezmi len časť pred '|'
+    $value = strtoupper(trim(explode('|', $value)[0]));
+
+    foreach ($sortedKeys as $prefixKey) {
+      if (strpos($value, $prefixKey) === 0) {
+        return GRAPHICS_SUBCAT_PREFIX_MAP[$prefixKey];
+      }
     }
   }
   return null;

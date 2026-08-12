@@ -26,7 +26,7 @@ if (!$itemId || $newStatus === '') {
 }
 
 $stmt = $pdo->prepare("
-    SELECT id, order_id, status, item_type_code, options_json, internal_options_json
+    SELECT id, order_id, status, item_type_code, sku, custom_label, options_json, internal_options_json
     FROM order_items
     WHERE id = ?
 ");
@@ -42,10 +42,10 @@ $oldStatus = $item['status'];
 $orderId = (int)$item['order_id'];
 $userId = (int)$_SESSION['user_id'];
 $itemType = strtoupper(trim((string)($item['item_type_code'] ?? '')));
-$allowed = ordersGetItemStatusCodes($conn, $itemType, true);
+$allowed = ordersGetItemStatusCodesForItem($conn, $item, true);
 
-if (!in_array($newStatus, $allowed, true)) {
-    echo json_encode(['success' => false, 'message' => 'Status is not allowed for this department']);
+if (!in_array($newStatus, $allowed, true) && $newStatus !== strtoupper(trim((string)$oldStatus))) {
+    echo json_encode(['success' => false, 'message' => 'Status is not allowed for this item type or subcategory']);
     exit;
 }
 
