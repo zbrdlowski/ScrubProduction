@@ -159,10 +159,9 @@ function itemTrafficState(string $type, array $items): string
             $ready++;
             $started++;
         }
-
-        // Any non-empty status other than NEW counts as work that has started.
-        // This keeps fallback workflow compatible with custom department statuses
-        // such as FITTING_REGAL created in status_definitions.
+        // Akýkoľvek neprázdny stav okrem NEW sa počíta ako začatá práca.
+        // Toto zachováva kompatibilnosť záložného pracovného postupu s vlastnými stavmi oddelení
+        // ako napríklad FITTING_REGAL vytvoreným v status_definitions.
         if ($status !== '' && $status !== 'NEW') {
             $started++;
         }
@@ -553,6 +552,56 @@ function ordersOrderDoNotInvoice(mysqli $conn, int $orderId): bool
     return !empty($followupMeta['do_not_invoice']);
 }
 
+/**
+ * Krajiny EU (27 clenskych statov, 2-pismenkove ISO kody). UK (GB) po
+ * Brexite EU nie je - zostava mimo, teda potrebuje faktura ku colnemu
+ * konaniu ako ktorykolvek iny stat mimo EU.
+ * Ak sa clenske staty EU niekedy zmenia, treba upraviť iba tento zoznam.
+ */
+const ORDERS_EU_COUNTRY_CODES = [
+    'AT', 'BE', 'BG', 'HR', 'CY', 'CZ', 'DK', 'EE', 'FI', 'FR', 'DE', 'GR',
+    'HU', 'IE', 'IT', 'LV', 'LT', 'LU', 'MT', 'NL', 'PL', 'PT', 'RO', 'SK',
+    'SI', 'ES', 'SE',
+];
+
+/**
+ * Vrati true, ak sa objednavka posiela do krajiny EU (netreba fakturu k
+ * colnemu konaniu, staci Ready for Label). Krajina sa berie z adresy
+ * dorucenia, s fallbackom na fakturacnu adresu ak dorucovacia chyba.
+ */
+function ordersIsEuShipping(mysqli $conn, int $orderId): bool
+{
+    static $euCodes = null;
+    if ($euCodes === null) {
+        $euCodes = array_flip(ORDERS_EU_COUNTRY_CODES);
+    }
+
+    $stmt = $conn->prepare("
+        SELECT UPPER(COALESCE(oa_ship.country, oa_bill.country, '')) AS country_code
+        FROM orders o
+        LEFT JOIN order_addresses oa_ship
+            ON oa_ship.order_id = o.id AND UPPER(oa_ship.type) = 'SHIPPING'
+        LEFT JOIN order_addresses oa_bill
+            ON oa_bill.order_id = o.id AND UPPER(oa_bill.type) = 'BILLING'
+        WHERE o.id = ?
+        LIMIT 1
+    ");
+
+    if (!$stmt) {
+        return false;
+    }
+
+    $stmt->bind_param('i', $orderId);
+    $stmt->execute();
+    $stmt->bind_result($countryCode);
+    $stmt->fetch();
+    $stmt->close();
+
+    $countryCode = strtoupper(trim((string) $countryCode));
+
+    return $countryCode !== '' && isset($euCodes[$countryCode]);
+}
+
 function ordersHasManualStatusOverride(mysqli $conn, int $orderId): bool
 {
     $stmt = $conn->prepare("
@@ -694,13 +743,17 @@ function recalculateOrderWorkflow(mysqli $conn, int $orderId): void
         $orderStatus = 'NEW';
     }
 
-    // Warranty / no-invoice production objednavky nikdy nemaju skoncit v
-    // Ready To Invoice (nie je co fakturovat) - bez ohladu na to, ci tento
-    // status prisiel z policy alebo ostal nezmeneny. Predtym bola tato
-    // kontrola iba vnutri stareho hardcoded fallbacku a teraz by inak tichoo
-    // prestala fungovat.
-    if ($orderStatus === 'READY_TO_INVOICE' && ordersOrderDoNotInvoice($conn, $orderId)) {
-        $orderStatus = 'READY';
+    // "Netreba fakturovat" pripady - warranty/no-invoice production objednavky
+    // A ODOSIELANIE V RAMCI EU (netreba faktura ku colnemu konaniu, staci
+    // Ready for Label). V oboch pripadoch konecny status = READY_TO_SHIP
+    // namiesto READY_TO_INVOICE, bez ohladu na to, ci READY_TO_INVOICE prisiel
+    // z policy alebo ostal nezmeneny. Predtym bola do-not-invoice kontrola
+    // iba vnutri stareho hardcoded fallbacku a teraz by inak ticho prestala
+    // fungovat.
+    if ($orderStatus === 'READY_TO_INVOICE') {
+        if (ordersOrderDoNotInvoice($conn, $orderId) || ordersIsEuShipping($conn, $orderId)) {
+            $orderStatus = 'READY_TO_SHIP';
+        }
     }
 
     $summaryJson = json_encode($summary, JSON_UNESCAPED_UNICODE);

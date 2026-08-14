@@ -859,38 +859,29 @@ function item_type_category_badge(array $item, array $order, array $addr, string
   $version = (string) ($opts['version'] ?? $opts['seat-version'] ?? '');
   $extra = (string) ($opts['extra'] ?? '');
 
-  // GFP — pre štítok chceme vedieť aké ďalšie depy sú v objednávke
-  // (v single-item view posielame len type tohto itemu)
-  $gfp = $type;
-
-  $params = [
-    'order' => $orderNum,
-    'name' => $customer,
-    'country' => $orderCountry,
-    'gfp' => $gfp,
-    'item' => $itemTitle,
-    'ship' => $ship,
-    'date' => $date,
-    'note' => $prodNote,
-    'extranote' => '',
-    'extra' => $extra,
-    'basematerial' => $basematerial,
-    'finish' => $finish,
-    'printer' => $printer,
-    // seat-only
-    'material' => $seatMaterial,
-    'bike' => $bike,
-    'version' => $version,
-  ];
-
+  // label_rtp.php si načíta všetko z DB podľa item_id
   if ($type === 'G') {
-    $params['type'] = trim((string) ($order['source_code'] ?? 'SO'));
-    $params['design'] = trim((string) ($opts['design'] ?? $opts['design-name'] ?? ''));
-    $params['graphic'] = '';
-    $params['grip'] = (string) ($intOpts['_print_grip'] ?? $opts['grip'] ?? '');
+    $url = LABEL_BASE_PATH . $script . '?item_id=' . (int) ($item['id'] ?? 0);
+  } else {
+    $params = [
+      'order'       => $orderNum,
+      'name'        => $customer,
+      'country'     => $orderCountry,
+      'gfp'         => $type,
+      'item'        => $itemTitle,
+      'ship'        => $ship,
+      'date'        => $date,
+      'note'        => $prodNote,
+      'extra'       => $extra,
+      'basematerial'=> $basematerial,
+      'finish'      => $finish,
+      'printer'     => $printer,
+      'material'    => $seatMaterial,
+      'bike'        => $bike,
+      'version'     => $version,
+    ];
+    $url = LABEL_BASE_PATH . $script . '?' . http_build_query($params);
   }
-
-  $url = LABEL_BASE_PATH . $script . '?' . http_build_query($params);
 
   return '<a href="' . h($url) . '" target="_blank" rel="noopener"'
     . ' class="badge badge-product-type"'
@@ -4411,27 +4402,8 @@ ob_start();
                   <?php
                   $itTypeRtp = strtoupper(trim((string) ($it['item_type_code'] ?? '')));
                   if ($itTypeRtp === 'G'):
-                    $rtpOpts = jsonDecodeAssocSafe((string) ($it['options_json'] ?? '{}'));
-                    $rtpIntOpts = jsonDecodeAssocSafe((string) ($it['internal_options_json'] ?? '{}'));
-                    $rtpParams = [
-                      'type' => trim((string) ($order['source_code'] ?? 'SO')),
-                      'order' => (string) ($order['order_number'] ?? $order['external_order_id'] ?? ''),
-                      'name' => trim((string) ($order['customer_name'] ?? $order['customer_email'] ?? '')),
-                      'country' => $orderCountry,
-                      'gfp' => $orderTrafficTypes ?: $itTypeRtp,
-                      'design' => trim((string) ($rtpOpts['design'] ?? $rtpOpts['design-name'] ?? '')),
-                      'ship' => trim((string) ($order['shipping_method'] ?? '')),
-                      'date' => ($order['created_at'] ?? '') !== '' ? date('d.m.Y', strtotime((string) $order['created_at'])) : '',
-                      'note' => trim((string) ($order['production_note'] ?? '')),
-                      'extranote' => '',
-                      'basematerial' => (string) ($rtpIntOpts['_print_material'] ?? $rtpOpts['base-material'] ?? ''),
-                      'finish' => (string) ($rtpIntOpts['_print_finish'] ?? $rtpOpts['graphics-finish'] ?? ''),
-                      'printer' => (string) ($rtpIntOpts['_printer'] ?? ''),
-                      'extra' => (string) ($rtpOpts['extra'] ?? ''),
-                      'graphic' => '',
-                      'grip' => (string) ($rtpOpts['grip'] ?? ''),
-                    ];
-                    $rtpUrl = LABEL_BASE_PATH . 'label_rtp.php?' . http_build_query($rtpParams);
+                    // label_rtp.php načíta všetko z DB — stačí item_id
+                    $rtpUrl = LABEL_BASE_PATH . 'label_rtp.php?item_id=' . (int) $it['id'];
                     ?>
                     <a href="<?= h($rtpUrl) ?>" target="_blank" rel="noopener" class="btn btn-xs btn-outline-warning"
                       title="RTP info prúžok pre grafika">RTP</a>
