@@ -366,102 +366,26 @@ function ordersGetStatusColor(mysqli $conn, string $scope, string $code, ?string
     return $color !== '' ? $color : null;
 }
 
-function ordersGetOrderStatusButtonClass(string $status): string
+/**
+ * Vráti HTML pre solid status chip — jednotný štýl naprieč orders.php, profile.php a všetkými ostatnými stránkami.
+ * Nahrádza priame použitie ordersGetOrderStatusButtonClass() ktorá vracia btn-outline-* triedy.
+ *
+ * @param mysqli $conn
+ * @param string $status   Kód statusu (napr. 'SHIPPED', 'IN_PROGRESS')
+ * @param string $size     Bootstrap btn veľkosť: 'xs', 'sm', '' (default 'xs') 
+ * @return string  Hotový <button> HTML
+ */
+function ordersRenderStatusChip(mysqli $conn, string $status, string $size = 'xs'): string
 {
-    switch (strtoupper(trim($status))) {
-        case 'NEW':
-            return 'btn-outline-danger';
-        case 'PENDING':
-            return 'btn-outline-pending';
-        case 'IN_PROGRESS':
-        case 'READY_TO_INVOICE':
-        case 'WAITING_PARTS':
-        case 'PRODUCTION':
-            return 'btn-outline-warning';
-        case 'DRAFT_REQUESTED':
-        case 'DRAFT_READY':
-            return 'btn-outline-info';
-        case 'RIPPED':
-        case 'PRINT_QUEUE':
-            return 'btn-outline-primary';
-        case 'DONE':
-        case 'COMPLETED':
-        case 'SHIPPED':
-        case 'READY':
-        case 'READY_TO_SHIP':
-            return 'btn-outline-success';
-        case 'NEED_INFO':
-            return 'btn-outline-danger';
-        case 'HOLD':
-        case 'CANCELLED':
-            return 'btn-outline-secondary';
-        default:
-            return 'btn-outline-secondary';
-    }
-}
+    $label = ordersGetStatusLabel($conn, 'order', $status);
+    $color = ordersGetStatusColor($conn, 'order', $status) ?: '#6c757d';
+    $safeColor = htmlspecialchars($color, ENT_QUOTES, 'UTF-8');
+    $safeLabel = htmlspecialchars($label ?: '-', ENT_QUOTES, 'UTF-8');
+    $textColor = ($color === '#ffc107') ? '#212529' : '#fff';
+    $sizeClass = $size !== '' ? ' btn-' . $size : '';
+    $style = 'background-color:' . $safeColor . ';border-color:' . $safeColor . ';color:' . $textColor . ';pointer-events:none;';
 
-function ordersGetOrderStatusBadgeClass(string $status): string
-{
-    switch (strtoupper(trim($status))) {
-        case 'NEW':
-            return 'bg-info';
-        case 'PENDING':
-            return 'bg-pending';
-        case 'IN_PROGRESS':
-        case 'READY_TO_INVOICE':
-        case 'PRODUCTION':
-            return 'bg-warning';
-        case 'NEED_INFO':
-            return 'bg-danger';
-        case 'DRAFT_REQUESTED':
-        case 'DRAFT_READY':
-            return 'bg-info';
-        case 'DONE':
-        case 'COMPLETED':
-        case 'SHIPPED':
-        case 'READY_TO_SHIP':
-            return 'bg-success';
-        case 'HOLD':
-        case 'CANCELLED':
-            return 'bg-secondary';
-        default:
-            return 'bg-secondary';
-    }
-}
-
-function ordersGetOrderStatusAccentColor(mysqli $conn, string $status): string
-{
-    $dbColor = ordersGetStatusColor($conn, 'order', $status);
-    if ($dbColor !== null) {
-        return $dbColor;
-    }
-
-    switch (strtoupper(trim($status))) {
-        case 'NEW':
-            return '#17a2b8';
-        case 'PENDING':
-            return '#7c3aed';
-        case 'IN_PROGRESS':
-        case 'READY_TO_INVOICE':
-        case 'PRODUCTION':
-            return '#ffc107';
-        case 'NEED_INFO':
-            return '#dc3545';
-        case 'DRAFT_REQUESTED':
-        case 'DRAFT_READY':
-            return '#20c997';
-        case 'RIPPED':
-        case 'PRINT_QUEUE':
-            return '#0d6efd';
-        case 'DONE':
-        case 'COMPLETED':
-        case 'READY_TO_SHIP':
-        case 'SHIPPED':
-            return '#28a745';
-        case 'HOLD':
-        case 'CANCELLED':
-            return '#6c757d';
-        default:
-            return '#3f9eff';
-    }
+    return '<button type="button" class="btn' . $sizeClass . ' orders-status-chip" style="' . $style . '">'
+        . $safeLabel
+        . '</button>';
 }

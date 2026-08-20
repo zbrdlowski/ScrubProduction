@@ -35,7 +35,8 @@
         $('#mym_existing_years').html('<span class="text-muted">Nový modelcode – zatiaľ žiadne roky.</span>');
         $('#mym_ambiguous_picker').hide().empty();
         $('#mym_year_pills').hide().empty();
-        $('#mym_edit_year_banner').hide().text('');
+        $('#mym_edit_year_banner').hide();
+        $('#mym_edit_year_banner_text').text('');
         $('#mym_newyear_group').show();
         $('#mym_rangeyear_preview').text('—');
         $('#mym_compat_table').removeClass('show-year-col');
@@ -202,7 +203,8 @@
         highlightActivePill();
 
         $('#mym_newyear_group').show();
-        $('#mym_edit_year_banner').hide().text('');
+        $('#mym_edit_year_banner').hide();
+        $('#mym_edit_year_banner_text').text('');
         $('#mym_compat_table').removeClass('show-year-col');
         $('#mym_add_compat_row').show();
         $('#mym_save_btn').text('Save');
@@ -217,9 +219,10 @@
         highlightActivePill();
 
         $('#mym_newyear_group').hide();
-        $('#mym_edit_year_banner')
-            .html('<i class="fas fa-edit mr-1"></i>Upravuješ kompatibilné modely pre rok <strong>' + year + '</strong> — zmeny sa ukladajú priamo do scrubcompat.')
-            .show();
+        $('#mym_edit_year_banner_text').html(
+            '<i class="fas fa-edit mr-1"></i>Upravuješ kompatibilné modely pre rok <strong>' + year + '</strong> — zmeny sa ukladajú priamo do scrubcompat.'
+        );
+        $('#mym_edit_year_banner').show();
         $('#mym_compat_table').addClass('show-year-col');
         $('#mym_add_compat_row').show();
         $('#mym_save_btn').text('Save changes for ' + year);
@@ -320,6 +323,56 @@
 
     $(document).on('shown.bs.modal', '#modelYearModal', function () {
         resetModal();
+    });
+
+    $(document).on('click', '#mym_reset_form_btn', function () {
+        resetModal();
+    });
+
+    $(document).on('click', '#mym_delete_year_btn', function () {
+        if (editingYear === null) return;
+
+        const brand = loadedBrand || $('#mym_brand').val().trim();
+        const model = loadedModel || $('#mym_model').val().trim();
+        const modelcode = $('#mym_modelcode').val().trim();
+        const year = editingYear;
+
+        const confirmed = window.confirm(
+            'Naozaj chceš natrvalo zmazať záznam:\n\n' +
+            brand + ' ' + model + ' — rok ' + year + ' [' + modelcode + ']\n\n' +
+            'Zmaže sa presne tento riadok v scrubdata. Kompatibilné modely v scrubcompat ' +
+            '(compatcode+rok) sa zmažú iba vtedy, ak ich už nepoužíva žiadny iný model ' +
+            'zdieľajúci ten istý modelcode. Táto akcia sa nedá vrátiť späť.'
+        );
+        if (!confirmed) return;
+
+        const $btn = $(this);
+        $btn.prop('disabled', true).html('<i class="fas fa-spinner fa-spin mr-1"></i> Mažem…');
+
+        $.ajax({
+            url: AJAX_URL + '?action=delete_year',
+            method: 'POST',
+            contentType: 'application/json',
+            data: JSON.stringify({ modelcode: modelcode, brand: brand, model: model, year: year }),
+            dataType: 'json',
+        }).done(function (resp) {
+            if (!resp.ok) {
+                $('#mym_status').html('<div class="alert alert-danger py-1 px-2 mb-0">' + resp.error + '</div>');
+                $btn.prop('disabled', false).html('<i class="fas fa-trash-alt mr-1"></i> Delete');
+                return;
+            }
+            const compatMsg = resp.compat_kept
+                ? 'Kompatibilné modely v scrubcompat ostali zachované, keďže ich pre tento rok stále používa iný zdieľaný model.'
+                : 'Zmazaných compat riadkov: ' + resp.deleted_compat + '.';
+            $('#mym_status').html(
+                '<div class="alert alert-success py-1 px-2 mb-0">Rok ' + year + ' bol zmazaný. ' + compatMsg + ' Stránka sa obnoví…</div>'
+            );
+            setTimeout(function () { window.location.reload(); }, 1500);
+        }).fail(function (xhr) {
+            console.error('delete_year zlyhalo:', xhr.status, xhr.responseText);
+            $('#mym_status').html('<div class="alert alert-danger py-1 px-2 mb-0">Chyba servera pri mazaní (HTTP ' + xhr.status + ').</div>');
+            $btn.prop('disabled', false).html('<i class="fas fa-trash-alt mr-1"></i> Delete');
+        });
     });
 
     $(document).on('click', '#mym_generate_code', function () {

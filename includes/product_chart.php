@@ -41,7 +41,7 @@ else
 // ── SQL pre hlavnú tabuľku ────────────────────────────────────────────────
 $sql_parts = "SELECT DISTINCT sd.brand, sd.model, sd.rangeyear, sd.modelcode, sm.meta_json,
                      st.trackid, st.new_year AS track_new_year,
-                     st.done_web, st.done_ebay, st.done_graphics_templates, st.done_seatcover_templates
+                     st.done_web, st.done_ebay, st.done_graphics_templates, st.done_seatcover_templates, st.done_products
                FROM scrubdata sd
                LEFT JOIN scrubdata_meta sm
                  ON sm.brand = sd.brand
@@ -142,7 +142,7 @@ function configBadges(array $meta): string
     return $html;
 }
 
-// ── Helper: zostaví tracking pole (Web/eBay/Templates) z DB riadku ────────
+// ── Helper: zostaví tracking pole (Web/eBay/Templates/Products) z DB riadku ─
 function buildTracking(array $row): ?array
 {
     if (empty($row['trackid'])) {
@@ -155,10 +155,11 @@ function buildTracking(array $row): ?array
         'done_ebay' => (int) $row['done_ebay'],
         'done_graphics_templates' => (int) $row['done_graphics_templates'],
         'done_seatcover_templates' => (int) $row['done_seatcover_templates'],
+        'done_products' => (int) $row['done_products'],
     ];
 }
 
-// Štyri kompaktné badge pre stav prenesenia posledného modelového update.
+// Päť kompaktných badge pre stav prenesenia posledného modelového update.
 // Model bez tracking záznamu je v predvolenom stave: všetko je hotové.
 function trackingBadges(?array $tracking): string
 {
@@ -167,6 +168,7 @@ function trackingBadges(?array $tracking): string
         'done_ebay' => ['EB', 'eBay'],
         'done_graphics_templates' => ['GT', 'Graphics Templates'],
         'done_seatcover_templates' => ['ST', 'Seatcover Templates'],
+        'done_products' => ['PR', 'Products'],
     ];
 
     $html = '<span class="badge-pair config-badges">';
@@ -186,6 +188,7 @@ function trackingIsPending(?array $tracking): bool
         || empty($tracking['done_ebay'])
         || empty($tracking['done_graphics_templates'])
         || empty($tracking['done_seatcover_templates'])
+        || empty($tracking['done_products'])
     );
 }
 ?>
@@ -481,6 +484,27 @@ function trackingIsPending(?array $tracking): bool
         color: #ffd97a;
     }
 
+    #mym_delete_year_btn {
+        flex-shrink: 0;
+        border-color: #c0392b;
+        color: #ff8a80;
+    }
+
+    #mym_delete_year_btn:hover {
+        background: #c0392b;
+        color: #fff;
+    }
+
+    #mym_reset_form_btn {
+        border-color: #344f65;
+        color: #8eabc4;
+    }
+
+    #mym_reset_form_btn:hover {
+        background: #2c4a5e;
+        color: #fff;
+    }
+
     #modelYearModal hr {
         border-color: #344f65;
     }
@@ -521,6 +545,25 @@ function trackingIsPending(?array $tracking): bool
     .tracking-section .block-card .card-header {
         background: #5c4415;
         color: #ffd97a;
+    }
+
+    /* Tracking sekcia má teraz 5 položiek (Web/eBay/Graphics Templates/
+       Seatcover Templates/Products) — vlastný rovnomerný 5-stĺpcový layout,
+       nezávislý od .col-md-3 gridu, ktorý používajú kapability bloky nižšie
+       (Graphics/Plastics/Seat Cover/Configuration zostávajú nezmenené na 4). */
+    .tracking-section .col-track5 {
+        flex: 0 0 100%;
+        max-width: 100%;
+        padding-left: 10px;
+        padding-right: 10px;
+        box-sizing: border-box;
+    }
+
+    @media (min-width: 768px) {
+        .tracking-section .col-track5 {
+            flex: 0 0 20%;
+            max-width: 20%;
+        }
     }
 
     .tracking-divider {
@@ -609,7 +652,7 @@ function trackingIsPending(?array $tracking): bool
 $trackingPendingCount = 0;
 $resTrackCnt = $conn->query(
     "SELECT COUNT(*) AS cnt FROM scrub_update_tracking
-     WHERE NOT (done_web AND done_ebay AND done_graphics_templates AND done_seatcover_templates)"
+     WHERE NOT (done_web AND done_ebay AND done_graphics_templates AND done_seatcover_templates AND done_products)"
 );
 if ($resTrackCnt) {
     $trackingPendingCount = (int) $resTrackCnt->fetch_assoc()['cnt'];
@@ -875,7 +918,7 @@ if ($resTrackCnt) {
         <div class="scrub-detail-panel" id="detail-<?= htmlspecialchars($rowkey2) ?>" style="display:none;">
             <div class="scrub-detail-inner">
 
-                <!-- ── Update Tracking — Web / eBay / Graphics Templates / Seatcover Templates ── -->
+                <!-- ── Update Tracking — Web / eBay / Graphics Templates / Seatcover Templates / Products ── -->
                 <div class="tracking-section mb-3">
                     <div class="d-flex justify-content-between align-items-center mb-2">
                         <span class="tracking-label">
@@ -1013,7 +1056,13 @@ if ($resTrackCnt) {
 
                     <div class="mb-2" id="mym_ambiguous_picker" style="display:none;"></div>
 
-                    <div class="alert alert-warning py-2 px-3 mb-2" id="mym_edit_year_banner" style="display:none;"></div>
+                    <div class="alert alert-warning py-2 px-3 mb-2 d-flex justify-content-between align-items-center"
+                        id="mym_edit_year_banner" style="display:none;">
+                        <span id="mym_edit_year_banner_text"></span>
+                        <button type="button" id="mym_delete_year_btn" class="btn btn-sm btn-outline-danger ml-2">
+                            <i class="fas fa-trash-alt mr-1"></i> Delete
+                        </button>
+                    </div>
 
                     <div id="mym_newyear_group">
                         <div class="form-row align-items-end">
@@ -1057,9 +1106,14 @@ if ($resTrackCnt) {
 
                     <div id="mym_status" class="mt-3"></div>
                 </div>
-                <div class="modal-footer" style="border-top:1px solid #344f65;">
-                    <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancel</button>
-                    <button type="button" id="mym_save_btn" class="btn btn-success">Save</button>
+                <div class="modal-footer justify-content-between" style="border-top:1px solid #344f65;">
+                    <button type="button" id="mym_reset_form_btn" class="btn btn-outline-secondary">
+                        <i class="fas fa-undo mr-1"></i> Reset Form
+                    </button>
+                    <div>
+                        <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancel</button>
+                        <button type="button" id="mym_save_btn" class="btn btn-success">Save</button>
+                    </div>
                 </div>
             </div>
         </div>
@@ -1091,11 +1145,12 @@ if ($resTrackCnt) {
                                 <th class="text-center">eBay</th>
                                 <th class="text-center">Graphics Templates</th>
                                 <th class="text-center">Seatcover Templates</th>
+                                <th class="text-center">Products</th>
                             </tr>
                         </thead>
                         <tbody id="tut_body">
                             <tr>
-                                <td colspan="9" class="text-center text-muted py-3">Načítavam…</td>
+                                <td colspan="10" class="text-center text-muted py-3">Načítavam…</td>
                             </tr>
                         </tbody>
                     </table>

@@ -60,7 +60,7 @@ $sql = "SELECT
     cu.email AS customer_email,
     os.code AS source_code,
     COALESCE(oa_ship.country, oa_bill.country) AS country_code,
-    oa.role,
+    COALESCE(oa.role, 'ITEM_WORKER') AS role,
 
     (
       SELECT GROUP_CONCAT(DISTINCT oi.item_type_code ORDER BY oi.item_type_code SEPARATOR ',')
@@ -104,22 +104,35 @@ $sql = "SELECT
     ) AS assigned_users
 
 FROM orders o
-JOIN order_assignments oa ON oa.order_id = o.id
+LEFT JOIN order_assignments oa
+  ON oa.order_id = o.id
+ AND oa.employee_id = ?
+ AND oa.removed_at IS NULL
 JOIN order_sources os ON os.id = o.source_id
 LEFT JOIN customers cu ON cu.id = o.customer_id
 LEFT JOIN order_addresses oa_ship ON oa_ship.order_id = o.id AND UPPER(oa_ship.type) = 'SHIPPING'
 LEFT JOIN order_addresses oa_bill ON oa_bill.order_id = o.id AND UPPER(oa_bill.type) = 'BILLING'
 
-WHERE 
-    oa.employee_id = ?
-    AND oa.removed_at IS NULL
+WHERE
+    (
+      oa.id IS NOT NULL
+      OR EXISTS (
+        SELECT 1
+        FROM order_item_assignments oia_me
+        JOIN order_items oi_me ON oi_me.id = oia_me.item_id
+        WHERE oi_me.order_id = o.id
+          AND oi_me.deleted_at IS NULL
+          AND oia_me.employee_id = ?
+          AND oia_me.removed_at IS NULL
+      )
+    )
     AND UPPER(o.status) != 'SHIPPED'
 ORDER BY o.order_date ASC
 ";
 
 $stmt = $conn->prepare($sql);
-$types = 'i';
-$params = [$userId];
+$types = 'ii';
+$params = [$userId, $userId];
 
 $stmt->bind_param($types, ...$params);
 $stmt->execute();
@@ -159,6 +172,10 @@ function profileStatusButtonClass(string $status): string
 function profileRoleBadge(string $role): string
 {
     $role = strtoupper($role);
+
+    if ($role === 'ITEM_WORKER') {
+        return '<span class="badge badge-success">Item</span>';
+    }
 
     return strpos($role, 'PRIMARY_') === 0
         ? '<span class="badge badge-info">Mine</span>'

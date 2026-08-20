@@ -6,6 +6,8 @@ $base = dirname(__DIR__, 2);
 require_once $base . '/includes/conn.php';
 require_once $base . '/includes/orders_status_helpers.php';
 require_once $base . '/includes/orders_workflow_helpers.php';
+require_once $base . '/includes/order_item_assignment_helpers.php';
+require_once $base . '/includes/render_assigned_users.php';
 require_once __DIR__ . '/activity_helper.php';
 
 header('Content-Type: application/json');
@@ -25,26 +27,67 @@ if (!$itemId || $newStatus === '') {
     exit;
 }
 
-$stmt = $pdo->prepare("
+$stmt = $conn->prepare("
     SELECT id, order_id, status, item_type_code, sku, custom_label, options_json, internal_options_json
     FROM order_items
     WHERE id = ?
+      AND deleted_at IS NULL
+    LIMIT 1
 ");
-$stmt->execute([$itemId]);
-$item = $stmt->fetch(PDO::FETCH_ASSOC);
+$stmt->bind_param('i', $itemId);
+$stmt->execute();
+$item = $stmt->get_result()->fetch_assoc();
+$stmt->close();
 
 if (!$item) {
     echo json_encode(['success' => false, 'message' => 'Item not found']);
     exit;
 }
 
-$oldStatus = $item['status'];
 $orderId = (int)$item['order_id'];
 $userId = (int)$_SESSION['user_id'];
+$conn->begin_transaction();
+
+// Always lock parent before child. This prevents a deadlock when two items in
+// the same order are changed concurrently and the workflow reads both items.
+$orderLock = $conn->prepare("SELECT id FROM orders WHERE id = ? LIMIT 1 FOR UPDATE");
+$orderLock->bind_param('i', $orderId);
+$orderLock->execute();
+$orderExists = (bool) $orderLock->get_result()->fetch_row();
+$orderLock->close();
+
+if (!$orderExists) {
+    $conn->rollback();
+    echo json_encode(['success' => false, 'message' => 'Order not found']);
+    exit;
+}
+
+$stmt = $conn->prepare("
+    SELECT id, order_id, status, item_type_code, sku, custom_label, options_json, internal_options_json
+    FROM order_items
+    WHERE id = ?
+      AND order_id = ?
+      AND deleted_at IS NULL
+    LIMIT 1
+    FOR UPDATE
+");
+$stmt->bind_param('ii', $itemId, $orderId);
+$stmt->execute();
+$item = $stmt->get_result()->fetch_assoc();
+$stmt->close();
+
+if (!$item) {
+    $conn->rollback();
+    echo json_encode(['success' => false, 'message' => 'Item not found']);
+    exit;
+}
+
+$oldStatus = $item['status'];
 $itemType = strtoupper(trim((string)($item['item_type_code'] ?? '')));
 $allowed = ordersGetItemStatusCodesForItem($conn, $item, true);
 
 if (!in_array($newStatus, $allowed, true) && $newStatus !== strtoupper(trim((string)$oldStatus))) {
+    $conn->rollback();
     echo json_encode(['success' => false, 'message' => 'Status is not allowed for this item type or subcategory']);
     exit;
 }
@@ -91,6 +134,7 @@ if ($newStatus === 'READY' && $itemType === 'S') {
     }
 
     if (!empty($missing)) {
+        $conn->rollback();
         echo json_encode([
             'success' => false,
             'message' => '⚠️ Položku nemožno označiť ako Ready. Najskôr potvrď: ' . implode(', ', $missing)
@@ -100,7 +144,60 @@ if ($newStatus === 'READY' && $itemType === 'S') {
     }
 }
 
-$update = $pdo->prepare("
+$normalizedOldStatus = strtoupper(trim((string) $oldStatus));
+$normalizedNewStatus = strtoupper(trim($newStatus));
+$isActualStatusChange = $normalizedOldStatus !== $normalizedNewStatus;
+
+// A same-value save is not the first status change. Duplicate historical saves
+// are ignored too, so reverting an item cannot claim it for a second time.
+$historyCheck = $conn->prepare("
+    SELECT 1
+    FROM order_item_statuses
+    WHERE order_item_id = ?
+      AND COALESCE(old_status, '') <> new_status
+    LIMIT 1
+");
+$historyCheck->bind_param('i', $itemId);
+$historyCheck->execute();
+$hasMeaningfulHistory = (bool) $historyCheck->get_result()->fetch_row();
+$historyCheck->close();
+$isFirstStatusChange = $isActualStatusChange && !$hasMeaningfulHistory;
+
+$departmentCode = orderItemDepartmentCode($itemType);
+$autoPrimaryAssigned = false;
+$autoPreparedAssigned = false;
+$autoCheckedAssigned = false;
+
+if ($isFirstStatusChange) {
+    $autoPrimaryAssigned = orderItemEnsurePrimaryAssignment(
+        $conn,
+        $orderId,
+        $userId,
+        $departmentCode
+    );
+    $autoPreparedAssigned = orderItemSetRoleAssignment(
+        $conn,
+        $orderId,
+        $itemId,
+        $userId,
+        'PREPARED'
+    );
+}
+
+if ($isActualStatusChange && $normalizedNewStatus === 'READY') {
+    $autoCheckedAssigned = orderItemSetRoleAssignment(
+        $conn,
+        $orderId,
+        $itemId,
+        $userId,
+        'CHECKED'
+    );
+}
+
+$autoItemAssigned = $autoPreparedAssigned || $autoCheckedAssigned;
+
+$nullableNote = $note !== '' ? $note : null;
+$update = $conn->prepare("
     UPDATE order_items
     SET status = ?,
         waiting_note = ?,
@@ -109,27 +206,19 @@ $update = $pdo->prepare("
         completed_at = NOW()
     WHERE id = ?
 ");
-$update->execute([
-    $newStatus,
-    $note ?: null,
-    $expectedDate,
-    $userId,
-    $itemId
-]);
+$update->bind_param('sssii', $newStatus, $nullableNote, $expectedDate, $userId, $itemId);
+$update->execute();
+$update->close();
 
-$history = $pdo->prepare("
+$history = $conn->prepare("
     INSERT INTO order_item_statuses
-    (order_item_id, old_status, new_status, note, expected_date, changed_by)
-    VALUES (?, ?, ?, ?, NULLIF(?, ''), ?)
+        (order_item_id, old_status, new_status, note, expected_date, changed_by)
+    VALUES
+        (?, ?, ?, ?, NULLIF(?, ''), ?)
 ");
-$history->execute([
-    $itemId,
-    $oldStatus,
-    $newStatus,
-    $note ?: null,
-    $expectedDate,
-    $userId
-]);
+$history->bind_param('issssi', $itemId, $oldStatus, $newStatus, $nullableNote, $expectedDate, $userId);
+$history->execute();
+$history->close();
 log_order_activity(
     $conn,
     $orderId,
@@ -141,12 +230,45 @@ log_order_activity(
         'old_status' => $oldStatus,
         'new_status' => $newStatus,
         'note' => $note,
-        'expected_date' => $expectedDate
+        'expected_date' => $expectedDate,
+        'auto_primary_assigned' => $autoPrimaryAssigned,
+        'auto_prepared_assigned' => $autoPreparedAssigned,
+        'auto_checked_assigned' => $autoCheckedAssigned,
     ],
     'Item status changed: ' . $oldStatus . ' → ' . $newStatus
 );
-//recalculateOrderStatus($pdo, $orderId);
+if ($autoPrimaryAssigned) {
+    log_order_activity(
+        $conn,
+        $orderId,
+        $userId,
+        'order_auto_taken',
+        'order_item',
+        $itemId,
+        ['role' => 'PRIMARY_' . $departmentCode, 'trigger_status' => $newStatus],
+        'Order automatically taken by first item status change'
+    );
+}
+
+if ($autoPreparedAssigned || $autoCheckedAssigned) {
+    log_order_activity(
+        $conn,
+        $orderId,
+        $userId,
+        'item_auto_assigned',
+        'order_item',
+        $itemId,
+        [
+            'trigger_status' => $newStatus,
+            'prepared' => $autoPreparedAssigned,
+            'checked' => $autoCheckedAssigned,
+        ],
+        'Item workflow position assigned by status change'
+    );
+}
+
 recalculateOrderWorkflow($conn, $orderId);
+$conn->commit();
 
 // Po prepočte načítame aktuálny traffic_summary_json a vrátime ho v odpovedi
 // — JS ho priamo aplikuje na badge v riadku tabuľky bez extra requestu
@@ -203,6 +325,12 @@ foreach ($departmentStatuses as $department => $statusCode) {
     $departmentColors[$department] = ordersGetStatusColor($conn, 'item', $statusCode, $department);
 }
 
+$permission = (int) ($_SESSION['permission'] ?? 0);
+$avatarsHtml = render_assigned_users_html($conn, $orderId);
+$takeAssignHtml = $departmentCode !== ''
+    ? render_order_take_assign_html($conn, $orderId, $departmentCode, $permission, $userId)
+    : '';
+
 echo json_encode([
     'success'         => true,
     'order_id'        => $orderId,
@@ -211,4 +339,11 @@ echo json_encode([
     'department_statuses' => $departmentStatuses,
     'department_labels' => $departmentLabels,
     'department_colors' => $departmentColors,
-]);
+    'auto_primary_assigned' => $autoPrimaryAssigned,
+    'auto_item_assigned' => $autoItemAssigned,
+    'auto_prepared_assigned' => $autoPreparedAssigned,
+    'auto_checked_assigned' => $autoCheckedAssigned,
+    'avatars_html' => $avatarsHtml,
+    'take_assign_html' => $takeAssignHtml,
+    'dept_code' => $departmentCode,
+], JSON_UNESCAPED_UNICODE);

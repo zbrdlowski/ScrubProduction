@@ -2,17 +2,20 @@
 declare(strict_types=1);
 
 /**
- * install_status_policies_2026_08.php
+ * install_status_policies_2026_08_v2.php
  * ---------------------------------------------------------
- * Jednorazovy install skript pre novu sadu status policies
- * (New / In Progress / Ready for Label / Ready for Invoice /
- * Info Requested / Communication / Delay) podla statuses.xlsx.
+ * UPSERT install skript pre aktualizovanu sadu status policies
+ * podla noveho statuses.xlsx (Plastics ma novy Info Requested
+ * bucket, novy In Progress bucket, upraveny Delay bucket).
  *
  * POUZITIE: nahraj do scripts/orders/ a spusti RAZ cez browser
- * (ako admin) alebo cez CLI: php install_status_policies_2026_08.php
- * Skript je idempotentny na urovni mena policy - ak policy s
- * rovnakym nazvom uz existuje, PRESKOCI ju (nevytvori duplicitu).
- * Po dokonceni automaticky prepocita vsetky objednavky.
+ * (ako admin) alebo cez CLI: php install_status_policies_2026_08_v2.php
+ *
+ * UPSERT SPRAVANIE: ak policy s rovnakym nazvom uz existuje (napr.
+ * z predchadzajuceho installu), skript ju NAJPRV KOMPLETNE ZMAZE
+ * (aj s podmienkami a allowed statuses) a znova vytvori s
+ * aktualnymi datami. NIC TREBA MAZAT RUCNE VOPRED.
+ * Po dokonceni automaticky prepocita vsetky (neuzavrete) objednavky.
  */
 
 session_start();
@@ -74,7 +77,7 @@ $policies = [
         'result' => 'INFO_REQUESTED',
         'stop' => 1,
         'conditions' => [
-            ['P', 'status', 'IN', ['NEED_INFO']],
+            ['P', 'status', 'IN', ['MODEL_REQUIRED', 'MODEL_REQUESTED', 'IMG_REQUIRED', 'IMG_REQUESTED']],
         ],
     ],
     [
@@ -191,7 +194,7 @@ $policies = [
         'result' => 'DELAY',
         'stop' => 1,
         'conditions' => [
-            ['P', 'status', 'IN', ['OUT_OF_STOCK_ORDERED', 'OUT_OF_STOCK_NOT_ORDERED', 'WAITING', 'PREORDER_NOT_ORDERED', 'PREORDER_ORDERED']],
+            ['P', 'status', 'IN', ['OUT_OF_STOCK_NOT_ORDERED', 'OUT_OF_STOCK_ORDERED', 'OUT_OF_STOCK_ORDERED_COMM']],
         ],
     ],
     [
@@ -200,7 +203,7 @@ $policies = [
         'result' => 'IN_PROGRESS',
         'stop' => 1,
         'conditions' => [
-            ['G', 'status', 'IN', ['RTP_AD_CHANGES', 'RTP_READY', 'RIP', 'PRINTED', 'CUT', 'DRAFT_✗', 'DRAFT_AD_CHANGES', 'DRAFT_READY', 'DRAFT_SENT', 'HO_RIP', 'PLASTICS_IN_STOCK', 'REPRINT', 'BARTOS_PRODUCTION']],
+            ['G', 'status', 'IN', ['RTP_AD_CHANGES', 'RTP_READY', 'RIP', 'PRINTED', 'CUT', 'PRODUCED', 'DRAFT_✗', 'DRAFT_AD_CHANGES', 'DRAFT_READY', 'DRAFT_SENT', 'HO_RIP', 'REPRINT', 'BARTOS_PRODUCTION']],
         ],
     ],
     [
@@ -209,23 +212,32 @@ $policies = [
         'result' => 'IN_PROGRESS',
         'stop' => 1,
         'conditions' => [
-            ['S', 'status', 'IN', ['STARTED', 'DRAFT_✗', 'DRAFT_AD_CHANGES', 'DRAFT_READY', 'DRAFT_SENT']],
+            ['S', 'status', 'IN', ['STARTED', 'PRODUCED', 'DRAFT_✗', 'DRAFT_AD_CHANGES', 'DRAFT_READY', 'DRAFT_SENT']],
         ],
     ],
     [
-        'name' => 'Fitting - In Progress',
+        'name' => 'Plastics - In Progress',
         'priority' => 320,
         'result' => 'IN_PROGRESS',
         'stop' => 1,
         'conditions' => [
-            ['F', 'status', 'IN', ['STARTED', 'REPRINT']],
+            ['P', 'status', 'IN', ['SCAN_OUT', 'PREORDER_NOT_ORDERED', 'PREORDER_ORDERED', 'ABO_NOT_ORDERED', 'ABO_ORDERED', 'ON_THE_WAY']],
+        ],
+    ],
+    [
+        'name' => 'Fitting - In Progress',
+        'priority' => 330,
+        'result' => 'IN_PROGRESS',
+        'stop' => 1,
+        'conditions' => [
+            ['F', 'status', 'IN', ['STARTED', 'CHECK_24', 'PHOTO', 'REPRINT']],
         ],
     ],
 ];
 
 
 $created = 0;
-$skipped = 0;
+$replaced = 0;
 
 foreach ($policies as $p) {
     $checkStmt = $conn->prepare("SELECT id FROM status_workflow_rules WHERE name = ? LIMIT 1");
@@ -234,10 +246,26 @@ foreach ($policies as $p) {
     $existing = $checkStmt->get_result()->fetch_assoc();
     $checkStmt->close();
 
+    $wasReplaced = false;
     if ($existing) {
-        echo "SKIP (uz existuje): {$p['name']}\n";
-        $skipped++;
-        continue;
+        $oldRuleId = (int) $existing['id'];
+
+        $delAllowed = $conn->prepare("DELETE FROM status_workflow_rule_allowed_order_statuses WHERE rule_id = ?");
+        $delAllowed->bind_param('i', $oldRuleId);
+        $delAllowed->execute();
+        $delAllowed->close();
+
+        $delConditions = $conn->prepare("DELETE FROM status_workflow_rule_conditions WHERE rule_id = ?");
+        $delConditions->bind_param('i', $oldRuleId);
+        $delConditions->execute();
+        $delConditions->close();
+
+        $delRule = $conn->prepare("DELETE FROM status_workflow_rules WHERE id = ?");
+        $delRule->bind_param('i', $oldRuleId);
+        $delRule->execute();
+        $delRule->close();
+
+        $wasReplaced = true;
     }
 
     $active = 1;
@@ -277,11 +305,16 @@ foreach ($policies as $p) {
         $allowStmt->close();
     }
 
-    echo "OK (id={$ruleId}): {$p['name']}\n";
-    $created++;
+    if ($wasReplaced) {
+        echo "REPLACED (id={$ruleId}): {$p['name']}\n";
+        $replaced++;
+    } else {
+        echo "CREATED (id={$ruleId}): {$p['name']}\n";
+        $created++;
+    }
 }
 
-echo "\n--- Hotovo: {$created} vytvorenych, {$skipped} preskocenych ---\n";
+echo "\n--- Hotovo: {$created} novych, {$replaced} nahradenych ---\n";
 
 echo "\nPrepocitavam vsetky objednavky...\n";
 $orderIds = [];

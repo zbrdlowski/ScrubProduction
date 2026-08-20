@@ -430,6 +430,12 @@ $workerRes = $conn->query("SELECT
     WHERE oa.employee_id = e.id
       AND oa.removed_at IS NULL
   )
+  OR EXISTS (
+    SELECT 1
+    FROM order_item_assignments oia
+    WHERE oia.employee_id = e.id
+      AND oia.removed_at IS NULL
+  )
   ORDER BY e.firstname, e.lastname, e.id
 ");
 if ($workerRes) {
@@ -478,7 +484,7 @@ $quickTabCounts = [];
 $qtRes = $conn->query("SELECT
   SUM(status='SHIPPED') AS cnt_shipped,
   SUM(status='PENDING') AS cnt_pending,
-  SUM(status='NEED_INFO') AS cnt_need_info,
+  SUM(status='COMMUNICATION') AS cnt_communication,
   SUM(status='DRAFT_READY') AS cnt_draft_ready,
   SUM(status='READY_TO_INVOICE') AS cnt_ready_to_invoice,
   SUM(status='READY_TO_SHIP') AS cnt_ready_to_ship,
@@ -487,7 +493,7 @@ FROM orders");
 if ($qtRes && $qtRow = $qtRes->fetch_assoc()) {
   $quickTabCounts['shipped'] = (int) ($qtRow['cnt_shipped'] ?? 0);
   $quickTabCounts['pending'] = (int) ($qtRow['cnt_pending'] ?? 0);
-  $quickTabCounts['need_info'] = (int) ($qtRow['cnt_need_info'] ?? 0);
+  $quickTabCounts['communication'] = (int) ($qtRow['cnt_communication'] ?? 0);
   $quickTabCounts['draft_ready'] = (int) ($qtRow['cnt_draft_ready'] ?? 0);
   $quickTabCounts['ready_to_invoice'] = (int) ($qtRow['cnt_ready_to_invoice'] ?? 0);
   $quickTabCounts['ready_to_ship'] = (int) ($qtRow['cnt_ready_to_ship'] ?? 0);
@@ -671,15 +677,26 @@ if ($fQ !== '') {
 }
 
 if ($fWorker > 0) {
-  $where[] = "EXISTS (
-    SELECT 1
-    FROM order_assignments oaw
-    WHERE oaw.order_id = o.id
-      AND oaw.employee_id = ?
-      AND oaw.removed_at IS NULL
+  $where[] = "(
+    EXISTS (
+      SELECT 1
+      FROM order_assignments oaw
+      WHERE oaw.order_id = o.id
+        AND oaw.employee_id = ?
+        AND oaw.removed_at IS NULL
+    )
+    OR EXISTS (
+      SELECT 1
+      FROM order_item_assignments oiaw
+      JOIN order_items oiw ON oiw.id = oiaw.item_id
+      WHERE oiw.order_id = o.id
+        AND oiw.deleted_at IS NULL
+        AND oiaw.employee_id = ?
+        AND oiaw.removed_at IS NULL
+    )
   )";
-  $types .= 'i';
-  $params[] = $fWorker;
+  $types .= 'ii';
+  array_push($params, $fWorker, $fWorker);
 }
 
 // ── Nové WHERE podmienky ─────────────────────────────────────────────────────
@@ -1639,7 +1656,7 @@ $deptOptions = [
   $quickTabs = [
     /*['id' => 'all',         'label' => 'Všetky objednávky', 'params' => []],*/
     ['id' => 'open_orders', 'label' => 'Open Orders', 'params' => ['exclude_status' => 'CANCELLED,PENDING,SHIPPED'], 'badge_key' => 'open_orders'],
-    ['id' => 'need_info', 'label' => 'Need Info', 'params' => ['status' => 'NEED_INFO'], 'badge_key' => 'need_info'],
+    ['id' => 'cnt_communication', 'label' => 'Communication', 'params' => ['status' => 'COMMUNICATION'], 'badge_key' => 'communication'],
     [
       'id' => 'draft_ready',
       'label' => 'Draft Ready',
@@ -2502,16 +2519,17 @@ $deptOptions = [
                   </button>
                 <?php endif; ?>
               </td>
-              <td class="text-center" data-status-cell="<?= $orderId ?>">
-                <?php
-                $status = strtoupper((string) ($row['status'] ?? ''));
-
-                $statusLabel = ordersGetStatusLabel($conn, 'order', $status);
-                $statusColor = ordersGetStatusColor($conn, 'order', $status) ?: '#6c757d';
-                $statusStyle = 'background-color:' . htmlspecialchars($statusColor, ENT_QUOTES, 'UTF-8') . ';'
-                  . 'border-color:' . htmlspecialchars($statusColor, ENT_QUOTES, 'UTF-8') . ';'
-                  . 'color:#fff;';
-                ?>
+              <?php
+              $status = strtoupper((string) ($row['status'] ?? ''));
+              $statusLabel = ordersGetStatusLabel($conn, 'order', $status);
+              $statusColor = ordersGetStatusColor($conn, 'order', $status) ?: '#6c757d';
+              $statusStyle = 'background-color:' . htmlspecialchars($statusColor, ENT_QUOTES, 'UTF-8') . ';'
+                . 'border-color:' . htmlspecialchars($statusColor, ENT_QUOTES, 'UTF-8') . ';'
+                . 'color:#fff;';
+              ?>
+              <td class="text-center" data-status-cell="<?= $orderId ?>"
+                data-status-color="<?= htmlspecialchars($statusColor, ENT_QUOTES, 'UTF-8') ?>"
+                data-status-label="<?= htmlspecialchars($statusLabel ?: '-', ENT_QUOTES, 'UTF-8') ?>">
                 <button type="button" class="btn btn-xs orders-status-chip" style="<?= $statusStyle ?> pointer-events:none;">
                   <?= htmlspecialchars($statusLabel ?: '-') ?>
                 </button>
@@ -3645,7 +3663,7 @@ $deptOptions = [
       alert('Update request failed');
     });
   });
-  $(document).on('change', '.item-status-select', function () {
+  $(document).on('change.orderDetailActions', '.item-status-select', function () {
     const $select = $(this);
     const itemId = $select.data('item-id');
     const status = $select.val();

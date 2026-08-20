@@ -574,15 +574,34 @@ $stmt = $conn->prepare("SELECT
               END,
               oa.id
             LIMIT 1
-          ), 0)
+          ), 0), '|',
+          oia.id, '|',
+          COALESCE(oia.assignment_role, 'WORKER')
         )
-        ORDER BY e.firstname, e.lastname
+        ORDER BY
+          CASE COALESCE(oia.assignment_role, 'WORKER')
+            WHEN 'PREPARED' THEN 1
+            WHEN 'CHECKED' THEN 2
+            ELSE 3
+          END,
+          e.firstname,
+          e.lastname
         SEPARATOR ';;'
       )
       FROM order_item_assignments oia
       JOIN employees e ON e.id = oia.employee_id
       WHERE oia.item_id = order_items.id
         AND oia.removed_at IS NULL
+        AND (
+          oia.assignment_role IN ('PREPARED', 'CHECKED')
+          OR NOT EXISTS (
+            SELECT 1
+            FROM order_item_assignments oia_role
+            WHERE oia_role.item_id = order_items.id
+              AND oia_role.assignment_role IN ('PREPARED', 'CHECKED')
+              AND oia_role.removed_at IS NULL
+          )
+        )
     ) AS item_assigned_users
 FROM order_items
 WHERE order_id=?
@@ -1981,6 +2000,8 @@ ob_start();
                           'name' => $bits[1],
                           'photo' => $bits[2],
                           'assignment_id' => (int) ($bits[3] ?? 0),
+                          'item_assignment_id' => (int) ($bits[4] ?? 0),
+                          'assignment_role' => strtoupper((string) ($bits[5] ?? 'WORKER')),
                         ];
                       }
                     }
@@ -2093,6 +2114,13 @@ ob_start();
                       <?php
                       $name = trim((string) $a['name']);
                       $photo = trim((string) $a['photo']);
+                      $assignmentRole = strtoupper((string) ($a['assignment_role'] ?? 'WORKER'));
+                      $assignmentRoleLabel = $assignmentRole === 'PREPARED'
+                        ? 'Prepared'
+                        : ($assignmentRole === 'CHECKED' ? 'Checked / Ready' : 'Assigned');
+                      $assignmentRoleMark = $assignmentRole === 'PREPARED'
+                        ? 'P'
+                        : ($assignmentRole === 'CHECKED' ? 'C' : '');
 
                       $initials = '';
                       foreach (preg_split('/\s+/', $name) as $p) {
@@ -2103,7 +2131,7 @@ ob_start();
                       $initials = mb_substr($initials, 0, 2);
 
                       $canRemoveThisAssignment = (
-                        !empty($a['assignment_id'])
+                        !empty($a['item_assignment_id'])
                         && (
                           (int) ($_SESSION['permission'] ?? 0) >= 300
                           || (int) $a['id'] === $currentUserId
@@ -2115,17 +2143,25 @@ ob_start();
 
                         <?php if ($photo !== ''): ?>
                           <img src="images/<?= h($photo) ?>" class="img-circle elevation-2"
-                            style="width:28px; height:28px; object-fit:cover;" title="<?= h($name) ?>">
+                            style="width:28px; height:28px; object-fit:cover;" title="<?= h($name . ' — ' . $assignmentRoleLabel) ?>">
                         <?php else: ?>
                           <span class="badge badge-secondary"
-                            style="width:28px; height:28px; line-height:28px; border-radius:50%;" title="<?= h($name) ?>">
+                            style="width:28px; height:28px; line-height:28px; border-radius:50%;" title="<?= h($name . ' — ' . $assignmentRoleLabel) ?>">
                             <?= h($initials ?: '?') ?>
+                          </span>
+                        <?php endif; ?>
+
+                        <?php if ($assignmentRoleMark !== ''): ?>
+                          <span title="<?= h($assignmentRoleLabel) ?>"
+                            style="position:absolute; right:-4px; bottom:-5px; min-width:14px; height:14px; padding:0 3px; border-radius:7px; background:<?= $assignmentRole === 'CHECKED' ? '#28a745' : '#17a2b8' ?>; color:#fff; border:1px solid #25313d; font-size:8px; font-weight:800; line-height:12px; text-align:center;">
+                            <?= h($assignmentRoleMark) ?>
                           </span>
                         <?php endif; ?>
 
                         <?php if ($canRemoveThisAssignment): ?>
                           <button type="button" class="btn-remove-assignment"
-                            data-assignment-id="<?= (int) $a['assignment_id'] ?>"
+                            data-assignment-id="<?= (int) $a['item_assignment_id'] ?>"
+                            data-assignment-kind="item"
                             title="<?= ((int) $a['id'] === $currentUserId ? 'Remove my assignment' : 'Remove assignment') ?>">
                             ×
                           </button>
@@ -2824,5 +2860,3 @@ function saveSeatCoverOps($select) {
 $html = ob_get_clean();
 out(200, ['ok' => true, 'html' => $html]);
 ?>
-
-

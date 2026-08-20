@@ -231,13 +231,15 @@ switch ($action) {
             // rôznych modelov môže zdieľať rovnaký modelcode (napr. Honda CRF250R aj CRF450R
             // majú rovnaký grafický kód). Preto MUSÍME filtrovať aj podľa brand+model, inak by
             // update rangeyear zasiahol aj cudzie modely s tým istým kódom.
-            $stmt = $conn->prepare("SELECT exactyear FROM scrubdata WHERE modelcode = ? AND brand = ? AND model = ? FOR UPDATE");
+            $stmt = $conn->prepare("SELECT exactyear, rangeyear FROM scrubdata WHERE modelcode = ? AND brand = ? AND model = ? FOR UPDATE");
             $stmt->bind_param('sss', $modelcode, $brand, $model);
             $stmt->execute();
             $res = $stmt->get_result();
             $years = [];
+            $oldRangeyear = null;
             while ($r = $res->fetch_assoc()) {
                 $years[] = (int)$r['exactyear'];
+                $oldRangeyear = $r['rangeyear']; // všetky riadky tejto skupiny majú rovnaký rangeyear
             }
             $stmt->close();
 
@@ -256,6 +258,21 @@ switch ($action) {
                 $stmtU->bind_param('ssss', $newRangeyear, $modelcode, $brand, $model);
                 $stmtU->execute();
                 $stmtU->close();
+            }
+
+            // 1b) DÔLEŽITÉ: scrubdata_meta (Graphics/Plastics/Seat Cover/Configuration
+            // zaškrtnutia) je naviazaná na presnú kombináciu brand+model+rangeyear+modelcode.
+            // Ak zmeníme rangeyear v scrubdata a nepremietneme to aj sem, appka stratí spojenie
+            // so starou meta_json a všetko sa bude javiť ako nezaškrtnuté (aj keď dáta v DB
+            // fyzicky existujú, len "visia" na starom, už neplatnom rangeyear).
+            if ($oldRangeyear !== null && $oldRangeyear !== $newRangeyear) {
+                $stmtM = $conn->prepare(
+                    "UPDATE scrubdata_meta SET rangeyear = ?
+                     WHERE brand = ? AND model = ? AND modelcode = ? AND rangeyear = ?"
+                );
+                $stmtM->bind_param('sssss', $newRangeyear, $brand, $model, $modelcode, $oldRangeyear);
+                $stmtM->execute();
+                $stmtM->close();
             }
 
             // 2) Insert nového riadku pre nový rok
@@ -428,6 +445,118 @@ switch ($action) {
                 'inserted' => $inserted,
                 'updated' => $updated,
                 'deleted' => $deleted,
+            ]);
+        } catch (Exception $e) {
+            $conn->rollback();
+            jexit(['ok' => false, 'error' => $e->getMessage()]);
+        }
+        break;
+
+    // ------------------------------------------------------------------
+    // Zmazanie KONKRÉTNEHO roku modelu (presná kombinácia brand+model+
+    // modelcode+exactyear). NIKDY nemaže podľa samotného modelcode — ten
+    // môže byť zdieľaný viacerými modelmi (rovnaké plasty/templaty), preto
+    // by to inak mohlo omylom vymazať dáta cudzieho modelu.
+    //
+    // scrubcompat (compatcode+compatyear) sa zmaže IBA VTEDY, ak po zmazaní
+    // tohto riadku už žiadny INÝ model (iný brand/model) nepoužíva rovnaký
+    // modelcode+rok — inak by sme zmazali kompatibilné modely, ktoré ešte
+    // potrebuje ten druhý (zdieľaný) model.
+    // ------------------------------------------------------------------
+    case 'delete_year':
+        $data = json_decode(file_get_contents('php://input'), true);
+        if (!is_array($data)) {
+            jexit(['ok' => false, 'error' => 'Neplatné dáta.']);
+        }
+
+        $modelcode = trim($data['modelcode'] ?? '');
+        $brand = trim($data['brand'] ?? '');
+        $model = trim($data['model'] ?? '');
+        $year = (int) ($data['year'] ?? 0);
+
+        if ($modelcode === '' || $brand === '' || $model === '' || $year <= 0) {
+            jexit(['ok' => false, 'error' => 'Chýbajú povinné polia (modelcode/brand/model/rok).']);
+        }
+
+        $conn->begin_transaction();
+        try {
+            // 1) Nájdi a zamkni presne TENTO riadok (nie celú skupinu)
+            $stmt = $conn->prepare(
+                "SELECT lineid FROM scrubdata WHERE brand=? AND model=? AND modelcode=? AND exactyear=? FOR UPDATE"
+            );
+            $stmt->bind_param('sssi', $brand, $model, $modelcode, $year);
+            $stmt->execute();
+            $row = $stmt->get_result()->fetch_assoc();
+            $stmt->close();
+
+            if (!$row) {
+                throw new Exception("Záznam pre {$brand} {$model} [{$modelcode}] rok {$year} neexistuje (možno už bol zmazaný).");
+            }
+
+            $stmt = $conn->prepare("DELETE FROM scrubdata WHERE lineid = ?");
+            $stmt->bind_param('i', $row['lineid']);
+            $stmt->execute();
+            $stmt->close();
+
+            // 2) Prepočítaj rangeyear zo zostávajúcich rokov TEJTO skupiny (brand+model+modelcode)
+            $stmt = $conn->prepare("SELECT exactyear, rangeyear FROM scrubdata WHERE brand=? AND model=? AND modelcode=?");
+            $stmt->bind_param('sss', $brand, $model, $modelcode);
+            $stmt->execute();
+            $res = $stmt->get_result();
+            $remainingYears = [];
+            $oldRangeyear = null;
+            while ($r = $res->fetch_assoc()) {
+                $remainingYears[] = (int) $r['exactyear'];
+                $oldRangeyear = $r['rangeyear'];
+            }
+            $stmt->close();
+
+            if (!empty($remainingYears)) {
+                $newRangeyear = (min($remainingYears) === max($remainingYears))
+                    ? (string) min($remainingYears)
+                    : min($remainingYears) . '-' . max($remainingYears);
+
+                if ($oldRangeyear !== $newRangeyear) {
+                    $stmtU = $conn->prepare("UPDATE scrubdata SET rangeyear=? WHERE brand=? AND model=? AND modelcode=?");
+                    $stmtU->bind_param('ssss', $newRangeyear, $brand, $model, $modelcode);
+                    $stmtU->execute();
+                    $stmtU->close();
+
+                    // rovnaká propagácia do scrubdata_meta ako pri pridávaní roku,
+                    // aby sa nestratili zaškrtnutia Graphics/Plastics/Seat Cover/Configuration
+                    $stmtM = $conn->prepare(
+                        "UPDATE scrubdata_meta SET rangeyear=? WHERE brand=? AND model=? AND modelcode=? AND rangeyear=?"
+                    );
+                    $stmtM->bind_param('sssss', $newRangeyear, $brand, $model, $modelcode, $oldRangeyear);
+                    $stmtM->execute();
+                    $stmtM->close();
+                }
+            }
+
+            // 3) scrubcompat zmaž len vtedy, ak už žiadny INÝ model (iný brand/model)
+            // nepoužíva rovnaký modelcode+rok
+            $stmt = $conn->prepare("SELECT COUNT(*) AS cnt FROM scrubdata WHERE modelcode=? AND exactyear=?");
+            $stmt->bind_param('si', $modelcode, $year);
+            $stmt->execute();
+            $stillUsedElsewhere = (int) $stmt->get_result()->fetch_assoc()['cnt'];
+            $stmt->close();
+
+            $deletedCompat = 0;
+            $compatKept = $stillUsedElsewhere > 0;
+            if (!$compatKept) {
+                $stmt = $conn->prepare("DELETE FROM scrubcompat WHERE compatcode=? AND compatyear=?");
+                $stmt->bind_param('si', $modelcode, $year);
+                $stmt->execute();
+                $deletedCompat = $stmt->affected_rows;
+                $stmt->close();
+            }
+
+            $conn->commit();
+            jexit([
+                'ok' => true,
+                'deleted_compat' => $deletedCompat,
+                'compat_kept' => $compatKept,
+                'remaining_years' => $remainingYears,
             ]);
         } catch (Exception $e) {
             $conn->rollback();

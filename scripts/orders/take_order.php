@@ -11,6 +11,7 @@ if (!isset($_SESSION['permission'])) {
 
 require_once __DIR__ . '/../../includes/conn.php';
 require_once __DIR__ . '/../../includes/render_assigned_users.php';
+require_once __DIR__ . '/../../includes/order_item_assignment_helpers.php';
 require_once __DIR__ . '/activity_helper.php';
 
 $orderId = (int)($_POST['order_id'] ?? 0);
@@ -182,14 +183,21 @@ $rm->close();
 $itemType = $itemTypeMap[$deptCode] ?? '';
 
 if ($itemType !== '') {
+$itemTypeCondition = $deptCode === 'PLASTICS'
+  ? "item_type_code IN ('P', 'T', 'M')"
+  : "item_type_code = ?";
 $stmtItems = $conn->prepare("
   SELECT id
   FROM order_items
   WHERE order_id = ?
     AND deleted_at IS NULL
-    AND item_type_code = ?
+    AND {$itemTypeCondition}
 ");
-$stmtItems->bind_param('is', $orderId, $itemType);
+if ($deptCode === 'PLASTICS') {
+  $stmtItems->bind_param('i', $orderId);
+} else {
+  $stmtItems->bind_param('is', $orderId, $itemType);
+}
 $stmtItems->execute();
 $itemsRes = $stmtItems->get_result();
 
@@ -199,22 +207,8 @@ while ($itemRow = $itemsRes->fetch_assoc()) {
 }
 $stmtItems->close();
 
-if (count($itemIds) === 1) {
-  $orderItemId = $itemIds[0];
-
-  $stmtAssignItem = $conn->prepare("
-    INSERT INTO order_item_assignments
-      (order_id, item_id, employee_id, assigned_by)
-    VALUES
-      (?, ?, ?, ?)
-    ON DUPLICATE KEY UPDATE
-      removed_at = NULL,
-      assigned_by = VALUES(assigned_by),
-      assigned_at = NOW()
-  ");
-  $stmtAssignItem->bind_param('iiii', $orderId, $orderItemId, $userId, $userId);
-  $stmtAssignItem->execute();
-  $stmtAssignItem->close();
+foreach ($itemIds as $orderItemId) {
+  orderItemSetRoleAssignment($conn, $orderId, $orderItemId, $userId, 'PREPARED');
 }
 }
 
