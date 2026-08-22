@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 require_once dirname(__DIR__, 2) . '/includes/get_order_detail_product_spec_selects.php';
+require_once dirname(__DIR__, 2) . '/includes/orders_status_helpers.php';
 require_once dirname(__DIR__) . '/orders/department_config.php';
 
 function customOrdersFlash(string $type, string $message, array $meta = []): void
@@ -118,6 +119,52 @@ function customOrdersItemTypeToDepartment(string $type): string
   }
 }
 
+function customOrdersItemStatusDefinitions(mysqli $conn, array $item, bool $activeOnly = true): array
+{
+  return ordersGetItemStatusDefinitionsForItem($conn, $item, $activeOnly);
+}
+
+function customOrdersResolveItemStatus(mysqli $conn, array $item, ?string $requestedStatus = null): string
+{
+  $activeDefinitions = customOrdersItemStatusDefinitions($conn, $item, true);
+  $allDefinitions = customOrdersItemStatusDefinitions($conn, $item, false);
+  $requestedStatus = strtoupper(trim((string) $requestedStatus));
+
+  if ($requestedStatus !== '' && isset($allDefinitions[$requestedStatus])) {
+    return $requestedStatus;
+  }
+
+  // Custom orders historically stored DRAFT/NEW. The production catalogue calls
+  // the actual initial draft state DRAFT_✗, so use it whenever it is available.
+  if (isset($activeDefinitions['DRAFT_✗'])) {
+    return 'DRAFT_✗';
+  }
+
+  return (string) (array_key_first($activeDefinitions) ?? ($requestedStatus !== '' ? $requestedStatus : 'NEW'));
+}
+
+function customOrdersDraftStatusDefinitions(mysqli $conn): array
+{
+  $drafts = [];
+  foreach (['G', 'P', 'S', 'F'] as $department) {
+    foreach (ordersGetItemStatusDefinitions($conn, $department, true) as $code => $meta) {
+      $label = trim((string) ($meta['label'] ?? $code));
+      if (strpos(strtoupper((string) $code), 'DRAFT') !== 0 && stripos($label, 'Draft') !== 0) {
+        continue;
+      }
+      if (!isset($drafts[$code]) || (int) ($meta['sort_order'] ?? 0) < (int) ($drafts[$code]['sort_order'] ?? PHP_INT_MAX)) {
+        $drafts[$code] = $meta;
+      }
+    }
+  }
+
+  uasort($drafts, static function (array $left, array $right): int {
+    return [(int) ($left['sort_order'] ?? 0), (string) ($left['label'] ?? '')]
+      <=> [(int) ($right['sort_order'] ?? 0), (string) ($right['label'] ?? '')];
+  });
+  return $drafts;
+}
+
 function customOrdersGraphicsSubcategoryLabels(): array
 {
   return defined('GRAPHICS_SUBCAT_LABELS') && is_array(GRAPHICS_SUBCAT_LABELS)
@@ -207,12 +254,15 @@ function customOrdersFilterSpecDefinitionsForBuilder(array $definitions, string 
   return $filtered;
 }
 
-function customOrdersTableExists(mysqli $conn, string $table): bool
+function customOrdersTableExists(mysqli $conn, string $table, bool $refresh = false): bool
 {
   static $cache = [];
   $table = trim($table);
   if ($table === '') {
     return false;
+  }
+  if ($refresh) {
+    unset($cache[$table]);
   }
   if (array_key_exists($table, $cache)) {
     return $cache[$table];
@@ -287,6 +337,35 @@ function customOrdersEnsureSchema(mysqli $conn): void
         CONSTRAINT `fk_custom_order_notes_order` FOREIGN KEY (`custom_order_id`) REFERENCES `custom_orders` (`id`) ON DELETE CASCADE
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
     ");
+  }
+
+  if (!customOrdersTableExists($conn, 'custom_order_photos')) {
+    if ($conn->query("
+      CREATE TABLE IF NOT EXISTS `custom_order_photos` (
+        `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+        `custom_order_id` bigint(20) NOT NULL,
+        `file_name` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
+        `original_name` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
+        `file_path` varchar(500) COLLATE utf8mb4_unicode_ci NOT NULL,
+        `mime_type` varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL,
+        `file_size` int(10) unsigned NOT NULL DEFAULT 0,
+        `width` int(10) unsigned DEFAULT NULL,
+        `height` int(10) unsigned DEFAULT NULL,
+        `created_by` int(11) DEFAULT NULL,
+        `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+        `deleted_at` datetime DEFAULT NULL,
+        `deleted_by` int(11) DEFAULT NULL,
+        `production_photo_id` int(10) unsigned DEFAULT NULL,
+        `exported_at` datetime DEFAULT NULL,
+        PRIMARY KEY (`id`),
+        KEY `ix_custom_order_photos_order` (`custom_order_id`),
+        KEY `ix_custom_order_photos_deleted` (`deleted_at`),
+        KEY `ix_custom_order_photos_production` (`production_photo_id`),
+        CONSTRAINT `fk_custom_order_photos_order` FOREIGN KEY (`custom_order_id`) REFERENCES `custom_orders` (`id`) ON DELETE CASCADE
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    ")) {
+      customOrdersTableExists($conn, 'custom_order_photos', true);
+    }
   }
 
   $columns = customOrdersTableColumns($conn, 'custom_orders');
@@ -454,6 +533,7 @@ function customOrdersActivityFieldLabels(): array
     'unit_price' => 'Unit price',
     'is_upsell' => 'Upsell',
     'upsell_source' => 'Upsell source',
+    'status' => 'Action status',
   ];
 }
 
@@ -765,6 +845,17 @@ function customOrdersItemPayloadFromPost(mysqli $conn, string $type = 'G'): arra
     'category_info' => trim((string) ($_POST['category_info'] ?? '')),
   ];
 
+  foreach ([
+    'category_brand' => 'category_brand',
+    'category_model' => 'category_model',
+    'category_year_range' => 'category_year_range',
+  ] as $postKey => $optionKey) {
+    $value = trim((string) ($_POST[$postKey] ?? ''));
+    if ($value !== '') {
+      $options[$optionKey] = $value;
+    }
+  }
+
   foreach ($definitions as $definition) {
     $specKey = trim((string) ($definition['spec_key'] ?? ''));
     $sourceKey = trim((string) ($definition['source_key'] ?? ''));
@@ -885,6 +976,25 @@ function customOrdersGetOrder(mysqli $conn, int $orderId): ?array
       while ($row = $res->fetch_assoc()) {
         $order['notes'][] = $row;
       }
+    }
+  }
+
+  $order['photos'] = [];
+  if (customOrdersTableExists($conn, 'custom_order_photos')) {
+    $stmt = $conn->prepare('
+      SELECT id, file_name, original_name, file_path, mime_type, file_size, width, height, created_at, production_photo_id
+      FROM custom_order_photos
+      WHERE custom_order_id = ? AND deleted_at IS NULL
+      ORDER BY id DESC
+    ');
+    if ($stmt) {
+      $stmt->bind_param('i', $orderId);
+      $stmt->execute();
+      $res = $stmt->get_result();
+      while ($row = $res->fetch_assoc()) {
+        $order['photos'][] = $row;
+      }
+      $stmt->close();
     }
   }
 
@@ -1282,7 +1392,7 @@ function customOrdersExportToProduction(mysqli $conn, int $customOrderId, int $u
       INSERT INTO order_items
         (order_id, line_no, sku, title, custom_label, item_type_code, qty, unit_price, options_json, internal_options_json, created_by, updated_by, updated_at, status)
       VALUES
-        (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), \'NEW\')
+        (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), ?)
     ');
     foreach ($order['items'] as $item) {
       $lineNo = (int) $item['line_no'];
@@ -1300,13 +1410,58 @@ function customOrdersExportToProduction(mysqli $conn, int $customOrderId, int $u
       $unitPrice = (float) $item['unit_price'];
       $optionsJson = (string) ($item['options_json'] ?? '{}');
       $internalOptionsJson = (string) ($item['internal_options_json'] ?? '{}');
-      $stmt->bind_param('iissssidssii', $productionOrderId, $lineNo, $sku, $title, $label, $typeCode, $qty, $unitPrice, $optionsJson, $internalOptionsJson, $userId, $userId);
+      $productionItemStatus = customOrdersResolveItemStatus($conn, $item, (string) ($item['status'] ?? ''));
+      $stmt->bind_param('iissssidssiis', $productionOrderId, $lineNo, $sku, $title, $label, $typeCode, $qty, $unitPrice, $optionsJson, $internalOptionsJson, $userId, $userId, $productionItemStatus);
       $stmt->execute();
     }
     $stmt->close();
 
     sync_order_categories($conn, $productionOrderId);
     recalculateOrderWorkflow($conn, $productionOrderId);
+
+    if (customOrdersTableExists($conn, 'custom_order_photos') && customOrdersTableExists($conn, 'order_photos')) {
+      $photoSelect = $conn->prepare('
+        SELECT id, file_name, original_name, file_path, mime_type, file_size, width, height, created_by
+        FROM custom_order_photos
+        WHERE custom_order_id = ? AND deleted_at IS NULL AND production_photo_id IS NULL
+        ORDER BY id ASC
+      ');
+      $photoInsert = $conn->prepare('
+        INSERT INTO order_photos
+          (order_id, file_name, original_name, file_path, mime_type, file_size, width, height, created_by)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ');
+      $photoLink = $conn->prepare('
+        UPDATE custom_order_photos
+        SET production_photo_id = ?, exported_at = NOW()
+        WHERE id = ? AND custom_order_id = ?
+      ');
+      if (!$photoSelect || !$photoInsert || !$photoLink) {
+        throw new RuntimeException('Custom order photos could not be prepared for export.');
+      }
+      $photoSelect->bind_param('i', $customOrderId);
+      $photoSelect->execute();
+      $photoResult = $photoSelect->get_result();
+      while ($photo = $photoResult->fetch_assoc()) {
+        $photoId = (int) $photo['id'];
+        $fileName = (string) $photo['file_name'];
+        $originalName = (string) $photo['original_name'];
+        $filePath = (string) $photo['file_path'];
+        $mimeType = (string) $photo['mime_type'];
+        $fileSize = (int) $photo['file_size'];
+        $width = (int) $photo['width'];
+        $height = (int) $photo['height'];
+        $createdBy = (int) ($photo['created_by'] ?? $userId);
+        $photoInsert->bind_param('issssiiii', $productionOrderId, $fileName, $originalName, $filePath, $mimeType, $fileSize, $width, $height, $createdBy);
+        $photoInsert->execute();
+        $productionPhotoId = (int) $photoInsert->insert_id;
+        $photoLink->bind_param('iii', $productionPhotoId, $photoId, $customOrderId);
+        $photoLink->execute();
+      }
+      $photoSelect->close();
+      $photoInsert->close();
+      $photoLink->close();
+    }
 
     log_order_activity(
       $conn,

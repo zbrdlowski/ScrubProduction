@@ -82,7 +82,9 @@ $data = [
   'shipping_phone' => $postString('shipping_phone', $existing),
   'shipping_method' => $postString('shipping_method', $existing),
   'shipping_price' => $postFloat('shipping_price', $existing),
-  'currency' => $postString('currency', $existing) ?: 'EUR',
+  // Custom orders currently use one fixed currency. Change this constant value here
+  // if the whole custom-order workflow moves to another currency in the future.
+  'currency' => 'EUR',
   'deposit_revision_limit' => $postInt('deposit_revision_limit', $existing, 0, 20),
   'deposit_revision_used' => $postInt('deposit_revision_used', $existing, 0, 20),
   'graphics_brief' => $postString('graphics_brief', $existing),
