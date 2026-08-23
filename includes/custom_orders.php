@@ -3321,8 +3321,8 @@ if (!$customOrdersDetailRequest) {
                             <input type="hidden" name="category_model" value="<?= h($editOptions['category_model'] ?? '') ?>">
                             <input type="hidden" name="category_year_range" value="<?= h($editOptions['category_year_range'] ?? '') ?>">
                             <input type="hidden" name="category_modelcode" value="<?= h($editOptions['category_modelcode'] ?? '') ?>">
-                            <button type="button" class="btn btn-sm btn-outline-info custom-category-info-trigger<?= $builderCategoryInfo === '' ? ' is-empty' : '' ?>" title="Select or change Brand, Model and Year range">
-                              <span class="custom-category-info-text"><?= h($builderCategoryInfo !== '' ? $builderCategoryInfo : 'Select Brand / Model / Year') ?></span>
+                            <button type="button" class="btn btn-sm btn-outline-info custom-category-info-trigger<?= $builderCategoryInfo === '' ? ' is-empty' : '' ?>" title="Select or change Brand, Model, Year range and Model Code">
+                              <span class="custom-category-info-text"><?= h($builderCategoryInfo !== '' ? $builderCategoryInfo : 'Select Brand / Model / Year / Model Code') ?></span>
                               <i class="fas fa-chevron-right" aria-hidden="true"></i>
                             </button>
                           </td>
@@ -3518,8 +3518,8 @@ if (!$customOrdersDetailRequest) {
                             <input type="hidden" name="category_model" value="<?= h($itemOptions['category_model'] ?? '') ?>">
                             <input type="hidden" name="category_year_range" value="<?= h($itemOptions['category_year_range'] ?? '') ?>">
                             <input type="hidden" name="category_modelcode" value="<?= h($itemOptions['category_modelcode'] ?? '') ?>">
-                            <button type="button" class="btn btn-sm btn-outline-info custom-category-info-trigger<?= $itemCategoryInfo === '' ? ' is-empty' : '' ?>" title="Select or change Brand, Model and Year range">
-                              <span class="custom-category-info-text"><?= h($itemCategoryInfo !== '' ? $itemCategoryInfo : 'Select Brand / Model / Year') ?></span>
+                            <button type="button" class="btn btn-sm btn-outline-info custom-category-info-trigger<?= $itemCategoryInfo === '' ? ' is-empty' : '' ?>" title="Select or change Brand, Model, Year range and Model Code">
+                              <span class="custom-category-info-text"><?= h($itemCategoryInfo !== '' ? $itemCategoryInfo : 'Select Brand / Model / Year / Model Code') ?></span>
                               <i class="fas fa-chevron-right" aria-hidden="true"></i>
                             </button>
                           </td>
