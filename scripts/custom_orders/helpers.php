@@ -849,6 +849,7 @@ function customOrdersItemPayloadFromPost(mysqli $conn, string $type = 'G'): arra
     'category_brand' => 'category_brand',
     'category_model' => 'category_model',
     'category_year_range' => 'category_year_range',
+    'category_modelcode' => 'category_modelcode',
   ] as $postKey => $optionKey) {
     $value = trim((string) ($_POST[$postKey] ?? ''));
     if ($value !== '') {

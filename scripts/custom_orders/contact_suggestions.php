@@ -4,6 +4,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/bootstrap.php';
 
 header('Content-Type: application/json; charset=utf-8');
+header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
 
 $query = trim((string) ($_GET['q'] ?? ''));
 $excludeOrderId = max(0, (int) ($_GET['exclude_id'] ?? 0));
@@ -39,6 +40,47 @@ $result = $stmt->get_result();
 
 $suggestions = [];
 $seen = [];
+$normalizeIdentityText = static function (?string $value): string {
+  $value = preg_replace('/\s+/u', ' ', trim((string) $value)) ?? '';
+  return mb_strtolower($value, 'UTF-8');
+};
+$contactIdentityKey = static function (
+  string $company,
+  string $email,
+  string $phone,
+  string $socialHandle,
+  string $name,
+  string $zip,
+  string $country,
+  string $city
+) use ($normalizeIdentityText): string {
+  $email = preg_replace('/\s+/u', '', $normalizeIdentityText($email)) ?? '';
+  if ($email !== '') {
+    return 'email:' . $email;
+  }
+
+  $phoneDigits = preg_replace('/\D+/', '', $phone) ?? '';
+  if (strlen($phoneDigits) >= 6) {
+    return 'phone:' . $phoneDigits;
+  }
+
+  $company = $normalizeIdentityText($company);
+  if ($company !== '') {
+    return 'company:' . $company . '|' . $normalizeIdentityText($zip) . '|' . strtoupper(trim($country));
+  }
+
+  $socialHandle = ltrim($normalizeIdentityText($socialHandle), '@');
+  if ($socialHandle !== '') {
+    return 'nick:' . $socialHandle;
+  }
+
+  $name = $normalizeIdentityText($name);
+  if ($name !== '') {
+    return 'name:' . $name . '|' . $normalizeIdentityText($city) . '|' . strtoupper(trim($country));
+  }
+
+  return '';
+};
 while ($row = $result->fetch_assoc()) {
   $billingName = trim((string) ($row['billing_name'] ?: $row['customer_name']));
   $billingEmail = trim((string) ($row['billing_email'] ?: $row['customer_email']));
@@ -47,13 +89,16 @@ while ($row = $result->fetch_assoc()) {
   $shippingEmail = trim((string) ($row['shipping_email'] ?: $billingEmail));
   $shippingPhone = trim((string) ($row['shipping_phone'] ?: $billingPhone));
   $company = trim((string) ($row['billing_company'] ?: $row['shipping_company']));
-  $identityKey = strtolower(implode('|', array_filter([
+  $identityKey = $contactIdentityKey(
     $company,
     $billingEmail,
     $billingPhone,
     trim((string) $row['social_handle']),
     $billingName,
-  ], static fn(string $value): bool => $value !== '')));
+    trim((string) ($row['billing_zip'] ?: $row['shipping_zip'])),
+    trim((string) ($row['billing_country'] ?: $row['shipping_country'])),
+    trim((string) ($row['billing_city'] ?: $row['shipping_city']))
+  );
   if ($identityKey === '' || isset($seen[$identityKey])) {
     continue;
   }
@@ -145,9 +190,16 @@ if (count($suggestions) < 10) {
     $shippingEmail = trim((string) ($row['shipping_email'] ?: $billingEmail));
     $shippingPhone = trim((string) ($row['shipping_phone'] ?: $billingPhone));
     $company = trim((string) ($row['billing_company'] ?: $row['shipping_company']));
-    $identityKey = strtolower(implode('|', array_filter([
-      $company, $billingEmail, $billingPhone, $socialHandle, $billingName,
-    ], static fn(string $value): bool => $value !== '')));
+    $identityKey = $contactIdentityKey(
+      $company,
+      $billingEmail,
+      $billingPhone,
+      $socialHandle,
+      $billingName,
+      trim((string) ($row['billing_zip'] ?: $row['shipping_zip'])),
+      trim((string) ($row['billing_country'] ?: $row['shipping_country'])),
+      trim((string) ($row['billing_city'] ?: $row['shipping_city']))
+    );
     if ($identityKey === '' || isset($seen[$identityKey])) {
       continue;
     }

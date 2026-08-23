@@ -4,6 +4,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/bootstrap.php';
 
 header('Content-Type: application/json; charset=utf-8');
+header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
 
 try {
   $level = trim((string) ($_GET['level'] ?? 'brands'));
@@ -32,12 +33,15 @@ try {
     if ($brand === '' || $model === '') {
       throw new InvalidArgumentException('Brand and model are required.');
     }
-    $stmt = $conn->prepare("SELECT DISTINCT rangeyear AS value FROM scrubdata WHERE brand = ? AND model = ? AND rangeyear <> '' ORDER BY rangeyear DESC");
+    $stmt = $conn->prepare("SELECT DISTINCT rangeyear AS value, modelcode FROM scrubdata WHERE brand = ? AND model = ? AND rangeyear <> '' ORDER BY rangeyear DESC, modelcode ASC");
     $stmt->bind_param('ss', $brand, $model);
     $stmt->execute();
     $result = $stmt->get_result();
     while ($row = $result->fetch_assoc()) {
-      $values[] = (string) $row['value'];
+      $values[] = [
+        'value' => (string) $row['value'],
+        'modelcode' => trim((string) ($row['modelcode'] ?? '')),
+      ];
     }
     $stmt->close();
   } else {

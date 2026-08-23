@@ -10,9 +10,9 @@ $flash = customOrdersTakeFlash();
 $statuses = customOrdersOrderStatuses();
 $allowedTypes = customOrdersAllowedItemTypes();
 $paymentKinds = customOrdersPaymentKinds();
-// CUSTOM ORDERS: Add any new payment methods here if another option is needed later.
+// CUSTOM ORDERS: Ak treba pridaj novy sposob platby, napr. Card, Bank Transfer, Cash, PayPal, Stripe.
 $customOrderPaymentMethods = ['PayPal', 'Bank Transfer', 'Cash'];
-// CUSTOM ORDERS: Add any new shipping methods here if another carrier/service is introduced.
+// CUSTOM ORDERS: Ak treba pridaj novy sposob dopravy, napr. DHL, GLS, FedEx Economy, FedEx Express, Post, Pick Up.
 $customOrderShippingMethods = ['FedEx Economy', 'FedEx Express', 'GLS', 'Post', 'Pick Up'];
 $assignableEmployees = customOrdersAssignableEmployees($conn);
 $invalidFields = [];
@@ -491,7 +491,7 @@ function customOrderHelpMap(string $lang = 'sk'): array
     'graphics_subcategory' => 'Spresni druh graphics produktu. Vyber meni dostupne specifikacie aj workflow statusy.',
     'category_brand' => 'Znacka motorky, pre ktoru je item urceny.',
     'category_model' => 'Model motorky v ramci vybranej znacky.',
-    'category_year_range' => 'Generacia alebo rozsah rokov kompatibility.',
+    'category_year_range' => 'Generacia alebo rozsah rokov kompatibility. Po vybere sa zo scrubdata automaticky doplni aj Model Code.',
     'notes_block' => 'Append-only poznamky. Nove zaznamy sa pridavaju do historie a povodne sa neprepisuju.',
     'note_type' => 'Customer = poziadavka zakaznika, Internal = interna informacia, Revision = poziadavka na upravu.',
     'note_body' => 'Nova samostatna poznamka, ktora sa po ulozeni prida do historie objednavky.',
@@ -616,7 +616,7 @@ function customOrderHelpMap(string $lang = 'sk'): array
     'graphics_subcategory' => 'Specifies the graphics product type and changes available specifications and workflow statuses.',
     'category_brand' => 'Bike brand for which the item is intended.',
     'category_model' => 'Bike model within the selected brand.',
-    'category_year_range' => 'Compatible generation or year range.',
+    'category_year_range' => 'Compatible generation or year range. Selecting it also loads the Model Code from scrubdata.',
     'notes_block' => 'Append-only notes. New entries are added to history and do not overwrite earlier notes.',
     'note_type' => 'Customer = customer request, Internal = internal information, Revision = requested change.',
     'note_body' => 'A new standalone note that is appended to the order history when saved.',
@@ -3320,6 +3320,7 @@ if (!$customOrdersDetailRequest) {
                             <input type="hidden" name="category_brand" value="<?= h($editOptions['category_brand'] ?? '') ?>">
                             <input type="hidden" name="category_model" value="<?= h($editOptions['category_model'] ?? '') ?>">
                             <input type="hidden" name="category_year_range" value="<?= h($editOptions['category_year_range'] ?? '') ?>">
+                            <input type="hidden" name="category_modelcode" value="<?= h($editOptions['category_modelcode'] ?? '') ?>">
                             <button type="button" class="btn btn-sm btn-outline-info custom-category-info-trigger<?= $builderCategoryInfo === '' ? ' is-empty' : '' ?>" title="Select or change Brand, Model and Year range">
                               <span class="custom-category-info-text"><?= h($builderCategoryInfo !== '' ? $builderCategoryInfo : 'Select Brand / Model / Year') ?></span>
                               <i class="fas fa-chevron-right" aria-hidden="true"></i>
@@ -3516,6 +3517,7 @@ if (!$customOrdersDetailRequest) {
                             <input type="hidden" name="category_brand" value="<?= h($itemOptions['category_brand'] ?? '') ?>">
                             <input type="hidden" name="category_model" value="<?= h($itemOptions['category_model'] ?? '') ?>">
                             <input type="hidden" name="category_year_range" value="<?= h($itemOptions['category_year_range'] ?? '') ?>">
+                            <input type="hidden" name="category_modelcode" value="<?= h($itemOptions['category_modelcode'] ?? '') ?>">
                             <button type="button" class="btn btn-sm btn-outline-info custom-category-info-trigger<?= $itemCategoryInfo === '' ? ' is-empty' : '' ?>" title="Select or change Brand, Model and Year range">
                               <span class="custom-category-info-text"><?= h($itemCategoryInfo !== '' ? $itemCategoryInfo : 'Select Brand / Model / Year') ?></span>
                               <i class="fas fa-chevron-right" aria-hidden="true"></i>
@@ -3711,13 +3713,13 @@ if (!$customOrdersDetailRequest) {
                         </select>
                       </div>
                       <div class="custom-category-picker-step">
-                        <label><span class="custom-category-picker-step-number">3</span> Year range<?= customOrderHelp('category_year_range') ?></label>
+                        <label><span class="custom-category-picker-step-number">3</span> Year range / Model Code<?= customOrderHelp('category_year_range') ?></label>
                         <select class="form-control form-control-sm" data-category-year disabled>
                           <option value="">Select model first</option>
                         </select>
                       </div>
                     </div>
-                    <div class="custom-category-picker-preview" data-category-preview>Select Brand, Model and Year range.</div>
+                    <div class="custom-category-picker-preview" data-category-preview>Select Brand, Model and Year range to load Model Code.</div>
                     <div class="small text-danger mt-2" data-category-error hidden></div>
                   </div>
                   <div class="modal-footer">
@@ -4022,7 +4024,7 @@ if (!$customOrdersDetailRequest) {
       if (row) row.classList.remove('order-row-open');
     }
 
-    function customCategoryPickerSetOptions(select, values, placeholder, selectedValue) {
+    function customCategoryPickerSetOptions(select, values, placeholder, selectedValue, selectedModelCode) {
       if (!select) return false;
       select.innerHTML = '';
       var placeholderOption = document.createElement('option');
@@ -4031,11 +4033,17 @@ if (!$customOrdersDetailRequest) {
       select.appendChild(placeholderOption);
 
       var selectedFound = false;
-      (values || []).forEach(function (value) {
+      (values || []).forEach(function (entry) {
+        var isStructured = entry && typeof entry === 'object';
+        var value = isStructured ? String(entry.value || '') : String(entry);
+        var modelcode = isStructured ? String(entry.modelcode || '').trim() : '';
         var option = document.createElement('option');
-        option.value = String(value);
-        option.textContent = String(value);
-        if (selectedValue && String(value) === String(selectedValue)) {
+        option.value = value;
+        option.textContent = modelcode ? (value + ' | ' + modelcode) : value;
+        option.setAttribute('data-modelcode', modelcode);
+        var valueMatches = selectedValue && value === String(selectedValue);
+        var codeMatches = !selectedModelCode || modelcode === String(selectedModelCode);
+        if (!selectedFound && valueMatches && codeMatches) {
           option.selected = true;
           selectedFound = true;
         }
@@ -4080,6 +4088,11 @@ if (!$customOrdersDetailRequest) {
       var targetForm = null;
       var requestSerial = 0;
 
+      function selectedModelCode() {
+        var option = yearSelect.options[yearSelect.selectedIndex];
+        return option ? String(option.getAttribute('data-modelcode') || '').trim() : '';
+      }
+
       function showError(error) {
         errorBox.textContent = error && error.message ? error.message : String(error);
         errorBox.hidden = false;
@@ -4091,9 +4104,9 @@ if (!$customOrdersDetailRequest) {
       }
 
       function updatePreview() {
-        var values = [brandSelect.value, modelSelect.value, yearSelect.value];
+        var values = [brandSelect.value, modelSelect.value, yearSelect.value, selectedModelCode()];
         var complete = values.every(function (value) { return value !== ''; });
-        preview.textContent = complete ? values.join(' | ') : 'Select Brand, Model and Year range.';
+        preview.textContent = complete ? values.join(' | ') : 'Select Brand, Model and Year range to load Model Code.';
         applyButton.disabled = !complete;
       }
 
@@ -4124,15 +4137,15 @@ if (!$customOrdersDetailRequest) {
         var state = {
           brand: valueOf('category_brand'),
           model: valueOf('category_model'),
-          year: valueOf('category_year_range')
+          year: valueOf('category_year_range'),
+          modelcode: valueOf('category_modelcode')
         };
-        if (!state.brand && !state.model && !state.year) {
-          var legacyParts = valueOf('category_info').split(/\s*\|\s*/).filter(function (value) { return value !== ''; });
-          if (legacyParts.length >= 3) {
-            state.brand = legacyParts[0];
-            state.model = legacyParts[1];
-            state.year = legacyParts[2];
-          }
+        var legacyParts = valueOf('category_info').split(/\s*\|\s*/).filter(function (value) { return value !== ''; });
+        if (legacyParts.length >= 3) {
+          if (!state.brand) state.brand = legacyParts[0];
+          if (!state.model) state.model = legacyParts[1];
+          if (!state.year) state.year = legacyParts[2];
+          if (!state.modelcode && legacyParts.length >= 4) state.modelcode = legacyParts[3];
         }
         return state;
       }
@@ -4170,7 +4183,7 @@ if (!$customOrdersDetailRequest) {
             setWaiting(yearSelect, 'Loading year ranges...');
             return customCategoryPickerLoad('years', state.brand, state.model).then(function (years) {
               if (serial !== requestSerial) return;
-              customCategoryPickerSetOptions(yearSelect, years, 'Select year range...', state.year);
+              customCategoryPickerSetOptions(yearSelect, years, 'Select year range...', state.year, state.modelcode);
               updatePreview();
             });
           });
@@ -4222,12 +4235,13 @@ if (!$customOrdersDetailRequest) {
 
       applyButton.addEventListener('click', function () {
         if (!targetForm || applyButton.disabled) return;
-        var selection = [brandSelect.value, modelSelect.value, yearSelect.value];
+        var selection = [brandSelect.value, modelSelect.value, yearSelect.value, selectedModelCode()];
         var fieldValues = {
           category_info: selection.join(' | '),
           category_brand: selection[0],
           category_model: selection[1],
-          category_year_range: selection[2]
+          category_year_range: selection[2],
+          category_modelcode: selection[3]
         };
         Object.keys(fieldValues).forEach(function (name) {
           var input = targetForm.querySelector('input[name="' + name + '"]');
@@ -4244,7 +4258,7 @@ if (!$customOrdersDetailRequest) {
 
       clearButton.addEventListener('click', function () {
         if (!targetForm) return;
-        ['category_info', 'category_brand', 'category_model', 'category_year_range'].forEach(function (name) {
+        ['category_info', 'category_brand', 'category_model', 'category_year_range', 'category_modelcode'].forEach(function (name) {
           var input = targetForm.querySelector('input[name="' + name + '"]');
           if (input) input.value = '';
         });
@@ -4252,7 +4266,7 @@ if (!$customOrdersDetailRequest) {
         if (trigger) {
           trigger.classList.add('is-empty');
           var textNode = trigger.querySelector('.custom-category-info-text');
-          if (textNode) textNode.textContent = 'Select Brand / Model / Year';
+          if (textNode) textNode.textContent = 'Select Brand / Model / Year / Model Code';
         }
         hideModal();
       });
