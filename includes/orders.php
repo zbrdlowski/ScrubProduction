@@ -1700,7 +1700,7 @@ $deptOptions = [
       'badge_key' => 'draft_ready',
       'badge_class' => 'badge-info'
     ],
-    ['id' => 'ready_to_invoice', 'label' => 'Ready to Invoice', 'params' => ['status' => 'READY_TO_INVOICE'], 'badge_key' => 'ready_to_invoice', 'badge_class' => 'badge-success'],
+    ['id' => 'ready_to_invoice', 'label' => 'Ready for Invoice', 'params' => ['status' => 'READY_TO_INVOICE'], 'badge_key' => 'ready_to_invoice', 'badge_class' => 'badge-success'],
     ['id' => 'ready_to_ship', 'label' => 'Ready to Ship', 'params' => ['status' => 'READY_TO_SHIP'], 'badge_key' => 'ready_to_ship', 'badge_class' => 'badge-success'],
     ['id' => 'pending', 'label' => '⏳ Pending', 'params' => ['status' => 'PENDING'], 'badge_key' => 'pending', 'badge_class' => 'badge-purple'],
     // -- sem pridaj ďalšie taby --
