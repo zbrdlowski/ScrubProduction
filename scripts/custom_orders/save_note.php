@@ -10,13 +10,13 @@ if ($orderId <= 0) {
   customOrdersRedirect();
 }
 
-$noteType = trim((string) ($_POST['note_type'] ?? 'INTERNAL'));
 $noteBody = trim((string) ($_POST['note_body'] ?? ''));
+$parentNoteId = (int) ($_POST['parent_note_id'] ?? 0);
 if ($noteBody === '') {
   customOrdersFlash('danger', 'Note cannot be empty.');
   customOrdersRedirect($orderId);
 }
 
-customOrdersAddNote($conn, $orderId, $noteType, $noteBody, $userId);
-customOrdersFlash('success', 'Note appended.');
+customOrdersAddNote($conn, $orderId, 'INTERNAL', $noteBody, $userId, $parentNoteId);
+customOrdersFlash('success', $parentNoteId > 0 ? 'Reply submitted.' : 'Note submitted.');
 customOrdersRedirect($orderId);

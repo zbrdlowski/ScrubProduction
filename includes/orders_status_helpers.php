@@ -372,16 +372,49 @@ function ordersGetStatusColor(mysqli $conn, string $scope, string $code, ?string
  *
  * @param mysqli $conn
  * @param string $status   Kód statusu (napr. 'SHIPPED', 'IN_PROGRESS')
- * @param string $size     Bootstrap btn veľkosť: 'xs', 'sm', '' (default 'xs') 
+ * @param string $size     Bootstrap btn veľkosť: 'xs', 'sm', '' (default 'xs')
+ * @param array  $extraDataAttrs  Asociatívne pole ďalších data-* atribútov pre <td> wrapper (nepoužíva sa tu, len pre td)
  * @return string  Hotový <button> HTML
  */
+/**
+ * Vypočíta kontrastnú farbu textu (#000 alebo #fff) pre dané hex pozadie.
+ * Používa relatívnu luminanciu podľa WCAG 2.1.
+ *
+ * @param string $hexColor  Hex farba pozadia (napr. '#ffc107' alebo 'ffc107')
+ * @return string  '#000000' pre svetlé pozadie, '#ffffff' pre tmavé
+ */
+function ordersContrastColor(string $hexColor): string
+{
+    $hex = ltrim($hexColor, '#');
+    if (strlen($hex) === 3) {
+        $hex = $hex[0] . $hex[0] . $hex[1] . $hex[1] . $hex[2] . $hex[2];
+    }
+    if (strlen($hex) !== 6) {
+        return '#ffffff';
+    }
+
+    $r = hexdec(substr($hex, 0, 2)) / 255;
+    $g = hexdec(substr($hex, 2, 2)) / 255;
+    $b = hexdec(substr($hex, 4, 2)) / 255;
+
+    // Linearizácia (sRGB gamma)
+    $r = $r <= 0.03928 ? $r / 12.92 : (($r + 0.055) / 1.055) ** 2.4;
+    $g = $g <= 0.03928 ? $g / 12.92 : (($g + 0.055) / 1.055) ** 2.4;
+    $b = $b <= 0.03928 ? $b / 12.92 : (($b + 0.055) / 1.055) ** 2.4;
+
+    // Relatívna luminancia (WCAG)
+    $luminance = 0.2126 * $r + 0.7152 * $g + 0.0722 * $b;
+
+    return $luminance > 0.179 ? '#000000' : '#ffffff';
+}
+
 function ordersRenderStatusChip(mysqli $conn, string $status, string $size = 'xs'): string
 {
     $label = ordersGetStatusLabel($conn, 'order', $status);
     $color = ordersGetStatusColor($conn, 'order', $status) ?: '#6c757d';
     $safeColor = htmlspecialchars($color, ENT_QUOTES, 'UTF-8');
     $safeLabel = htmlspecialchars($label ?: '-', ENT_QUOTES, 'UTF-8');
-    $textColor = ($color === '#ffc107') ? '#212529' : '#fff';
+    $textColor = ordersContrastColor($color);
     $sizeClass = $size !== '' ? ' btn-' . $size : '';
     $style = 'background-color:' . $safeColor . ';border-color:' . $safeColor . ';color:' . $textColor . ';pointer-events:none;';
 

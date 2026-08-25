@@ -1032,6 +1032,19 @@ $detailStatusDates = $detailStatusDateRule
   ? ordersFetchStatusEventDates($conn, $orderIds, [$detailStatusCode])
   : [];
 
+// ── Duplicitní zákazníci: spočítaj, koľkokrát sa každé meno vyskytuje
+// medzi aktuálne zobrazenými riadkami (už so zahrnutými filtrami).
+// Ignorujeme prázdne mená. Výsledok sa použije pri renderingu riadkov
+// na zobrazenie vizuálneho indikátora ak má zákazník 2+ objednávky.
+$customerNameCounts = [];
+foreach ($orderRows as $_cr) {
+  $_cn = trim((string) ($_cr['customer_name'] ?? ''));
+  if ($_cn === '') $_cn = trim((string) ($_cr['customer_email'] ?? ''));
+  if ($_cn === '') continue;
+  $customerNameCounts[$_cn] = ($customerNameCounts[$_cn] ?? 0) + 1;
+}
+unset($_cr, $_cn);
+
 $orderDepartmentStatusMap = [];
 if ($orderIds) {
   $placeholders = implode(',', array_fill(0, count($orderIds), '?'));
@@ -1095,6 +1108,29 @@ $deptOptions = [
   table td,
   table th {
     vertical-align: middle;
+  }
+
+  /* Indikátor duplicitného zákazníka */
+  .order-dup-customer-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    font-size: 0.68rem;
+    font-weight: 600;
+    color: #fd7e14;
+    background: rgba(253, 126, 20, 0.15);
+    border: 1px solid rgba(253, 126, 20, 0.4);
+    border-radius: 10px;
+    padding: 1px 6px 1px 5px;
+    text-decoration: none;
+    white-space: nowrap;
+    vertical-align: middle;
+    line-height: 1.5;
+  }
+  .order-dup-customer-badge:hover {
+    background: rgba(253, 126, 20, 0.28);
+    color: #ffab5e;
+    text-decoration: none;
   }
 
   .tm-highlight {
@@ -2347,10 +2383,24 @@ $deptOptions = [
                 <?php endif; ?>
 
               </td>
+              <?php
+              $customerDupCount = $customerNameCounts[$customer] ?? 1;
+              $customerIsDup = $customerDupCount >= 2;
+              ?>
               <td>
                 <span
                   style="display:flex; justify-content:space-between; align-items:center; gap:6px; white-space:nowrap;">
-                  <span style="padding-left:5px;"><?= htmlspecialchars($customer) ?></span>
+                  <span style="padding-left:5px; display:inline-flex; align-items:center; gap:5px;">
+                    <?= htmlspecialchars($customer) ?>
+                    <?php if ($customerIsDup): ?>
+                      <a href="?page=orders&q=<?= urlencode($customer) ?>"
+                        class="order-dup-customer-badge"
+                        title="<?= htmlspecialchars($customerDupCount . ' open orders from this customer - Click to search') ?>"
+                        onclick="event.stopPropagation();">
+                        <i class="fas fa-clone"></i><?= $customerDupCount ?>
+                      </a>
+                    <?php endif; ?>
+                  </span>
                   <?php if ($hasCompanyInfo): ?>
                     <span
                       title="<?= htmlspecialchars('Company: ' . ($billingCompany ?: '-') . ' | ID: ' . ($billingCompanyId ?: '-')) ?>"
@@ -2462,7 +2512,7 @@ $deptOptions = [
                   $badgeStyle = 'font-size:1rem; padding:.5em .7em;';
                   if ($departmentColor) {
                     $safeColor = htmlspecialchars($departmentColor, ENT_QUOTES, 'UTF-8');
-                    $badgeStyle .= 'background-color:' . $safeColor . ';border-color:' . $safeColor . ';color:#fff;';
+                    $badgeStyle .= 'background-color:' . $safeColor . ';border-color:' . $safeColor . ';color:' . ordersContrastColor($departmentColor) . ';';
                   } elseif ($state === 'GREEN') {
                     $badgeStyle .= 'background-color:#28a745;border-color:#28a745;color:#fff;';
                   } elseif ($state === 'ORANGE') {
@@ -2525,7 +2575,7 @@ $deptOptions = [
               $statusColor = ordersGetStatusColor($conn, 'order', $status) ?: '#6c757d';
               $statusStyle = 'background-color:' . htmlspecialchars($statusColor, ENT_QUOTES, 'UTF-8') . ';'
                 . 'border-color:' . htmlspecialchars($statusColor, ENT_QUOTES, 'UTF-8') . ';'
-                . 'color:#fff;';
+                . 'color:' . ordersContrastColor($statusColor) . ';';
               ?>
               <td class="text-center" data-status-cell="<?= $orderId ?>"
                 data-status-color="<?= htmlspecialchars($statusColor, ENT_QUOTES, 'UTF-8') ?>"

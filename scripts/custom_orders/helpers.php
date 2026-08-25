@@ -328,15 +328,36 @@ function customOrdersEnsureSchema(mysqli $conn): void
       CREATE TABLE IF NOT EXISTS `custom_order_notes` (
         `id` bigint(20) NOT NULL AUTO_INCREMENT,
         `custom_order_id` bigint(20) NOT NULL,
+        `parent_note_id` bigint(20) DEFAULT NULL,
         `note_type` varchar(32) NOT NULL DEFAULT 'INTERNAL',
         `note_body` text NOT NULL,
         `created_by` int(11) DEFAULT NULL,
         `created_at` datetime NOT NULL DEFAULT current_timestamp(),
         PRIMARY KEY (`id`),
         KEY `ix_custom_order_notes_order` (`custom_order_id`),
-        CONSTRAINT `fk_custom_order_notes_order` FOREIGN KEY (`custom_order_id`) REFERENCES `custom_orders` (`id`) ON DELETE CASCADE
+        KEY `ix_custom_order_notes_parent` (`parent_note_id`),
+        CONSTRAINT `fk_custom_order_notes_order` FOREIGN KEY (`custom_order_id`) REFERENCES `custom_orders` (`id`) ON DELETE CASCADE,
+        CONSTRAINT `fk_custom_order_notes_parent` FOREIGN KEY (`parent_note_id`) REFERENCES `custom_order_notes` (`id`) ON DELETE CASCADE
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
     ");
+  }
+
+  $noteColumns = customOrdersTableColumns($conn, 'custom_order_notes');
+  if ($noteColumns && !isset($noteColumns['parent_note_id'])) {
+    if ($conn->query("
+      ALTER TABLE `custom_order_notes`
+        ADD COLUMN `parent_note_id` bigint(20) DEFAULT NULL AFTER `custom_order_id`
+    ")) {
+      customOrdersTableColumns($conn, 'custom_order_notes', true);
+
+      // Keep the upgrade compatible with older Synology MariaDB builds. The
+      // application validates the parent note itself, so a self-referencing
+      // foreign key is not required for replies to work.
+      $conn->query("
+        ALTER TABLE `custom_order_notes`
+          ADD KEY `ix_custom_order_notes_parent` (`parent_note_id`)
+      ");
+    }
   }
 
   if (!customOrdersTableExists($conn, 'custom_order_photos')) {
@@ -462,6 +483,7 @@ function customOrdersActivityActionLabel(string $action): string
     'payment_deleted' => 'Payment deleted',
     'followup_added' => 'Follow-up added',
     'note_added' => 'Note added',
+    'note_reply_added' => 'Note reply added',
     'owner_assigned' => 'Owner changed',
     'official_number_assigned' => 'Official number assigned',
     'exported' => 'Exported',
@@ -972,7 +994,16 @@ function customOrdersGetOrder(mysqli $conn, int $orderId): ?array
 
   $order['notes'] = [];
   if (customOrdersTableExists($conn, 'custom_order_notes')) {
-    $res = $conn->query('SELECT * FROM custom_order_notes WHERE custom_order_id = ' . (int) $orderId . ' ORDER BY created_at DESC, id DESC');
+    $res = $conn->query("
+      SELECT
+        con.*,
+        TRIM(CONCAT_WS(' ', e.firstname, e.lastname)) AS author_name,
+        e.photo AS author_photo
+      FROM custom_order_notes con
+      LEFT JOIN employees e ON e.id = con.created_by
+      WHERE con.custom_order_id = " . (int) $orderId . "
+      ORDER BY con.created_at ASC, con.id ASC
+    ");
     if ($res) {
       while ($row = $res->fetch_assoc()) {
         $order['notes'][] = $row;
@@ -1074,7 +1105,7 @@ function customOrdersGetProductionOverview(mysqli $conn, int $productionOrderId)
   return $overview;
 }
 
-function customOrdersAddNote(mysqli $conn, int $orderId, string $noteType, string $noteBody, int $userId): void
+function customOrdersAddNote(mysqli $conn, int $orderId, string $noteType, string $noteBody, int $userId, int $parentNoteId = 0): void
 {
   $noteType = strtoupper(trim($noteType));
   if ($orderId <= 0 || $noteBody === '' || !customOrdersTableExists($conn, 'custom_order_notes')) {
@@ -1086,15 +1117,47 @@ function customOrdersAddNote(mysqli $conn, int $orderId, string $noteType, strin
     $noteType = 'INTERNAL';
   }
 
-  $stmt = $conn->prepare('INSERT INTO custom_order_notes (custom_order_id, note_type, note_body, created_by) VALUES (?, ?, ?, ?)');
+  $noteColumns = customOrdersTableColumns($conn, 'custom_order_notes');
+  $supportsReplies = isset($noteColumns['parent_note_id']);
+  $resolvedParentNoteId = 0;
+  if ($supportsReplies && $parentNoteId > 0) {
+    $parentStmt = $conn->prepare('SELECT id, parent_note_id FROM custom_order_notes WHERE id = ? AND custom_order_id = ? LIMIT 1');
+    if ($parentStmt) {
+      $parentStmt->bind_param('ii', $parentNoteId, $orderId);
+      $parentStmt->execute();
+      $parentRow = $parentStmt->get_result()->fetch_assoc();
+      $parentStmt->close();
+      if ($parentRow) {
+        $resolvedParentNoteId = (int) (($parentRow['parent_note_id'] ?? 0) ?: $parentRow['id']);
+      }
+    }
+  }
+
+  if ($supportsReplies) {
+    $parentValue = $resolvedParentNoteId > 0 ? $resolvedParentNoteId : null;
+    $stmt = $conn->prepare('INSERT INTO custom_order_notes (custom_order_id, parent_note_id, note_type, note_body, created_by) VALUES (?, ?, ?, ?, ?)');
+  } else {
+    $stmt = $conn->prepare('INSERT INTO custom_order_notes (custom_order_id, note_type, note_body, created_by) VALUES (?, ?, ?, ?)');
+  }
   if (!$stmt) {
     return;
   }
-  $stmt->bind_param('issi', $orderId, $noteType, $noteBody, $userId);
+  if ($supportsReplies) {
+    $stmt->bind_param('iissi', $orderId, $parentValue, $noteType, $noteBody, $userId);
+  } else {
+    $stmt->bind_param('issi', $orderId, $noteType, $noteBody, $userId);
+  }
   $stmt->execute();
   $stmt->close();
 
-  customOrdersLog($conn, $orderId, 'note_added', $userId, ['note_type' => $noteType], 'Lead note appended');
+  customOrdersLog(
+    $conn,
+    $orderId,
+    $resolvedParentNoteId > 0 ? 'note_reply_added' : 'note_added',
+    $userId,
+    ['note_type' => $noteType, 'parent_note_id' => $resolvedParentNoteId ?: null],
+    $resolvedParentNoteId > 0 ? 'Lead note reply added' : 'Lead note appended'
+  );
 }
 
 function customOrdersAssignOwner(mysqli $conn, int $orderId, int $ownerEmployeeId, int $assignedBy): void

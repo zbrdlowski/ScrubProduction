@@ -505,6 +505,24 @@ function trackingIsPending(?array $tracking): bool
         color: #fff;
     }
 
+    /* Malé "×" tlačidlá vedľa Model/Range selectov v hornom filtri —
+       zrušia iba tú jednu úroveň (a všetko pod ňou), nie celý filter. */
+    .scrub-filter-clear {
+        background: #3a2020;
+        border: 1px solid #6b3030;
+        color: #ff8a80;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0 12px;
+        flex-shrink: 0;
+    }
+
+    .scrub-filter-clear:hover {
+        background: #6b3030;
+        color: #fff;
+    }
+
     #modelYearModal hr {
         border-color: #344f65;
     }
@@ -671,19 +689,27 @@ if ($resTrackCnt) {
                 <tr>
                     <!-- BRAND -->
                     <td>
-                        <select class="form-control" onchange="if(this.value) window.location=this.value;">
-                            <option hidden>Pick Brand</option>
-                            <?php
-                            $res = $conn->query("SELECT DISTINCT brand FROM scrubdata ORDER BY brand ASC");
-                            while ($r = $res->fetch_assoc()):
-                                $url = 'index.php?page=product_chart&brand=' . urlencode($r['brand']);
-                                $sel = ($r['brand'] === $scrubrand) ? ' selected' : '';
-                                ?>
-                                <option value="<?= htmlspecialchars($url) ?>" <?= $sel ?>>
-                                    <?= htmlspecialchars($r['brand']) ?>
-                                </option>
-                            <?php endwhile; ?>
-                        </select>
+                        <div class="d-flex" style="gap:6px;">
+                            <select class="form-control" onchange="if(this.value) window.location=this.value;">
+                                <option hidden>Pick Brand</option>
+                                <?php
+                                $res = $conn->query("SELECT DISTINCT brand FROM scrubdata ORDER BY brand ASC");
+                                while ($r = $res->fetch_assoc()):
+                                    $url = 'index.php?page=product_chart&brand=' . urlencode($r['brand']);
+                                    $sel = ($r['brand'] === $scrubrand) ? ' selected' : '';
+                                    ?>
+                                    <option value="<?= htmlspecialchars($url) ?>" <?= $sel ?>>
+                                        <?= htmlspecialchars($r['brand']) ?>
+                                    </option>
+                                <?php endwhile; ?>
+                            </select>
+                            <?php if ($scrubrand !== ''): ?>
+                                <a href="?page=product_chart"
+                                    class="btn btn-sm scrub-filter-clear" title="Zrušiť výber brandu — späť na úplný zoznam">
+                                    <i class="fas fa-times"></i>
+                                </a>
+                            <?php endif; ?>
+                        </div>
                     </td>
 
                     <!-- MODEL -->
@@ -691,23 +717,31 @@ if ($resTrackCnt) {
                         <?php if ($scrubrand === ''): ?>
                             <div class="text-muted pt-1">Model</div>
                         <?php else: ?>
-                            <select class="form-control" onchange="if(this.value) window.location=this.value;">
-                                <option hidden>Pick Model</option>
-                                <?php
-                                $stmt = $conn->prepare("SELECT DISTINCT model FROM scrubdata WHERE brand=? ORDER BY model ASC");
-                                $stmt->bind_param('s', $scrubrand);
-                                $stmt->execute();
-                                $res = $stmt->get_result();
-                                while ($r = $res->fetch_assoc()):
-                                    $url = 'index.php?page=product_chart&brand=' . urlencode($scrubrand) . '&model=' . urlencode($r['model']);
-                                    $sel = ($r['model'] === $scrubmodel) ? ' selected' : '';
-                                    ?>
-                                    <option value="<?= htmlspecialchars($url) ?>" <?= $sel ?>>
-                                        <?= htmlspecialchars($r['model']) ?>
-                                    </option>
-                                <?php endwhile;
-                                $stmt->close(); ?>
-                            </select>
+                            <div class="d-flex" style="gap:6px;">
+                                <select class="form-control" onchange="if(this.value) window.location=this.value;">
+                                    <option hidden>Pick Model</option>
+                                    <?php
+                                    $stmt = $conn->prepare("SELECT DISTINCT model FROM scrubdata WHERE brand=? ORDER BY model ASC");
+                                    $stmt->bind_param('s', $scrubrand);
+                                    $stmt->execute();
+                                    $res = $stmt->get_result();
+                                    while ($r = $res->fetch_assoc()):
+                                        $url = 'index.php?page=product_chart&brand=' . urlencode($scrubrand) . '&model=' . urlencode($r['model']);
+                                        $sel = ($r['model'] === $scrubmodel) ? ' selected' : '';
+                                        ?>
+                                        <option value="<?= htmlspecialchars($url) ?>" <?= $sel ?>>
+                                            <?= htmlspecialchars($r['model']) ?>
+                                        </option>
+                                    <?php endwhile;
+                                    $stmt->close(); ?>
+                                </select>
+                                <?php if ($scrubmodel !== ''): ?>
+                                    <a href="?page=product_chart&brand=<?= urlencode($scrubrand) ?>"
+                                        class="btn btn-sm scrub-filter-clear" title="Zrušiť výber modelu — späť na všetky modely brandu <?= htmlspecialchars($scrubrand) ?>">
+                                        <i class="fas fa-times"></i>
+                                    </a>
+                                <?php endif; ?>
+                            </div>
                         <?php endif; ?>
                     </td>
 
@@ -716,26 +750,33 @@ if ($resTrackCnt) {
                         <?php if ($scrubmodel === ''): ?>
                             <div class="text-muted pt-1">Production Years</div>
                         <?php else: ?>
-                            <select class="form-control" onchange="if(this.value) window.location=this.value;">
-                                <option hidden>Pick Year Range</option>
-                                <?php
-                                $stmt = $conn->prepare("SELECT DISTINCT rangeyear FROM scrubdata WHERE brand=? AND model=? ORDER BY rangeyear DESC");
-                                $stmt->bind_param('ss', $scrubrand, $scrubmodel);
-                                $stmt->execute();
-                                $res = $stmt->get_result();
-                                while ($r = $res->fetch_assoc()):
-                                    $url = 'index.php?page=product_chart&brand=' . urlencode($scrubrand) . '&model=' . urlencode($scrubmodel) . '&range=' . urlencode($r['rangeyear']);
-                                    $sel = ($r['rangeyear'] === $scrubrange) ? ' selected' : '';
+                            <div class="d-flex" style="gap:6px;">
+                                <select class="form-control" onchange="if(this.value) window.location=this.value;">
+                                    <option hidden>Pick Year Range</option>
+                                    <?php
+                                    $stmt = $conn->prepare("SELECT DISTINCT rangeyear FROM scrubdata WHERE brand=? AND model=? ORDER BY rangeyear DESC");
+                                    $stmt->bind_param('ss', $scrubrand, $scrubmodel);
+                                    $stmt->execute();
+                                    $res = $stmt->get_result();
+                                    while ($r = $res->fetch_assoc()):
+                                        $url = 'index.php?page=product_chart&brand=' . urlencode($scrubrand) . '&model=' . urlencode($scrubmodel) . '&range=' . urlencode($r['rangeyear']);
+                                        $sel = ($r['rangeyear'] === $scrubrange) ? ' selected' : '';
                                     ?>
                                     <option value="<?= htmlspecialchars($url) ?>" <?= $sel ?>>
                                         <?= htmlspecialchars($r['rangeyear']) ?>
                                     </option>
                                 <?php endwhile;
                                 $stmt->close(); ?>
-                            </select>
+                                </select>
+                                <?php if ($scrubrange !== ''): ?>
+                                    <a href="?page=product_chart&brand=<?= urlencode($scrubrand) ?>&model=<?= urlencode($scrubmodel) ?>"
+                                        class="btn btn-sm scrub-filter-clear" title="Zrušiť výber roku — späť na všetky roky modelu <?= htmlspecialchars($scrubmodel) ?>">
+                                        <i class="fas fa-times"></i>
+                                    </a>
+                                <?php endif; ?>
+                            </div>
                         <?php endif; ?>
                     </td>
-
                     <!-- RESET -->
                     <td style="width:120px;">
                         <?php if ($scrubrand !== ''): ?>

@@ -14,6 +14,15 @@ $paymentKinds = customOrdersPaymentKinds();
 $customOrderPaymentMethods = ['PayPal', 'Bank Transfer', 'Cash'];
 // CUSTOM ORDERS: Ak treba pridaj novy sposob dopravy, napr. DHL, GLS, FedEx Economy, FedEx Express, Post, Pick Up.
 $customOrderShippingMethods = ['FedEx Economy', 'FedEx Express', 'GLS', 'Post', 'Pick Up'];
+
+// CUSTOM ORDERS: Predvoleny stav zbalovacich sekcii.
+// true = po nacitani rozbalena, false = po nacitani zbalena.
+$customOrderSectionDefaults = [
+  'payments' => false,
+  'notes' => true,
+  'followups' => false,
+];
+
 $assignableEmployees = customOrdersAssignableEmployees($conn);
 $invalidFields = [];
 if (is_array($flash['meta']['invalid_fields'] ?? null)) {
@@ -722,16 +731,27 @@ function customOrderCopyButton(string $value): string
   return ' <button type="button" class="btn btn-xs btn-copy-inline" data-copy="' . htmlspecialchars($value, ENT_QUOTES, 'UTF-8') . '" title="Copy">📋</button>';
 }
 
-function customOrderNoteTypeLabel(string $type): string
+function customOrderNoteAuthorAvatar(array $note): string
 {
-  switch (strtoupper(trim($type))) {
-    case 'CUSTOMER':
-      return 'Customer note';
-    case 'REVISION':
-      return 'Revision';
-    default:
-      return 'Internal note';
+  $authorName = trim((string) ($note['author_name'] ?? ''));
+  if ($authorName === '') {
+    $authorName = (int) ($note['created_by'] ?? 0) > 0 ? ('Employee #' . (int) $note['created_by']) : 'System';
   }
+
+  $photo = trim((string) ($note['author_photo'] ?? ''));
+  if ($photo !== '') {
+    return '<img src="images/' . htmlspecialchars($photo, ENT_QUOTES, 'UTF-8') . '" class="custom-note-author-avatar" alt="' . htmlspecialchars($authorName, ENT_QUOTES, 'UTF-8') . '" title="' . htmlspecialchars($authorName, ENT_QUOTES, 'UTF-8') . '">';
+  }
+
+  $initials = '';
+  foreach (preg_split('/\s+/', $authorName) as $namePart) {
+    if ($namePart !== '') {
+      $initials .= mb_strtoupper(mb_substr($namePart, 0, 1));
+    }
+  }
+  $initials = mb_substr($initials, 0, 2);
+
+  return '<span class="custom-note-author-avatar custom-note-author-fallback" title="' . htmlspecialchars($authorName, ENT_QUOTES, 'UTF-8') . '">' . htmlspecialchars($initials !== '' ? $initials : '?', ENT_QUOTES, 'UTF-8') . '</span>';
 }
 
 function customOrderBuilderSpecLabel(string $itemTypeCode, array $definition): string
@@ -745,6 +765,18 @@ function customOrderBuilderSpecLabel(string $itemTypeCode, array $definition): s
   }
 
   return $label;
+}
+
+function customOrderBuilderDefinitionIsTextarea(array $definition): bool
+{
+  foreach (['spec_key', 'source_key', 'label'] as $definitionKey) {
+    $normalized = productSpecNormalizeSourceKey((string) ($definition[$definitionKey] ?? ''));
+    if ($normalized === 'note' || preg_match('/(?:^|-)(?:buyer-note|my-item-note|note)$/', $normalized)) {
+      return true;
+    }
+  }
+
+  return false;
 }
 
 function customOrderItemOptionGroups(mysqli $conn, string $itemTypeCode, array $options): array
@@ -928,6 +960,16 @@ if (!$customOrdersDetailRequest) {
 
   .custom-order-table-row {
     cursor: pointer;
+    transition: opacity .2s ease;
+  }
+
+  /* Pri otvorenom detaile stlm ostatne objednavky rovnako ako v Orders. */
+  #customOrdersTable.table-has-open .custom-order-table-row:not(.order-row-open) {
+    opacity: .35;
+  }
+
+  #customOrdersTable.table-has-open .custom-order-detail-row {
+    opacity: 1 !important;
   }
 
   .custom-order-table-row:hover td {
@@ -1107,7 +1149,7 @@ if (!$customOrdersDetailRequest) {
     font-size: 11px;
   }
 
-  .custom-twin-lead-strip {
+  .custom-twin-header-column-lead {
     padding-bottom: 10px;
     margin-bottom: 10px;
     border-bottom: 1px solid rgba(255, 255, 255, .09);
@@ -1115,11 +1157,25 @@ if (!$customOrdersDetailRequest) {
 
   .custom-order-value-breakdown-card {
     width: 100%;
-    min-height: 100%;
+    min-height: 0;
     border: 1px solid rgba(23, 162, 184, .45);
     border-radius: 10px;
     background: rgba(23, 162, 184, .06);
     padding: 14px;
+  }
+
+  .custom-twin-column-stack {
+    gap: 14px;
+  }
+
+  .custom-twin-column-stack>.custom-twin-edit-card,
+  .custom-twin-column-stack>.custom-order-value-breakdown-card,
+  .custom-twin-column-stack>.custom-twin-secondary-card {
+    width: 100%;
+  }
+
+  .custom-twin-secondary-card {
+    margin: 0;
   }
 
   .custom-order-value-breakdown-row {
@@ -1134,13 +1190,6 @@ if (!$customOrdersDetailRequest) {
     padding-bottom: 9px;
     border-bottom: 1px solid rgba(255, 255, 255, .14);
     font-weight: 700;
-  }
-
-  #custom-order-accounting-panel > .panel-body > .custom-order-section-title:first-child,
-  #custom-order-accounting-panel > .panel-body > .custom-order-section-title:first-child + .text-muted,
-  #custom-order-accounting-panel > .panel-body > form:first-of-type,
-  #custom-order-accounting-panel > .panel-body > .custom-optical-divider:first-of-type {
-    display: none;
   }
 
   .custom-status-tabs {
@@ -1300,16 +1349,6 @@ if (!$customOrdersDetailRequest) {
 
   .custom-item-status-select {
     border-left: 4px solid var(--item-status-color, #17a2b8) !important;
-  }
-
-  .custom-compact-finance-grid {
-    align-items: start;
-    grid-template-columns: minmax(680px, 1.65fr) minmax(280px, .7fr) minmax(340px, .85fr);
-  }
-
-  .custom-compact-finance-grid > .custom-field-cluster {
-    width: 100%;
-    padding: 31px 10px 10px;
   }
 
   .custom-payment-entry-grid {
@@ -1487,14 +1526,6 @@ if (!$customOrdersDetailRequest) {
   }
 
   @media (max-width: 1600px) {
-    .custom-compact-finance-grid {
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-    }
-
-    .custom-compact-finance-grid > #custom-order-payments-block {
-      grid-column: 1 / -1;
-    }
-
     .custom-payment-entry-grid {
       grid-template-columns: repeat(3, minmax(0, 1fr));
     }
@@ -1505,6 +1536,66 @@ if (!$customOrdersDetailRequest) {
     grid-template-columns: minmax(270px, .75fr) minmax(420px, 1.15fr) minmax(520px, 1.55fr);
     gap: 10px;
     align-items: start;
+  }
+
+  .custom-collapsible-panel {
+    overflow: hidden;
+  }
+
+  .custom-collapsible-toggle {
+    display: flex;
+    width: 100%;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    padding: 12px 14px;
+    border: 0;
+    background: rgba(60, 141, 188, .08);
+    color: #f1f4f7;
+    text-align: left;
+    cursor: pointer;
+  }
+
+  .custom-collapsible-toggle:hover,
+  .custom-collapsible-toggle:focus {
+    outline: none;
+    background: rgba(60, 141, 188, .16);
+  }
+
+  .custom-collapsible-toggle-title,
+  .custom-collapsible-toggle-meta {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .custom-collapsible-toggle-title {
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: .05em;
+    text-transform: uppercase;
+  }
+
+  .custom-collapsible-toggle-meta {
+    margin-left: auto;
+    color: #aeb8c2;
+    font-size: 12px;
+  }
+
+  .custom-collapsible-toggle-chevron {
+    transition: transform .18s ease;
+  }
+
+  .custom-collapsible-toggle[aria-expanded="true"] .custom-collapsible-toggle-chevron {
+    transform: rotate(180deg);
+  }
+
+  .custom-collapsible-panel.is-expanded .custom-collapsible-toggle {
+    border-bottom: 1px solid rgba(255, 255, 255, .10);
+  }
+
+  .custom-collapsible-body[hidden] {
+    display: none !important;
   }
 
   .custom-followup-card {
@@ -1578,18 +1669,51 @@ if (!$customOrdersDetailRequest) {
 
   .custom-notes-timeline {
     display: grid;
-    gap: 10px;
+    gap: 16px;
+  }
+
+  .custom-note-thread {
+    display: grid;
+    gap: 8px;
   }
 
   .custom-note-entry {
+    display: grid;
+    grid-template-columns: 38px minmax(0, 1fr);
+    gap: 10px;
+    width: calc(100% - 70px);
     border-left: 3px solid rgba(60, 141, 188, .65);
     border-radius: 8px;
     background: rgba(255, 255, 255, .03);
     padding: 10px 12px;
   }
 
+  .custom-note-author-avatar {
+    width: 34px;
+    height: 34px;
+    border: 2px solid rgba(60, 141, 188, .72);
+    border-radius: 50%;
+    object-fit: cover;
+    background: #20262c;
+  }
+
+  .custom-note-author-fallback {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: #e8edf2;
+    font-size: 11px;
+    font-weight: 700;
+  }
+
+  .custom-note-entry-content {
+    min-width: 0;
+  }
+
   .custom-note-entry-meta {
     display: flex;
+    align-items: center;
+    justify-content: space-between;
     flex-wrap: wrap;
     gap: 8px;
     margin-bottom: 6px;
@@ -1597,10 +1721,95 @@ if (!$customOrdersDetailRequest) {
     font-size: 12px;
   }
 
+  .custom-note-reply-button {
+    padding: 1px 7px;
+    border: 0;
+    background: transparent;
+    color: #5bc0de;
+    font-size: 12px;
+  }
+
+  .custom-note-reply-button:hover,
+  .custom-note-reply-button:focus {
+    outline: none;
+    color: #9be5f7;
+    text-decoration: underline;
+  }
+
   .custom-note-entry-body {
     color: #f8f9fa;
     white-space: pre-wrap;
+    overflow-wrap: anywhere;
     line-height: 1.45;
+  }
+
+  .custom-note-replies {
+    display: grid;
+    gap: 8px;
+    margin-left: 64px;
+  }
+
+  .custom-note-reply-wrap {
+    position: relative;
+    padding-left: 34px;
+  }
+
+  .custom-note-reply-wrap::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: -9px;
+    width: 28px;
+    height: 32px;
+    border-left: 2px solid rgba(93, 173, 226, .52);
+    border-bottom: 2px solid rgba(93, 173, 226, .52);
+    border-radius: 0 0 0 5px;
+  }
+
+  .custom-note-entry.is-reply {
+    width: 100%;
+    border-left-color: rgba(255, 193, 7, .78);
+    background: rgba(255, 193, 7, .045);
+  }
+
+  .custom-note-reply-form {
+    margin: 2px 0 0 98px;
+    padding: 10px;
+    border: 1px solid rgba(60, 141, 188, .28);
+    border-radius: 8px;
+    background: rgba(17, 24, 39, .22);
+  }
+
+  .custom-note-reply-form[hidden] {
+    display: none !important;
+  }
+
+  .custom-note-reply-actions,
+  .custom-note-compose-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 7px;
+    margin-top: 7px;
+  }
+
+  .custom-note-compose {
+    margin-top: 16px;
+    padding-top: 14px;
+    border-top: 1px solid rgba(255, 255, 255, .10);
+  }
+
+  @media (max-width: 900px) {
+    .custom-note-entry {
+      width: 100%;
+    }
+
+    .custom-note-replies {
+      margin-left: 24px;
+    }
+
+    .custom-note-reply-form {
+      margin-left: 58px;
+    }
   }
 
   .custom-item-spec-groups {
@@ -1704,6 +1913,12 @@ if (!$customOrdersDetailRequest) {
     border-radius: 10px;
     background: rgba(255, 255, 255, .015);
     overflow: hidden;
+  }
+
+  @media (min-width: 1500px) {
+    .custom-builder-order-shell>.table-responsive {
+      overflow-x: hidden;
+    }
   }
 
   .custom-builder-order-shell[hidden] {
@@ -2707,7 +2922,7 @@ if (!$customOrdersDetailRequest) {
               <div class="text-muted small">Showing up to 300 most recently updated rows</div>
             </div>
             <div class="table-responsive">
-              <table class="table table-sm table-dark table-striped custom-mini-table mb-0">
+              <table id="customOrdersTable" class="table table-sm table-dark table-striped custom-mini-table mb-0">
                 <thead>
                   <tr>
                     <th>Official / Internal<?= customOrderHelp('list_order_number') ?></th>
@@ -2841,9 +3056,14 @@ if (!$customOrdersDetailRequest) {
           $customTypeTotals[$breakdownType] += (float) ($breakdownItem['qty'] ?? 0) * (float) ($breakdownItem['unit_price'] ?? 0);
         }
         $customDisplayNumber = (string) ($selectedOrder['official_order_number'] ?: $selectedOrder['internal_code']);
+        $customHeaderHasInvalid = (bool) array_intersect_key($invalidFields, array_flip([
+          'customer_name', 'social_handle', 'shipping_name', 'shipping_street', 'shipping_city',
+          'shipping_zip', 'shipping_country', 'customer_email', 'shipping_email', 'shipping_phone',
+          'shipping_price',
+        ]));
         ?>
 
-        <div class="custom-twin-order-card">
+        <div id="custom-order-accounting-panel" data-scroll-block class="custom-twin-order-card<?= $customHeaderHasInvalid ? ' custom-panel-invalid' : '' ?>">
           <div class="custom-twin-order-header d-flex justify-content-between align-items-center flex-wrap">
             <div class="d-flex align-items-center flex-wrap" style="gap:6px;">
               <b class="btn-copy-inline" data-copy="<?= h($customDisplayNumber) ?>" style="cursor:pointer;">#<?= h($customDisplayNumber) ?></b>
@@ -2880,7 +3100,6 @@ if (!$customOrdersDetailRequest) {
                 <i class="fas fa-history mr-1"></i>Activity
                 <span class="badge badge-info"><?= count((array) ($selectedOrder['activity'] ?? [])) ?></span>
               </button>
-              <span class="badge badge-info"><?= h($selectedOrder['owner_name'] ?: 'Unassigned') ?></span>
               <select name="status" form="custom-twin-header-form-<?= (int) $selectedOrder['id'] ?>" class="form-control form-control-sm" style="min-width:170px;">
                 <?php foreach ($statuses as $code => $label): ?><option value="<?= h($code) ?>" <?= $selectedOrder['status'] === $code ? 'selected' : '' ?>><?= h($label) ?></option><?php endforeach; ?>
               </select>
@@ -2892,7 +3111,7 @@ if (!$customOrdersDetailRequest) {
 
           <div class="custom-twin-order-body">
             <div class="row align-items-stretch">
-              <div class="col-lg-8 d-flex flex-column">
+              <div class="col-lg-8 d-flex flex-column custom-twin-column-stack">
                 <div class="custom-twin-edit-card">
                   <div class="custom-twin-edit-title">Edit order header</div>
                   <div class="custom-twin-edit-body">
@@ -2900,20 +3119,12 @@ if (!$customOrdersDetailRequest) {
                       <input type="hidden" name="custom_order_id" value="<?= (int) $selectedOrder['id'] ?>">
                       <input type="hidden" name="dead_order_flag" value="<?= (int) $selectedOrder['dead_order_flag'] ?>">
 
-                      <div class="form-row custom-twin-lead-strip">
-                        <div class="form-group col-md-6"><label>Source channel<?= customOrderHelp('source_channel') ?></label><input name="source_channel" class="form-control form-control-sm" value="<?= h($selectedOrder['source_channel']) ?>" placeholder="Instagram, Email…"></div>
-                        <div class="form-group col-md-6"><label>Nick<?= customOrderHelp('social_handle') ?></label><input name="social_handle" class="form-control form-control-sm" value="<?= h($selectedOrder['social_handle']) ?>" placeholder="Nick"></div>
-                      </div>
-
-                      <div class="form-row">
-                        <div class="form-group col-md-4"><label>Payment<?= customOrderHelp('payment_method') ?></label><select name="payment_method" class="form-control form-control-sm"><?php foreach (customOrderOptionsWithCurrent($customOrderPaymentMethods, (string) $selectedOrder['payment_method']) as $paymentMethod): ?><option value="<?= h($paymentMethod) ?>" <?= (string) $selectedOrder['payment_method'] === $paymentMethod ? 'selected' : '' ?>><?= h($paymentMethod) ?></option><?php endforeach; ?></select></div>
-                        <div class="form-group col-md-4"><label>Shipping Method<?= customOrderHelp('shipping_method') ?></label><select name="shipping_method" class="form-control form-control-sm"><?php foreach (customOrderOptionsWithCurrent($customOrderShippingMethods, (string) $selectedOrder['shipping_method']) as $shippingMethod): ?><option value="<?= h($shippingMethod) ?>" <?= (string) $selectedOrder['shipping_method'] === $shippingMethod ? 'selected' : '' ?>><?= h($shippingMethod) ?></option><?php endforeach; ?></select></div>
-                        <div class="form-group col-md-4"><label>Shipping Price<?= customOrderHelp('shipping_price') ?></label><input type="number" step="0.01" name="shipping_price" class="form-control form-control-sm" value="<?= h($selectedOrder['shipping_price']) ?>"></div>
-                      </div>
-
                       <div class="row">
                         <div class="col-md-6">
-                          <h6>Billing<?= customOrderHelp('billing_address') ?></h6>
+                          <div class="form-group custom-twin-header-column-lead"><label>Nick<?= customOrderHelp('social_handle') ?></label><input name="social_handle" class="form-control form-control-sm" value="<?= h($selectedOrder['social_handle']) ?>" placeholder="Nick"></div>
+                          <div class="form-group mb-0"><label>Payment<?= customOrderHelp('payment_method') ?></label><select name="payment_method" class="form-control form-control-sm"><?php foreach (customOrderOptionsWithCurrent($customOrderPaymentMethods, (string) $selectedOrder['payment_method']) as $paymentMethod): ?><option value="<?= h($paymentMethod) ?>" <?= (string) $selectedOrder['payment_method'] === $paymentMethod ? 'selected' : '' ?>><?= h($paymentMethod) ?></option><?php endforeach; ?></select></div>
+
+                          <h6 class="mt-3">Billing<?= customOrderHelp('billing_address') ?></h6>
                           <input name="billing_name" class="form-control form-control-sm mb-1" placeholder="Name" value="<?= h($selectedOrder['billing_name']) ?>">
                           <div class="form-row mb-1"><div class="col-md-8"><input name="billing_company" class="form-control form-control-sm" placeholder="Company" value="<?= h($selectedOrder['billing_company']) ?>"></div><div class="col-md-4"><input name="billing_company_id" class="form-control form-control-sm" placeholder="Company ID" value="<?= h($selectedOrder['billing_company_id']) ?>"></div></div>
                           <input name="billing_street" class="form-control form-control-sm mb-1" placeholder="Street" value="<?= h($selectedOrder['billing_street']) ?>">
@@ -2924,7 +3135,13 @@ if (!$customOrdersDetailRequest) {
                           <input name="billing_phone" class="form-control form-control-sm mb-1" placeholder="Phone" value="<?= h($selectedOrder['billing_phone']) ?>">
                         </div>
                         <div class="col-md-6">
-                          <h6>Shipping<?= customOrderHelp('shipping_address') ?></h6>
+                          <div class="form-group custom-twin-header-column-lead"><label>Source channel<?= customOrderHelp('source_channel') ?></label><input name="source_channel" class="form-control form-control-sm" value="<?= h($selectedOrder['source_channel']) ?>" placeholder="Instagram, Email…"></div>
+                          <div class="form-row">
+                            <div class="form-group col-md-8 mb-0"><label>Shipping Price<?= customOrderHelp('shipping_price') ?></label><input type="number" step="0.01" name="shipping_price" class="form-control form-control-sm" value="<?= h($selectedOrder['shipping_price']) ?>"></div>
+                            <div class="form-group col-md-4 mb-0"><label>Shipping Method<?= customOrderHelp('shipping_method') ?></label><select name="shipping_method" class="form-control form-control-sm"><?php foreach (customOrderOptionsWithCurrent($customOrderShippingMethods, (string) $selectedOrder['shipping_method']) as $shippingMethod): ?><option value="<?= h($shippingMethod) ?>" <?= (string) $selectedOrder['shipping_method'] === $shippingMethod ? 'selected' : '' ?>><?= h($shippingMethod) ?></option><?php endforeach; ?></select></div>
+                          </div>
+
+                          <h6 class="mt-3">Shipping<?= customOrderHelp('shipping_address') ?></h6>
                           <input name="shipping_name" class="form-control form-control-sm mb-1" placeholder="Name" value="<?= h($selectedOrder['shipping_name']) ?>">
                           <div class="form-row mb-1"><div class="col-md-8"><input name="shipping_company" class="form-control form-control-sm" placeholder="Company" value="<?= h($selectedOrder['shipping_company']) ?>"></div><div class="col-md-4"><input name="shipping_company_id" class="form-control form-control-sm" placeholder="Company ID" value="<?= h($selectedOrder['shipping_company_id']) ?>"></div></div>
                           <input name="shipping_street" class="form-control form-control-sm mb-1" placeholder="Street" value="<?= h($selectedOrder['shipping_street']) ?>">
@@ -2938,9 +3155,42 @@ if (!$customOrdersDetailRequest) {
                     </form>
                   </div>
                 </div>
+
+                <fieldset class="custom-field-cluster custom-twin-secondary-card">
+                  <legend class="custom-field-cluster-title">Production Snapshot<?= customOrderHelp('production_snapshot') ?></legend>
+                  <?php if ((int) ($selectedOrder['production_order_id'] ?? 0) > 0): ?>
+                    <div class="custom-production-overview">
+                      <div class="custom-production-stat"><strong>Production ID</strong><span><?= (int) $selectedOrder['production_order_id'] ?></span></div>
+                      <div class="custom-production-stat"><strong>Invoices</strong><span><?= count($productionOverview['invoices'] ?? []) ?></span></div>
+                      <div class="custom-production-stat"><strong>Tracking</strong><span><?= count($productionOverview['tracking'] ?? []) ?></span></div>
+                    </div>
+                    <div class="custom-production-lists">
+                      <div>
+                        <div class="custom-production-list-title">Invoices</div>
+                        <div class="custom-production-records">
+                          <?php foreach (($productionOverview['invoices'] ?? []) as $invoice): ?>
+                            <div class="custom-production-record-row"><span class="custom-production-record-label">Invoice</span><span><?= h((string) ($invoice['invoice_number'] ?? '')) ?><?= customOrderCopyButton((string) ($invoice['invoice_number'] ?? '')) ?></span></div>
+                          <?php endforeach; ?>
+                          <?php if (empty($productionOverview['invoices'])): ?><div class="text-muted small">No invoices yet.</div><?php endif; ?>
+                        </div>
+                      </div>
+                      <div>
+                        <div class="custom-production-list-title">Tracking Numbers</div>
+                        <div class="custom-production-records">
+                          <?php foreach (($productionOverview['tracking'] ?? []) as $tracking): ?>
+                            <div class="custom-production-record-row"><span class="custom-production-record-label"><?= h((string) ($tracking['carrier'] ?: 'Tracking')) ?></span><span><?= h((string) ($tracking['tracking_number'] ?? '')) ?><?= customOrderCopyButton((string) ($tracking['tracking_number'] ?? '')) ?></span></div>
+                          <?php endforeach; ?>
+                          <?php if (empty($productionOverview['tracking'])): ?><div class="text-muted small">No tracking yet.</div><?php endif; ?>
+                        </div>
+                      </div>
+                    </div>
+                  <?php else: ?>
+                    <div class="text-muted">Lead not exported yet. Production invoice and tracking data will appear here after export.</div>
+                  <?php endif; ?>
+                </fieldset>
               </div>
 
-              <div class="col-lg-4 mt-3 mt-lg-0 d-flex">
+              <div class="col-lg-4 mt-3 mt-lg-0 d-flex flex-column custom-twin-column-stack">
                 <div class="custom-order-value-breakdown-card">
                   <div class="custom-order-value-breakdown-row custom-order-value-breakdown-total"><span>Total Order Value:</span><span><?= number_format((float) $summary['gross_total'], 2) ?> <?= h($selectedOrder['currency']) ?></span></div>
                   <?php foreach (['G' => 'Graphics', 'P' => 'Plastics', 'S' => 'Seat Covers', 'F' => 'Fitting', 'T' => 'Accessories', 'M' => 'Other'] as $typeCode => $typeLabel): ?>
@@ -2952,261 +3202,33 @@ if (!$customOrdersDetailRequest) {
                   <div class="custom-order-value-breakdown-row"><span>Paid net:</span><span><?= number_format((float) $summary['payment_net'], 2) ?> <?= h($selectedOrder['currency']) ?></span></div>
                   <div class="custom-order-value-breakdown-row font-weight-bold"><span>Balance due:</span><span><?= number_format((float) ($summary['gross_total'] - $summary['payment_net']), 2) ?> <?= h($selectedOrder['currency']) ?></span></div>
                 </div>
-              </div>
-            </div>
-          </div>
-        </div>
 
-        <div id="custom-order-accounting-panel"
-          data-scroll-block
-          class="custom-orders-panel mb-3<?= isset($invalidFields['customer_name']) || isset($invalidFields['social_handle']) || isset($invalidFields['shipping_name']) || isset($invalidFields['shipping_street']) || isset($invalidFields['shipping_city']) || isset($invalidFields['shipping_zip']) || isset($invalidFields['shipping_country']) || isset($invalidFields['customer_email']) || isset($invalidFields['shipping_email']) || isset($invalidFields['shipping_phone']) || isset($invalidFields['shipping_price']) ? ' custom-panel-invalid' : '' ?>">
-          <div class="panel-body">
-            <div class="custom-order-section-title">1. Edit Header — Lead, Addresses And Financials</div>
-            <div class="mb-3 text-muted">
-              Owner:
-              <strong><?= h($selectedOrder['owner_name'] ?: 'Unassigned') ?></strong>
-              <?php if (!empty($selectedOrder['owner_assigned_at'])): ?>
-                | assigned at <?= h($selectedOrder['owner_assigned_at']) ?>
-              <?php endif; ?>
-              <?php if (!empty($selectedOrder['owner_assigned_by_name'])): ?>
-                | by <?= h($selectedOrder['owner_assigned_by_name']) ?>
-              <?php endif; ?>
-            </div>
-            <form method="post" action="scripts/custom_orders/save_order.php" data-scroll-target="#custom-order-accounting-panel">
-              <input type="hidden" name="custom_order_id" value="<?= (int) $selectedOrder['id'] ?>">
-              <div class="custom-order-subgrid">
-                <fieldset class="custom-field-cluster custom-form-full">
-                  <legend class="custom-field-cluster-title">Payment And Delivery Methods</legend>
-                  <div class="custom-form-grid">
-                    <div><label>Payment<?= customOrderHelp('payment_method') ?></label><select name="payment_method" class="form-control form-control-sm"><?php foreach (customOrderOptionsWithCurrent($customOrderPaymentMethods, (string) ($selectedOrder['payment_method'] ?? '')) as $paymentMethod): ?><option value="<?= h($paymentMethod) ?>" <?= (string) ($selectedOrder['payment_method'] ?? '') === $paymentMethod ? 'selected' : '' ?>><?= h($paymentMethod) ?></option><?php endforeach; ?></select></div>
-                    <div><label>Shipping<?= customOrderHelp('shipping_method') ?></label><select name="shipping_method" class="form-control form-control-sm"><?php foreach (customOrderOptionsWithCurrent($customOrderShippingMethods, (string) $selectedOrder['shipping_method']) as $shippingMethod): ?><option value="<?= h($shippingMethod) ?>" <?= (string) $selectedOrder['shipping_method'] === $shippingMethod ? 'selected' : '' ?>><?= h($shippingMethod) ?></option><?php endforeach; ?></select></div>
-                    <div><label class="<?= trim(customOrderInvalid($invalidFields, 'shipping_price')) ?>">Shipping price<?= customOrderHelp('shipping_price') ?></label><input type="number" step="0.01" name="shipping_price" class="form-control form-control-sm<?= customOrderInvalid($invalidFields, 'shipping_price') ?>" value="<?= h($selectedOrder['shipping_price']) ?>"></div>
+                <fieldset class="custom-field-cluster custom-order-photos-card custom-twin-secondary-card" data-custom-order-photo-card data-order-id="<?= (int) $selectedOrder['id'] ?>">
+                  <legend class="custom-field-cluster-title">Order Photos<?= customOrderHelp('order_photos') ?></legend>
+                  <div class="custom-order-photo-dropzone" data-custom-order-photo-dropzone>
+                    <input type="file" class="d-none" data-custom-order-photo-input accept="image/jpeg,image/png,image/webp,image/gif" multiple>
+                    <div>
+                      <i class="fas fa-cloud-upload-alt d-block mb-1"></i>
+                      <b>Drag &amp; drop photos</b>
+                      <div class="small text-muted">or click to select · resize to max 1500 px</div>
+                    </div>
                   </div>
-                </fieldset>
-
-                <fieldset class="custom-field-cluster custom-form-full">
-                  <legend class="custom-field-cluster-title">Lead Identity And Billing</legend>
-                  <div class="custom-form-grid">
-                    <div><label>Status<?= customOrderHelp('status') ?></label><select name="status" class="form-control form-control-sm"><?php foreach ($statuses as $code => $label): ?><option value="<?= h($code) ?>" <?= $selectedOrder['status'] === $code ? 'selected' : '' ?>><?= h($label) ?></option><?php endforeach; ?></select></div>
-                    <div><label>Source channel<?= customOrderHelp('source_channel') ?></label><input type="text" name="source_channel" class="form-control form-control-sm" value="<?= h($selectedOrder['source_channel']) ?>" placeholder="Instagram, WhatsApp, Email"></div>
-                    <div><label>Communication platform<?= customOrderHelp('social_platform') ?></label><input type="text" name="social_platform" class="form-control form-control-sm" value="<?= h($selectedOrder['social_platform']) ?>"></div>
-                    <div><label class="<?= trim(customOrderInvalid($invalidFields, 'social_handle')) ?>">Nick<?= customOrderHelp('social_handle') ?></label><input type="text" name="social_handle" class="form-control form-control-sm<?= customOrderInvalid($invalidFields, 'social_handle') ?>" value="<?= h($selectedOrder['social_handle']) ?>" list="custom-contact-suggestions"></div>
-                    <div><label class="<?= trim(customOrderInvalid($invalidFields, 'customer_name')) ?>">Customer name<?= customOrderHelp('customer_name') ?></label><input type="text" name="customer_name" class="form-control form-control-sm<?= customOrderInvalid($invalidFields, 'customer_name') ?>" value="<?= h($selectedOrder['customer_name']) ?>" list="custom-contact-suggestions"></div>
-                    <div><label class="<?= trim(customOrderInvalid($invalidFields, 'customer_email')) ?>">Customer email<?= customOrderHelp('customer_email') ?></label><input type="text" name="customer_email" class="form-control form-control-sm<?= customOrderInvalid($invalidFields, 'customer_email') ?>" value="<?= h($selectedOrder['customer_email']) ?>"></div>
-                    <div><label class="<?= trim(customOrderInvalid($invalidFields, 'customer_phone')) ?>">Customer phone<?= customOrderHelp('customer_phone') ?></label><input type="text" name="customer_phone" class="form-control form-control-sm<?= customOrderInvalid($invalidFields, 'customer_phone') ?>" value="<?= h($selectedOrder['customer_phone'] ?? '') ?>"></div>
-                  </div>
-                </fieldset>
-
-                <fieldset class="custom-field-cluster custom-form-full">
-                  <legend class="custom-field-cluster-title">Order Financial Rules</legend>
-                  <div class="custom-form-grid-4">
-                    <div><label>Complexity<?= customOrderHelp('complexity_level') ?></label><input type="number" min="1" max="10" name="complexity_level" class="form-control form-control-sm" value="<?= (int) $selectedOrder['complexity_level'] ?>"></div>
-                    <div><label>Revisions included<?= customOrderHelp('deposit_revision_limit') ?></label><input type="number" name="deposit_revision_limit" class="form-control form-control-sm" value="<?= (int) $selectedOrder['deposit_revision_limit'] ?>"></div>
-                    <div><label>Revisions used<?= customOrderHelp('deposit_revision_used') ?></label><input type="number" name="deposit_revision_used" class="form-control form-control-sm" value="<?= (int) $selectedOrder['deposit_revision_used'] ?>"></div>
-                  </div>
-                </fieldset>
-
-                <fieldset class="custom-field-cluster">
-                  <legend class="custom-field-cluster-title">Invoicing Address</legend>
-                  <div class="custom-form-grid">
-                    <div class="custom-form-full"><label>Billing name<?= customOrderHelp('billing_name') ?></label><input type="text" name="billing_name" class="form-control form-control-sm" value="<?= h($selectedOrder['billing_name'] ?? '') ?>" placeholder="Name"></div>
-                    <div style="grid-column: span 2;"><label>Company<?= customOrderHelp('billing_company') ?></label><input type="text" name="billing_company" class="form-control form-control-sm" value="<?= h($selectedOrder['billing_company'] ?? '') ?>" placeholder="Company"></div>
-                    <div><label>Company ID<?= customOrderHelp('billing_company_id') ?></label><input type="text" name="billing_company_id" class="form-control form-control-sm" value="<?= h($selectedOrder['billing_company_id'] ?? '') ?>" placeholder="Company ID"></div>
-                    <div class="custom-form-full"><label>Street<?= customOrderHelp('billing_street') ?></label><input type="text" name="billing_street" class="form-control form-control-sm" value="<?= h($selectedOrder['billing_street'] ?? '') ?>" placeholder="Street"></div>
-                    <div class="custom-form-full"><label>City<?= customOrderHelp('billing_city') ?></label><input type="text" name="billing_city" class="form-control form-control-sm" value="<?= h($selectedOrder['billing_city'] ?? '') ?>" placeholder="City"></div>
-                    <div class="custom-form-full"><label>ZIP<?= customOrderHelp('billing_zip') ?></label><input type="text" name="billing_zip" class="form-control form-control-sm" value="<?= h($selectedOrder['billing_zip'] ?? '') ?>" placeholder="ZIP"></div>
-                    <div class="custom-form-full"><label>Country<?= customOrderHelp('billing_country') ?></label><input type="text" name="billing_country" class="form-control form-control-sm" value="<?= h($selectedOrder['billing_country'] ?? '') ?>" placeholder="Country"></div>
-                    <div class="custom-form-full"><label>Email<?= customOrderHelp('billing_email') ?></label><input type="text" name="billing_email" class="form-control form-control-sm" value="<?= h($selectedOrder['billing_email'] ?? '') ?>" placeholder="Email"></div>
-                    <div class="custom-form-full"><label>Phone<?= customOrderHelp('billing_phone') ?></label><input type="text" name="billing_phone" class="form-control form-control-sm" value="<?= h($selectedOrder['billing_phone'] ?? '') ?>" placeholder="Phone"></div>
-                  </div>
-                </fieldset>
-
-                <fieldset class="custom-field-cluster">
-                  <legend class="custom-field-cluster-title">Shipping Address</legend>
-                  <div class="custom-form-grid">
-                    <div class="custom-form-full"><label class="<?= trim(customOrderInvalid($invalidFields, 'shipping_name')) ?>">Shipping name<?= customOrderHelp('shipping_name') ?></label><input type="text" name="shipping_name" class="form-control form-control-sm<?= customOrderInvalid($invalidFields, 'shipping_name') ?>" value="<?= h($selectedOrder['shipping_name']) ?>" placeholder="Name"></div>
-                    <div style="grid-column: span 2;"><label>Company<?= customOrderHelp('shipping_company') ?></label><input type="text" name="shipping_company" class="form-control form-control-sm" value="<?= h($selectedOrder['shipping_company']) ?>" placeholder="Company"></div>
-                    <div><label>Company ID<?= customOrderHelp('shipping_company_id') ?></label><input type="text" name="shipping_company_id" class="form-control form-control-sm" value="<?= h($selectedOrder['shipping_company_id'] ?? '') ?>" placeholder="Company ID"></div>
-                    <div class="custom-form-full"><label class="<?= trim(customOrderInvalid($invalidFields, 'shipping_street')) ?>">Street<?= customOrderHelp('shipping_street') ?></label><input type="text" name="shipping_street" class="form-control form-control-sm<?= customOrderInvalid($invalidFields, 'shipping_street') ?>" value="<?= h($selectedOrder['shipping_street']) ?>" placeholder="Street"></div>
-                    <div class="custom-form-full"><label class="<?= trim(customOrderInvalid($invalidFields, 'shipping_city')) ?>">City<?= customOrderHelp('shipping_city') ?></label><input type="text" name="shipping_city" class="form-control form-control-sm<?= customOrderInvalid($invalidFields, 'shipping_city') ?>" value="<?= h($selectedOrder['shipping_city']) ?>" placeholder="City"></div>
-                    <div class="custom-form-full"><label class="<?= trim(customOrderInvalid($invalidFields, 'shipping_zip')) ?>">ZIP<?= customOrderHelp('shipping_zip') ?></label><input type="text" name="shipping_zip" class="form-control form-control-sm<?= customOrderInvalid($invalidFields, 'shipping_zip') ?>" value="<?= h($selectedOrder['shipping_zip']) ?>" placeholder="ZIP"></div>
-                    <div class="custom-form-full"><label class="<?= trim(customOrderInvalid($invalidFields, 'shipping_country')) ?>">Country<?= customOrderHelp('shipping_country') ?></label><input type="text" name="shipping_country" class="form-control form-control-sm<?= customOrderInvalid($invalidFields, 'shipping_country') ?>" value="<?= h($selectedOrder['shipping_country']) ?>" placeholder="Country"></div>
-                    <div class="custom-form-full"><label class="<?= trim(customOrderInvalid($invalidFields, 'shipping_email')) ?>">Email<?= customOrderHelp('shipping_email') ?></label><input type="text" name="shipping_email" class="form-control form-control-sm<?= customOrderInvalid($invalidFields, 'shipping_email') ?>" value="<?= h($selectedOrder['shipping_email']) ?>" placeholder="Email"></div>
-                    <div class="custom-form-full"><label class="<?= trim(customOrderInvalid($invalidFields, 'shipping_phone')) ?>">Phone<?= customOrderHelp('shipping_phone') ?></label><input type="text" name="shipping_phone" class="form-control form-control-sm<?= customOrderInvalid($invalidFields, 'shipping_phone') ?>" value="<?= h($selectedOrder['shipping_phone']) ?>" placeholder="Phone"></div>
-                  </div>
-                </fieldset>
-              </div>
-              <button type="submit" class="btn btn-success btn-sm mt-3">Save Accounting / Addresses</button>
-            </form>
-
-            <div class="custom-optical-divider"></div>
-
-            <div class="custom-order-subgrid custom-compact-finance-grid">
-              <fieldset class="custom-field-cluster" id="custom-order-payments-block" data-scroll-block>
-                <legend class="custom-field-cluster-title">Payments And Deposits<?= customOrderHelp('payments_block') ?></legend>
-                <form method="post" action="scripts/custom_orders/save_payment.php" data-scroll-target="#custom-order-payments-block">
-                  <input type="hidden" name="custom_order_id" value="<?= (int) $selectedOrder['id'] ?>">
-                  <div class="custom-payment-entry-grid">
-                    <div><label>Kind<?= customOrderHelp('payment_kind') ?></label><select name="payment_kind"
-                        class="form-control form-control-sm"><?php foreach ($paymentKinds as $code => $label): ?>
-                          <option value="<?= h($code) ?>"><?= h($label) ?></option><?php endforeach; ?>
-                      </select></div>
-                    <div><label>PayPal tx ID<?= customOrderHelp('paypal_transaction_id') ?></label><input type="text"
-                        name="paypal_transaction_id" class="form-control form-control-sm"></div>
-                    <div><label>Amount<?= customOrderHelp('payment_amount') ?></label><input type="number" step="0.01"
-                        name="amount" class="form-control form-control-sm" required></div>
-                    <div><label>Currency<?= customOrderHelp('payment_currency') ?></label><input type="text" name="currency"
-                        class="form-control form-control-sm" value="<?= h($selectedOrder['currency']) ?>"></div>
-                    <div><label>Received at<?= customOrderHelp('payment_received_at') ?></label><input type="datetime-local"
-                        name="received_at" class="form-control form-control-sm"></div>
-                  </div>
-                  <div class="custom-payment-note-row">
-                    <div><label>Note<?= customOrderHelp('payment_note') ?></label><input type="text" name="note" class="form-control form-control-sm"></div>
-                    <button type="submit" class="btn btn-outline-light btn-sm">Add Payment</button>
-                  </div>
-                </form>
-                <table class="table table-sm table-dark table-striped custom-mini-table custom-payment-history">
-                  <thead>
-                    <tr>
-                      <th>Kind<?= customOrderHelp('payment_kind') ?></th>
-                      <th>Amount<?= customOrderHelp('payment_amount') ?></th>
-                      <th>PayPal<?= customOrderHelp('paypal_transaction_id') ?></th>
-                      <th>Note<?= customOrderHelp('payment_note') ?></th>
-                      <th>At<?= customOrderHelp('payment_received_at') ?></th>
-                      <th></th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <?php foreach ($selectedOrder['payments'] as $payment): ?>
-                      <tr>
-                        <td><?= h($payment['payment_kind']) ?></td>
-                        <td><?= number_format((float) $payment['amount'], 2) ?></td>
-                        <td><?= h($payment['paypal_transaction_id']) ?></td>
-                        <td><?= customOrderTruncate((string) ($payment['note'] ?? ''), 42) ?></td>
-                        <td><?= h($payment['received_at']) ?></td>
-                        <td>
-                          <form method="post" action="scripts/custom_orders/delete_payment.php" data-scroll-target="#custom-order-payments-block" onsubmit="return confirm('Delete this payment record?');">
-                            <input type="hidden" name="custom_order_id" value="<?= (int) $selectedOrder['id'] ?>">
-                            <input type="hidden" name="payment_id" value="<?= (int) $payment['id'] ?>">
-                            <button type="submit" class="btn btn-danger btn-xs">Delete</button>
-                          </form>
-                        </td>
-                      </tr>
+                  <div class="custom-order-photo-progress" data-custom-order-photo-progress><span></span></div>
+                  <?php if ((int) ($selectedOrder['production_order_id'] ?? 0) > 0): ?>
+                    <div class="small text-info mt-1">New photos are synchronized directly with Production Order #<?= (int) $selectedOrder['production_order_id'] ?>.</div>
+                  <?php endif; ?>
+                  <div class="custom-order-photo-grid" data-custom-order-photo-grid>
+                    <?php foreach (($selectedOrder['photos'] ?? []) as $photo): ?>
+                      <div class="custom-order-photo-wrap" data-photo-id="<?= (int) $photo['id'] ?>">
+                        <img src="<?= h((string) $photo['file_path']) ?>" class="custom-order-photo-thumb" data-full-src="<?= h((string) $photo['file_path']) ?>" alt="<?= h((string) ($photo['original_name'] ?? 'Order photo')) ?>">
+                        <button type="button" class="btn btn-xs btn-danger custom-order-photo-delete" data-photo-id="<?= (int) $photo['id'] ?>" title="Delete photo">&times;</button>
+                      </div>
                     <?php endforeach; ?>
-                  </tbody>
-                </table>
-              </fieldset>
-
-              <fieldset class="custom-field-cluster">
-                <legend class="custom-field-cluster-title">Production Snapshot<?= customOrderHelp('production_snapshot') ?></legend>
-                <?php if ((int) ($selectedOrder['production_order_id'] ?? 0) > 0): ?>
-                  <div class="custom-production-overview">
-                    <div class="custom-production-stat"><strong>Production ID</strong><span><?= (int) $selectedOrder['production_order_id'] ?></span></div>
-                    <div class="custom-production-stat"><strong>Invoices</strong><span><?= count($productionOverview['invoices'] ?? []) ?></span></div>
-                    <div class="custom-production-stat"><strong>Tracking</strong><span><?= count($productionOverview['tracking'] ?? []) ?></span></div>
+                    <?php if (empty($selectedOrder['photos'])): ?><div class="text-muted small custom-order-photo-empty">No photos yet.</div><?php endif; ?>
                   </div>
-                  <div class="custom-production-lists">
-                    <div>
-                      <div class="custom-production-list-title">Invoices</div>
-                      <div class="custom-production-records">
-                        <?php foreach (($productionOverview['invoices'] ?? []) as $invoice): ?>
-                          <div class="custom-production-record-row"><span class="custom-production-record-label">Invoice</span><span><?= h((string) ($invoice['invoice_number'] ?? '')) ?><?= customOrderCopyButton((string) ($invoice['invoice_number'] ?? '')) ?></span></div>
-                        <?php endforeach; ?>
-                        <?php if (empty($productionOverview['invoices'])): ?><div class="text-muted small">No invoices yet.</div><?php endif; ?>
-                      </div>
-                    </div>
-                    <div>
-                      <div class="custom-production-list-title">Tracking Numbers</div>
-                      <div class="custom-production-records">
-                        <?php foreach (($productionOverview['tracking'] ?? []) as $tracking): ?>
-                          <div class="custom-production-record-row"><span class="custom-production-record-label"><?= h((string) ($tracking['carrier'] ?: 'Tracking')) ?></span><span><?= h((string) ($tracking['tracking_number'] ?? '')) ?><?= customOrderCopyButton((string) ($tracking['tracking_number'] ?? '')) ?></span></div>
-                        <?php endforeach; ?>
-                        <?php if (empty($productionOverview['tracking'])): ?><div class="text-muted small">No tracking yet.</div><?php endif; ?>
-                      </div>
-                    </div>
-                  </div>
-                <?php else: ?>
-                  <div class="text-muted">Lead not exported yet. Production invoice and tracking data will appear here after export.</div>
-                <?php endif; ?>
-              </fieldset>
-
-              <fieldset class="custom-field-cluster custom-order-photos-card" data-custom-order-photo-card data-order-id="<?= (int) $selectedOrder['id'] ?>">
-                <legend class="custom-field-cluster-title">Order Photos<?= customOrderHelp('order_photos') ?></legend>
-                <div class="custom-order-photo-dropzone" data-custom-order-photo-dropzone>
-                  <input type="file" class="d-none" data-custom-order-photo-input accept="image/jpeg,image/png,image/webp,image/gif" multiple>
-                  <div>
-                    <i class="fas fa-cloud-upload-alt d-block mb-1"></i>
-                    <b>Drag &amp; drop photos</b>
-                    <div class="small text-muted">or click to select · resize to max 1500 px</div>
-                  </div>
-                </div>
-                <div class="custom-order-photo-progress" data-custom-order-photo-progress><span></span></div>
-                <?php if ((int) ($selectedOrder['production_order_id'] ?? 0) > 0): ?>
-                  <div class="small text-info mt-1">New photos are synchronized directly with Production Order #<?= (int) $selectedOrder['production_order_id'] ?>.</div>
-                <?php endif; ?>
-                <div class="custom-order-photo-grid" data-custom-order-photo-grid>
-                  <?php foreach (($selectedOrder['photos'] ?? []) as $photo): ?>
-                    <div class="custom-order-photo-wrap" data-photo-id="<?= (int) $photo['id'] ?>">
-                      <img src="<?= h((string) $photo['file_path']) ?>" class="custom-order-photo-thumb" data-full-src="<?= h((string) $photo['file_path']) ?>" alt="<?= h((string) ($photo['original_name'] ?? 'Order photo')) ?>">
-                      <button type="button" class="btn btn-xs btn-danger custom-order-photo-delete" data-photo-id="<?= (int) $photo['id'] ?>" title="Delete photo">&times;</button>
-                    </div>
-                  <?php endforeach; ?>
-                  <?php if (empty($selectedOrder['photos'])): ?><div class="text-muted small custom-order-photo-empty">No photos yet.</div><?php endif; ?>
-                </div>
-              </fieldset>
-            </div>
-          </div>
-        </div>
-
-        <div id="custom-order-service-panel" data-scroll-block class="custom-orders-panel custom-order-block">
-          <div class="panel-body">
-            <fieldset class="custom-field-cluster" id="custom-order-followups-block" data-scroll-block>
-              <legend class="custom-field-cluster-title">Contact Attempts And Follow-ups<?= customOrderHelp('followups_block') ?></legend>
-              <?php $deadOrderLocked = !empty($selectedOrder['exported_at']) || !empty($selectedOrder['production_order_id']) || (string) ($selectedOrder['status'] ?? '') === 'EXPORTED'; ?>
-              <div class="custom-followup-layout">
-                <div class="custom-followup-card">
-                  <div class="custom-followup-card-title">Follow-up Status</div>
-                  <form method="post" action="scripts/custom_orders/save_order.php" data-scroll-target="#custom-order-followups-block">
-                    <input type="hidden" name="custom_order_id" value="<?= (int) $selectedOrder['id'] ?>">
-                    <input type="hidden" name="dead_order_flag" value="<?= $deadOrderLocked ? (int) $selectedOrder['dead_order_flag'] : 0 ?>">
-                    <div class="custom-followup-status-controls">
-                      <div><label>Next follow-up<?= customOrderHelp('next_followup_at') ?></label><input type="datetime-local" name="next_followup_at" class="form-control form-control-sm" value="<?= h($selectedOrder['next_followup_at'] ? date('Y-m-d\TH:i', strtotime((string) $selectedOrder['next_followup_at'])) : '') ?>"></div>
-                      <div class="form-check mb-2"><input class="form-check-input" type="checkbox" name="dead_order_flag" id="dead_order_flag_followups" value="1" <?= (int) $selectedOrder['dead_order_flag'] === 1 ? 'checked' : '' ?> <?= $deadOrderLocked ? 'disabled' : '' ?>><label class="form-check-label" for="dead_order_flag_followups">Dead order<?= customOrderHelp('dead_order_flag') ?></label></div>
-                    </div>
-                    <?php if ($deadOrderLocked): ?><div class="text-muted small mt-1">Locked after export to production.</div><?php endif; ?>
-                    <button type="submit" class="btn btn-outline-light btn-sm mt-2">Save Status</button>
-                  </form>
-                </div>
-
-                <div class="custom-followup-card">
-                  <div class="custom-followup-card-title">Add Follow-up</div>
-                  <form method="post" action="scripts/custom_orders/save_followup.php" data-scroll-target="#custom-order-followups-block">
-                    <input type="hidden" name="custom_order_id" value="<?= (int) $selectedOrder['id'] ?>">
-                    <div class="custom-followup-add-grid">
-                      <div><label>Contacted at<?= customOrderHelp('followup_contacted_at') ?></label><input type="datetime-local" name="contacted_at" class="form-control form-control-sm"></div>
-                      <div><label>Channel<?= customOrderHelp('followup_channel') ?></label><input type="text" name="channel" class="form-control form-control-sm" placeholder="IG / WhatsApp / Email"></div>
-                      <div class="custom-followup-add-note"><label>Note<?= customOrderHelp('followup_note') ?></label><input type="text" name="note" class="form-control form-control-sm" placeholder="Requested address, clarified plastics generation, etc."></div>
-                    </div>
-                    <button type="submit" class="btn btn-outline-light btn-sm mt-2">Add Follow-up</button>
-                  </form>
-                </div>
-
-                <div class="custom-followup-card custom-followup-history-card">
-                  <div class="custom-followup-card-title">History</div>
-                  <div class="custom-followup-history-scroll">
-                    <table class="table table-sm table-dark table-striped custom-mini-table custom-followup-history">
-                      <thead><tr><th>When<?= customOrderHelp('followup_contacted_at') ?></th><th>Channel<?= customOrderHelp('followup_channel') ?></th><th>Note<?= customOrderHelp('followup_note') ?></th></tr></thead>
-                      <tbody>
-                        <?php foreach ($selectedOrder['followups'] as $followup): ?>
-                          <tr><td><?= h($followup['contacted_at']) ?></td><td><?= h($followup['channel']) ?></td><td><?= h($followup['note']) ?></td></tr>
-                        <?php endforeach; ?>
-                        <?php if (empty($selectedOrder['followups'])): ?><tr><td colspan="3" class="text-muted">No follow-ups yet.</td></tr><?php endif; ?>
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
+                </fieldset>
               </div>
-            </fieldset>
+            </div>
           </div>
         </div>
 
@@ -3238,10 +3260,6 @@ if (!$customOrdersDetailRequest) {
               <div class="custom-item-builder-shell">
                 <div class="custom-builder-picker">
                   <div class="custom-builder-picker-copy">
-                    <div class="custom-item-builder-title"><?= $editItem ? 'Edit Product' : 'Add Product To Lead' ?></div>
-                    <?php if (!$editItem && $currentBuilderType === ''): ?>
-                      <div class="custom-builder-placeholder" data-builder-empty-note>Select a kind to render the familiar order-style product block.</div>
-                    <?php endif; ?>
                     <div class="custom-builder-upsell-inline">
                       <div class="custom-builder-upsell-source">
                         <label>Upsell source<?= customOrderHelp('item_upsell_source') ?></label>
@@ -3258,16 +3276,16 @@ if (!$customOrdersDetailRequest) {
                   <div class="custom-builder-picker-label" data-graphics-subcategory-wrap <?= $currentBuilderDepartment === 'G' ? '' : 'hidden' ?>>
                     <label>Graphics subcategory<?= customOrderHelp('graphics_subcategory') ?></label>
                     <select name="graphics_subcategory" class="form-control form-control-sm custom-graphics-subcategory-select">
-                      <option value="">General graphics</option>
+                      <option value="">Graphics Kit</option>
                       <?php foreach ($graphicsSubcategoryLabels as $subcatCode => $subcatLabel): ?>
                         <option value="<?= h((string) $subcatCode) ?>" <?= $currentBuilderSubcategory === (string) $subcatCode ? 'selected' : '' ?>><?= h((string) $subcatLabel) ?></option>
                       <?php endforeach; ?>
                     </select>
                   </div>
                   <div class="custom-builder-picker-label">
-                    <label>Kind<?= customOrderHelp('item_type_code') ?></label>
+                    <label>Product Type<?= customOrderHelp('item_type_code') ?></label>
                     <select name="item_type_code" class="form-control form-control-sm custom-item-type-select">
-                      <option value="">Select kind...</option>
+                      <option value="">Select product type...</option>
                       <?php foreach ($allowedTypes as $code => $label): ?><option value="<?= h($code) ?>" <?= ($currentBuilderType === $code) ? 'selected' : '' ?>><?= h($label) ?></option><?php endforeach; ?>
                     </select>
                   </div>
@@ -3369,9 +3387,7 @@ if (!$customOrdersDetailRequest) {
                             $departmentMainFields = [];
                             $departmentTextFields = [];
                             foreach ($filteredDefinitions as $definition) {
-                              $sourceKey = trim((string) ($definition['source_key'] ?? ''));
-                              $fieldType = trim((string) ($definition['field_type'] ?? 'dropdown'));
-                              if ($fieldType === 'text' || in_array($sourceKey, ['name', 'number', 'note', 'my-item-note'], true)) {
+                              if (customOrderBuilderDefinitionIsTextarea($definition)) {
                                 $departmentTextFields[] = $definition;
                               } else {
                                 $departmentMainFields[] = $definition;
@@ -3389,7 +3405,7 @@ if (!$customOrdersDetailRequest) {
                                   <div class="g-options-bar">
                                     <?php foreach ($departmentMainFields as $definition): ?>
                                       <label class="product-spec-label">
-                                        <span class="product-spec-label-title"><?= h(customOrderBuilderSpecLabel($departmentCode, $definition)) ?><?= customOrderHelp('item_specification') ?></span>
+                                        <span class="product-spec-label-title"><?= h(customOrderBuilderSpecLabel($departmentCode, $definition)) ?></span>
                                         <?= customOrderRenderSpecFieldInput($conn, $definition, $editOptions, $selectedOrder) ?>
                                       </label>
                                     <?php endforeach; ?>
@@ -3404,7 +3420,7 @@ if (!$customOrdersDetailRequest) {
                                   <div class="g-options-bar">
                                     <?php foreach ($departmentTextFields as $definition): ?>
                                       <label class="product-spec-label">
-                                        <span class="product-spec-label-title"><?= h(customOrderBuilderSpecLabel($departmentCode, $definition)) ?><?= customOrderHelp('item_specification') ?></span>
+                                        <span class="product-spec-label-title"><?= h(customOrderBuilderSpecLabel($departmentCode, $definition)) ?></span>
                                         <?= customOrderRenderSpecFieldInput($conn, $definition, $editOptions, $selectedOrder) ?>
                                       </label>
                                     <?php endforeach; ?>
@@ -3450,9 +3466,7 @@ if (!$customOrdersDetailRequest) {
                 $itemMainDefinitions = [];
                 $itemTextDefinitions = [];
                 foreach ($itemDefinitions as $itemDefinition) {
-                  $itemSourceKey = trim((string) ($itemDefinition['source_key'] ?? ''));
-                  $itemFieldType = trim((string) ($itemDefinition['field_type'] ?? 'dropdown'));
-                  if ($itemFieldType === 'text' || in_array($itemSourceKey, ['name', 'number', 'note', 'my-item-note'], true)) {
+                  if (customOrderBuilderDefinitionIsTextarea($itemDefinition)) {
                     $itemTextDefinitions[] = $itemDefinition;
                   } else {
                     $itemMainDefinitions[] = $itemDefinition;
@@ -3547,7 +3561,7 @@ if (!$customOrdersDetailRequest) {
                         <?php if ($itemMainDefinitions): ?>
                           <tr class="g-item-options-row item-type-<?= h($itemTypeCode) ?>">
                             <td colspan="99"><div class="g-options-bar">
-                              <?php foreach ($itemMainDefinitions as $itemDefinition): ?><label class="product-spec-label"><span class="product-spec-label-title"><?= h(customOrderBuilderSpecLabel($itemDepartment, $itemDefinition)) ?><?= customOrderHelp('item_specification') ?></span><?= customOrderRenderSpecFieldInput($conn, $itemDefinition, $itemOptions, $selectedOrder) ?></label><?php endforeach; ?>
+                              <?php foreach ($itemMainDefinitions as $itemDefinition): ?><label class="product-spec-label"><span class="product-spec-label-title"><?= h(customOrderBuilderSpecLabel($itemDepartment, $itemDefinition)) ?></span><?= customOrderRenderSpecFieldInput($conn, $itemDefinition, $itemOptions, $selectedOrder) ?></label><?php endforeach; ?>
                             </div></td>
                           </tr>
                         <?php endif; ?>
@@ -3555,7 +3569,7 @@ if (!$customOrdersDetailRequest) {
                         <?php if ($itemTextDefinitions): ?>
                           <tr class="g-item-options-row item-type-<?= h($itemTypeCode) ?>">
                             <td colspan="99"><div class="g-options-bar">
-                              <?php foreach ($itemTextDefinitions as $itemDefinition): ?><label class="product-spec-label"><span class="product-spec-label-title"><?= h(customOrderBuilderSpecLabel($itemDepartment, $itemDefinition)) ?><?= customOrderHelp('item_specification') ?></span><?= customOrderRenderSpecFieldInput($conn, $itemDefinition, $itemOptions, $selectedOrder) ?></label><?php endforeach; ?>
+                              <?php foreach ($itemTextDefinitions as $itemDefinition): ?><label class="product-spec-label"><span class="product-spec-label-title"><?= h(customOrderBuilderSpecLabel($itemDepartment, $itemDefinition)) ?></span><?= customOrderRenderSpecFieldInput($conn, $itemDefinition, $itemOptions, $selectedOrder) ?></label><?php endforeach; ?>
                             </div></td>
                           </tr>
                         <?php endif; ?>
@@ -3571,6 +3585,75 @@ if (!$customOrdersDetailRequest) {
               <?php endforeach; ?>
               <?php if (empty($selectedOrder['items'])): ?><div class="text-muted">No products added yet.</div><?php endif; ?>
             </div>
+
+            <?php $paymentsDefaultExpanded = !empty($customOrderSectionDefaults['payments']); ?>
+            <div id="custom-order-payments-block" data-scroll-block data-custom-collapsible-panel data-section-key="payments" data-order-id="<?= (int) $selectedOrder['id'] ?>" data-default-expanded="<?= $paymentsDefaultExpanded ? '1' : '0' ?>" class="custom-orders-panel custom-collapsible-panel mt-3<?= $paymentsDefaultExpanded ? ' is-expanded' : '' ?>">
+              <button type="button" class="custom-collapsible-toggle" data-custom-collapsible-toggle aria-expanded="<?= $paymentsDefaultExpanded ? 'true' : 'false' ?>">
+                <span class="custom-collapsible-toggle-title"><i class="fas fa-wallet" aria-hidden="true"></i>Payments And Deposits<?= customOrderHelp('payments_block') ?></span>
+                <span class="custom-collapsible-toggle-meta">
+                  <span class="badge badge-info"><?= count((array) ($selectedOrder['payments'] ?? [])) ?></span>
+                  <span>records</span>
+                  <i class="fas fa-chevron-down custom-collapsible-toggle-chevron" aria-hidden="true"></i>
+                </span>
+              </button>
+              <div class="panel-body custom-collapsible-body" data-custom-collapsible-body <?= $paymentsDefaultExpanded ? '' : 'hidden' ?>>
+                <fieldset class="custom-field-cluster">
+              <legend class="custom-field-cluster-title">Payment Details</legend>
+              <form method="post" action="scripts/custom_orders/save_payment.php" data-scroll-target="#custom-order-payments-block">
+                <input type="hidden" name="custom_order_id" value="<?= (int) $selectedOrder['id'] ?>">
+                <div class="custom-payment-entry-grid">
+                  <div><label>Kind<?= customOrderHelp('payment_kind') ?></label><select name="payment_kind"
+                      class="form-control form-control-sm"><?php foreach ($paymentKinds as $code => $label): ?>
+                        <option value="<?= h($code) ?>"><?= h($label) ?></option><?php endforeach; ?>
+                    </select></div>
+                  <div><label>PayPal tx ID<?= customOrderHelp('paypal_transaction_id') ?></label><input type="text"
+                      name="paypal_transaction_id" class="form-control form-control-sm"></div>
+                  <div><label>Amount<?= customOrderHelp('payment_amount') ?></label><input type="number" step="0.01"
+                      name="amount" class="form-control form-control-sm" required></div>
+                  <div><label>Currency<?= customOrderHelp('payment_currency') ?></label><input type="text" name="currency"
+                      class="form-control form-control-sm" value="<?= h($selectedOrder['currency']) ?>"></div>
+                  <div><label>Received at<?= customOrderHelp('payment_received_at') ?></label><input type="datetime-local"
+                      name="received_at" class="form-control form-control-sm"></div>
+                </div>
+                <div class="custom-payment-note-row">
+                  <div><label>Note<?= customOrderHelp('payment_note') ?></label><input type="text" name="note" class="form-control form-control-sm"></div>
+                  <button type="submit" class="btn btn-outline-light btn-sm">Add Payment</button>
+                </div>
+              </form>
+              <table class="table table-sm table-dark table-striped custom-mini-table custom-payment-history">
+                <thead>
+                  <tr>
+                    <th>Kind<?= customOrderHelp('payment_kind') ?></th>
+                    <th>Amount<?= customOrderHelp('payment_amount') ?></th>
+                    <th>PayPal<?= customOrderHelp('paypal_transaction_id') ?></th>
+                    <th>Note<?= customOrderHelp('payment_note') ?></th>
+                    <th>At<?= customOrderHelp('payment_received_at') ?></th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <?php foreach ($selectedOrder['payments'] as $payment): ?>
+                    <tr>
+                      <td><?= h($payment['payment_kind']) ?></td>
+                      <td><?= number_format((float) $payment['amount'], 2) ?></td>
+                      <td><?= h($payment['paypal_transaction_id']) ?></td>
+                      <td><?= customOrderTruncate((string) ($payment['note'] ?? ''), 42) ?></td>
+                      <td><?= h($payment['received_at']) ?></td>
+                      <td>
+                        <form method="post" action="scripts/custom_orders/delete_payment.php" data-scroll-target="#custom-order-payments-block" onsubmit="return confirm('Delete this payment record?');">
+                          <input type="hidden" name="custom_order_id" value="<?= (int) $selectedOrder['id'] ?>">
+                          <input type="hidden" name="payment_id" value="<?= (int) $payment['id'] ?>">
+                          <button type="submit" class="btn btn-danger btn-xs">Delete</button>
+                        </form>
+                      </td>
+                    </tr>
+                  <?php endforeach; ?>
+                </tbody>
+              </table>
+                </fieldset>
+              </div>
+            </div>
+
             <?php foreach ($selectedOrder['items'] as $item): ?>
               <?php $itemOptions = json_decode((string) ($item['options_json'] ?? ''), true) ?: []; ?>
               <?php $itemCategoryInfo = trim((string) ($itemOptions['category_info'] ?? '')); ?>
@@ -3733,30 +3816,158 @@ if (!$customOrdersDetailRequest) {
           </div>
         </div>
 
-        <div class="custom-orders-panel mb-3">
-          <div class="panel-body">
-            <div class="custom-order-section-title">4. Append-Only Notes<?= customOrderHelp('notes_block') ?></div>
-            <form method="post" action="scripts/custom_orders/save_note.php" class="mb-3">
-              <input type="hidden" name="custom_order_id" value="<?= (int) $selectedOrder['id'] ?>">
-              <div class="custom-form-grid">
-                <div><label>Type<?= customOrderHelp('note_type') ?></label><select name="note_type" class="form-control form-control-sm"><option value="CUSTOMER">Customer</option><option value="INTERNAL">Internal</option><option value="REVISION">Revision</option></select></div>
-                <div class="custom-form-full"><label>New note<?= customOrderHelp('note_body') ?></label><textarea name="note_body" rows="4" class="form-control form-control-sm" placeholder="Append next customer change, revision request, or internal update..."></textarea></div>
-              </div>
-              <button type="submit" class="btn btn-outline-light btn-sm mt-2">Append Note</button>
-            </form>
+        <?php $notesDefaultExpanded = !empty($customOrderSectionDefaults['notes']); ?>
+        <div id="custom-order-notes-panel" data-scroll-block data-custom-collapsible-panel data-section-key="notes" data-order-id="<?= (int) $selectedOrder['id'] ?>" data-default-expanded="<?= $notesDefaultExpanded ? '1' : '0' ?>" class="custom-orders-panel custom-collapsible-panel mb-3<?= $notesDefaultExpanded ? ' is-expanded' : '' ?>">
+          <button type="button" class="custom-collapsible-toggle" data-custom-collapsible-toggle aria-expanded="<?= $notesDefaultExpanded ? 'true' : 'false' ?>">
+            <span class="custom-collapsible-toggle-title"><i class="fas fa-comment-alt" aria-hidden="true"></i>4. Append-Only Notes<?= customOrderHelp('notes_block') ?></span>
+            <span class="custom-collapsible-toggle-meta">
+              <span class="badge badge-info"><?= count((array) ($selectedOrder['notes'] ?? [])) ?></span>
+              <span>messages</span>
+              <i class="fas fa-chevron-down custom-collapsible-toggle-chevron" aria-hidden="true"></i>
+            </span>
+          </button>
+          <div class="panel-body custom-collapsible-body" data-custom-collapsible-body <?= $notesDefaultExpanded ? '' : 'hidden' ?>>
+            <?php
+            $rootNotes = [];
+            $noteReplies = [];
+            foreach ((array) ($selectedOrder['notes'] ?? []) as $discussionNote) {
+              $discussionNoteId = (int) ($discussionNote['id'] ?? 0);
+              $discussionParentId = (int) ($discussionNote['parent_note_id'] ?? 0);
+              if ($discussionParentId > 0) {
+                $noteReplies[$discussionParentId][] = $discussionNote;
+              } else {
+                $rootNotes[$discussionNoteId] = $discussionNote;
+              }
+            }
+            foreach ($noteReplies as $discussionParentId => $orphanCheckReplies) {
+              if (!isset($rootNotes[$discussionParentId])) {
+                foreach ($orphanCheckReplies as $orphanReply) {
+                  $rootNotes[(int) ($orphanReply['id'] ?? 0)] = $orphanReply;
+                }
+                unset($noteReplies[$discussionParentId]);
+              }
+            }
+            ?>
             <div class="custom-notes-timeline">
-              <?php foreach (($selectedOrder['notes'] ?? []) as $note): ?>
-                <div class="custom-note-entry">
-                  <div class="custom-note-entry-meta"><span class="badge badge-secondary"><?= h(customOrderNoteTypeLabel((string) ($note['note_type'] ?? ''))) ?></span><span><?= h((string) ($note['created_at'] ?? '')) ?></span></div>
-                  <div class="custom-note-entry-body"><?= h((string) ($note['note_body'] ?? '')) ?></div>
+              <?php foreach ($rootNotes as $noteId => $note): ?>
+                <?php $replyFormId = 'custom-note-reply-' . (int) $noteId; ?>
+                <div class="custom-note-thread">
+                  <article class="custom-note-entry">
+                    <div><?= customOrderNoteAuthorAvatar($note) ?></div>
+                    <div class="custom-note-entry-content">
+                      <div class="custom-note-entry-meta">
+                        <span><?= h((string) ($note['created_at'] ?? '')) ?></span>
+                        <button type="button" class="custom-note-reply-button" data-note-reply-toggle data-reply-form="#<?= h($replyFormId) ?>">Reply</button>
+                      </div>
+                      <div class="custom-note-entry-body"><?= h((string) ($note['note_body'] ?? '')) ?></div>
+                    </div>
+                  </article>
+
+                  <?php if (!empty($noteReplies[$noteId])): ?>
+                    <div class="custom-note-replies">
+                      <?php foreach ($noteReplies[$noteId] as $reply): ?>
+                        <div class="custom-note-reply-wrap">
+                          <article class="custom-note-entry is-reply">
+                            <div><?= customOrderNoteAuthorAvatar($reply) ?></div>
+                            <div class="custom-note-entry-content">
+                              <div class="custom-note-entry-meta">
+                                <span><?= h((string) ($reply['created_at'] ?? '')) ?></span>
+                                <button type="button" class="custom-note-reply-button" data-note-reply-toggle data-reply-form="#<?= h($replyFormId) ?>">Reply</button>
+                              </div>
+                              <div class="custom-note-entry-body"><?= h((string) ($reply['note_body'] ?? '')) ?></div>
+                            </div>
+                          </article>
+                        </div>
+                      <?php endforeach; ?>
+                    </div>
+                  <?php endif; ?>
+
+                  <form method="post" action="scripts/custom_orders/save_note.php" id="<?= h($replyFormId) ?>" class="custom-note-reply-form" data-scroll-target="#custom-order-notes-panel" hidden>
+                    <input type="hidden" name="custom_order_id" value="<?= (int) $selectedOrder['id'] ?>">
+                    <input type="hidden" name="parent_note_id" value="<?= (int) $noteId ?>">
+                    <label>Reply<?= customOrderHelp('note_body') ?></label>
+                    <textarea name="note_body" rows="2" class="form-control form-control-sm" placeholder="Write a reply..." required></textarea>
+                    <div class="custom-note-reply-actions">
+                      <button type="button" class="btn btn-outline-secondary btn-sm" data-note-reply-cancel>Cancel</button>
+                      <button type="submit" class="btn btn-outline-info btn-sm">Submit</button>
+                    </div>
+                  </form>
                 </div>
               <?php endforeach; ?>
-              <?php if (empty($selectedOrder['notes'])): ?>
-                <div class="text-muted">No appended notes yet.</div>
-              <?php endif; ?>
+              <?php if (!$rootNotes): ?><div class="text-muted">No notes yet. Start the discussion below.</div><?php endif; ?>
             </div>
+
+            <form method="post" action="scripts/custom_orders/save_note.php" class="custom-note-compose" data-scroll-target="#custom-order-notes-panel">
+              <input type="hidden" name="custom_order_id" value="<?= (int) $selectedOrder['id'] ?>">
+              <label>New note<?= customOrderHelp('note_body') ?></label>
+              <textarea name="note_body" rows="3" class="form-control form-control-sm" placeholder="Write a new message..." required></textarea>
+              <div class="custom-note-compose-actions"><button type="submit" class="btn btn-outline-light btn-sm">Submit</button></div>
+            </form>
           </div>
         </div>
+
+        <?php $followupsDefaultExpanded = !empty($customOrderSectionDefaults['followups']); ?>
+        <div id="custom-order-service-panel" data-scroll-block data-custom-collapsible-panel data-section-key="followups" data-order-id="<?= (int) $selectedOrder['id'] ?>" data-default-expanded="<?= $followupsDefaultExpanded ? '1' : '0' ?>" class="custom-orders-panel custom-order-block custom-collapsible-panel<?= $followupsDefaultExpanded ? ' is-expanded' : '' ?>">
+          <button type="button" class="custom-collapsible-toggle" data-custom-collapsible-toggle aria-expanded="<?= $followupsDefaultExpanded ? 'true' : 'false' ?>">
+            <span class="custom-collapsible-toggle-title"><i class="fas fa-comments" aria-hidden="true"></i>Contact Attempts And Follow-ups<?= customOrderHelp('followups_block') ?></span>
+            <span class="custom-collapsible-toggle-meta">
+              <span class="badge badge-info"><?= count((array) ($selectedOrder['followups'] ?? [])) ?></span>
+              <span>records</span>
+              <?php if (!empty($selectedOrder['next_followup_at'])): ?><span>Next: <?= h(date('d.m.Y H:i', strtotime((string) $selectedOrder['next_followup_at']))) ?></span><?php endif; ?>
+              <i class="fas fa-chevron-down custom-collapsible-toggle-chevron" aria-hidden="true"></i>
+            </span>
+          </button>
+          <div class="panel-body custom-collapsible-body" data-custom-collapsible-body <?= $followupsDefaultExpanded ? '' : 'hidden' ?>>
+            <fieldset class="custom-field-cluster" id="custom-order-followups-block" data-scroll-block>
+              <legend class="custom-field-cluster-title">Follow-up Details<?= customOrderHelp('followups_block') ?></legend>
+              <?php $deadOrderLocked = !empty($selectedOrder['exported_at']) || !empty($selectedOrder['production_order_id']) || (string) ($selectedOrder['status'] ?? '') === 'EXPORTED'; ?>
+              <div class="custom-followup-layout">
+                <div class="custom-followup-card">
+                  <div class="custom-followup-card-title">Follow-up Status</div>
+                  <form method="post" action="scripts/custom_orders/save_order.php" data-scroll-target="#custom-order-followups-block">
+                    <input type="hidden" name="custom_order_id" value="<?= (int) $selectedOrder['id'] ?>">
+                    <input type="hidden" name="dead_order_flag" value="<?= $deadOrderLocked ? (int) $selectedOrder['dead_order_flag'] : 0 ?>">
+                    <div class="custom-followup-status-controls">
+                      <div><label>Next follow-up<?= customOrderHelp('next_followup_at') ?></label><input type="datetime-local" name="next_followup_at" class="form-control form-control-sm" value="<?= h($selectedOrder['next_followup_at'] ? date('Y-m-d\TH:i', strtotime((string) $selectedOrder['next_followup_at'])) : '') ?>"></div>
+                      <div class="form-check mb-2"><input class="form-check-input" type="checkbox" name="dead_order_flag" id="dead_order_flag_followups" value="1" <?= (int) $selectedOrder['dead_order_flag'] === 1 ? 'checked' : '' ?> <?= $deadOrderLocked ? 'disabled' : '' ?>><label class="form-check-label" for="dead_order_flag_followups">Dead order<?= customOrderHelp('dead_order_flag') ?></label></div>
+                    </div>
+                    <?php if ($deadOrderLocked): ?><div class="text-muted small mt-1">Locked after export to production.</div><?php endif; ?>
+                    <button type="submit" class="btn btn-outline-light btn-sm mt-2">Save Status</button>
+                  </form>
+                </div>
+
+                <div class="custom-followup-card">
+                  <div class="custom-followup-card-title">Add Follow-up</div>
+                  <form method="post" action="scripts/custom_orders/save_followup.php" data-scroll-target="#custom-order-followups-block">
+                    <input type="hidden" name="custom_order_id" value="<?= (int) $selectedOrder['id'] ?>">
+                    <div class="custom-followup-add-grid">
+                      <div><label>Contacted at<?= customOrderHelp('followup_contacted_at') ?></label><input type="datetime-local" name="contacted_at" class="form-control form-control-sm"></div>
+                      <div><label>Channel<?= customOrderHelp('followup_channel') ?></label><input type="text" name="channel" class="form-control form-control-sm" placeholder="IG / WhatsApp / Email"></div>
+                      <div class="custom-followup-add-note"><label>Note<?= customOrderHelp('followup_note') ?></label><input type="text" name="note" class="form-control form-control-sm" placeholder="Requested address, clarified plastics generation, etc."></div>
+                    </div>
+                    <button type="submit" class="btn btn-outline-light btn-sm mt-2">Add Follow-up</button>
+                  </form>
+                </div>
+
+                <div class="custom-followup-card custom-followup-history-card">
+                  <div class="custom-followup-card-title">History</div>
+                  <div class="custom-followup-history-scroll">
+                    <table class="table table-sm table-dark table-striped custom-mini-table custom-followup-history">
+                      <thead><tr><th>When<?= customOrderHelp('followup_contacted_at') ?></th><th>Channel<?= customOrderHelp('followup_channel') ?></th><th>Note<?= customOrderHelp('followup_note') ?></th></tr></thead>
+                      <tbody>
+                        <?php foreach ($selectedOrder['followups'] as $followup): ?>
+                          <tr><td><?= h($followup['contacted_at']) ?></td><td><?= h($followup['channel']) ?></td><td><?= h($followup['note']) ?></td></tr>
+                        <?php endforeach; ?>
+                        <?php if (empty($selectedOrder['followups'])): ?><tr><td colspan="3" class="text-muted">No follow-ups yet.</td></tr><?php endif; ?>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            </fieldset>
+          </div>
+        </div>
+
 
         <?php $recentActivity = $selectedOrder['activity'] ?? []; ?>
         <?php $recentActivityVisibleLimit = 5; ?>
@@ -4021,7 +4232,13 @@ if (!$customOrdersDetailRequest) {
           wrap.style.display = 'none';
         }
       }
-      if (row) row.classList.remove('order-row-open');
+      if (row) {
+        row.classList.remove('order-row-open');
+        var table = row.closest('table');
+        if (table && !table.querySelector('.custom-order-table-row.order-row-open')) {
+          table.classList.remove('table-has-open');
+        }
+      }
     }
 
     function customCategoryPickerSetOptions(select, values, placeholder, selectedValue, selectedModelCode) {
@@ -4583,12 +4800,110 @@ if (!$customOrdersDetailRequest) {
       });
     }
 
+    function initializeCustomCollapsiblePanels(root) {
+      if (!root) return;
+
+      root.querySelectorAll('[data-custom-collapsible-panel]').forEach(function (panel) {
+        var toggle = panel.querySelector('[data-custom-collapsible-toggle]');
+        var body = panel.querySelector('[data-custom-collapsible-body]');
+        if (!toggle || !body) return;
+
+        var orderId = panel.getAttribute('data-order-id') || '0';
+        var sectionKey = panel.getAttribute('data-section-key') || 'section';
+        var storageKey = 'custom-order-section-expanded:' + sectionKey + ':' + orderId;
+
+        function setExpanded(expanded, remember) {
+          toggle.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+          panel.classList.toggle('is-expanded', expanded);
+          if (remember && window.jQuery) {
+            var $body = window.jQuery(body);
+            $body.stop(true, true);
+            if (expanded) {
+              body.hidden = false;
+              $body.hide().slideDown(140);
+            } else {
+              $body.slideUp(140, function () {
+                body.hidden = true;
+                body.style.display = '';
+              });
+            }
+          } else {
+            body.hidden = !expanded;
+            body.style.display = '';
+          }
+          if (remember) {
+            try {
+              window.sessionStorage.setItem(storageKey, expanded ? '1' : '0');
+            } catch (storageError) {
+            }
+          }
+          if (expanded) {
+            window.requestAnimationFrame(function () { alignCustomHelpIcons(panel); });
+          }
+        }
+
+        var initiallyExpanded = panel.getAttribute('data-default-expanded') === '1';
+        try {
+          var storedState = window.sessionStorage.getItem(storageKey);
+          if (storedState === '1' || storedState === '0') {
+            initiallyExpanded = storedState === '1';
+          }
+        } catch (storageError) {
+        }
+        setExpanded(initiallyExpanded, false);
+
+        if (toggle.dataset.collapsibleBound === '1') return;
+        toggle.dataset.collapsibleBound = '1';
+        toggle.addEventListener('click', function () {
+          setExpanded(toggle.getAttribute('aria-expanded') !== 'true', true);
+        });
+      });
+    }
+
+    function initializeCustomNoteReplies(root) {
+      if (!root) return;
+
+      root.querySelectorAll('[data-note-reply-toggle]').forEach(function (button) {
+        if (button.dataset.noteReplyBound === '1') return;
+        button.dataset.noteReplyBound = '1';
+        button.addEventListener('click', function () {
+          var selector = button.getAttribute('data-reply-form') || '';
+          var notesPanel = button.closest('#custom-order-notes-panel') || root;
+          var form = selector ? notesPanel.querySelector(selector) : null;
+          if (!form) return;
+          var shouldOpen = form.hidden;
+          notesPanel.querySelectorAll('.custom-note-reply-form').forEach(function (otherForm) {
+            otherForm.hidden = true;
+          });
+          form.hidden = !shouldOpen;
+          if (shouldOpen) {
+            var textarea = form.querySelector('textarea[name="note_body"]');
+            if (textarea) textarea.focus();
+          }
+        });
+      });
+
+      root.querySelectorAll('[data-note-reply-cancel]').forEach(function (button) {
+        if (button.dataset.noteReplyCancelBound === '1') return;
+        button.dataset.noteReplyCancelBound = '1';
+        button.addEventListener('click', function () {
+          var form = button.closest('.custom-note-reply-form');
+          if (!form) return;
+          form.hidden = true;
+          var textarea = form.querySelector('textarea[name="note_body"]');
+          if (textarea) textarea.value = '';
+        });
+      });
+    }
+
     function initializeInjectedDetail(root) {
       if (!root) return;
 
       initializeCustomCategoryPicker(root);
       initializeCustomOrderPhotos(root);
       initializeCustomContactSuggestions(root);
+      initializeCustomCollapsiblePanels(root);
+      initializeCustomNoteReplies(root);
       alignCustomHelpIcons(root);
       root.querySelectorAll('.table-responsive').forEach(function (tableWrap) {
         if (tableWrap.dataset.helpAlignmentBound === '1') return;
@@ -4748,12 +5063,16 @@ if (!$customOrdersDetailRequest) {
 
       if (wrap.dataset.loaded === '1') {
         row.classList.add('order-row-open');
+        var loadedTable = row.closest('table');
+        if (loadedTable) loadedTable.classList.add('table-has-open');
         if (window.jQuery) window.jQuery(wrap).stop(true, true).slideDown(120);
         else wrap.style.display = 'block';
         return;
       }
 
       row.classList.add('order-row-open');
+      var table = row.closest('table');
+      if (table) table.classList.add('table-has-open');
       wrap.style.display = 'block';
       wrap.innerHTML = '<div class="p-3 text-muted"><span class="spinner-border spinner-border-sm mr-2"></span>Loading custom order detail…</div>';
 
@@ -4882,6 +5201,8 @@ if (!$customOrdersDetailRequest) {
       });
     });
 
+    initializeCustomCollapsiblePanels(document);
+    initializeCustomNoteReplies(document);
     alignCustomHelpIcons(document);
     var helpAlignmentFrame = 0;
     window.addEventListener('resize', function () {
