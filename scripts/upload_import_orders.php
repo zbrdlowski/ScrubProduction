@@ -85,6 +85,7 @@ try {
     'skipped_locked_order_refs' => $stats['skipped_locked_order_refs'] ?? [],
     'skipped_existing_orders' => $stats['skipped_existing_orders'] ?? 0,
     'skipped_existing_order_refs' => $stats['skipped_existing_order_refs'] ?? [],
+    'plastics_gated_orders' => $stats['plastics_gated_orders'] ?? 0,
     'note' => $stats['note'] ?? null,
   ], JSON_UNESCAPED_UNICODE);
 

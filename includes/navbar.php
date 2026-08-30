@@ -30,30 +30,42 @@ if (isset($conn) && $conn instanceof mysqli) {
     }
 }
 ?>
+<style>
+  @media (min-width: 576px) {
+    .plastics-nav-dropdown:hover > .dropdown-menu,
+    .plastics-nav-dropdown:focus-within > .dropdown-menu {
+      display: block;
+      margin-top: 0;
+    }
+  }
+</style>
 <nav class="main-header navbar navbar-expand navbar-dark">
     <!-- Left navbar links -->
     <ul class="navbar-nav">
       <li class="nav-item">
         <a class="nav-link" data-widget="pushmenu" href="#" role="button"><i class="fas fa-bars"></i></a>
       </li>
-      <li class="nav-item d-none d-sm-inline-block">
-        <a href="?page=inventory_report" class="nav-link">Plastics Inventory</a>
+      <li class="nav-item dropdown d-none d-sm-inline-block plastics-nav-dropdown">
+        <a href="#" class="nav-link dropdown-toggle" data-toggle="dropdown" role="button" aria-haspopup="true" aria-expanded="false">
+          Plastics
+        </a>
+        <div class="dropdown-menu">
+          <a href="?page=inventory_report" class="dropdown-item">Plastics Inventory</a>
+          <a href="?page=general_items" class="dropdown-item">All Plastics Items</a>
+          <a href="?page=historical_movements" class="dropdown-item">Plastics Order Archive</a>          
+        </div>
       </li>
       <li class="nav-item d-none d-sm-inline-block">
-        <a href="?page=general_items" class="nav-link">All Plastics Items</a>
-      </li>
-       <li class="nav-item d-none d-sm-inline-block">
-        <a href="?page=historical_movements" class="nav-link">Plastics Order Archive</a>
-      </li>
-      </li>
-       <li class="nav-item d-none d-sm-inline-block">
         <a href="?page=shoptet_order_download" class="nav-link">Web Order Download</a>
       </li>
       <li class="nav-item d-none d-sm-inline-block">
-        <a href="?page=chat" class="nav-link">Scrub Chat</a>
+        <a href="?page=chat" class="nav-link">Chat</a>
       </li>
       <li class="nav-item d-none d-sm-inline-block">
-        <a href="?page=orders&exclude_status=CANCELLED%2CPENDING%2CSHIPPED" class="nav-link">Open Orders</a>
+        <a href="?page=orders&exclude_status=CANCELLED%2CPENDING%2CSHIPPED" class="nav-link">Production</a>
+      </li>
+      <li class="nav-item d-none d-sm-inline-block">
+        <a href="?page=custom_orders" class="nav-link">Custom</a>
       </li>
       <li class="nav-item d-none d-sm-inline-block">
         <a href="?page=projects" class="nav-link">Projects</a>

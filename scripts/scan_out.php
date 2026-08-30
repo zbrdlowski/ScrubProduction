@@ -96,7 +96,7 @@ try {
     $pdo->commit();
 
     $_SESSION['success'] = 'Položka ' . $barcode . ' úspešne odscanovaná z pozície ' . $shelf_location . ' !';
-    $_SESSION['saved_order'] = $order_id;
+    unset($_SESSION['saved_order']);
     header('Location: ../index.php?page=scan_form_out');
     exit;
 

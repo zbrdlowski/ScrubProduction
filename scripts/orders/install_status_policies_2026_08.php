@@ -2,14 +2,13 @@
 declare(strict_types=1);
 
 /**
- * install_status_policies_2026_08_v2.php
+ * install_status_policies_2026_08_v3.php
  * ---------------------------------------------------------
  * UPSERT install skript pre aktualizovanu sadu status policies
- * podla noveho statuses.xlsx (Plastics ma novy Info Requested
- * bucket, novy In Progress bucket, upraveny Delay bucket).
+ * podla noveho statuses.xlsx, vratane Plastics Check Stock gate.
  *
  * POUZITIE: nahraj do scripts/orders/ a spusti RAZ cez browser
- * (ako admin) alebo cez CLI: php install_status_policies_2026_08_v2.php
+ * (ako admin) alebo cez CLI: php install_status_policies_2026_08.php
  *
  * UPSERT SPRAVANIE: ak policy s rovnakym nazvom uz existuje (napr.
  * z predchadzajuceho installu), skript ju NAJPRV KOMPLETNE ZMAZE
@@ -32,9 +31,62 @@ if (php_sapi_name() !== 'cli') {
     header('Content-Type: text/plain; charset=utf-8');
 }
 
-$allowedStatuses = ['NEW', 'IN_PROGRESS', 'READY_TO_SHIP', 'READY_TO_INVOICE', 'INFO_REQUESTED', 'COMMUNICATION', 'PENDING', 'HOLD', 'DELAY'];
+$requiredStatusDefinitions = [
+    ['item', 'P', 'CHECK_STOCK', 'Check Stock', '#6c757d', 5],
+    ['item', 'G', 'PLASTICS_IN_STOCK', 'Plastics in stock?', '#00ffe1', 120],
+    ['item', 'S', 'PLASTICS_IN_STOCK', 'Plastics in stock?', '#00ffe1', 100],
+    ['item', 'F', 'PLASTICS_IN_STOCK', 'Plastics in stock?', '#6c757d', 5],
+    ['order', null, 'PLASTICS_IN_STOCK', 'Plastics in stock?', '#6c757d', 15],
+];
+
+foreach ($requiredStatusDefinitions as $definition) {
+    [$scope, $department, $code, $label, $color, $sortOrder] = $definition;
+    $checkDefinition = $conn->prepare("\n        SELECT id\n        FROM status_definitions\n        WHERE scope = ?\n          AND department <=> ?\n          AND code = ?\n        LIMIT 1\n    ");
+    $checkDefinition->bind_param('sss', $scope, $department, $code);
+    $checkDefinition->execute();
+    $existingDefinition = $checkDefinition->get_result()->fetch_assoc();
+    $checkDefinition->close();
+
+    if ($existingDefinition) {
+        continue;
+    }
+
+    $workflowState = 'IN_PROGRESS';
+    $isFinal = 0;
+    $isWaiting = 0;
+    $active = 1;
+    $insertDefinition = $conn->prepare("\n        INSERT INTO status_definitions\n            (scope, department, code, label, color, sort_order, workflow_state, is_final, is_waiting, active)\n        VALUES\n            (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)\n    ");
+    $insertDefinition->bind_param(
+        'sssssisiii',
+        $scope,
+        $department,
+        $code,
+        $label,
+        $color,
+        $sortOrder,
+        $workflowState,
+        $isFinal,
+        $isWaiting,
+        $active
+    );
+    $insertDefinition->execute();
+    $insertDefinition->close();
+}
+
+// PENDING is deliberately excluded: an unpaid order must remain visibly
+// pending even though its item-level plastics gate is already initialized.
+$allowedStatuses = ['NEW', 'IN_PROGRESS', 'READY_TO_SHIP', 'READY_TO_INVOICE', 'INFO_REQUESTED', 'COMMUNICATION', 'HOLD', 'DELAY', 'PLASTICS_IN_STOCK'];
 
 $policies = [
+    [
+        'name' => 'Plastics - Check Stock',
+        'priority' => 5,
+        'result' => 'PLASTICS_IN_STOCK',
+        'stop' => 1,
+        'conditions' => [
+            ['P', 'status', 'IN', ['CHECK_STOCK']],
+        ],
+    ],
     [
         'name' => 'Graphics - Info Requested',
         'priority' => 10,
@@ -234,6 +286,43 @@ $policies = [
         ],
     ],
 ];
+
+$newOrderCombinations = [
+    ['G', 900],
+    ['GF', 910],
+    ['P', 920],
+    ['PS', 930],
+    ['PF', 940],
+    ['S', 950],
+    ['GS', 960],
+    ['GPF', 970],
+    ['GPFS', 980],
+];
+$newDefaults = [
+    'G' => ['RTP_✗', 'SPOKE_COATS_✗'],
+    'S' => ['SEW_✗'],
+    'P' => ['PK_✗'],
+    'F' => ['FIT_✗'],
+];
+
+foreach ($newOrderCombinations as [$combination, $priority]) {
+    $conditions = [];
+    foreach (['G', 'S', 'P', 'F'] as $department) {
+        if (strpos($combination, $department) !== false) {
+            $conditions[] = [$department, 'status', 'IN', $newDefaults[$department]];
+        } else {
+            $conditions[] = [$department, 'presence', 'ABSENT', null];
+        }
+    }
+
+    $policies[] = [
+        'name' => 'New (' . implode('+', str_split($combination)) . ')',
+        'priority' => $priority,
+        'result' => 'NEW',
+        'stop' => 1,
+        'conditions' => $conditions,
+    ];
+}
 
 
 $created = 0;

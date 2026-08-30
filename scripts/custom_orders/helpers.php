@@ -20,11 +20,14 @@ function customOrdersTakeFlash(): ?array
   return $flash;
 }
 
-function customOrdersRedirect(int $orderId = 0): void
+function customOrdersRedirect(int $orderId = 0, int $focusNoteId = 0): void
 {
   $location = '../../index.php?page=custom_orders';
   if ($orderId > 0) {
     $location .= '&custom_order_id=' . $orderId;
+  }
+  if ($orderId > 0 && $focusNoteId > 0) {
+    $location .= '&focus_note_id=' . $focusNoteId;
   }
   header('Location: ' . $location);
   exit;
@@ -45,7 +48,6 @@ function customOrdersNormalizeCountry(?string $country): ?string
   $map = [
     'UK' => 'GB',
     'EN' => 'GB',
-    'NE' => 'NL',
     'CZ' => 'CZ',
     'SK' => 'SK',
     'DE' => 'DE',
@@ -55,6 +57,28 @@ function customOrdersNormalizeCountry(?string $country): ?string
     'CA' => 'CA',
     'US' => 'US',
     'CH' => 'CH',
+    'USA' => 'US',
+    'UNITED STATES' => 'US',
+    'UNITED STATES OF AMERICA' => 'US',
+    'UNITED KINGDOM' => 'GB',
+    'GREAT BRITAIN' => 'GB',
+    'GERMANY' => 'DE',
+    'SLOVAKIA' => 'SK',
+    'SLOVAK REPUBLIC' => 'SK',
+    'CZECHIA' => 'CZ',
+    'CZECH REPUBLIC' => 'CZ',
+    'MEXICO' => 'MX',
+    'AUSTRIA' => 'AT',
+    'POLAND' => 'PL',
+    'CANADA' => 'CA',
+    'AUSTRALIA' => 'AU',
+    'FRANCE' => 'FR',
+    'ITALY' => 'IT',
+    'SWITZERLAND' => 'CH',
+    'NETHERLANDS' => 'NL',
+    'THE NETHERLANDS' => 'NL',
+    'BELGIUM' => 'BE',
+    'SPAIN' => 'ES',
   ];
 
   if (isset($map[$country])) {
@@ -64,15 +88,37 @@ function customOrdersNormalizeCountry(?string $country): ?string
   return preg_match('/^[A-Z]{2}$/', $country) ? $country : null;
 }
 
+function customOrdersNormalizeState(?string $state): ?string
+{
+  $state = strtoupper(trim((string) $state));
+  if ($state === '') {
+    return null;
+  }
+  return preg_match('/^[A-Z0-9]{2,3}$/', $state) ? $state : null;
+}
+
+function customOrdersCountryRequiresState(?string $country): bool
+{
+  return in_array(customOrdersNormalizeCountry($country), ['US', 'CA', 'AU'], true);
+}
 function customOrdersOrderStatuses(): array
 {
   return [
     'LEAD' => 'Lead',
-    'DEPOSIT_PENDING' => 'Deposit Pending',
     'DEPOSIT_PAID' => 'Deposit Paid',
+    'DRAFT_X' => 'Draft ✗',
+    'DRAFT_AD_CHANGES' => 'Draft Ad.changes',
+    'DRAFT_READY' => 'Draft Ready',
+    'DRAFT_READY_NOTES' => 'Draft Ready + notes',
+    'DRAFT_SENT' => 'Draft Sent',
+    'CONTACT_CUSTOMER' => 'Contact Customer',
+    'CUSTOMER_CONTACTED' => 'Customer Contacted',
+    'EXPORTED' => 'Exported',
+
+    // Legacy statuses can still exist on older custom orders.
+    'DEPOSIT_PENDING' => 'Deposit Pending',
     'IN_PROGRESS' => 'In Progress',
     'READY_TO_EXPORT' => 'Ready To Export',
-    'EXPORTED' => 'Exported',
     'CANCELLED' => 'Cancelled',
     'DEAD' => 'Dead',
   ];
@@ -333,6 +379,10 @@ function customOrdersEnsureSchema(mysqli $conn): void
         `note_body` text NOT NULL,
         `created_by` int(11) DEFAULT NULL,
         `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+        `updated_by` int(11) DEFAULT NULL,
+        `updated_at` datetime DEFAULT NULL,
+        `deleted_by` int(11) DEFAULT NULL,
+        `deleted_at` datetime DEFAULT NULL,
         PRIMARY KEY (`id`),
         KEY `ix_custom_order_notes_order` (`custom_order_id`),
         KEY `ix_custom_order_notes_parent` (`parent_note_id`),
@@ -358,6 +408,39 @@ function customOrdersEnsureSchema(mysqli $conn): void
           ADD KEY `ix_custom_order_notes_parent` (`parent_note_id`)
       ");
     }
+  }
+
+  $noteColumns = customOrdersTableColumns($conn, 'custom_order_notes', true);
+  $noteAuditColumns = [
+    'updated_by' => "ADD COLUMN `updated_by` int(11) DEFAULT NULL AFTER `created_at`",
+    'updated_at' => "ADD COLUMN `updated_at` datetime DEFAULT NULL AFTER `updated_by`",
+    'deleted_by' => "ADD COLUMN `deleted_by` int(11) DEFAULT NULL AFTER `updated_at`",
+    'deleted_at' => "ADD COLUMN `deleted_at` datetime DEFAULT NULL AFTER `deleted_by`",
+  ];
+  foreach ($noteAuditColumns as $columnName => $columnSql) {
+    if (!isset($noteColumns[$columnName]) && $conn->query("ALTER TABLE `custom_order_notes` {$columnSql}")) {
+      $noteColumns[$columnName] = true;
+    }
+  }
+  customOrdersTableColumns($conn, 'custom_order_notes', true);
+
+  if (!customOrdersTableExists($conn, 'custom_order_note_revisions')) {
+    $conn->query("
+      CREATE TABLE IF NOT EXISTS `custom_order_note_revisions` (
+        `id` bigint(20) NOT NULL AUTO_INCREMENT,
+        `note_id` bigint(20) NOT NULL,
+        `custom_order_id` bigint(20) NOT NULL,
+        `revision_action` varchar(16) NOT NULL,
+        `old_body` text NULL,
+        `new_body` text NULL,
+        `actor_employee_id` int(11) DEFAULT NULL,
+        `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+        PRIMARY KEY (`id`),
+        KEY `ix_custom_note_revisions_note` (`note_id`),
+        KEY `ix_custom_note_revisions_order` (`custom_order_id`)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
+    ");
+    customOrdersTableExists($conn, 'custom_order_note_revisions', true);
   }
 
   if (!customOrdersTableExists($conn, 'custom_order_photos')) {
@@ -389,6 +472,15 @@ function customOrdersEnsureSchema(mysqli $conn): void
     }
   }
 
+  if (customOrdersTableExists($conn, 'order_addresses')) {
+    $addressColumns = customOrdersTableColumns($conn, 'order_addresses');
+    if ($addressColumns && !isset($addressColumns['state'])) {
+      if ($conn->query("ALTER TABLE `order_addresses` ADD COLUMN `state` varchar(32) DEFAULT NULL AFTER `country`")) {
+        customOrdersTableColumns($conn, 'order_addresses', true);
+      }
+    }
+  }
+
   $columns = customOrdersTableColumns($conn, 'custom_orders');
   if (!$columns) {
     $done = true;
@@ -404,9 +496,11 @@ function customOrdersEnsureSchema(mysqli $conn): void
     'billing_city' => "ADD COLUMN `billing_city` varchar(128) DEFAULT NULL AFTER `billing_street`",
     'billing_zip' => "ADD COLUMN `billing_zip` varchar(32) DEFAULT NULL AFTER `billing_city`",
     'billing_country' => "ADD COLUMN `billing_country` varchar(2) DEFAULT NULL AFTER `billing_zip`",
-    'billing_email' => "ADD COLUMN `billing_email` varchar(255) DEFAULT NULL AFTER `billing_country`",
+    'billing_state' => "ADD COLUMN `billing_state` varchar(3) DEFAULT NULL AFTER `billing_country`",
+    'billing_email' => "ADD COLUMN `billing_email` varchar(255) DEFAULT NULL AFTER `billing_state`",
     'billing_phone' => "ADD COLUMN `billing_phone` varchar(64) DEFAULT NULL AFTER `billing_email`",
     'shipping_company_id' => "ADD COLUMN `shipping_company_id` varchar(128) DEFAULT NULL AFTER `shipping_company`",
+    'shipping_state' => "ADD COLUMN `shipping_state` varchar(3) DEFAULT NULL AFTER `shipping_country`",
   ];
 
   $alterParts = [];
@@ -484,6 +578,8 @@ function customOrdersActivityActionLabel(string $action): string
     'followup_added' => 'Follow-up added',
     'note_added' => 'Note added',
     'note_reply_added' => 'Note reply added',
+    'note_edited' => 'Note edited',
+    'note_deleted' => 'Note deleted',
     'owner_assigned' => 'Owner changed',
     'official_number_assigned' => 'Official number assigned',
     'exported' => 'Exported',
@@ -523,6 +619,7 @@ function customOrdersActivityFieldLabels(): array
     'billing_city' => 'Billing city',
     'billing_zip' => 'Billing ZIP',
     'billing_country' => 'Billing country',
+    'billing_state' => 'Billing state',
     'billing_email' => 'Billing email',
     'billing_phone' => 'Billing phone',
     'shipping_name' => 'Shipping name',
@@ -532,6 +629,7 @@ function customOrdersActivityFieldLabels(): array
     'shipping_city' => 'Shipping city',
     'shipping_zip' => 'Shipping ZIP',
     'shipping_country' => 'Shipping country',
+    'shipping_state' => 'Shipping state',
     'shipping_email' => 'Shipping email',
     'shipping_phone' => 'Shipping phone',
     'shipping_method' => 'Shipping method',
@@ -1011,6 +1109,24 @@ function customOrdersGetOrder(mysqli $conn, int $orderId): ?array
     }
   }
 
+  $order['note_revisions'] = [];
+  if (customOrdersTableExists($conn, 'custom_order_note_revisions')) {
+    $res = $conn->query("
+      SELECT
+        conr.*,
+        TRIM(CONCAT_WS(' ', e.firstname, e.lastname)) AS actor_name
+      FROM custom_order_note_revisions conr
+      LEFT JOIN employees e ON e.id = conr.actor_employee_id
+      WHERE conr.custom_order_id = " . (int) $orderId . "
+      ORDER BY conr.created_at ASC, conr.id ASC
+    ");
+    if ($res) {
+      while ($row = $res->fetch_assoc()) {
+        $order['note_revisions'][(int) ($row['note_id'] ?? 0)][] = $row;
+      }
+    }
+  }
+
   $order['photos'] = [];
   if (customOrdersTableExists($conn, 'custom_order_photos')) {
     $stmt = $conn->prepare('
@@ -1105,11 +1221,11 @@ function customOrdersGetProductionOverview(mysqli $conn, int $productionOrderId)
   return $overview;
 }
 
-function customOrdersAddNote(mysqli $conn, int $orderId, string $noteType, string $noteBody, int $userId, int $parentNoteId = 0): void
+function customOrdersAddNote(mysqli $conn, int $orderId, string $noteType, string $noteBody, int $userId, int $parentNoteId = 0): int
 {
   $noteType = strtoupper(trim($noteType));
   if ($orderId <= 0 || $noteBody === '' || !customOrdersTableExists($conn, 'custom_order_notes')) {
-    return;
+    return 0;
   }
 
   $allowedTypes = ['CUSTOMER', 'INTERNAL', 'REVISION'];
@@ -1140,7 +1256,7 @@ function customOrdersAddNote(mysqli $conn, int $orderId, string $noteType, strin
     $stmt = $conn->prepare('INSERT INTO custom_order_notes (custom_order_id, note_type, note_body, created_by) VALUES (?, ?, ?, ?)');
   }
   if (!$stmt) {
-    return;
+    return 0;
   }
   if ($supportsReplies) {
     $stmt->bind_param('iissi', $orderId, $parentValue, $noteType, $noteBody, $userId);
@@ -1148,6 +1264,7 @@ function customOrdersAddNote(mysqli $conn, int $orderId, string $noteType, strin
     $stmt->bind_param('issi', $orderId, $noteType, $noteBody, $userId);
   }
   $stmt->execute();
+  $newNoteId = (int) $stmt->insert_id;
   $stmt->close();
 
   customOrdersLog(
@@ -1155,9 +1272,10 @@ function customOrdersAddNote(mysqli $conn, int $orderId, string $noteType, strin
     $orderId,
     $resolvedParentNoteId > 0 ? 'note_reply_added' : 'note_added',
     $userId,
-    ['note_type' => $noteType, 'parent_note_id' => $resolvedParentNoteId ?: null],
+    ['note_id' => $newNoteId, 'note_type' => $noteType, 'parent_note_id' => $resolvedParentNoteId ?: null],
     $resolvedParentNoteId > 0 ? 'Lead note reply added' : 'Lead note appended'
   );
+  return $newNoteId;
 }
 
 function customOrdersAssignOwner(mysqli $conn, int $orderId, int $ownerEmployeeId, int $assignedBy): void
@@ -1317,6 +1435,10 @@ function customOrdersExportValidation(array $order): array
       $fields[] = 'shipping_country';
     }
   }
+  if (customOrdersCountryRequiresState((string) ($order['shipping_country'] ?? '')) && trim((string) ($order['shipping_state'] ?? '')) === '') {
+    $errors[] = 'Shipping state / province is required for this country.';
+    $fields[] = 'shipping_state';
+  }
   if (trim((string) ($order['customer_email'] ?? '')) === '' && trim((string) ($order['customer_phone'] ?? '')) === '' && trim((string) ($order['shipping_email'] ?? '')) === '' && trim((string) ($order['shipping_phone'] ?? '')) === '') {
     $errors[] = 'At least one contact field (email or phone) is required.';
     $fields[] = 'customer_email';
@@ -1423,32 +1545,35 @@ function customOrdersExportToProduction(mysqli $conn, int $customOrderId, int $u
     $stmt->close();
 
     $stmt = $conn->prepare('
-      INSERT INTO order_addresses (order_id, type, name, company, company_id, street, city, zip, country, email, phone)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO order_addresses (order_id, type, name, company, company_id, street, city, zip, country, state, email, phone)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ');
     $billingType = 'BILLING';
-    $billingName = trim((string) ($order['customer_name'] ?: $order['shipping_name']));
-    $billingCompany = trim((string) ($order['shipping_company'] ?? ''));
-    $emptyCompanyId = '';
-    $billingStreet = trim((string) ($order['shipping_street'] ?? ''));
-    $billingCity = trim((string) ($order['shipping_city'] ?? ''));
-    $billingZip = trim((string) ($order['shipping_zip'] ?? ''));
-    $billingCountry = (string) customOrdersNormalizeCountry((string) ($order['shipping_country'] ?? ''));
-    $billingEmail = trim((string) ($order['customer_email'] ?: $order['shipping_email']));
-    $billingPhone = trim((string) ($order['customer_phone'] ?: $order['shipping_phone']));
-    $stmt->bind_param('issssssssss', $productionOrderId, $billingType, $billingName, $billingCompany, $emptyCompanyId, $billingStreet, $billingCity, $billingZip, $billingCountry, $billingEmail, $billingPhone);
+    $billingName = trim((string) ($order['billing_name'] ?: $order['customer_name'] ?: $order['shipping_name']));
+    $billingCompany = trim((string) ($order['billing_company'] ?? ''));
+    $billingCompanyId = trim((string) ($order['billing_company_id'] ?? ''));
+    $billingStreet = trim((string) ($order['billing_street'] ?: ($order['shipping_street'] ?? '')));
+    $billingCity = trim((string) ($order['billing_city'] ?: ($order['shipping_city'] ?? '')));
+    $billingZip = trim((string) ($order['billing_zip'] ?: ($order['shipping_zip'] ?? '')));
+    $billingCountry = (string) customOrdersNormalizeCountry((string) ($order['billing_country'] ?: ($order['shipping_country'] ?? '')));
+    $billingState = (string) customOrdersNormalizeState((string) ($order['billing_state'] ?: ($order['shipping_state'] ?? '')));
+    $billingEmail = trim((string) ($order['customer_email'] ?: $order['billing_email'] ?: $order['shipping_email']));
+    $billingPhone = trim((string) ($order['customer_phone'] ?: $order['billing_phone'] ?: $order['shipping_phone']));
+    $stmt->bind_param('isssssssssss', $productionOrderId, $billingType, $billingName, $billingCompany, $billingCompanyId, $billingStreet, $billingCity, $billingZip, $billingCountry, $billingState, $billingEmail, $billingPhone);
     $stmt->execute();
 
     $shippingType = 'SHIPPING';
     $shippingName = trim((string) ($order['shipping_name'] ?? ''));
     $shippingCompany = trim((string) ($order['shipping_company'] ?? ''));
+    $shippingCompanyId = trim((string) ($order['shipping_company_id'] ?? ''));
     $shippingStreet = trim((string) ($order['shipping_street'] ?? ''));
     $shippingCity = trim((string) ($order['shipping_city'] ?? ''));
     $shippingZip = trim((string) ($order['shipping_zip'] ?? ''));
     $shippingCountry = (string) customOrdersNormalizeCountry((string) ($order['shipping_country'] ?? ''));
+    $shippingState = (string) customOrdersNormalizeState((string) ($order['shipping_state'] ?? ''));
     $shippingEmail = trim((string) ($order['shipping_email'] ?: $order['customer_email']));
     $shippingPhone = trim((string) ($order['shipping_phone'] ?: $order['customer_phone']));
-    $stmt->bind_param('issssssssss', $productionOrderId, $shippingType, $shippingName, $shippingCompany, $emptyCompanyId, $shippingStreet, $shippingCity, $shippingZip, $shippingCountry, $shippingEmail, $shippingPhone);
+    $stmt->bind_param('isssssssssss', $productionOrderId, $shippingType, $shippingName, $shippingCompany, $shippingCompanyId, $shippingStreet, $shippingCity, $shippingZip, $shippingCountry, $shippingState, $shippingEmail, $shippingPhone);
     $stmt->execute();
     $stmt->close();
 

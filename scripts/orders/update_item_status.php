@@ -8,6 +8,7 @@ require_once $base . '/includes/orders_status_helpers.php';
 require_once $base . '/includes/orders_workflow_helpers.php';
 require_once $base . '/includes/order_item_assignment_helpers.php';
 require_once $base . '/includes/render_assigned_users.php';
+require_once $base . '/includes/orders_plastics_gate_helpers.php';
 require_once __DIR__ . '/activity_helper.php';
 
 header('Content-Type: application/json');
@@ -210,6 +211,20 @@ $update->bind_param('sssii', $newStatus, $nullableNote, $expectedDate, $userId, 
 $update->execute();
 $update->close();
 
+$releasedDependentItems = [];
+if (
+    $isActualStatusChange
+    && $itemType === 'P'
+    && $normalizedOldStatus === 'CHECK_STOCK'
+    && $normalizedNewStatus === 'PK_✗'
+) {
+    $releasedDependentItems = ordersReleasePlasticsDependantsIfReady(
+        $conn,
+        $orderId,
+        $userId
+    );
+}
+
 $history = $conn->prepare("
     INSERT INTO order_item_statuses
         (order_item_id, old_status, new_status, note, expected_date, changed_by)
@@ -234,6 +249,7 @@ log_order_activity(
         'auto_primary_assigned' => $autoPrimaryAssigned,
         'auto_prepared_assigned' => $autoPreparedAssigned,
         'auto_checked_assigned' => $autoCheckedAssigned,
+        'released_dependent_items' => $releasedDependentItems,
     ],
     'Item status changed: ' . $oldStatus . ' → ' . $newStatus
 );
@@ -343,6 +359,7 @@ echo json_encode([
     'auto_item_assigned' => $autoItemAssigned,
     'auto_prepared_assigned' => $autoPreparedAssigned,
     'auto_checked_assigned' => $autoCheckedAssigned,
+    'released_dependent_items' => $releasedDependentItems,
     'avatars_html' => $avatarsHtml,
     'take_assign_html' => $takeAssignHtml,
     'dept_code' => $departmentCode,

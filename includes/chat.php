@@ -605,34 +605,53 @@ if (empty($_SESSION['user_id'])) {
             width: 100%;
         }
     }
-    .chat-file-link {
-    color: #17a2b8;
-    text-decoration: underline;
-    font-weight: 600;
-    }
-
-    .chat-file-link:hover {
-        color: #63d3e6;
-    }
     .chat-file-wrapper {
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    background: rgba(23, 162, 184, 0.12);
-    border: 1px solid rgba(23, 162, 184, 0.25);
+    max-width: 100%;
+    background: rgba(255, 193, 7, 0.14);
+    border: 1px solid rgba(255, 193, 7, 0.38);
     border-radius: 8px;
     padding: 4px 8px;
 }
 
 .chat-file-link {
-    color: #17a2b8;
+    min-width: 0;
+    color: #ffd166;
     text-decoration: none;
     font-weight: 600;
+    overflow-wrap: anywhere;
 }
 
 .chat-file-link:hover {
-    color: #63d3e6;
+    color: #ffe69c;
     text-decoration: underline;
+}
+
+.chat-web-link,
+.chat-web-link:visited {
+    color: #6fe7ff;
+    font-weight: 600;
+    text-decoration: underline;
+    text-decoration-thickness: 1px;
+    text-underline-offset: 2px;
+    overflow-wrap: anywhere;
+}
+
+.chat-web-link:hover,
+.chat-web-link:focus {
+    color: #b9f4ff;
+}
+
+.chat-message-row.own .chat-web-link,
+.chat-message-row.own .chat-web-link:visited {
+    color: #fff1a8;
+}
+
+.chat-message-row.own .chat-web-link:hover,
+.chat-message-row.own .chat-web-link:focus {
+    color: #ffffff;
 }
 
 .chat-copy-path {
@@ -2015,45 +2034,57 @@ if (empty($_SESSION['user_id'])) {
             loadContacts($('#chatSearch').val());
         });
     });
-        function linkify(text) {
-            if (!text) return '';
+    function linkifyHttp(text) {
+        return escapeHtml(text).replace(
+            /(https?:\/\/[^\s]+)/gi,
+            '<a href="$1" class="chat-web-link" target="_blank" rel="noopener noreferrer">$1</a>'
+        );
+    }
 
-            let safe = escapeHtml(text);
+    function linkify(text) {
+        if (!text) return '';
 
-            // HTTP / HTTPS
-            safe = safe.replace(
-                /(https?:\/\/[^\s]+)/gi,
-                '<a href="$1" target="_blank" rel="noopener noreferrer">$1</a>'
-            );
+        const source = String(text);
+        const pathPattern = /Y:[\\\/][^\r\n]+/gi;
+        let html = '';
+        let lastIndex = 0;
+        let match;
 
-            // Y:\ paths → link + copy button
-            safe = safe.replace(
-                /(Y:\\[^\s]+)/gi,
-                function(match) {
-                    const url = match.replace(/\\/g, '/');
+        while ((match = pathPattern.exec(source)) !== null) {
+            html += linkifyHttp(source.slice(lastIndex, match.index));
 
-                    return `
-                        <span class="chat-file-wrapper">
-                            <a href="file:///${url}" class="chat-file-link">
-                                <i class="fas fa-folder-open mr-1"></i>${match}
-                            </a>
-                            <button class="chat-copy-path" data-path="${match}" title="Kopírovať">
-                                <i class="fas fa-copy"></i>
-                            </button>
-                        </span>
-                    `;
-                }
-            );
+            // Cesta siaha po koniec riadku, takže môže obsahovať aj medzery.
+            const matchedText = match[0];
+            const path = matchedText.trimEnd();
+            const trailingWhitespace = matchedText.slice(path.length);
+            const fileUrl = encodeURI('file:///' + path.replace(/\\/g, '/'));
+            const encodedPath = encodeURIComponent(path);
 
-            return safe;
+            html += `
+                <span class="chat-file-wrapper">
+                    <a href="${escapeHtml(fileUrl)}" class="chat-file-link">
+                        <i class="fas fa-folder-open mr-1"></i>${escapeHtml(path)}
+                    </a>
+                    <button type="button" class="chat-copy-path" data-path="${encodedPath}" title="Kopírovať celú cestu">
+                        <i class="fas fa-copy"></i>
+                    </button>
+                </span>${escapeHtml(trailingWhitespace)}
+            `;
+
+            lastIndex = pathPattern.lastIndex;
         }
+
+        html += linkifyHttp(source.slice(lastIndex));
+        return html;
+    }
     $(document).on('click', '.chat-file-link', function(e) {
         // optional: warning
         console.log('Opening file path:', this.href);
     });$(document).on('click', '.chat-copy-path', function(e) {
     e.preventDefault();
 
-    const path = $(this).data('path');
+    const encodedPath = $(this).attr('data-path');
+    const path = encodedPath ? decodeURIComponent(encodedPath) : '';
 
     if (!path) return;
 

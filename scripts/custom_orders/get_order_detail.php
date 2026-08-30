@@ -7,6 +7,7 @@ header('Content-Type: application/json; charset=utf-8');
 
 $orderId = (int) ($_POST['custom_order_id'] ?? $_POST['order_id'] ?? 0);
 $editItemId = (int) ($_POST['edit_item_id'] ?? 0);
+$focusNoteId = max(0, (int) ($_POST['focus_note_id'] ?? 0));
 if ($orderId <= 0) {
   http_response_code(422);
   echo json_encode(['ok' => false, 'error' => 'Invalid custom order.']);
@@ -19,6 +20,9 @@ $_GET = [
 ];
 if ($editItemId > 0) {
   $_GET['edit_item_id'] = (string) $editItemId;
+}
+if ($focusNoteId > 0) {
+  $_GET['focus_note_id'] = (string) $focusNoteId;
 }
 
 define('CUSTOM_ORDERS_DETAIL_REQUEST', true);

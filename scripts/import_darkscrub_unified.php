@@ -7,6 +7,18 @@ if (!function_exists('str_contains')) {
 }
 
 require_once __DIR__ . '/orders/department_config.php';
+require_once __DIR__ . '/../includes/orders_workflow_helpers.php';
+require_once __DIR__ . '/../includes/orders_plastics_gate_helpers.php';
+
+/**
+ * Put a newly imported order behind the plastics stock-check gate.
+ *
+ * Plastics items are actionable by the plastics department. Every dependent
+ * production item waits until all plastics items are confirmed as PK_✗.
+ */
+function oi_apply_plastics_check_stock_gate(mysqli $conn, int $orderId): bool {
+  return ordersApplyPlasticsStockGate($conn, $orderId);
+}
 
 /**
  * Unified DarkScrub CSV importer.
@@ -276,6 +288,7 @@ function import_darkscrub_unified_csv(mysqli $conn, string $csvPath, string $mod
     'skipped_locked_order_refs' => [],
     'skipped_existing_orders' => 0,
     'skipped_existing_order_refs' => [],
+    'plastics_gated_orders' => 0,
     'mode' => $mode,
   ];
 
@@ -565,7 +578,22 @@ function import_darkscrub_unified_csv(mysqli $conn, string $csvPath, string $mod
       }
     }
 
+    // The stock-check gate belongs only to brand-new orders. Reimports must
+    // never reset an already progressing order back to its initial workflow.
+    $plasticsGateApplied = !$beforeExists
+      && oi_apply_plastics_check_stock_gate($conn, $orderId);
+
+    if ($plasticsGateApplied) {
+      $stats['plastics_gated_orders']++;
+    }
+
     oi_refresh_order_categories($conn, $orderId);
+
+    // Keep unpaid orders visibly PENDING. Their item gate is already prepared,
+    // but overall workflow starts only after payment is confirmed.
+    if ($plasticsGateApplied && $initialStatus !== 'PENDING') {
+      recalculateOrderWorkflow($conn, $orderId);
+    }
 
     oi_upsert_shipment_from_unified_row($conn, $orderId, $first, $seenShipping);
 

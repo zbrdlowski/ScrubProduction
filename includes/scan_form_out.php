@@ -28,7 +28,7 @@
     <div class="col-md-8">
       <div class="panel panel-default">
         <div class="panel-body">
-          <form id="scanForm" method="POST" autocomplete="off">
+          <form id="scanForm" method="POST" action="scripts/scan_out.php" autocomplete="off">
             <div class="form-group">
               <input type="hidden" id="movement" name="movement" value="OUT" required>
             </div>
@@ -184,58 +184,18 @@ $stmt->execute([
   }
 
   form.addEventListener('submit', function(e) {
-    e.preventDefault();
-
     const order = orderInput.value.trim();
     const barcode = barcodeInput.value.trim();
     const shelf = shelfInput.value.trim();
 
     if (!order || !barcode || !shelf) {
+      e.preventDefault();
       showStatus('error', 'Order, barcode and shelf are required.');
       return;
     }
 
-    lockForm();
-    statusBox.innerHTML = '';
-
-    fetch('scripts/scan_out.php', {
-      method: 'POST',
-      body: new FormData(form),
-      credentials: 'same-origin'
-    }).then(function(response) {
-      if (response.status === 401) {
-        handleSessionExpired();
-        return null;
-      }
-
-      return response.json().then(function(data) {
-        if (!response.ok || !data || data.status !== 'ok') {
-          throw new Error((data && data.message) ? data.message : 'Server error.');
-        }
-        return data;
-      });
-    }).then(function(data) {
-      if (!data) return;
-
-      showStatus('success', data.message || 'Item scanned OUT successfully.');
-
-      // Keep order number, clear scanned values for next operation.
-      barcodeInput.value = '';
-      shelfInput.value = '';
-      barcodeInput.focus();
-
-      // Refresh page shortly so Last 10 movements updates and operator sees the DB result.
-      setTimeout(function() {
-        window.location.reload();
-      }, 700);
-
-    }).catch(function(error) {
-      showStatus('error', error.message || 'Server error.');
-      unlockForm();
-      barcodeInput.focus();
-    });
+    sendBtn.disabled = true;
   });
-
   clearOrder.addEventListener('click', function() {
     orderInput.value = '';
     fetch('scripts/clear_saved_order.php', {

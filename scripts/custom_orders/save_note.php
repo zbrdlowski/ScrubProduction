@@ -17,6 +17,10 @@ if ($noteBody === '') {
   customOrdersRedirect($orderId);
 }
 
-customOrdersAddNote($conn, $orderId, 'INTERNAL', $noteBody, $userId, $parentNoteId);
+$newNoteId = customOrdersAddNote($conn, $orderId, 'INTERNAL', $noteBody, $userId, $parentNoteId);
+if ($newNoteId <= 0) {
+  customOrdersFlash('danger', 'Note could not be saved.');
+  customOrdersRedirect($orderId);
+}
 customOrdersFlash('success', $parentNoteId > 0 ? 'Reply submitted.' : 'Note submitted.');
-customOrdersRedirect($orderId);
+customOrdersRedirect($orderId, $newNoteId);

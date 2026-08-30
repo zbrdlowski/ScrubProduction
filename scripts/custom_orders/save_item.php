@@ -30,6 +30,16 @@ if ($orderId <= 0) {
   $finish(false, 'Invalid custom order.');
 }
 
+$orderStmt = $conn->prepare('SELECT production_order_id FROM custom_orders WHERE id = ? LIMIT 1');
+$orderStmt->bind_param('i', $orderId);
+$orderStmt->execute();
+$orderRow = $orderStmt->get_result()->fetch_assoc() ?: null;
+$orderStmt->close();
+if (!$orderRow) {
+  $finish(false, 'Custom order not found.');
+}
+$itemWorkflowStatusEnabled = (int) ($orderRow['production_order_id'] ?? 0) > 0;
+
 $type = strtoupper(trim((string) ($_POST['item_type_code'] ?? 'G')));
 $allowedTypes = array_keys(customOrdersAllowedItemTypes());
 if (!in_array($type, $allowedTypes, true)) {
@@ -37,6 +47,15 @@ if (!in_array($type, $allowedTypes, true)) {
 }
 
 $title = trim((string) ($_POST['title'] ?? ''));
+$unitPrice = (float) ($_POST['unit_price'] ?? 0);
+if ($itemId <= 0 && $type === 'F') {
+  if ($title === '') {
+    $title = 'Fitting';
+  }
+  if ($unitPrice <= 0) {
+    $unitPrice = 39.90;
+  }
+}
 if ($title === '') {
   $finish(false, 'Item title is required.', $itemId);
 }
@@ -45,8 +64,8 @@ $payload = customOrdersItemPayloadFromPost($conn, $type);
 $sku = trim((string) ($_POST['sku'] ?? 'MANUAL'));
 $customLabel = trim((string) ($_POST['custom_label'] ?? ''));
 $qty = max(1, (int) ($_POST['qty'] ?? 1));
-$unitPrice = (float) ($_POST['unit_price'] ?? 0);
 $isUpsell = isset($_POST['is_upsell']) ? 1 : 0;
+$hasUpsellSource = array_key_exists('upsell_source', $_POST);
 $upsellSource = trim((string) ($_POST['upsell_source'] ?? ''));
 $statusItem = [
   'item_type_code' => $type,
@@ -55,7 +74,8 @@ $statusItem = [
   'options_json' => $payload['options_json'],
   'internal_options_json' => $payload['internal_options_json'],
 ];
-$itemStatus = customOrdersResolveItemStatus($conn, $statusItem, (string) ($_POST['item_status'] ?? ''));
+$requestedItemStatus = $itemWorkflowStatusEnabled ? (string) ($_POST['item_status'] ?? '') : '';
+$itemStatus = customOrdersResolveItemStatus($conn, $statusItem, $requestedItemStatus);
 
 if ($itemId > 0) {
   $existingItem = null;
@@ -66,6 +86,15 @@ if ($itemId > 0) {
   $stmt->close();
   if (!$existingItem) {
     $finish(false, 'Custom item not found.', $itemId);
+  }
+  if (!$itemWorkflowStatusEnabled) {
+    $itemStatus = trim((string) ($existingItem['status'] ?? ''));
+    if ($itemStatus === '') {
+      $itemStatus = customOrdersResolveItemStatus($conn, $statusItem, '');
+    }
+  }
+  if (!$hasUpsellSource) {
+    $upsellSource = trim((string) ($existingItem['upsell_source'] ?? ''));
   }
 
   $stmt = $conn->prepare('

@@ -47,7 +47,7 @@ $postFloat = static function (string $key, array $existing): float {
 
 $data = [
   'status' => $postString('status', $existing) ?: 'LEAD',
-  'complexity_level' => $postInt('complexity_level', $existing, 1, 10),
+  'complexity_level' => $postInt('complexity_level', $existing, 1, 7),
   'source_channel' => $postString('source_channel', $existing),
   'social_platform' => $postString('social_platform', $existing),
   'social_handle' => $postString('social_handle', $existing),
@@ -69,6 +69,7 @@ $data = [
   'billing_city' => $postString('billing_city', $existing),
   'billing_zip' => $postString('billing_zip', $existing),
   'billing_country' => customOrdersNormalizeCountry($postString('billing_country', $existing)),
+  'billing_state' => customOrdersNormalizeState($postString('billing_state', $existing)),
   'billing_email' => $postString('billing_email', $existing),
   'billing_phone' => $postString('billing_phone', $existing),
   'shipping_name' => $postString('shipping_name', $existing),
@@ -78,6 +79,7 @@ $data = [
   'shipping_city' => $postString('shipping_city', $existing),
   'shipping_zip' => $postString('shipping_zip', $existing),
   'shipping_country' => customOrdersNormalizeCountry($postString('shipping_country', $existing)),
+  'shipping_state' => customOrdersNormalizeState($postString('shipping_state', $existing)),
   'shipping_email' => $postString('shipping_email', $existing),
   'shipping_phone' => $postString('shipping_phone', $existing),
   'shipping_method' => $postString('shipping_method', $existing),
@@ -96,6 +98,28 @@ $data = [
   'next_followup_at' => $postNullableDate('next_followup_at', $existing),
   'dead_order_flag' => (int) ($_POST['dead_order_flag'] ?? 0) === 1 ? 1 : 0,
 ];
+
+if ((int) ($_POST['billing_same_as_shipping'] ?? 0) === 1) {
+  foreach (['name', 'company', 'company_id', 'street', 'city', 'zip', 'country', 'state', 'email', 'phone'] as $addressField) {
+    $data['billing_' . $addressField] = $data['shipping_' . $addressField] ?? '';
+  }
+}
+
+if (!customOrdersCountryRequiresState($data['shipping_country'])) {
+  $data['shipping_state'] = null;
+}
+if (!customOrdersCountryRequiresState($data['billing_country'])) {
+  $data['billing_state'] = null;
+}
+
+if (!isset(customOrdersOrderStatuses()[$data['status']])) {
+  $data['status'] = 'LEAD';
+}
+
+$autoAssignedOfficialNumber = '';
+if ($data['status'] === 'DRAFT_X' && trim((string) ($existing['official_order_number'] ?? '')) === '') {
+  $autoAssignedOfficialNumber = customOrdersAssignOfficialNumber($conn, $orderId, 'SO', $userId);
+}
 
 $contactId = customOrdersUpsertContactDirectory($conn, $data);
 
@@ -137,5 +161,9 @@ customOrdersLog(
   ],
   $changes ? ('Updated ' . count($changes) . ' field(s)') : 'No visible field changes'
 );
-customOrdersFlash('success', 'Custom order saved.');
+$flashMessage = 'Custom order saved.';
+if ($autoAssignedOfficialNumber !== '') {
+  $flashMessage .= ' Official SO assigned: ' . $autoAssignedOfficialNumber . '.';
+}
+customOrdersFlash('success', $flashMessage);
 customOrdersRedirect($orderId);

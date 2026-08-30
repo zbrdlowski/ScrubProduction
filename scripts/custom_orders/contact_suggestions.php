@@ -24,7 +24,7 @@ $stmt = $conn->prepare("
     shipping_zip, shipping_country, shipping_email, shipping_phone, updated_at
   FROM custom_orders
   WHERE CONCAT_WS(' ',
-    source_channel, social_handle, customer_name, customer_email, customer_phone,
+    social_handle, customer_name, customer_email, customer_phone,
     billing_name, billing_company, billing_company_id, billing_street, billing_city,
     billing_zip, billing_country, billing_email, billing_phone,
     shipping_name, shipping_company, shipping_company_id, shipping_street, shipping_city,
@@ -168,7 +168,7 @@ if (count($suggestions) < 10) {
     LEFT JOIN order_addresses bill ON bill.order_id = o.id AND UPPER(bill.type) = 'BILLING'
     LEFT JOIN order_addresses ship ON ship.order_id = o.id AND UPPER(ship.type) = 'SHIPPING'
     WHERE CONCAT_WS(' ',
-      os.code, o.source_meta, cu.name, cu.email, cu.phone,
+      o.source_meta, cu.name, cu.email, cu.phone,
       bill.name, bill.company, bill.company_id, bill.street, bill.city, bill.zip,
       bill.country, bill.email, bill.phone,
       ship.name, ship.company, ship.company_id, ship.street, ship.city, ship.zip,
