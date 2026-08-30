@@ -180,6 +180,81 @@ $dailyRows = dash_rows($conn, "SELECT DATE(order_date) AS d, COUNT(*) AS cnt
   ORDER BY d ASC
 ");
 
+/*
+ * Seat Cover / Mid Fork sales origin statistics.
+ * Checkbox upsells are explicitly tagged by the unified importer in
+ * options_json._auto_generated. Everything else is a deliberately ordered
+ * product: Seat Covers use department S and Mid Forks use the canonical G_MF
+ * prefix from department_config.php. Bundle-created S items therefore remain
+ * generic sales, while only SHOPTET checkbox items count as upsells.
+ */
+$addonSalesRows = dash_rows($conn, "SELECT
+    DATE_FORMAT(o.order_date, '%Y-%m') AS month_key,
+    SUM(CASE
+      WHEN oi.item_type_code = 'S'
+       AND COALESCE(oi.options_json, '') NOT LIKE '%SHOPTET_AUTO_SEATCOVER%'
+      THEN COALESCE(oi.qty, 1) ELSE 0 END) AS seat_generic,
+    SUM(CASE
+      WHEN COALESCE(oi.options_json, '') LIKE '%SHOPTET_AUTO_SEATCOVER%'
+      THEN COALESCE(oi.qty, 1) ELSE 0 END) AS seat_upsell,
+    SUM(CASE
+      WHEN oi.item_type_code = 'G'
+       AND (
+         LEFT(UPPER(TRIM(COALESCE(oi.custom_label, ''))), 4) = 'G_MF'
+         OR LEFT(UPPER(TRIM(COALESCE(oi.sku, ''))), 4) = 'G_MF'
+       )
+       AND COALESCE(oi.options_json, '') NOT LIKE '%SHOPTET_AUTO_MIDFORKS%'
+      THEN COALESCE(oi.qty, 1) ELSE 0 END) AS mid_generic,
+    SUM(CASE
+      WHEN COALESCE(oi.options_json, '') LIKE '%SHOPTET_AUTO_MIDFORKS%'
+      THEN COALESCE(oi.qty, 1) ELSE 0 END) AS mid_upsell
+  FROM order_items oi
+  INNER JOIN orders o ON o.id = oi.order_id
+  WHERE oi.deleted_at IS NULL
+    AND COALESCE(UPPER(o.status), '') <> 'CANCELLED'
+    AND o.order_date >= DATE_FORMAT(DATE_SUB(CURDATE(), INTERVAL 11 MONTH), '%Y-%m-01')
+  GROUP BY DATE_FORMAT(o.order_date, '%Y-%m')
+  ORDER BY month_key ASC
+");
+
+$addonSalesByMonth = [];
+foreach ($addonSalesRows as $addonRow) {
+  $addonSalesByMonth[(string) ($addonRow['month_key'] ?? '')] = $addonRow;
+}
+
+$addonChartLabels = [];
+$seatGenericData = [];
+$seatUpsellData = [];
+$midGenericData = [];
+$midUpsellData = [];
+$addonTotals = [
+  'seat_generic' => 0,
+  'seat_upsell' => 0,
+  'mid_generic' => 0,
+  'mid_upsell' => 0,
+];
+$monthCursor = new DateTimeImmutable('first day of this month');
+$monthCursor = $monthCursor->modify('-11 months');
+for ($monthIndex = 0; $monthIndex < 12; $monthIndex++) {
+  $monthKey = $monthCursor->format('Y-m');
+  $monthRow = $addonSalesByMonth[$monthKey] ?? [];
+  $seatGeneric = (int) ($monthRow['seat_generic'] ?? 0);
+  $seatUpsell = (int) ($monthRow['seat_upsell'] ?? 0);
+  $midGeneric = (int) ($monthRow['mid_generic'] ?? 0);
+  $midUpsell = (int) ($monthRow['mid_upsell'] ?? 0);
+
+  $addonChartLabels[] = $monthCursor->format('m/Y');
+  $seatGenericData[] = $seatGeneric;
+  $seatUpsellData[] = $seatUpsell;
+  $midGenericData[] = $midGeneric;
+  $midUpsellData[] = $midUpsell;
+  $addonTotals['seat_generic'] += $seatGeneric;
+  $addonTotals['seat_upsell'] += $seatUpsell;
+  $addonTotals['mid_generic'] += $midGeneric;
+  $addonTotals['mid_upsell'] += $midUpsell;
+  $monthCursor = $monthCursor->modify('+1 month');
+}
+
 $chartLabels = [];
 $chartData = [];
 foreach ($dailyRows as $r) {
@@ -326,7 +401,7 @@ function dashboardFlag(string $code): string
 
       <div class="card card-warning flex-fill">
         <div class="card-header">
-          <h3 class="card-title">Waiting / Blocked by Department</h3>
+          <h3 class="card-title">Unfinished Work by Department</h3>
         </div>
         <div class="card-body">
           <a href="index.php?page=orders&type=G" class="btn btn-block btn-outline-warning text-left">
@@ -362,6 +437,31 @@ function dashboardFlag(string $code): string
 
     </div>
 
+  </div>
+
+  <div class="row">
+    <div class="col-12">
+      <div class="card card-success">
+        <div class="card-header d-flex align-items-center flex-wrap">
+          <h3 class="card-title mr-auto">Seat Cover &amp; Mid Fork Sales — Last 12 Months</h3>
+          <div class="ml-auto">
+            <span class="badge badge-success mr-1">Seat generic: <?= $addonTotals['seat_generic'] ?></span>
+            <span class="badge badge-light mr-3">Seat upsell: <?= $addonTotals['seat_upsell'] ?></span>
+            <span class="badge badge-info mr-1">Mid Fork generic: <?= $addonTotals['mid_generic'] ?></span>
+            <span class="badge badge-warning">Mid Fork upsell: <?= $addonTotals['mid_upsell'] ?></span>
+          </div>
+        </div>
+        <div class="card-body">
+          <div style="height:320px; position:relative;">
+            <canvas id="addonSalesChart"></canvas>
+          </div>
+          <div class="small text-muted mt-2">
+            Generic = deliberately ordered product or bundle component. Upsell = item generated from the Shoptet
+            “include Seat Cover / Mid Forks as displayed” checkbox. Cancelled orders are excluded.
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 
   <div class="row">
@@ -626,5 +726,84 @@ function dashboardFlag(string $code): string
         }
       }
     });
+
+    const addonCanvas = document.getElementById('addonSalesChart');
+    if (addonCanvas) {
+      new Chart(addonCanvas, {
+        type: 'bar',
+        data: {
+          labels: <?= json_encode($addonChartLabels, JSON_UNESCAPED_UNICODE) ?>,
+          datasets: [{
+            label: 'Seat Cover — Generic',
+            stack: 'seat-cover',
+            data: <?= json_encode($seatGenericData, JSON_UNESCAPED_UNICODE) ?>,
+            backgroundColor: 'rgba(40, 167, 69, 0.82)',
+            borderColor: '#28a745',
+            borderWidth: 1
+          }, {
+            label: 'Seat Cover — Upsell',
+            stack: 'seat-cover',
+            data: <?= json_encode($seatUpsellData, JSON_UNESCAPED_UNICODE) ?>,
+            backgroundColor: 'rgba(144, 238, 144, 0.82)',
+            borderColor: '#90ee90',
+            borderWidth: 1
+          }, {
+            label: 'Mid Fork — Generic',
+            stack: 'mid-forks',
+            data: <?= json_encode($midGenericData, JSON_UNESCAPED_UNICODE) ?>,
+            backgroundColor: 'rgba(23, 162, 184, 0.82)',
+            borderColor: '#17a2b8',
+            borderWidth: 1
+          }, {
+            label: 'Mid Fork — Upsell',
+            stack: 'mid-forks',
+            data: <?= json_encode($midUpsellData, JSON_UNESCAPED_UNICODE) ?>,
+            backgroundColor: 'rgba(255, 193, 7, 0.85)',
+            borderColor: '#ffc107',
+            borderWidth: 1
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          legend: {
+            labels: {
+              fontColor: '#ced4da'
+            }
+          },
+          tooltips: {
+            mode: 'index',
+            intersect: false
+          },
+          scales: {
+            xAxes: [{
+              stacked: true,
+              ticks: {
+                fontColor: '#ced4da'
+              },
+              gridLines: {
+                color: 'rgba(255,255,255,0.08)'
+              }
+            }],
+            yAxes: [{
+              stacked: true,
+              ticks: {
+                beginAtZero: true,
+                precision: 0,
+                fontColor: '#ced4da'
+              },
+              gridLines: {
+                color: 'rgba(255,255,255,0.08)'
+              },
+              scaleLabel: {
+                display: true,
+                labelString: 'Pieces sold',
+                fontColor: '#ced4da'
+              }
+            }]
+          }
+        }
+      });
+    }
   });
 </script>
