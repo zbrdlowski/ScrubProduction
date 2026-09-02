@@ -6,7 +6,6 @@ header('Content-Type: application/json; charset=utf-8');
 require_once dirname(__DIR__, 2) . '/includes/conn.php';
 /** @var mysqli $conn */
 require_once dirname(__DIR__, 2) . '/includes/orders_status_helpers.php';
-require_once dirname(__DIR__, 2) . '/includes/orders_workflow_helpers.php';
 require_once __DIR__ . '/activity_helper.php';
 
 function out(array $payload): void {
@@ -43,48 +42,27 @@ if (!$row) {
 }
 
 $oldStatus = strtoupper((string)($row['status'] ?? ''));
-$resumeWorkflowAfterPayment = $oldStatus === 'PENDING'
-  && in_array($newStatus, ['NEW', 'PLASTICS_IN_STOCK'], true);
 
 if ($oldStatus === $newStatus) {
   out(['ok' => true, 'unchanged' => true]);
 }
 
-$stmt = $resumeWorkflowAfterPayment
-  ? $conn->prepare("UPDATE orders
-      SET status = ?,
-          status_override = 0,
-          status_override_by = NULL,
-          status_override_at = NULL,
-          status_override_note = NULL
-      WHERE id = ?
-      LIMIT 1
-    ")
-  : $conn->prepare("UPDATE orders
-      SET status = ?,
-          status_override = 1,
-          status_override_by = ?,
-          status_override_at = NOW()
-      WHERE id = ?
-      LIMIT 1
-    ");
+$stmt = $conn->prepare("UPDATE orders
+  SET status = ?,
+      status_override = 1,
+      status_override_by = ?,
+      status_override_at = NOW()
+  WHERE id = ?
+  LIMIT 1
+");
 
 if (!$stmt) {
   out(['ok' => false, 'error' => $conn->error]);
 }
 
-if ($resumeWorkflowAfterPayment) {
-  $stmt->bind_param('si', $newStatus, $orderId);
-} else {
-  $stmt->bind_param('sii', $newStatus, $userId, $orderId);
-}
+$stmt->bind_param('sii', $newStatus, $userId, $orderId);
 $stmt->execute();
 $stmt->close();
-
-if ($resumeWorkflowAfterPayment) {
-  recalculateOrderWorkflow($conn, $orderId);
-  $newStatus = ordersGetCurrentOrderStatus($conn, $orderId);
-}
 
 log_order_activity(
   $conn,

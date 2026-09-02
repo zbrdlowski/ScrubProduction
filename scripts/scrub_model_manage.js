@@ -281,7 +281,7 @@
             if (groupExists) {
                 if (!silentReset) {
                     $('#mym_brand').val(resp.brand).prop('readonly', true);
-                    $('#mym_model').val(resp.model).prop('readonly', true);
+                    $('#mym_model').val(resp.model).prop('readonly', false);
                     $('#mym_modelcode').prop('readonly', true);
                     $('#mym_generate_code').prop('disabled', true);
                 }

@@ -159,19 +159,32 @@ $blockedRows = dash_rows($conn, "SELECT
   LIMIT 10
 ");
 
-$countryRows = dash_rows($conn, "SELECT 
+$countryMapRows = dash_rows($conn, "SELECT
     COALESCE(oa_ship.country, oa_bill.country, '??') AS country,
-    COUNT(*) AS cnt
+    COUNT(DISTINCT o.id) AS cnt
   FROM orders o
   LEFT JOIN order_addresses oa_ship
     ON oa_ship.order_id = o.id AND UPPER(oa_ship.type) = 'SHIPPING'
   LEFT JOIN order_addresses oa_bill
     ON oa_bill.order_id = o.id AND UPPER(oa_bill.type) = 'BILLING'
   WHERE o.order_date >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)
+    AND COALESCE(UPPER(o.status), '') <> 'CANCELLED'
   GROUP BY country
   ORDER BY cnt DESC
-  LIMIT 10
 ");
+$countryRows = array_slice($countryMapRows, 0, 10);
+$countryMapValues = [];
+foreach ($countryMapRows as $countryMapRow) {
+  $countryCode = strtoupper(trim((string) ($countryMapRow['country'] ?? '')));
+  if ($countryCode === 'UK') {
+    $countryCode = 'GB';
+  } elseif ($countryCode === 'UM') {
+    $countryCode = 'US';
+  }
+  if (preg_match('/^[A-Z]{2}$/', $countryCode)) {
+    $countryMapValues[strtolower($countryCode)] = (int) ($countryMapRow['cnt'] ?? 0);
+  }
+}
 
 $dailyRows = dash_rows($conn, "SELECT DATE(order_date) AS d, COUNT(*) AS cnt
   FROM orders
@@ -208,6 +221,16 @@ $addonSalesRows = dash_rows($conn, "SELECT
     SUM(CASE
       WHEN COALESCE(oi.options_json, '') LIKE '%SHOPTET_AUTO_MIDFORKS%'
       THEN COALESCE(oi.qty, 1) ELSE 0 END) AS mid_upsell
+    ,SUM(CASE
+      WHEN oi.item_type_code = 'G'
+       AND (
+         LEFT(UPPER(TRIM(COALESCE(oi.custom_label, ''))), 4) = 'GFP_'
+         OR LEFT(UPPER(TRIM(COALESCE(oi.sku, ''))), 4) = 'GFP_'
+       )
+      THEN COALESCE(oi.qty, 1) ELSE 0 END) AS gfp_generic
+    ,SUM(CASE
+      WHEN COALESCE(oi.options_json, '') LIKE '%SHOPTET_AUTO_FITTING%'
+      THEN COALESCE(oi.qty, 1) ELSE 0 END) AS gfp_upsell
   FROM order_items oi
   INNER JOIN orders o ON o.id = oi.order_id
   WHERE oi.deleted_at IS NULL
@@ -227,11 +250,15 @@ $seatGenericData = [];
 $seatUpsellData = [];
 $midGenericData = [];
 $midUpsellData = [];
+$gfpGenericData = [];
+$gfpUpsellData = [];
 $addonTotals = [
   'seat_generic' => 0,
   'seat_upsell' => 0,
   'mid_generic' => 0,
   'mid_upsell' => 0,
+  'gfp_generic' => 0,
+  'gfp_upsell' => 0,
 ];
 $monthCursor = new DateTimeImmutable('first day of this month');
 $monthCursor = $monthCursor->modify('-11 months');
@@ -242,16 +269,22 @@ for ($monthIndex = 0; $monthIndex < 12; $monthIndex++) {
   $seatUpsell = (int) ($monthRow['seat_upsell'] ?? 0);
   $midGeneric = (int) ($monthRow['mid_generic'] ?? 0);
   $midUpsell = (int) ($monthRow['mid_upsell'] ?? 0);
+  $gfpGeneric = (int) ($monthRow['gfp_generic'] ?? 0);
+  $gfpUpsell = (int) ($monthRow['gfp_upsell'] ?? 0);
 
   $addonChartLabels[] = $monthCursor->format('m/Y');
   $seatGenericData[] = $seatGeneric;
   $seatUpsellData[] = $seatUpsell;
   $midGenericData[] = $midGeneric;
   $midUpsellData[] = $midUpsell;
+  $gfpGenericData[] = $gfpGeneric;
+  $gfpUpsellData[] = $gfpUpsell;
   $addonTotals['seat_generic'] += $seatGeneric;
   $addonTotals['seat_upsell'] += $seatUpsell;
   $addonTotals['mid_generic'] += $midGeneric;
   $addonTotals['mid_upsell'] += $midUpsell;
+  $addonTotals['gfp_generic'] += $gfpGeneric;
+  $addonTotals['gfp_upsell'] += $gfpUpsell;
   $monthCursor = $monthCursor->modify('+1 month');
 }
 
@@ -309,6 +342,150 @@ function dashboardFlag(string $code): string
   </span>';
 }
 ?>
+
+<style>
+  .addon-sales-card-header {
+    gap: 10px;
+  }
+
+  .addon-sales-card-title {
+    flex: 1 1 280px;
+    font-weight: 700;
+  }
+
+  .addon-sales-stats {
+    display: flex;
+    flex: 2 1 520px;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .addon-sales-stat-group {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 36px;
+    padding: 5px 9px;
+    border: 1px solid rgba(255, 255, 255, .28);
+    border-radius: 7px;
+    background: #26323b;
+    color: #f8f9fa;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, .18);
+  }
+
+  .addon-sales-stat-title {
+    padding-right: 8px;
+    border-right: 1px solid rgba(255, 255, 255, .20);
+    font-size: 12px;
+    font-weight: 800;
+    letter-spacing: .02em;
+    white-space: nowrap;
+  }
+
+  .addon-sales-stat-group.is-seat .addon-sales-stat-title {
+    color: #61e586;
+  }
+
+  .addon-sales-stat-group.is-mid .addon-sales-stat-title {
+    color: #5bd8eb;
+  }
+
+  .addon-sales-stat-group.is-gfp .addon-sales-stat-title {
+    color: #d7a8ff;
+  }
+
+  .addon-sales-metric {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    color: #d8dee3;
+    font-size: 11px;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+
+  .addon-sales-metric strong {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 28px;
+    padding: 3px 7px;
+    border-radius: 10px;
+    background: #f8f9fa;
+    color: #17212a;
+    font-size: 13px;
+    line-height: 1.1;
+  }
+
+  .addon-sales-metric.is-upsell strong {
+    background: #ffc107;
+    color: #211a00;
+  }
+
+  .orders-world-map {
+    position: relative;
+    width: 100%;
+    height: 360px;
+    border: 1px solid rgba(255, 255, 255, .08);
+    border-radius: 6px;
+    background: #252f36;
+  }
+
+  .jqvmap-label {
+    z-index: 1060;
+    background: #111827;
+    color: #f8f9fa;
+    border: 1px solid rgba(255, 255, 255, .18);
+    border-radius: 4px;
+    padding: 6px 8px;
+    font-size: 12px;
+    line-height: 1.2;
+    box-shadow: 0 8px 18px rgba(0, 0, 0, .28);
+  }
+
+  .orders-world-map .jqvmap-zoomin,
+  .orders-world-map .jqvmap-zoomout {
+    box-sizing: content-box;
+    z-index: 2;
+    width: 16px;
+    height: 16px;
+    line-height: 16px;
+    border: 1px solid rgba(255, 255, 255, .24);
+    background: rgba(17, 24, 39, .92);
+    color: #fff;
+    font-weight: 700;
+    user-select: none;
+  }
+  .orders-map-legend {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 8px;
+    color: #adb5bd;
+    font-size: 11px;
+  }
+
+  .orders-map-legend-gradient {
+    width: 150px;
+    height: 10px;
+    border: 1px solid rgba(255, 255, 255, .22);
+    border-radius: 5px;
+    background: linear-gradient(90deg, #d8f3dc 0%, #69c27d 50%, #003b1f 100%);
+  }
+
+  @media (max-width: 767.98px) {
+    .addon-sales-stats {
+      flex-basis: 100%;
+      justify-content: flex-start;
+    }
+
+    .orders-world-map {
+      height: 280px;
+    }
+  }
+</style>
 
 <div class="container-fluid">
 
@@ -442,13 +619,24 @@ function dashboardFlag(string $code): string
   <div class="row">
     <div class="col-12">
       <div class="card card-success">
-        <div class="card-header d-flex align-items-center flex-wrap">
-          <h3 class="card-title mr-auto">Seat Cover &amp; Mid Fork Sales — Last 12 Months</h3>
-          <div class="ml-auto">
-            <span class="badge badge-success mr-1">Seat generic: <?= $addonTotals['seat_generic'] ?></span>
-            <span class="badge badge-light mr-3">Seat upsell: <?= $addonTotals['seat_upsell'] ?></span>
-            <span class="badge badge-info mr-1">Mid Fork generic: <?= $addonTotals['mid_generic'] ?></span>
-            <span class="badge badge-warning">Mid Fork upsell: <?= $addonTotals['mid_upsell'] ?></span>
+        <div class="card-header d-flex align-items-center flex-wrap addon-sales-card-header">
+          <h3 class="card-title addon-sales-card-title">Generic vs Upsell Sales — Last 12 Months</h3>
+          <div class="addon-sales-stats">
+            <div class="addon-sales-stat-group is-seat">
+              <span class="addon-sales-stat-title">Seat Cover</span>
+              <span class="addon-sales-metric">Generic <strong><?= $addonTotals['seat_generic'] ?></strong></span>
+              <span class="addon-sales-metric is-upsell">Upsell <strong><?= $addonTotals['seat_upsell'] ?></strong></span>
+            </div>
+            <div class="addon-sales-stat-group is-mid">
+              <span class="addon-sales-stat-title">Mid Forks</span>
+              <span class="addon-sales-metric">Generic <strong><?= $addonTotals['mid_generic'] ?></strong></span>
+              <span class="addon-sales-metric is-upsell">Upsell <strong><?= $addonTotals['mid_upsell'] ?></strong></span>
+            </div>
+            <div class="addon-sales-stat-group is-gfp">
+              <span class="addon-sales-stat-title">GFP / Applying</span>
+              <span class="addon-sales-metric">Generic <strong><?= $addonTotals['gfp_generic'] ?></strong></span>
+              <span class="addon-sales-metric is-upsell">Upsell <strong><?= $addonTotals['gfp_upsell'] ?></strong></span>
+            </div>
           </div>
         </div>
         <div class="card-body">
@@ -457,7 +645,8 @@ function dashboardFlag(string $code): string
           </div>
           <div class="small text-muted mt-2">
             Generic = deliberately ordered product or bundle component. Upsell = item generated from the Shoptet
-            “include Seat Cover / Mid Forks as displayed” checkbox. Cancelled orders are excluded.
+            “include Seat Cover / Mid Forks as displayed” or “Applying Graphics” checkbox. GFP generic counts only
+            the main G row with a GFP_ SKU/code, so its generated P and F rows are not counted again. Cancelled orders are excluded.
           </div>
         </div>
       </div>
@@ -596,7 +785,7 @@ function dashboardFlag(string $code): string
       </div>
     </div>
 
-    <div class="col-md-3 d-flex">
+    <div class="col-md-6 d-flex">
       <div class="card card-secondary flex-fill">
         <div class="card-header">
           <h3 class="card-title">Department Workload</h3>
@@ -648,7 +837,10 @@ function dashboardFlag(string $code): string
       </div>
     </div>
 
-    <div class="col-md-3 d-flex">
+  </div>
+
+  <div class="row align-items-stretch">
+    <div class="col-md-4 d-flex">
       <div class="card card-info flex-fill">
         <div class="card-header">
           <h3 class="card-title">Top Countries 30d</h3>
@@ -661,6 +853,22 @@ function dashboardFlag(string $code): string
               <b><?= (int) $r['cnt'] ?></b>
             </div>
           <?php endforeach; ?>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-md-8 d-flex">
+      <div class="card card-success flex-fill">
+        <div class="card-header">
+          <h3 class="card-title">Orders by Country — Last 30 Days</h3>
+        </div>
+        <div class="card-body p-2">
+          <div id="ordersWorldMap" class="orders-world-map" aria-label="World map showing order volume by country"></div>
+          <div class="orders-map-legend" aria-hidden="true">
+            <span>Fewer orders</span>
+            <span class="orders-map-legend-gradient"></span>
+            <span>More orders</span>
+          </div>
         </div>
       </div>
     </div>
@@ -758,8 +966,22 @@ function dashboardFlag(string $code): string
             label: 'Mid Fork — Upsell',
             stack: 'mid-forks',
             data: <?= json_encode($midUpsellData, JSON_UNESCAPED_UNICODE) ?>,
-            backgroundColor: 'rgba(255, 193, 7, 0.85)',
-            borderColor: '#ffc107',
+            backgroundColor: 'rgba(91, 216, 235, 0.86)',
+            borderColor: '#5bd8eb',
+            borderWidth: 1
+          }, {
+            label: 'GFP — Generic',
+            stack: 'gfp-applying',
+            data: <?= json_encode($gfpGenericData, JSON_UNESCAPED_UNICODE) ?>,
+            backgroundColor: 'rgba(111, 66, 193, 0.82)',
+            borderColor: '#8d63d2',
+            borderWidth: 1
+          }, {
+            label: 'Applying Graphics — Upsell',
+            stack: 'gfp-applying',
+            data: <?= json_encode($gfpUpsellData, JSON_UNESCAPED_UNICODE) ?>,
+            backgroundColor: 'rgba(232, 174, 255, 0.86)',
+            borderColor: '#e8aeff',
             borderWidth: 1
           }]
         },
@@ -804,6 +1026,82 @@ function dashboardFlag(string $code): string
           }
         }
       });
+    }
+
+    function dashboardOrderCountWord(count) {
+      const lastTwo = count % 100;
+      const last = count % 10;
+      if (count === 1) return 'objednávka';
+      if ((lastTwo < 12 || lastTwo > 14) && last >= 2 && last <= 4) return 'objednávky';
+      return 'objednávok';
+    }
+    const countryMapValues = <?= json_encode($countryMapValues, JSON_UNESCAPED_UNICODE) ?>;
+    const worldMap = $('#ordersWorldMap');
+    if (worldMap.length && typeof $.fn.vectorMap === 'function') {
+      try {
+        worldMap.vectorMap({
+          map: 'world_en',
+          backgroundColor: 'transparent',
+          color: '#46535c',
+          borderColor: '#6c7a84',
+          borderWidth: 0.7,
+          borderOpacity: 0.55,
+          hoverColor: '#4fce72',
+          hoverOpacity: 0.9,
+          selectedColor: null,
+          enableZoom: true,
+          showTooltip: true,
+          values: countryMapValues,
+          scaleColors: ['#d8f3dc', '#003b1f'],
+          normalizeFunction: 'polynomial',
+          onLabelShow: function (event, label, code) {
+            const orderCount = Number(countryMapValues[String(code).toLowerCase()] || 0);
+            label.text(label.text() + ': ' + orderCount + ' ' + dashboardOrderCountWord(orderCount));
+          },
+          onRegionClick: function (event) {
+            event.preventDefault();
+          }
+        });
+
+        const mapElement = worldMap.get(0);
+        let wheelZoomLocked = false;
+
+        mapElement.addEventListener('wheel', function (event) {
+          const mapObject = worldMap.data('mapObject');
+          if (!mapObject || event.deltaY === 0) {
+            return;
+          }
+
+          const zoomingIn = event.deltaY < 0;
+          const canZoom = zoomingIn
+            ? mapObject.zoomCurStep < mapObject.zoomMaxStep
+            : mapObject.zoomCurStep > 1;
+
+          // At the zoom limits, leave the wheel available for normal page scrolling.
+          if (!canZoom) {
+            return;
+          }
+
+          event.preventDefault();
+          if (wheelZoomLocked) {
+            return;
+          }
+
+          wheelZoomLocked = true;
+          if (zoomingIn) {
+            mapObject.zoomIn();
+          } else {
+            mapObject.zoomOut();
+          }
+
+          window.setTimeout(function () {
+            wheelZoomLocked = false;
+          }, 90);
+        }, { passive: false });
+      } catch (mapError) {
+        worldMap.html('<div class="text-muted p-3">World map could not be loaded.</div>');
+        console.error(mapError);
+      }
     }
   });
 </script>

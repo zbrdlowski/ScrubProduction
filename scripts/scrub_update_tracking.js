@@ -21,6 +21,7 @@
         ['eBay', 'done_ebay'],
         ['Graphics Templates', 'done_graphics_templates'],
         ['Seatcover Templates', 'done_seatcover_templates'],
+        ['Products', 'done_products'],
     ];
 
     function ptEscHtml(str) {
@@ -37,40 +38,6 @@
             try { return JSON.parse(tracking); } catch (e) { return null; }
         }
         return tracking || null;
-    }
-
-    function isTrackingPending(tracking) {
-        return !!tracking && TRACKING_ITEMS.some(function (item) {
-            return !parseInt(tracking[item[1]], 10);
-        });
-    }
-
-    function buildTrackingTableBadges(tracking) {
-        const abbreviations = ['WEB', 'EB', 'GT', 'ST'];
-        let html = '<span class="badge-pair config-badges">';
-        TRACKING_ITEMS.forEach(function (item, index) {
-            const isDone = !tracking || !!parseInt(tracking[item[1]], 10);
-            html += '<span class="badge meta-status-badge config-mini-badge ' +
-                (isDone ? 'badge-success' : 'badge-danger') + '" title="' +
-                ptEscHtml(item[0]) + '">' + abbreviations[index] + '</span>';
-        });
-        return html + '</span>';
-    }
-
-    function refreshTrackingTableCell($row, tracking) {
-        const pending = isTrackingPending(tracking);
-        const $cell = $row.find('.tracking-status-cell');
-        if (!$cell.length) return;
-
-        $cell
-            .attr('data-order', pending ? '0' : '1')
-            .attr('data-search', pending ? 'Pending' : 'Complete')
-            .html(buildTrackingTableBadges(tracking));
-
-        // Obnov DataTables cache; prekreslenie prebehne pri najbližšom filtri/radení.
-        if ($.fn.DataTable && $.fn.DataTable.isDataTable('#scrubTable')) {
-            $('#scrubTable').DataTable().cell($cell).invalidate('dom');
-        }
     }
 
     // ── VIEW renderer (4 mini bloky, col-md-3) ─────────────────────────────
@@ -96,7 +63,7 @@
                 : '<span class="badge meta-status-badge badge-danger"><i class="fas fa-times mr-1"></i>PENDING</span>';
 
             html += `
-                <div class="col-md-3 mb-3">
+                <div class="col-track5 mb-3">
                     <div class="block-card card">
                         <div class="card-header text-light">${ptEscHtml(label)}</div>
                         <div class="card-body">
@@ -227,7 +194,6 @@
                 done_seatcover_templates: row.done_seatcover_templates,
             });
             $row.data('tracking', updated);
-            refreshTrackingTableCell($row, updated);
 
             if ($row.hasClass('open')) {
                 renderTrackingView($row.data('rowkey'), updated);
@@ -339,7 +305,6 @@
                         done_seatcover_templates: resp.done_seatcover_templates,
                     });
                     $row.data('tracking', updated);
-                    refreshTrackingTableCell($row, updated);
                     renderTrackingView(rowkey, updated);
 
                     $('#tracking-edit-' + rowkey).hide();

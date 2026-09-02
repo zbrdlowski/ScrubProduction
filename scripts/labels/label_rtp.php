@@ -191,7 +191,7 @@ if ($itemId > 0) {
       ) AS shipping_country,
       (
         SELECT GROUP_CONCAT(
-          DISTINCT CONCAT(e.firstname,' ',e.lastname)
+          CONCAT(e.firstname,' ',e.lastname)
           ORDER BY e.firstname, e.lastname
           SEPARATOR ', '
         )
@@ -201,7 +201,7 @@ if ($itemId > 0) {
       ) AS assigned_names,
       (
         SELECT GROUP_CONCAT(
-          DISTINCT CONCAT(e.firstname,' ',e.lastname)
+          CONCAT(e.firstname,' ',e.lastname)
           ORDER BY
             CASE WHEN oa.role = 'PRIMARY_GRAPHICS' THEN 0 ELSE 1 END,
             e.firstname, e.lastname

@@ -48,6 +48,33 @@
 			opacity: 1;
 		}
 
+				.dashboard-shortcut {
+			border-color: #2ed1d2;
+			color: #2ed1d2;
+		}
+
+		.dashboard-shortcut:hover,
+		.dashboard-shortcut:focus {
+			background: #2ed1d2;
+			border-color: #2ed1d2;
+			color: #1d252b;
+		}
+
+		.login-submit-btn {
+			width: 100%;
+			background: linear-gradient(180deg, #3d95ff 0%, #0d6efd 55%, #0a58ca 100%);
+			border-color: #0b5ed7;
+			color: #ffffff;
+			box-shadow: inset 0 1px 0 rgba(255, 255, 255, .22), 0 2px 4px rgba(0, 0, 0, .18);
+			font-weight: 600;
+		}
+
+		.login-submit-btn:hover,
+		.login-submit-btn:focus {
+			background: linear-gradient(180deg, #4aa0ff 0%, #0b68f0 55%, #084fb7 100%);
+			border-color: #0a58ca;
+			color: #ffffff;
+		}
 		/* Chrome autofill fix */
 		.login-box .form-control:-webkit-autofill,
 		.login-box .form-control:-webkit-autofill:hover,
@@ -158,19 +185,19 @@ if (isset($_POST['login'])) {
 
 					<span class="glyphicon glyphicon-lock form-control-feedback"></span>
 				</div>
+				<div class="form-group mb-0">
+					<button type="submit"
+						class="btn btn-primary btn-block btn-flat login-submit-btn"
+						name="login">
 
-				<div class="row">
-					<div class="col-xs-4">
-						<button type="submit"
-							class="btn btn-primary btn-block btn-flat"
-							name="login">
-
-							<i class="fa fa-sign-in"></i> Sign In
-						</button>
-					</div>
+						<i class="fa fa-sign-in"></i> Sign In
+					</button>
 				</div>
 
 			</form>
+			<a href="tv.php" class="btn btn-outline-info btn-block btn-flat dashboard-shortcut mt-3">
+				<i class="fa fa-tv"></i> Production Dashboard
+			</a>
 		</div>
 
 		<br /><br />

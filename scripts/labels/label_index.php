@@ -11,8 +11,12 @@
       margin: 0;
       padding: 10px;
     }
-    table { border: 2px solid black; border-collapse: collapse; }
-    td    { border: 2px solid black; }
+    table {
+      border: 3px solid black;
+      border-collapse: separate;
+      border-spacing: 3px;
+    }
+    td { border: 1px solid black; }
     #name  { text-align: center; font-size: 40px; padding: 6px; }
     #order { text-align: center; font-size: 50px; padding: 6px; }
     #country, #ship {
@@ -60,10 +64,20 @@ $rt       = stripos($extra, 'RT') !== false;
 $sc       = stripos($extra, 'SC') !== false;
 $stickers = ($extra === 'Stickers');
 if ($stickers) $sc = false;
+
+function shipAbbrev(string $ship): string {
+  $hasFedex   = stripos($ship, 'fedex') !== false;
+  $hasEconomy = stripos($ship, 'economy') !== false;
+  $hasExpress = stripos($ship, 'expres') !== false; // pokryje Expres aj Express
+  if ($hasFedex && $hasEconomy) return 'FD-E';
+  if ($hasFedex && $hasExpress) return 'FD-X';
+  return $ship;
+}
+$shipLabel = shipAbbrev($ship);
 ?>
 
 <div align="center">
-  <table width="800" border="1" cellpadding="2" cellspacing="2">
+  <table width="800" border="0" cellpadding="2" cellspacing="2">
 
     <!-- Meno + QR -->
     <tr>
@@ -83,7 +97,7 @@ if ($stickers) $sc = false;
       <td id="country" width="15%"><?= htmlspecialchars($gfp) ?></td>
       <td id="ship"    width="15%"><?= htmlspecialchars($country) ?></td>
       <td id="ship"    width="15%">&nbsp;</td>
-      <td id="ship"    width="15%"><?= htmlspecialchars($ship) ?></td>
+      <td id="ship"    width="15%"><?= htmlspecialchars($shipLabel) ?></td>
       <td id="ship"    width="15%"><?= htmlspecialchars($date) ?></td>
       <td colspan="2" style="text-align:center; font-size:18px; font-weight:bold; padding:6px;">
         <?= htmlspecialchars($basematerial) ?>&nbsp;&nbsp;<?= htmlspecialchars($finish) ?>

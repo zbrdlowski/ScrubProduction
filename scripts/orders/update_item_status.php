@@ -6,9 +6,9 @@ $base = dirname(__DIR__, 2);
 require_once $base . '/includes/conn.php';
 require_once $base . '/includes/orders_status_helpers.php';
 require_once $base . '/includes/orders_workflow_helpers.php';
+require_once $base . '/includes/orders_plastics_gate_helpers.php';
 require_once $base . '/includes/order_item_assignment_helpers.php';
 require_once $base . '/includes/render_assigned_users.php';
-require_once $base . '/includes/orders_plastics_gate_helpers.php';
 require_once __DIR__ . '/activity_helper.php';
 
 header('Content-Type: application/json');
@@ -149,21 +149,31 @@ $normalizedOldStatus = strtoupper(trim((string) $oldStatus));
 $normalizedNewStatus = strtoupper(trim($newStatus));
 $isActualStatusChange = $normalizedOldStatus !== $normalizedNewStatus;
 
-// A same-value save is not the first status change. Duplicate historical saves
-// are ignored too, so reverting an item cannot claim it for a second time.
+$isStockCheckRelease = $isActualStatusChange
+    && ordersPlasticsGateIsStockCheckReleaseTransition($conn, $orderId, $item, $oldStatus, $newStatus);
+
+// A same-value save is not the first production status change. Stock-check
+// release transitions are stored in history, but they are intentionally ignored
+// here so the next real department status change can still take the order.
 $historyCheck = $conn->prepare("
-    SELECT 1
+    SELECT old_status, new_status
     FROM order_item_statuses
     WHERE order_item_id = ?
       AND COALESCE(old_status, '') <> new_status
-    LIMIT 1
+    ORDER BY id ASC
 ");
 $historyCheck->bind_param('i', $itemId);
 $historyCheck->execute();
-$hasMeaningfulHistory = (bool) $historyCheck->get_result()->fetch_row();
+$historyResult = $historyCheck->get_result();
+$hasMeaningfulHistory = false;
+while ($historyRow = $historyResult->fetch_assoc()) {
+    if (!ordersPlasticsGateIsIgnoredAssignmentTransition($conn, $item, $historyRow['old_status'] ?? '', $historyRow['new_status'] ?? '')) {
+        $hasMeaningfulHistory = true;
+        break;
+    }
+}
 $historyCheck->close();
-$isFirstStatusChange = $isActualStatusChange && !$hasMeaningfulHistory;
-
+$isFirstStatusChange = $isActualStatusChange && !$isStockCheckRelease && !$hasMeaningfulHistory;
 $departmentCode = orderItemDepartmentCode($itemType);
 $autoPrimaryAssigned = false;
 $autoPreparedAssigned = false;
@@ -211,20 +221,6 @@ $update->bind_param('sssii', $newStatus, $nullableNote, $expectedDate, $userId, 
 $update->execute();
 $update->close();
 
-$releasedDependentItems = [];
-if (
-    $isActualStatusChange
-    && $itemType === 'P'
-    && $normalizedOldStatus === 'CHECK_STOCK'
-    && $normalizedNewStatus === 'PK_✗'
-) {
-    $releasedDependentItems = ordersReleasePlasticsDependantsIfReady(
-        $conn,
-        $orderId,
-        $userId
-    );
-}
-
 $history = $conn->prepare("
     INSERT INTO order_item_statuses
         (order_item_id, old_status, new_status, note, expected_date, changed_by)
@@ -249,7 +245,7 @@ log_order_activity(
         'auto_primary_assigned' => $autoPrimaryAssigned,
         'auto_prepared_assigned' => $autoPreparedAssigned,
         'auto_checked_assigned' => $autoCheckedAssigned,
-        'released_dependent_items' => $releasedDependentItems,
+        'stock_check_release' => $isStockCheckRelease,
     ],
     'Item status changed: ' . $oldStatus . ' → ' . $newStatus
 );
@@ -281,6 +277,11 @@ if ($autoPreparedAssigned || $autoCheckedAssigned) {
         ],
         'Item workflow position assigned by status change'
     );
+}
+
+$plasticsGateReleased = [];
+if ($itemType === 'P') {
+    $plasticsGateReleased = ordersReleasePlasticsDependantsIfReady($conn, $orderId, $userId);
 }
 
 recalculateOrderWorkflow($conn, $orderId);
@@ -359,7 +360,8 @@ echo json_encode([
     'auto_item_assigned' => $autoItemAssigned,
     'auto_prepared_assigned' => $autoPreparedAssigned,
     'auto_checked_assigned' => $autoCheckedAssigned,
-    'released_dependent_items' => $releasedDependentItems,
+    'stock_check_release' => $isStockCheckRelease,
+    'plastics_gate_released' => $plasticsGateReleased,
     'avatars_html' => $avatarsHtml,
     'take_assign_html' => $takeAssignHtml,
     'dept_code' => $departmentCode,

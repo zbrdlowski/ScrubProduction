@@ -12,6 +12,7 @@ if (!isset($_SESSION['permission'])) {
 require_once __DIR__ . '/../../includes/conn.php';
 require_once __DIR__ . '/../../includes/render_assigned_users.php';
 require_once __DIR__ . '/../../includes/order_item_assignment_helpers.php';
+require_once __DIR__ . '/../../includes/orders_plastics_gate_helpers.php';
 require_once __DIR__ . '/activity_helper.php';
 
 $orderId = (int)($_POST['order_id'] ?? 0);
@@ -116,15 +117,22 @@ try {
   $conn->begin_transaction();
 
   // lock order row to avoid two takes at once
-  $lock = $conn->prepare("SELECT id FROM orders WHERE id=? FOR UPDATE");
+  $lock = $conn->prepare("SELECT id, status FROM orders WHERE id=? FOR UPDATE");
   $lock->bind_param('i', $orderId);
   $lock->execute();
-  $ok = (bool)$lock->get_result()->fetch_row();
+  $orderRow = $lock->get_result()->fetch_assoc();
   $lock->close();
-  if (!$ok) {
+  if (!$orderRow) {
     $conn->rollback();
     http_response_code(404);
     echo json_encode(['ok'=>false,'error'=>'Order not found']);
+    exit;
+  }
+
+  if (ordersPlasticsGateHasBlockedDependants($conn, $orderId)) {
+    $conn->rollback();
+    http_response_code(409);
+    echo json_encode(['ok'=>false,'error'=>'Finish plastics stock check before taking this order']);
     exit;
   }
 

@@ -1,6 +1,8 @@
 <?php
 declare(strict_types=1);
 
+require_once __DIR__ . '/orders_plastics_gate_helpers.php';
+
 /**
  * Vyrenderuje presne ten istý HTML fragment, aký sa zobrazuje v orders.php
  * v bunke "Assigned" (div.assigned-users s avatarmi/iniciálami a x-remove
@@ -195,6 +197,9 @@ function render_order_take_assign_html(
     return '';
   }
 
+  if (ordersPlasticsGateHasBlockedDependants($conn, $orderId)) {
+    return '<span class="badge badge-secondary ml-2" title="Finish plastics stock check before taking this order">Stock check</span>';
+  }
   $assignedRaw = $assignedRawOverride !== null
     ? $assignedRawOverride
     : fetch_assigned_users_raw($conn, $orderId);

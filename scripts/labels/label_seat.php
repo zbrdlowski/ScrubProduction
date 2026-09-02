@@ -69,6 +69,16 @@ $rt       = stripos($extra, 'RT') !== false;
 $sc       = stripos($extra, 'SC') !== false;
 $stickers = ($extra === 'Stickers');
 if ($stickers) $sc = false;
+
+function shipAbbrev(string $ship): string {
+  $hasFedex   = stripos($ship, 'fedex') !== false;
+  $hasEconomy = stripos($ship, 'economy') !== false;
+  $hasExpress = stripos($ship, 'expres') !== false; // pokryje Expres aj Express
+  if ($hasFedex && $hasEconomy) return 'FD-E';
+  if ($hasFedex && $hasExpress) return 'FD-X';
+  return $ship;
+}
+$shipLabel = shipAbbrev($ship);
 ?>
 
 <div align="center">
@@ -101,7 +111,7 @@ if ($stickers) $sc = false;
       <td id="country" width="15%"><?= htmlspecialchars($gfp) ?></td>
       <td id="ship"    width="15%"><?= htmlspecialchars($country) ?></td>
       <td id="ship"    width="15%">&nbsp;</td>
-      <td id="ship"    width="15%"><?= htmlspecialchars($ship) ?></td>
+      <td id="ship"    width="15%"><?= htmlspecialchars($shipLabel) ?></td>
       <td id="ship"    width="15%"><?= htmlspecialchars($date) ?></td>
     </tr>
 

@@ -33,7 +33,7 @@ function jexit(array $data): void
 }
 
 // Whitelist povolených stĺpcov (nikdy nedôveruj $_POST['field'] priamo v SQL)
-const TRACKING_FLAGS = ['done_web', 'done_ebay', 'done_graphics_templates', 'done_seatcover_templates'];
+const TRACKING_FLAGS = ['done_web', 'done_ebay', 'done_graphics_templates', 'done_seatcover_templates', 'done_products'];
 
 $action = $_REQUEST['action'] ?? '';
 
@@ -43,10 +43,10 @@ switch ($action) {
     case 'list_pending':
         $res = $conn->query(
             "SELECT trackid, modelcode, brand, model, rangeyear, new_year,
-                    done_web, done_ebay, done_graphics_templates, done_seatcover_templates,
+                    done_web, done_ebay, done_graphics_templates, done_seatcover_templates, done_products,
                     created_at
              FROM scrub_update_tracking
-             WHERE NOT (done_web AND done_ebay AND done_graphics_templates AND done_seatcover_templates)
+             WHERE NOT (done_web AND done_ebay AND done_graphics_templates AND done_seatcover_templates AND done_products)
              ORDER BY created_at DESC"
         );
         $rows = [];
@@ -60,7 +60,7 @@ switch ($action) {
     case 'count_pending':
         $res = $conn->query(
             "SELECT COUNT(*) AS cnt FROM scrub_update_tracking
-             WHERE NOT (done_web AND done_ebay AND done_graphics_templates AND done_seatcover_templates)"
+             WHERE NOT (done_web AND done_ebay AND done_graphics_templates AND done_seatcover_templates AND done_products)"
         );
         $row = $res->fetch_assoc();
         jexit(['ok' => true, 'count' => (int)$row['cnt']]);
@@ -84,7 +84,7 @@ switch ($action) {
 
         // Vráť aktuálny stav záznamu (pre prípadné prekreslenie na klientovi)
         $stmt = $conn->prepare(
-            "SELECT trackid, done_web, done_ebay, done_graphics_templates, done_seatcover_templates
+            "SELECT trackid, done_web, done_ebay, done_graphics_templates, done_seatcover_templates, done_products
              FROM scrub_update_tracking WHERE trackid = ?"
         );
         $stmt->bind_param('i', $trackid);
@@ -107,13 +107,14 @@ switch ($action) {
         $doneEbay = !empty($_POST['done_ebay']) ? 1 : 0;
         $doneGfx = !empty($_POST['done_graphics_templates']) ? 1 : 0;
         $doneSct = !empty($_POST['done_seatcover_templates']) ? 1 : 0;
+        $doneProducts = !empty($_POST['done_products']) ? 1 : 0;
 
         $stmt = $conn->prepare(
             "UPDATE scrub_update_tracking
-             SET done_web=?, done_ebay=?, done_graphics_templates=?, done_seatcover_templates=?
+             SET done_web=?, done_ebay=?, done_graphics_templates=?, done_seatcover_templates=?, done_products=?
              WHERE trackid = ?"
         );
-        $stmt->bind_param('iiiii', $doneWeb, $doneEbay, $doneGfx, $doneSct, $trackid);
+        $stmt->bind_param('iiiiii', $doneWeb, $doneEbay, $doneGfx, $doneSct, $doneProducts, $trackid);
         $stmt->execute();
         $stmt->close();
 
@@ -123,6 +124,7 @@ switch ($action) {
             'done_ebay' => $doneEbay,
             'done_graphics_templates' => $doneGfx,
             'done_seatcover_templates' => $doneSct,
+            'done_products' => $doneProducts,
         ]);
         break;
 

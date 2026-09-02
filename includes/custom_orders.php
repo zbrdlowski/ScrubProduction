@@ -175,7 +175,7 @@ try {
   $filterWhere = [];
   if ($query !== '') {
     $safe = '%' . $conn->real_escape_string($query) . '%';
-    $filterWhere[] = "(co.internal_code LIKE '$safe' OR co.official_order_number LIKE '$safe' OR co.customer_name LIKE '$safe' OR co.social_handle LIKE '$safe' OR co.customer_email LIKE '$safe' OR co.customer_phone LIKE '$safe')";
+    $filterWhere[] = "(co.internal_code LIKE '$safe' OR co.official_order_number LIKE '$safe' OR co.customer_name LIKE '$safe' OR co.social_handle LIKE '$safe' OR co.customer_email LIKE '$safe' OR co.customer_phone LIKE '$safe' OR co.billing_name LIKE '$safe' OR co.shipping_name LIKE '$safe' OR co.billing_email LIKE '$safe' OR co.shipping_email LIKE '$safe' OR co.billing_phone LIKE '$safe' OR co.shipping_phone LIKE '$safe' OR co.billing_company LIKE '$safe' OR co.shipping_company LIKE '$safe' OR co.billing_company_id LIKE '$safe' OR co.shipping_company_id LIKE '$safe')";
   }
   if ($difficultyFilter > 0) {
     $filterWhere[] = 'COALESCE(co.complexity_level, 1) = ' . (int) $difficultyFilter;
@@ -583,7 +583,7 @@ function customOrderResolveHelpLanguage(): string
 function customOrderHelpMap(string $lang = 'sk'): array
 {
   $mapSk = [
-    'search' => 'Hladaj podla internal code, official order number, mena zakaznika alebo social handle.',
+    'search' => 'Hladaj podla lead cisla, official order number, mena, emailu, telefonu, nicku, firmy alebo company ID.',
     'status_filter' => 'Filtrovanie leadov podla pipeline stavu.',
     'seq_so' => 'Nastav posledne pouzite SO cislo. Dalsia SO objednavka dostane nasledujuce cislo.',
     'seq_go' => 'Nastav posledne pouzite GO cislo pre GrenzGaenger objednavky.',
@@ -708,7 +708,7 @@ function customOrderHelpMap(string $lang = 'sk'): array
   ];
 
   $mapEn = [
-    'search' => 'Search by internal code, official order number, customer name, or social handle.',
+    'search' => 'Search by lead number, official order number, name, email, phone, nick, company, or company ID.',
     'status_filter' => 'Filter leads by pipeline status.',
     'seq_so' => 'Set the last used SO number. The next SO order will use the following number.',
     'seq_go' => 'Set the last used GO number for GrenzGaenger orders.',
@@ -1269,6 +1269,19 @@ if (!$customOrdersDetailRequest) {
     margin-bottom: 14px;
     background: #20252b;
   }
+
+  .custom-orders-quick-search form {
+    display: flex;
+    align-items: flex-end;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  .custom-orders-quick-search-field {
+    flex: 1 1 420px;
+    min-width: 280px;
+  }
+
   .custom-orders-filter-toolbar {
     display: flex;
     align-items: center;
@@ -3293,6 +3306,31 @@ if (!$customOrdersDetailRequest) {
     <?php endif; ?>
   </div>
 
+  <div class="custom-orders-toolbar custom-orders-quick-search">
+    <form method="get" class="mb-0">
+      <input type="hidden" name="page" value="custom_orders">
+      <?php if ($tabFilter !== 'all'): ?><input type="hidden" name="tab" value="<?= h($tabFilter) ?>"><?php endif; ?>
+      <?php if ($draftStatusFilter !== ''): ?><input type="hidden" name="draft_status" value="<?= h($draftStatusFilter) ?>"><?php endif; ?>
+      <?php if ($customOrderHelpLang !== ''): ?><input type="hidden" name="help_lang" value="<?= h($customOrderHelpLang) ?>"><?php endif; ?>
+      <?php if ($difficultyFilter > 0): ?><input type="hidden" name="difficulty" value="<?= (int) $difficultyFilter ?>"><?php endif; ?>
+      <?php if ($ownerFilter > 0): ?><input type="hidden" name="owner" value="<?= (int) $ownerFilter ?>"><?php endif; ?>
+      <?php if ($countryFilter !== ''): ?><input type="hidden" name="country" value="<?= h($countryFilter) ?>"><?php endif; ?>
+      <?php if ($sourceFilter !== ''): ?><input type="hidden" name="source" value="<?= h($sourceFilter) ?>"><?php endif; ?>
+      <?php if ($paymentFilter !== ''): ?><input type="hidden" name="payment" value="<?= h($paymentFilter) ?>"><?php endif; ?>
+      <?php if ($shippingFilter !== ''): ?><input type="hidden" name="shipping" value="<?= h($shippingFilter) ?>"><?php endif; ?>
+      <?php if ($itemTypeFilter !== ''): ?><input type="hidden" name="item_type" value="<?= h($itemTypeFilter) ?>"><?php endif; ?>
+      <?php if ($dateFromFilter !== ''): ?><input type="hidden" name="date_from" value="<?= h($dateFromFilter) ?>"><?php endif; ?>
+      <?php if ($dateToFilter !== ''): ?><input type="hidden" name="date_to" value="<?= h($dateToFilter) ?>"><?php endif; ?>
+      <div class="form-group mb-0 custom-orders-quick-search-field">
+        <label class="small mb-1">Search<?= customOrderHelp('search') ?></label>
+        <input type="text" name="q" class="form-control form-control-sm" value="<?= h($query) ?>" placeholder="Lead no., order no., email, name, company, company ID, phone, nick">
+      </div>
+      <button type="submit" class="btn btn-primary btn-sm"><i class="fas fa-search mr-1"></i>Search</button>
+      <?php if ($query !== ''): ?>
+        <a class="btn btn-secondary btn-sm" href="<?= h(customOrderBuildUrl(null, ['q' => null, 'custom_order_id' => null, 'edit_item_id' => null], false)) ?>"><i class="fas fa-times mr-1"></i>Clear search</a>
+      <?php endif; ?>
+    </form>
+  </div>
 
   <?php if ($customOrdersCanManage): ?>
   <div class="modal fade" id="custom-order-seeds-modal" tabindex="-1" role="dialog" aria-hidden="true">
@@ -3414,7 +3452,12 @@ if (!$customOrdersDetailRequest) {
           </div>
           <div class="form-group mb-1 <?= customOrderFilterActive($countryFilter) ?>">
             <label class="small mb-1">Country</label>
-            <div class="custom-country-select-wrap no-flag"><span class="custom-country-flag is-empty" data-country-flag aria-hidden="true"></span><select name="country" data-country-select class="form-control form-control-sm custom-country-select"><option value="<?= h($countryFilter) ?>" selected><?= h($countryFilter) ?></option></select></div>
+            <div class="custom-country-select-wrap no-flag">
+              <span class="custom-country-flag is-empty" data-country-flag aria-hidden="true"></span>
+              <select name="country" data-country-select data-country-placeholder="-- All --" class="form-control form-control-sm custom-country-select">
+                <option value="<?= h($countryFilter) ?>" selected><?= h($countryFilter !== '' ? $countryFilter : '-- All --') ?></option>
+              </select>
+            </div>
           </div>
           <div class="form-group mb-1 <?= customOrderFilterActive($sourceFilter) ?>">
             <label class="small mb-1">Source</label>
@@ -3454,7 +3497,7 @@ if (!$customOrdersDetailRequest) {
           </div>
           <div class="form-group mb-1 filter-search <?= customOrderFilterActive($query) ?>">
             <label class="small mb-1">Search<?= customOrderHelp('search') ?></label>
-            <input type="text" name="q" class="form-control form-control-sm" value="<?= h($query) ?>" placeholder="Order no., customer, email, phone, nick">
+            <input type="text" name="q" class="form-control form-control-sm" value="<?= h($query) ?>" placeholder="Lead no., order no., email, name, company, company ID, phone, nick">
           </div>
           <div class="form-group mb-1 <?= customOrderFilterActive($dateFromFilter) ?>">
             <label class="small mb-1">Updated From</label>
@@ -3500,7 +3543,7 @@ if (!$customOrdersDetailRequest) {
           <div class="form-group">
             <label>Search<?= customOrderHelp('search') ?></label>
             <input type="text" name="q" class="form-control form-control-sm" value="<?= h($query) ?>"
-              placeholder="Internal code, official no., customer, handle">
+              placeholder="Lead no., order no., email, name, company, company ID, phone, nick">
           </div>
           <button type="submit" class="btn btn-primary btn-sm">Filter</button>
         </form>
@@ -4597,7 +4640,7 @@ if (!$customOrdersDetailRequest) {
                           <?php if (!$noteIsDeleted): ?><button type="button" class="custom-note-reply-button" data-note-reply-toggle data-reply-form="#<?= h($replyFormId) ?>">Reply</button><?php endif; ?>
                           <?php if ($noteCanModify): ?>
                             <button type="button" class="custom-note-reply-button" data-note-edit-toggle data-edit-form="#<?= h($editFormId) ?>">Edit</button>
-                            <form method="post" action="scripts/custom_orders/delete_note.php" data-scroll-target="#custom-order-notes-panel" onsubmit="return confirm('Delete this note? It will disappear from the normal view but remain in the restricted audit.');">
+                            <form method="post" action="scripts/custom_orders/delete_note.php" data-scroll-target="#custom-order-notes-panel" onsubmit="return confirm('Delete this note?');">
                               <input type="hidden" name="custom_order_id" value="<?= (int) $selectedOrder['id'] ?>">
                               <input type="hidden" name="note_id" value="<?= (int) $noteId ?>">
                               <button type="submit" class="custom-note-reply-button text-danger">Delete</button>
@@ -4643,7 +4686,7 @@ if (!$customOrdersDetailRequest) {
                                   <?php if (!$replyIsDeleted): ?><button type="button" class="custom-note-reply-button" data-note-reply-toggle data-reply-form="#<?= h($replyFormId) ?>">Reply</button><?php endif; ?>
                                   <?php if ($replyCanModify): ?>
                                     <button type="button" class="custom-note-reply-button" data-note-edit-toggle data-edit-form="#<?= h($replyEditFormId) ?>">Edit</button>
-                                    <form method="post" action="scripts/custom_orders/delete_note.php" data-scroll-target="#custom-order-notes-panel" onsubmit="return confirm('Delete this reply? It will remain in the restricted audit.');">
+                                    <form method="post" action="scripts/custom_orders/delete_note.php" data-scroll-target="#custom-order-notes-panel" onsubmit="return confirm('Delete this reply?');">
                                       <input type="hidden" name="custom_order_id" value="<?= (int) $selectedOrder['id'] ?>">
                                       <input type="hidden" name="note_id" value="<?= $replyId ?>">
                                       <button type="submit" class="custom-note-reply-button text-danger">Delete</button>
@@ -5541,7 +5584,7 @@ if (!$customOrdersDetailRequest) {
       select.innerHTML = '';
       var emptyOption = document.createElement('option');
       emptyOption.value = '';
-      emptyOption.textContent = 'Country';
+      emptyOption.textContent = select.getAttribute('data-country-placeholder') || 'Country';
       select.appendChild(emptyOption);
       countries.forEach(function (country) {
         var option = document.createElement('option');
@@ -6307,6 +6350,7 @@ if (!$customOrdersDetailRequest) {
       });
     });
 
+    initializeCustomCountryState(document);
     applyCustomOrdersAccess(document);
     initializeCustomCollapsiblePanels(document);
     initializeCustomNoteReplies(document);

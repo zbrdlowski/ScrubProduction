@@ -5,7 +5,7 @@ $stmt = $pdo->query("SELECT
         q.id,
         q.intake_ref,
         q.barcode,
-        q.item_name,
+        i.name AS item_name,
         i.description,
         i.color,
         q.quantity,
