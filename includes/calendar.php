@@ -327,7 +327,7 @@ echo '<tr class="'.$rowClass.'">';
     echo '<td width="14%">' . $SlovakDay. '</td>';
         echo '<td width="14%" align="center">';
         // odpracovaný čas
-        $ZratajCas =  $conn->query("SELECT SUM(TIME_TO_SEC(TIMEDIFF(time_out, time_in))) AS sucet FROM `".$attdn_table."` WHERE employee_id = '$eno' AND date = '".$Year."-".$Month."-".$i_display."' AND movement = '1'") or die(mysqli_error());                       
+        $ZratajCas =  $conn->query("SELECT SUM(TIME_TO_SEC(TIMEDIFF(time_out, time_in))) AS sucet FROM `".$attdn_table."` WHERE employee_id = '$eno' AND date = '".$Year."-".$Month."-".$i_display."' AND movement = '1'") or die(mysqli_error($conn));                       
         if($ZratajCas->num_rows > 0){
             while($row = $ZratajCas->fetch_array()){
                 $edit = TRUE;
@@ -348,7 +348,7 @@ echo '<tr class="'.$rowClass.'">';
         }
         echo '<td width="14%" align="center">';
         // čas strávený na obede
-        $ZratajObed =  $conn->query("SELECT SUM(TIME_TO_SEC(TIMEDIFF(time_out, time_in))) AS sucet FROM `".$attdn_table."` WHERE employee_id = '$eno' AND date = '".$Year."-".$Month."-".$i_display."' AND movement = '4'") or die(mysqli_error());                       
+        $ZratajObed =  $conn->query("SELECT SUM(TIME_TO_SEC(TIMEDIFF(time_out, time_in))) AS sucet FROM `".$attdn_table."` WHERE employee_id = '$eno' AND date = '".$Year."-".$Month."-".$i_display."' AND movement = '4'") or die(mysqli_error($conn));                       
         if($ZratajObed->num_rows > 0){
             while($ObedRow = $ZratajObed->fetch_array()){
                 $edit = TRUE;
@@ -365,7 +365,7 @@ echo '<tr class="'.$rowClass.'">';
         }
         echo '<td width="14%" align="center">';
         // čas strávený na prestávke
-        $ZratajCiga =  $conn->query("SELECT SUM(TIME_TO_SEC(TIMEDIFF(time_out, time_in))) AS sucet FROM `".$attdn_table."` WHERE employee_id = '$eno' AND date = '".$Year."-".$Month."-".$i_display."' AND movement = '3'") or die(mysqli_error());                       
+        $ZratajCiga =  $conn->query("SELECT SUM(TIME_TO_SEC(TIMEDIFF(time_out, time_in))) AS sucet FROM `".$attdn_table."` WHERE employee_id = '$eno' AND date = '".$Year."-".$Month."-".$i_display."' AND movement = '3'") or die(mysqli_error($conn));                       
         if($ZratajCiga->num_rows > 0){
             while($CigaRow = $ZratajCiga->fetch_array()){
                 $edit = TRUE;
@@ -382,7 +382,7 @@ echo '<tr class="'.$rowClass.'">';
         }
         echo '<td width="14%" align="center">';
         // dovolenky
-        $ZratajDovca =  $conn->query("SELECT SUM(TIME_TO_SEC(TIMEDIFF(time_out, time_in))) AS sucet FROM `".$attdn_table."` WHERE employee_id = '$eno' AND date = '".$Year."-".$Month."-".$i_display."' AND movement = '5'") or die(mysqli_error());                       
+        $ZratajDovca =  $conn->query("SELECT SUM(TIME_TO_SEC(TIMEDIFF(time_out, time_in))) AS sucet FROM `".$attdn_table."` WHERE employee_id = '$eno' AND date = '".$Year."-".$Month."-".$i_display."' AND movement = '5'") or die(mysqli_error($conn));                       
         if($ZratajDovca->num_rows > 0){
             while($DovcaRow = $ZratajDovca->fetch_array()){
                 $edit = TRUE;
@@ -409,7 +409,7 @@ echo '<tr class="'.$rowClass.'">';
         }
         echo '<td width="14%" align="center">';
         // Maródky
-        $ZratajMarod =  $conn->query("SELECT SUM(TIME_TO_SEC(TIMEDIFF(time_out, time_in))) AS sucet FROM `".$attdn_table."` WHERE employee_id = '$eno' AND date = '".$Year."-".$Month."-".$i_display."' AND movement = '6'") or die(mysqli_error());                       
+        $ZratajMarod =  $conn->query("SELECT SUM(TIME_TO_SEC(TIMEDIFF(time_out, time_in))) AS sucet FROM `".$attdn_table."` WHERE employee_id = '$eno' AND date = '".$Year."-".$Month."-".$i_display."' AND movement = '6'") or die(mysqli_error($conn));                       
         if($ZratajMarod->num_rows > 0){
             while($MarodRow = $ZratajMarod->fetch_array()){
                 $edit = TRUE;
