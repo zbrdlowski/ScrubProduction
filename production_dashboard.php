@@ -5,6 +5,8 @@ if (session_status() !== PHP_SESSION_ACTIVE) {
   session_start();
 }
 
+date_default_timezone_set('Europe/Bratislava');
+
 $dashboardKeyHash = strtolower((string) (getenv('DARKSCRUB_PRODUCTION_DASHBOARD_KEY_HASH') ?: 'c0fa7e8f09161184332cf504564dffd63079fb70b785a89dd148f041d6716617'));
 $dashboardRequestKey = (string) ($_GET['key'] ?? '');
 $dashboardHasSession = !empty($_SESSION['permission']);
@@ -117,6 +119,31 @@ function dashboard_json($value): string
 {
   $json = json_encode($value, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT);
   return $json === false ? 'null' : $json;
+}
+function dashboard_fedex_countdown_config(DateTimeImmutable $now): array
+{
+  $today = $now->setTime(0, 0, 0);
+  $pickupMorning = $today->setTime(10, 0, 0);
+  $pickupAfternoon = $today->setTime(14, 30, 0);
+
+  if ($now < $pickupMorning) {
+    $previous = $today->modify('-1 day')->setTime(14, 30, 0);
+    $next = $pickupMorning;
+  } elseif ($now < $pickupAfternoon) {
+    $previous = $pickupMorning;
+    $next = $pickupAfternoon;
+  } else {
+    $previous = $pickupAfternoon;
+    $next = $today->modify('+1 day')->setTime(10, 0, 0);
+  }
+
+  return [
+    'serverNowMs' => ((int) $now->format('U')) * 1000,
+    'previousAtMs' => ((int) $previous->format('U')) * 1000,
+    'nextAtMs' => ((int) $next->format('U')) * 1000,
+    'targetLabel' => $next->format('H:i'),
+    'targetDay' => $next->format('Y-m-d') === $now->format('Y-m-d') ? 'today' : 'tomorrow',
+  ];
 }
 function dashboard_rows(mysqli $conn, string $sql, string $types = '', array $params = []): array
 {
@@ -423,6 +450,7 @@ $statusMeta = dashboard_load_item_status_meta($conn);
 $priorityBreakdown = dashboard_priority_breakdown($conn, 20, $dashboardDepartments);
 $deadlineBreakdown = dashboard_priority_breakdown($conn, 10, $dashboardDepartments);
 $departmentBlocks = dashboard_department_status_blocks($conn, $dashboardDepartments, $statusMeta, $dashboardDisplayStatuses);
+$fedexCountdown = dashboard_fedex_countdown_config(new DateTimeImmutable('now'));
 $today = new DateTimeImmutable('today');
 $weekStart = $today->modify('monday this week');
 $weekEnd = $weekStart->modify('+7 days');
@@ -542,14 +570,15 @@ $updatedAt = date('d.m.Y H:i');
     }
 
     .topbar {
-      display: flex;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
       align-items: center;
-      justify-content: space-between;
-      gap: 18px;
+      gap: clamp(12px, 1.4vw, 26px);
       min-height: 38px;
     }
 
     .brand {
+      justify-self: start;
       display: flex;
       align-items: center;
       gap: 12px;
@@ -569,7 +598,48 @@ $updatedAt = date('d.m.Y H:i');
       white-space: nowrap;
     }
 
+    .courier-countdown {
+      --courier-color: var(--green);
+      justify-self: center;
+      display: inline-grid;
+      grid-template-columns: auto auto auto;
+      align-items: center;
+      gap: clamp(8px, .8vw, 16px);
+      min-width: clamp(260px, 25vw, 430px);
+      padding: clamp(4px, .35vw, 7px) clamp(10px, .8vw, 16px);
+      border: 1px solid rgba(255, 255, 255, .18);
+      border-radius: 8px;
+      background: rgba(0, 0, 0, .16);
+      color: var(--courier-color);
+    }
+
+    .courier-logo {
+      display: block;
+      width: auto;
+      height: clamp(14px, 1vw, 20px);
+      max-width: clamp(45px, 4vw, 72px);
+      object-fit: contain;
+    }
+
+    .courier-time {
+      color: var(--courier-color);
+      font-size: clamp(20px, 2.15vw, 38px);
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+      line-height: 1;
+      text-shadow: 0 0 10px rgba(255, 255, 255, .15);
+      white-space: nowrap;
+    }
+
+    .courier-target {
+      color: var(--text);
+      font-size: clamp(11px, .82vw, 16px);
+      opacity: .86;
+      white-space: nowrap;
+    }
+
     .clock {
+      justify-self: end;
       text-align: right;
       color: var(--muted);
       font-size: clamp(14px, 1vw, 20px);
@@ -976,11 +1046,19 @@ $updatedAt = date('d.m.Y H:i');
 
     @media (max-width: 720px) {
       .topbar {
+        grid-template-columns: 1fr;
         align-items: flex-start;
-        flex-direction: column;
+      }
+
+      .courier-countdown {
+        justify-self: start;
+        min-width: 0;
+        width: 100%;
+        max-width: 430px;
       }
 
       .clock {
+        justify-self: start;
         text-align: left;
       }
 
@@ -1008,6 +1086,11 @@ $updatedAt = date('d.m.Y H:i');
       <div class="brand">
         <img src="dist/img/ScrubLogo.png" alt="Darkscrub">
         <div class="brand-title">Production Dashboard</div>
+      </div>
+      <div class="courier-countdown" id="fedexCountdown" aria-label="FedEx courier countdown">
+        <img class="courier-logo" src="images/logo/fedex.png" alt="FedEx">
+        <strong class="courier-time" id="fedexCountdownTime">--:--:--</strong>
+        <span class="courier-target" id="fedexCountdownTarget">do --:--</span>
       </div>
       <div class="clock">
         <strong id="dashClock"><?php echo dashboard_h(date('H:i')); ?></strong>
@@ -1130,6 +1213,8 @@ $updatedAt = date('d.m.Y H:i');
     (function () {
       var weeklyLabels = <?php echo dashboard_json($weekLabels); ?>;
       var weeklyDatasets = <?php echo dashboard_json($weeklyDatasets); ?>;
+      var fedexCountdown = <?php echo dashboard_json($fedexCountdown); ?>;
+      var fedexClientLoadedAt = Date.now();
       var ctx = document.getElementById('weeklyShippedChart');
       if (ctx && window.Chart) {
         new Chart(ctx, {
@@ -1147,14 +1232,60 @@ $updatedAt = date('d.m.Y H:i');
           }
         });
       }
+      function pad2(value) {
+        value = Math.floor(Math.abs(value));
+        return value < 10 ? '0' + value : String(value);
+      }
+
       function updateClock() {
         var now = new Date();
         var clock = document.getElementById('dashClock');
         if (!clock) return;
         clock.textContent = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
       }
+
+      function updateFedexCountdown() {
+        var box = document.getElementById('fedexCountdown');
+        var timeEl = document.getElementById('fedexCountdownTime');
+        var targetEl = document.getElementById('fedexCountdownTarget');
+        if (!box || !timeEl || !targetEl || !fedexCountdown) return;
+
+        var nowMs = Number(fedexCountdown.serverNowMs || 0) + (Date.now() - fedexClientLoadedAt);
+        var nextAtMs = Number(fedexCountdown.nextAtMs || 0);
+        var previousAtMs = Number(fedexCountdown.previousAtMs || 0);
+        var remainingMs = nextAtMs - nowMs;
+
+        if (remainingMs <= 0) {
+          timeEl.textContent = '00:00:00';
+          if (!window.__fedexReloading) {
+            window.__fedexReloading = true;
+            setTimeout(function () { window.location.reload(); }, 500);
+          }
+          return;
+        }
+
+        var warningWindowMs = 60 * 60 * 1000;
+        var urgency = remainingMs >= warningWindowMs ? 0 : 1 - (remainingMs / warningWindowMs);
+        urgency = Math.max(0, Math.min(1, urgency));
+        var hue = Math.round(120 * (1 - urgency));
+        var lightness = Math.round(48 + (urgency * 4));
+        box.style.setProperty('--courier-color', 'hsl(' + hue + ', 88%, ' + lightness + '%)');
+
+        var totalSeconds = Math.floor(remainingMs / 1000);
+        var hours = Math.floor(totalSeconds / 3600);
+        var minutes = Math.floor((totalSeconds % 3600) / 60);
+        var seconds = totalSeconds % 60;
+        timeEl.textContent = pad2(hours) + ':' + pad2(minutes) + ':' + pad2(seconds);
+
+        var targetText = 'until ' + (fedexCountdown.targetLabel || '--:--');
+        if (fedexCountdown.targetDay === 'tomorrow') targetText += ' tomorrow';
+        targetEl.textContent = targetText;
+      }
+
       updateClock();
+      updateFedexCountdown();
       setInterval(updateClock, 15000);
+      setInterval(updateFedexCountdown, 1000);
       setTimeout(function () { window.location.reload(); }, 60000);
     }());
   </script>

@@ -2679,18 +2679,80 @@ $deptOptions = [
     return $('#ordersTable .order-row[data-order-id="' + orderId + '"]');
   }
 
-  function openOrderDetailState(orderId) {
+  let orderDetailFocusToken = 0;
+
+  function ordersDetailViewportTop() {
+    const stickyTop = parseFloat(
+      getComputedStyle(document.documentElement).getPropertyValue('--orders-table-head-top')
+    );
+    const tableHeadH = $('#ordersTable thead').outerHeight() || 36;
+
+    return (isNaN(stickyTop) ? 0 : stickyTop) + tableHeadH + 10;
+  }
+
+  function getOrderRowPinnedTop(orderId) {
+    const $row = orderRowById(orderId);
+    if (!$row.length || !$row[0]) return null;
+
+    const rect = $row[0].getBoundingClientRect();
+    const viewportTop = ordersDetailViewportTop();
+    const viewportBottom = Math.max(viewportTop + 60, window.innerHeight - 48);
+
+    return Math.min(Math.max(rect.top, viewportTop), viewportBottom);
+  }
+
+  function stabilizeOrderDetailFocus(orderId, pinnedTop) {
+    if (pinnedTop === null) return;
+
+    const token = ++orderDetailFocusToken;
+
+    function keepPinned() {
+      if (token !== orderDetailFocusToken) return;
+
+      const $row = orderRowById(orderId);
+      if (!$row.length || !$row[0]) return;
+
+      const rect = $row[0].getBoundingClientRect();
+      const targetTop = Math.max(pinnedTop, ordersDetailViewportTop());
+      const delta = rect.top - targetTop;
+
+      if (Math.abs(delta) > 1) {
+        window.scrollTo(
+          window.pageXOffset || window.scrollX || 0,
+          Math.max(0, (window.pageYOffset || window.scrollY || 0) + delta)
+        );
+      }
+    }
+
+    if (window.requestAnimationFrame) {
+      window.requestAnimationFrame(keepPinned);
+    } else {
+      setTimeout(keepPinned, 0);
+    }
+
+    [40, 120, 180, 260].forEach(function (delay) {
+      setTimeout(keepPinned, delay);
+    });
+  }
+
+  function openOrderDetailState(orderId, options) {
     const $wrap = $('#detail-' + orderId);
+    const opts = options || {};
+    const pinnedTop = opts.stabilizeFocus === false ? null : getOrderRowPinnedTop(orderId);
 
     $('.detail-wrap').not($wrap).filter(':visible').stop(true, true).slideUp(120);
     $('#ordersTable .order-row').removeClass('order-row-open');
     orderRowById(orderId).addClass('order-row-open');
     $('#ordersTable').addClass('table-has-open');
+
+    stabilizeOrderDetailFocus(orderId, pinnedTop);
   }
 
   function closeOrderDetailState(orderId) {
     const $wrap = $('#detail-' + orderId);
     const $row = orderRowById(orderId);
+
+    orderDetailFocusToken++;
 
     $wrap.stop(true, true).slideUp(120, function () {
       $row.removeClass('order-row-open');
@@ -3360,7 +3422,7 @@ $deptOptions = [
     // Vynútený "open" stav — nikdy netogglujeme cez .btn-toggle-detail click,
     // lebo ten je toggle (open/close) a pri pretrvávajúcom data('loaded')=true
     // by mohol detail namiesto refreshu rovno zavrieť.
-    openOrderDetailState(orderId);
+    openOrderDetailState(orderId, { stabilizeFocus: false });
     $wrap.stop(true, true).show();
     window.scrollTo(scrollX, scrollY);
 

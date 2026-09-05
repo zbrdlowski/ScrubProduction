@@ -87,23 +87,44 @@
      $_SESSION['calendar_url'] = $url;
      if(empty($_GET['year'])){$Year = date('Y');}else{$Year = $_GET['year'];}
      if(empty($_GET['month'])){$Month = date('m');}else{$Month = $_GET['month'];}
-     if(empty($_GET['activedisp'])){$ActiveDisp = 'active';}else{$ActiveDisp = $_GET['activedisp'];}
-
-     switch($ActiveDisp){
-      case 'all': $sql2 = "SELECT id, firstname, lastname, active FROM employees ORDER BY lastname ASC"; 
-      $allgombik = 'warning'; $activegombik = 'default'; $inactivegombik = 'default';  break;
-      case 'inactive': $sql2 = "SELECT id, firstname, lastname, active FROM employees WHERE active = 'Inactive' ORDER BY lastname ASC"; $gombik = 'success';
-      $allgombik = 'default'; $activegombik = 'default'; $inactivegombik = 'warning';  break;  
-      case 'active': $sql2 = "SELECT id, firstname, lastname, active FROM employees WHERE active = 'Active' ORDER BY lastname ASC"; $gombik = 'success';  
-      $allgombik = 'default'; $activegombik = 'warning'; $inactivegombik = 'default';  break;    
+     $ActiveDisp = $_GET['activedisp'] ?? 'active';
+     if (!in_array($ActiveDisp, ['active', 'inactive', 'all'], true)) {
+       $ActiveDisp = 'active';
      }
+
+     $attendanceWhere = [
+       'active' => "attendance_enabled = 1 AND active = 'Active'",
+       'inactive' => "active = 'Inactive'",
+       'all' => "attendance_enabled = 1 OR active = 'Inactive'"
+     ];
+     $sql2 = "SELECT id, firstname, lastname, active
+              FROM employees
+              WHERE " . $attendanceWhere[$ActiveDisp] . "
+              ORDER BY lastname ASC";
+     $activegombik = ($ActiveDisp === 'active') ? 'warning' : 'default';
+     $inactivegombik = ($ActiveDisp === 'inactive') ? 'warning' : 'default';
+     $allgombik = ($ActiveDisp === 'all') ? 'warning' : 'default';
 
 
      $VelkaNedela = date("d-m", easter_date($Year));
      $VelkyPiatok = date("d-m", easter_date($Year)-172800);
      $VelkyPondelok = date("d-m", easter_date($Year)+86400);
 
-     $eno = $_GET['eno']; // zamestnanec
+     $eno = isset($_GET['eno']) ? (int)$_GET['eno'] : 0; // zamestnanec
+     $attendanceSelectionError = false;
+     if ($eno > 0) {
+       $attendanceEmployee = $conn->query(
+         "SELECT id FROM employees
+          WHERE id = " . $eno . "
+            AND (attendance_enabled = 1 OR active = 'Inactive')
+          LIMIT 1"
+       );
+       if (!$attendanceEmployee || $attendanceEmployee->num_rows === 0) {
+         $eno = 0;
+         unset($_GET['eno']);
+         $attendanceSelectionError = true;
+       }
+     }
      $date = date('Y-m-d'); // aktualny den
      $ThisYear =  date( 'Y', strtotime($date)); // aktualny Rock
      $Thismonth =  date( 'm', strtotime($date)); // Tentok Mesiac - číselne 01,02,03 etc..
@@ -121,6 +142,10 @@
      while($menorow = $menoquery->fetch_assoc()){
       $MenoExcel = $menorow['firstname'] .' '. $menorow['lastname'];
      }
+if ($attendanceSelectionError) {
+  echo '<div class="alert alert-warning"><i class="fa fa-info-circle"></i> Tento pracovník nemá zapnutú dochádzku a nie je možné mu spracovať výkaz.</div>';
+}
+
 echo '<div class="box box-solid">';
 echo '  <div class="box-header with-border">';
 
@@ -128,7 +153,7 @@ echo '    <h3 class="box-title"><i class="fa fa-calendar"></i> Detail dochádzky
 
 echo '      <div class="btn-group" style="gap:8px; margin-right:10px; margin-left:10px;">';
 echo '        <a href="index.php?page=calendar&year='.$Year.'&month='.$Month.'&activedisp=active" class="btn btn-'.$activegombik.' btn-flat"><i class="fa fa-user"></i> Aktívni</a>';
-echo '        <a href="index.php?page=calendar&year='.$Year.'&month='.$Month.'&activedisp=inactive" class="btn btn-'.$inactivegombik.' btn-flat"><i class="fa fa-user"></i> Neaktívni</a>';
+echo '        <a href="index.php?page=calendar&year='.$Year.'&month='.$Month.'&activedisp=inactive" class="btn btn-'.$inactivegombik.' btn-flat"><i class="fa fa-user-times"></i> Vyradení</a>';
 echo '        <a href="index.php?page=calendar&year='.$Year.'&month='.$Month.'&activedisp=all" class="btn btn-'.$allgombik.'  btn-flat"><i class="fa fa-users"></i> Všetci</a>';
 
 echo '      <form class="form-inline" style="display:inline-block; vertical-align:middle; margin:0;">';

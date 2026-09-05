@@ -180,6 +180,15 @@
                   <i class="fas fa-briefcase mr-1"></i> Práca a dochádzka
                 </div>
 
+                <div class="form-group">
+                  <label>Typ pracovníka</label>
+                  <select class="form-control" name="worker_type" id="add_worker_type" required>
+                    <option value="employee" selected>Zamestnanec</option>
+                    <option value="contractor">Subdodávateľ</option>
+                  </select>
+                  <small class="form-text text-muted">Typ pracovníka nemení prístup do systému. Ten riadi stav účtu a oprávnenia.</small>
+                </div>
+
                 <div class="form-row">
                   <div class="form-group col-md-6">
                     <label>Pracovná pozícia</label>
@@ -197,7 +206,7 @@
 
                   <div class="form-group col-md-6">
                     <label>Pracovná doba</label>
-                    <select class="form-control" name="schedule" required>
+                    <select class="form-control" name="schedule" id="add_schedule" required>
                       <option value="">- Select -</option>
                       <?php
                       $sql = "SELECT * FROM schedules";
@@ -207,17 +216,8 @@
                       }
                       ?>
                     </select>
+                    <small class="form-text text-muted">Pre subdodávateľa bez dochádzky je pracovná doba voliteľná.</small>
                   </div>
-                </div>
-
-                <div class="form-group">
-                  <label>Osobný prehľad</label>
-                  <select class="form-control" name="personal" required>
-                    <option value="X" selected>Nezobraziť nič</option>
-                    <option value="A">Zobraziť iba denný prehľad</option>
-                    <option value="B">Zobraziť iba mesačný prehľad</option>
-                    <option value="C">Zobraziť oba prehľady</option>
-                  </select>
                 </div>
 
                 <div class="form-group mb-0">
@@ -242,7 +242,7 @@
                         checked>
                       <label class="custom-control-label" for="add_active">Aktívny</label>
                     </div>
-                    <small>Zamestnanec je aktívny v systéme.</small>
+                    <small>Používateľ sa môže prihlásiť a používať povolené časti systému.</small>
                   </div>
 
                   <div class="employee-switch-card">
@@ -250,7 +250,16 @@
                       <input type="checkbox" class="custom-control-input" id="add_grid" name="grid" value="1" checked>
                       <label class="custom-control-label" for="add_grid">Zobraziť v gride</label>
                     </div>
-                    <small>Dochádzka, online status, obed, prestávky.</small>
+                    <small>Tabletový grid, online status, obed a prestávky.</small>
+                  </div>
+
+                  <div class="employee-switch-card">
+                    <div class="custom-control custom-switch">
+                      <input type="checkbox" class="custom-control-input" id="add_attendance_enabled"
+                        name="attendance_enabled" value="1" checked>
+                      <label class="custom-control-label" for="add_attendance_enabled">Výkazy dochádzky</label>
+                    </div>
+                    <small>Zobraziť v HR kalendári a umožniť spracovanie mesačného výkazu.</small>
                   </div>
 
                   <div class="employee-switch-card">
@@ -305,6 +314,15 @@
     $(document).on('change', '#employee_add_photo', function () {
       var fileName = $(this).val().split('\\').pop();
       $(this).next('.custom-file-label').html(fileName || 'Vybrať súbor...');
+    });
+
+    $(document).on('change', '#add_worker_type', function () {
+      var isContractor = this.value === 'contractor';
+      $('#add_schedule').prop('required', !isContractor);
+      if (isContractor) {
+        $('#add_grid').prop('checked', false);
+        $('#add_attendance_enabled').prop('checked', false);
+      }
     });
   });
 </script>

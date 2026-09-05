@@ -14,7 +14,19 @@ if (isset($_POST['add'])) {
     $schedule = (int)($_POST['schedule'] ?? 0);
 
     $active = isset($_POST['active']) ? 'Active' : 'Inactive';
+    $worker_type = trim($_POST['worker_type'] ?? 'employee');
+    if (!in_array($worker_type, ['employee', 'contractor'], true)) {
+        $worker_type = 'employee';
+    }
+
+    if ($worker_type === 'contractor' && $schedule <= 0) {
+        $scheduleResult = $conn->query("SELECT id FROM schedules ORDER BY id ASC LIMIT 1");
+        if ($scheduleResult && ($scheduleRow = $scheduleResult->fetch_assoc())) {
+            $schedule = (int)$scheduleRow['id'];
+        }
+    }
     $grid = isset($_POST['grid']) ? 1 : 0;
+    $attendance_enabled = isset($_POST['attendance_enabled']) ? 1 : 0;
     $personal_orders = isset($_POST['personal_orders']) ? 1 : 0;
     $chat = isset($_POST['chat']) ? 'yes' : 'no';
 
@@ -66,14 +78,16 @@ if (isset($_POST['add'])) {
             online_status,
             chat,
             active,
+            worker_type,
             grid,
+            attendance_enabled,
             personal_orders,
             personal,
             username,
             permission,
             password
         ) VALUES (
-            ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), 2, ?, ?, ?, ?, ?, ?, ?, PASSWORD(?)
+            ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), 2, ?, ?, ?, ?, ?, ?, ?, ?, ?, PASSWORD(?)
         )
     ");
 
@@ -84,7 +98,7 @@ if (isset($_POST['add'])) {
     }
 
     $stmt->bind_param(
-        "sssssssiisssiissss",
+        "sssssssiissssiiissss",
         $employee_id,
         $firstname,
         $lastname,
@@ -97,7 +111,9 @@ if (isset($_POST['add'])) {
         $filename,
         $chat,
         $active,
+        $worker_type,
         $grid,
+        $attendance_enabled,
         $personal_orders,
         $personal,
         $username,

@@ -163,6 +163,14 @@
     background: #dd4b39;
   }
 
+  .bubble-worker-employee {
+    background: #00a65a;
+  }
+
+  .bubble-worker-contractor {
+    background: #f39c12;
+  }
+
   .bubble-schedule {
     background: #3c8dbc;
   }
@@ -305,71 +313,60 @@
               </div>
 
               <?php
-              if (empty($_GET['activedisp'])) {
-                $ActiveDisp = 'active';
-              } else {
-                $ActiveDisp = $_GET['activedisp'];
+              $allowedEmployeeViews = ['employees', 'contractors', 'inactive', 'all'];
+              $ActiveDisp = $_GET['activedisp'] ?? 'employees';
+              if (!in_array($ActiveDisp, $allowedEmployeeViews, true)) {
+                $ActiveDisp = 'employees';
               }
 
-              switch ($ActiveDisp) {
-                case 'all':
-                  $sql2 = "SELECT 
-                                employees.*, 
-                                employees.id AS empid,
-                                position.description AS position_name,
-                                schedules.time_in,
-                                schedules.time_out
-                             FROM employees
-                             LEFT JOIN position ON position.id = employees.position_id
-                             LEFT JOIN schedules ON schedules.id = employees.schedule_id
-                             ORDER BY employees.lastname ASC";
-                  $allgombik = 'warning';
-                  $activegombik = 'default';
-                  $inactivegombik = 'default';
-                  break;
+              $whereByView = [
+                'employees' => "employees.active = 'Active' AND employees.worker_type = 'employee'",
+                'contractors' => "employees.active = 'Active' AND employees.worker_type = 'contractor'",
+                'inactive' => "employees.active = 'Inactive'",
+                'all' => '1 = 1'
+              ];
 
-                case 'inactive':
-                  $sql2 = "SELECT 
-                                employees.*, 
-                                employees.id AS empid,
-                                position.description AS position_name,
-                                schedules.time_in,
-                                schedules.time_out
-                             FROM employees
-                             LEFT JOIN position ON position.id = employees.position_id
-                             LEFT JOIN schedules ON schedules.id = employees.schedule_id
-                             WHERE employees.active = 'Inactive'
-                             ORDER BY employees.lastname ASC";
-                  $allgombik = 'default';
-                  $activegombik = 'default';
-                  $inactivegombik = 'warning';
-                  break;
+              $sql2 = "SELECT
+                          employees.*,
+                          employees.id AS empid,
+                          position.description AS position_name,
+                          schedules.time_in,
+                          schedules.time_out
+                       FROM employees
+                       LEFT JOIN position ON position.id = employees.position_id
+                       LEFT JOIN schedules ON schedules.id = employees.schedule_id
+                       WHERE " . $whereByView[$ActiveDisp] . "
+                       ORDER BY employees.lastname ASC";
 
-                case 'active':
-                default:
-                  $sql2 = "SELECT 
-                                employees.*, 
-                                employees.id AS empid,
-                                position.description AS position_name,
-                                schedules.time_in,
-                                schedules.time_out
-                             FROM employees
-                             LEFT JOIN position ON position.id = employees.position_id
-                             LEFT JOIN schedules ON schedules.id = employees.schedule_id
-                             WHERE employees.active = 'Active'
-                             ORDER BY employees.lastname ASC";
-                  $allgombik = 'default';
-                  $activegombik = 'warning';
-                  $inactivegombik = 'default';
-                  break;
+              $employeeViews = [
+                'employees' => ['icon' => 'fa-id-badge', 'label' => 'Aktívni zamestnanci'],
+                'contractors' => ['icon' => 'fa-handshake-o', 'label' => 'Aktívni subdodávatelia'],
+                'inactive' => ['icon' => 'fa-user-times', 'label' => 'Neaktívni'],
+                'all' => ['icon' => 'fa-users', 'label' => 'Všetci pracovníci']
+              ];
+
+              $employeeCounts = ['employees' => 0, 'contractors' => 0, 'inactive' => 0, 'all' => 0];
+              $countQuery = $conn->query("SELECT
+                  SUM(active = 'Active' AND worker_type = 'employee') AS employees_count,
+                  SUM(active = 'Active' AND worker_type = 'contractor') AS contractors_count,
+                  SUM(active = 'Inactive') AS inactive_count,
+                  COUNT(1) AS all_count
+                FROM employees");
+              if ($countQuery && ($countRow = $countQuery->fetch_assoc())) {
+                $employeeCounts = [
+                  'employees' => (int)$countRow['employees_count'],
+                  'contractors' => (int)$countRow['contractors_count'],
+                  'inactive' => (int)$countRow['inactive_count'],
+                  'all' => (int)$countRow['all_count']
+                ];
               }
 
-              echo '&nbsp;&nbsp;';
-              echo '<a href="index.php?page=employee&activedisp=active" class="btn btn-' . $activegombik . ' btn-sm btn-flat"><span class="glyphicon glyphicon-user"></span>&nbsp;&nbsp;Aktívny zamestnanci</a>';
-              echo '&nbsp;&nbsp;';
-              echo '<a href="index.php?page=employee&activedisp=inactive" class="btn btn-' . $inactivegombik . ' btn-sm btn-flat"><span class="glyphicon glyphicon-user"></span>&nbsp;&nbsp;Neaktívny zamestnanci</a>';
-              echo '&nbsp;&nbsp;';
-              echo '<a href="index.php?page=employee&activedisp=all" class="btn btn-' . $allgombik . ' btn-sm btn-flat"><span class="glyphicon glyphicon-user"></span>&nbsp;&nbsp;Všetci zamestnanci</a>';
+              foreach ($employeeViews as $viewKey => $view) {
+                $buttonType = ($ActiveDisp === $viewKey) ? 'warning' : 'default';
+                echo '<a href="index.php?page=employee&amp;activedisp=' . $viewKey . '" class="btn btn-' . $buttonType . ' btn-sm btn-flat">';
+                echo '<i class="fa ' . $view['icon'] . '"></i>&nbsp;&nbsp;' . $view['label'];
+                echo ' <span class="badge">' . $employeeCounts[$viewKey] . '</span></a>';
+              }
               ?>
             </div>
 
@@ -383,8 +380,10 @@
             <div class="employee-list-wrap">
               <?php
               $query = $conn->query($sql2);
+              $employeeCount = 0;
 
               while ($row = $query->fetch_assoc()) {
+                $employeeCount++;
 
                 $gender = strtolower(trim($row['gender'] ?? ''));
                 $isFemale = ($gender === 'female');
@@ -426,6 +425,10 @@
                 }
 
                 $isActive = (strcasecmp(trim($row['active'] ?? ''), 'Active') === 0);
+                $workerType = (($row['worker_type'] ?? 'employee') === 'contractor') ? 'contractor' : 'employee';
+                $workerTypeLabel = $workerType === 'contractor' ? 'Subdodávateľ' : 'Zamestnanec';
+                $workerTypeClass = $workerType === 'contractor' ? 'bubble-worker-contractor' : 'bubble-worker-employee';
+                $workerTypeIcon = $workerType === 'contractor' ? 'fa-handshake-o' : 'fa-id-badge';
                 $statusActiveText = $isFemale ? 'Aktívna' : 'Aktívny';
                 $statusInactiveText = $isFemale ? 'Neaktívna' : 'Neaktívny';
                 $employedSinceLabel = $isFemale ? 'Zamestnaná od' : 'Zamestnaný od';
@@ -470,7 +473,8 @@
                     $username,
                     $phone,
                     $address,
-                    $userpermitions
+                    $userpermitions,
+                    $workerTypeLabel
                   ])))
                   ,
                   ENT_QUOTES,
@@ -526,6 +530,18 @@
                           <div class="emp-value">
                             <?php echo $isActive ? $statusActiveText : $statusInactiveText; ?>
                           </div>
+                        </div>
+                      </div>
+
+                      <div class="emp-infobox">
+                        <div class="emp-icon">
+                          <div class="icon-bubble <?php echo $workerTypeClass; ?>">
+                            <i class="fa <?php echo $workerTypeIcon; ?>"></i>
+                          </div>
+                        </div>
+                        <div class="emp-content">
+                          <div class="emp-title">Typ pracovníka</div>
+                          <div class="emp-value"><?php echo $workerTypeLabel; ?></div>
                         </div>
                       </div>
 
@@ -591,6 +607,13 @@
                   </div>
                 </div>
               <?php } ?>
+
+              <?php if ($employeeCount === 0): ?>
+                <div class="alert alert-info mb-0">
+                  <i class="fa fa-info-circle"></i>
+                  V tejto kategórii zatiaľ nie sú žiadni pracovníci.
+                </div>
+              <?php endif; ?>
             </div>
 
           </div>

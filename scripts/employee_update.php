@@ -59,11 +59,13 @@ $position = (int)($_POST['position_id'] ?? $current['position_id']);
 $schedule = (int)($_POST['schedule_id'] ?? $current['schedule_id']);
 $created_on = trim($_POST['created_on'] ?? $current['created_on']);
 $personal = trim($_POST['personal'] ?? $current['personal']);
+$worker_type = trim($_POST['worker_type'] ?? ($current['worker_type'] ?? 'employee'));
 $password = trim($_POST['password'] ?? '');
 $permission = (int)($_POST['permission'] ?? $current['permission']);
 
 $active = isset($_POST['active']) && $_POST['active'] === 'Active' ? 'Active' : 'Inactive';
 $grid = isset($_POST['grid']) ? 1 : 0;
+$attendance_enabled = isset($_POST['attendance_enabled']) ? 1 : 0;
 $personal_orders = isset($_POST['personal_orders']) ? 1 : 0;
 $chat = isset($_POST['chat']) && $_POST['chat'] === 'yes' ? 'yes' : 'no';
 
@@ -73,6 +75,10 @@ if (!in_array($gender, ['Male', 'Female'], true)) {
 
 if (!in_array($personal, ['X', 'A', 'B', 'C'], true)) {
     $personal = $current['personal'];
+}
+
+if (!in_array($worker_type, ['employee', 'contractor'], true)) {
+    $worker_type = $current['worker_type'] ?? 'employee';
 }
 
 if ($editor_permission == 300 && $permission > 300) {
@@ -94,7 +100,9 @@ if ($editor_permission == 300) {
     $gender = $current['gender'];
     $schedule = (int)$current['schedule_id'];
     $active = $current['active'];
+    $worker_type = $current['worker_type'] ?? 'employee';
     $grid = (int)$current['grid'];
+    $attendance_enabled = (int)($current['attendance_enabled'] ?? 1);
     $personal_orders = (int)$current['personal_orders'];
     $personal = $current['personal'];
     $created_on = $current['created_on'];
@@ -116,7 +124,9 @@ if ($password !== '' && $editor_permission >= 500) {
             created_on = ?,
             chat = ?,
             active = ?,
+            worker_type = ?,
             grid = ?,
+            attendance_enabled = ?,
             personal_orders = ?,
             personal = ?,
             permission = ?,
@@ -125,7 +135,7 @@ if ($password !== '' && $editor_permission >= 500) {
     ");
 
     $stmt->bind_param(
-        "ssssssiisssiisisi",
+        "ssssssiissssiiisisi",
         $firstname,
         $lastname,
         $address,
@@ -137,7 +147,9 @@ if ($password !== '' && $editor_permission >= 500) {
         $created_on,
         $chat,
         $active,
+        $worker_type,
         $grid,
+        $attendance_enabled,
         $personal_orders,
         $personal,
         $permission,
@@ -157,7 +169,9 @@ if ($password !== '' && $editor_permission >= 500) {
             created_on = ?,
             chat = ?,
             active = ?,
+            worker_type = ?,
             grid = ?,
+            attendance_enabled = ?,
             personal_orders = ?,
             personal = ?,
             permission = ?
@@ -165,7 +179,7 @@ if ($password !== '' && $editor_permission >= 500) {
     ");
 
     $stmt->bind_param(
-        "ssssssiisssiisii",
+        "ssssssiissssiiisii",
         $firstname,
         $lastname,
         $address,
@@ -177,7 +191,9 @@ if ($password !== '' && $editor_permission >= 500) {
         $created_on,
         $chat,
         $active,
+        $worker_type,
         $grid,
+        $attendance_enabled,
         $personal_orders,
         $personal,
         $permission,
