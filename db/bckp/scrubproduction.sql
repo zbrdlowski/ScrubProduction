@@ -40745,31 +40745,6 @@ TRUNCATE TABLE `orders`;
 -- Dumping data for table `orders`
 --
 
-INSERT INTO `orders` (`id`, `date`, `order_type`, `gfp`, `sku`, `order_nr`, `customer`, `country`, `courier`, `status`, `product_name`, `invoice`, `tracking`, `bike`, `model`, `year`) VALUES
-(1, '2025-06-13', 'eBay', 'TFP', '305067298373', '16-12878-42469', 'Trevor Mccorkle', 'US', 'FedEx-E', 'Delivered', 'Graphics Kit KTM 690 SMC R 2019 2020 2021 2022 2023 2024 2025 STICKERS Supermoto', '5120252430', '287113308065', 'KTM', '690 SMC', '2025'),
-(2, '2025-06-13', 'eBay', 'GFP', '305357022318', '19-12876-00699', 'Cody Grove', 'US', 'FedEx-E', 'Delivered', 'Plastics + Graphics Yamaha YZ450F 2018-2022 YZ250F 2019-2023 Race number + Name', 'Invoice', 'Tracking', 'Yamaha', 'YZ450f', '2022'),
-(3, '2025-06-13', 'eBay', 'GFP', '115595724230', '25-12878-58531', 'TKlaus Gerdemann', 'DE', 'FedEx-E', 'Open', 'Grafik + Plastik KTM SX SX-F 2023 2024 XC XC-F Motocross dekor angewandte satz', 'Invoice', 'Tracking', 'KTM', 'SX', '2024'),
-(4, '2025-06-13', 'eBay', 'GFP', '116411663936', '26-12878-72624', 'Paul Ebner', 'AT', 'FedEx-E', 'Priority', 'KTM EXC EXC-F 2008 2009 2010 2011 125 200 250 300 400 450 530R Plastik satz', 'Invoice', 'Tracking', 'KTM', 'EXC', '2011'),
-(5, '2025-06-13', 'eBay', 'P', '116435079659', '10-12898-73634', 'Tobias Krakl', 'AT', 'FedEx-E', 'Priority', 'KTM EXC EXC-F 2005 2006 2007 125 200 250 300 400 450 525 Plastik satz teile', 'Invoice', 'Tracking', 'KTM', 'EXC', '2017'),
-(6, '2025-06-13', 'eBay', 'P', '116266110222', '15-12892-61171', 'Jörn Hußmanner', 'DE', 'FedEx-E', 'Open', 'Plastik KTM SMC 625 - 660 1999 - 2004 Supermoto Bodykit', 'Invoice', 'Tracking', 'KTM', 'SMC', '2004'),
-(7, '2025-06-13', 'WEB', 'P', 'SKU', 'X000009812', 'Taavi Huusari', 'FI', 'FedEx-E', 'Open', 'Full Kit - Husqvarna 14-> - TE-FE Series - 2020-2023 : Grey', 'Invoice', 'Tracking', 'Husqvarna', 'TE-FE Series', '2003'),
-(8, '2025-06-13', 'WEB', 'S', 'SKU', 'X000009812', 'Taavi Huusari', 'FI', 'FedEx-E', 'Open', 'Temper Rate - V3 Seat Style: Simple', 'Invoice', 'Tracking', 'Husqvarna', 'TE-FE Series', '2003'),
-(9, '2025-06-13', 'WEB', 'G', 'SKU', 'X000009815', 'Tino Mayr', 'DE', 'FedEx-E', 'Priority', 'K11 - R1 Kit Type: Full Kit Name : Tino Mayr  Name Font: 1 Number : 116 Number Font :4 -  Black Number Plate Color : Same As On Picture', 'Invoice', 'Tracking', 'KTM', 'EXC', '2025'),
-(25, '2025-06-14', 'eBay', 'G', '116113116111 ', '18-13350-19060 ', 'HONERBACH Motorradservice ', 'DE', 'FedEx-E', 'Open', 'G_SCRAPPER_ST BMW R 1300 GS R1300GS 2024 Grafik Dekor Aufkleber ', 'Invoice', 'Tracking', 'BMW', 'R1300 GS', '2025'),
-(26, '2025-06-14', 'eBay', 'GFP', '306356133227 ', '14-13355-17775 ', 'kyle walker ', 'US', 'FedEx-E', 'Open', 'Plastics + Graphics Husqvarna TE FE 2020 2021 2022 2023 Gray Yellow ', 'Invoice', 'Tracking', 'Husqvarna', 'TE-FE Series', '2025'),
-(27, '2025-06-14', 'eBay', 'TFP', '304546576418 ', '04-13368-61620 ', 'Oscar ortiz perez ', 'US', 'FedEx-E', 'Open', 'Restyle Yamaha YZ 85 2002-2018 Plastic Body Kit OEM (2021) replica with decals ', 'Invoice', 'Tracking', 'Yamaha', 'YZ450f', '2025'),
-(28, '2025-06-14', 'eBay', 'P', '304163977513 ', '05-13367-75223 ', 'Jay Frost ', 'US', 'FedEx-E', 'Open', 'Kawasaki KX80 KX100 1998 1999 2000 Black/White/Green Plastic Body Kit KX 80 100[Green] ', 'Invoice', 'Tracking', 'Yamaha', 'YZ450f', '2025'),
-(29, '2025-06-14', 'eBay', 'GFP', '306288442208 ', '14-13355-56398 ', 'Angelica Cruz ', 'US', 'FedEx-E', 'Open', 'Plastics + Graphics Yamaha YZ250F 2019-2023 YZ450F 2018-2022 GRIP + Race number ', 'Invoice', 'Tracking', 'Yamaha', 'YZ450f', '2025'),
-(30, '2025-06-14', 'eBay', 'P', '304761169751 ', '01-13373-34996 ', 'Matthias Engels ', 'US', 'FedEx-E', 'Priority', 'Yamaha WR450F 2007-2011 WR250F 2007-2014 Plastics kit + V-Face Headlight ', 'Invoice', 'Tracking', 'Yamaha', 'YZ450f', '2025'),
-(31, '2025-06-14', 'eBay', 'P', '305260492724 ', '26-13339-69964 ', 'Dustin Deppenmeier ', 'US', 'FedEx-E', 'Open', 'KTM SX XC 2023-2025 EXC XC-W 2024-2025 Airbox lower part Original KTM plastic ', 'Invoice', 'Tracking', 'KTM', 'EXC', '2025'),
-(32, '2025-06-14', 'eBay', 'G', '305303251189 ', '14-13355-85479 ', 'Gary  Miller ', 'UK', 'FedEx-E', 'Shipped', 'G_FR5_R4 - Yamaha Ténéré 700 2019 2020 2021 2022 2023 2024 Tenere Graphics decals stickers ', 'Invoice', 'Tracking', 'KTM', 'EXC', '2025'),
-(33, '2025-06-14', 'eBay', 'GFP', '305339799961 ', '02-13372-21631 ', 'ACS-2910 jairo ripol Arias Contreras ', 'US', 'FedEx-E', 'Open', 'Plastics + Graphics Yamaha YZ 85 2002-2018 Restyle | Custom race number ', 'Invoice', 'Tracking', 'Yamaha', 'YZ450f', '2025'),
-(34, '2025-06-14', 'eBay', 'P', '305260492724 ', '18-13351-27912 ', 'Mikeith Green ', 'US', 'FedEx-E', 'Open', 'KTM SX XC 2023-2025 EXC XC-W 2024-2025 Airbox lower part Original KTM plastic ', 'Invoice', 'Tracking', 'KTM', 'EXC', '2025'),
-(35, '2025-06-14', 'eBay', 'GFP', '305786569840 ', '20-13348-82894 ', 'Broderick Nelson ', 'US', 'FedEx-E', 'Open', 'Plastics + Graphics Yamaha 2003-2009 YZ250F YZ450F YZF 250 450 ', 'Invoice', 'Tracking', 'Yamaha', 'YZ450f', '2025'),
-(36, '2025-06-14', 'eBay', 'P', '304761035829 ', '25-13343-60427 ', 'Adrian De Leon ', 'US', 'FedEx-E', 'Open', 'Restyle Yamaha YZ125 YZ250 2006-2021 Plastics kit + Airbox OEM color ', 'Invoice', 'Tracking', 'Yamaha', 'YZ450f', '2025'),
-(37, '2025-06-14', 'eBay', 'GFP', '305752972291 ', '25-13343-72403 ', 'Jamie Curry ', 'UK', 'FedEx-E', 'Shipped', 'Plastics + Graphics KTM 2020 2021 2022 2023 XC-W XCF-W EXC EXC-F ', 'Invoice', 'Tracking', 'KTM', 'EXC', '2025'),
-(38, '2025-06-14', 'eBay', 'P', '304163977558 ', '03-13372-86890 ', 'Finn Rohrer ', 'US', 'FedEx-E', 'Shipped', 'Yamaha YZ250F YZF 250 2001-2002 White Blue OEM color Plastic Kit + Fork guards[OEM] ', 'Invoice', 'Tracking', 'Yamaha', 'YZ450f', '2025'),
-(39, '2025-06-14', 'eBay', 'GFP', '304537100974 ', '16-13355-62411 ', 'David Thomas ', 'US', 'FedEx-E', 'Open', 'Plastics + Graphics Yamaha YZ450F 2018-2022 YZ250F 2019-2023 Race number + Name ', 'Invoice', 'Tracking', 'Yamaha', 'YZ450f', '2025');
 
 -- --------------------------------------------------------
 
@@ -40792,24 +40767,6 @@ TRUNCATE TABLE `orders_finish`;
 -- Dumping data for table `orders_finish`
 --
 
-INSERT INTO `orders_finish` (`finish_id`, `finish_name`) VALUES
-(1, 'Standard'),
-(2, 'Chrome'),
-(3, 'Holochrome'),
-(4, 'Fluo Yellow'),
-(5, 'Fluo Orange'),
-(6, 'Fluo Green'),
-(7, 'Fluo Pink'),
-(8, 'More Layers'),
-(9, 'Silver Metallic'),
-(10, 'Special'),
-(11, 'Transparent'),
-(12, 'Reflex'),
-(13, 'White - AP/10'),
-(14, 'White - AP/90'),
-(15, 'White SUB - 660L'),
-(16, 'White SUB - X1'),
-(17, 'White SUB - X2');
 
 -- --------------------------------------------------------
 

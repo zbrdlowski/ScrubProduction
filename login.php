@@ -48,9 +48,19 @@
 			opacity: 1;
 		}
 
-				.dashboard-shortcut {
+		.dashboard-shortcut {
+			position: fixed;
+			right: 1.5rem;
+			bottom: 1.5rem;
+			display: inline-flex;
+			align-items: center;
+			justify-content: center;
+			width: 44px;
+			height: 44px;
+			padding: 0;
 			border-color: #2ed1d2;
 			color: #2ed1d2;
+			z-index: 10;
 		}
 
 		.dashboard-shortcut:hover,
@@ -195,9 +205,6 @@ if (isset($_POST['login'])) {
 				</div>
 
 			</form>
-			<a href="tv.php" class="btn btn-outline-info btn-block btn-flat dashboard-shortcut mt-3">
-				<i class="fa fa-tv"></i> Production Dashboard
-			</a>
 		</div>
 
 		<br /><br />
@@ -214,6 +221,13 @@ if (isset($_POST['login'])) {
 		?>
 
 	</div>
+
+	<a href="tv.php"
+		class="btn btn-outline-info btn-flat dashboard-shortcut"
+		aria-label="Production Dashboard"
+		title="Production Dashboard">
+		<i class="fa fa-tv" aria-hidden="true"></i>
+	</a>
 
 <?php
 }

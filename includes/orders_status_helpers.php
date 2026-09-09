@@ -27,50 +27,50 @@ function ordersStatusDefinitionFallbacks(): array
 {
     return [
         'order' => [
-            'PENDING' => ['code' => 'PENDING', 'label' => 'Pending payment', 'color' => '#7c3aed', 'sort_order' => 5, 'active' => 1],
-            'NEW' => ['code' => 'NEW', 'label' => 'New', 'color' => '#17a2b8', 'sort_order' => 10, 'active' => 1],
-            'IN_PROGRESS' => ['code' => 'IN_PROGRESS', 'label' => 'In Progress', 'color' => '#ffc107', 'sort_order' => 20, 'active' => 1],
-            'NEED_INFO' => ['code' => 'NEED_INFO', 'label' => 'Need Info', 'color' => '#dc3545', 'sort_order' => 30, 'active' => 1],
-            'DRAFT_REQUESTED' => ['code' => 'DRAFT_REQUESTED', 'label' => 'Draft Requested', 'color' => '#17a2b8', 'sort_order' => 35, 'active' => 1],
-            'DRAFT_READY' => ['code' => 'DRAFT_READY', 'label' => 'Draft Ready', 'color' => '#20c997', 'sort_order' => 40, 'active' => 1],
-            'RIPPED' => ['code' => 'RIPPED', 'label' => 'Ripped', 'color' => '#0d6efd', 'sort_order' => 45, 'active' => 1],
-            'PRINT_QUEUE' => ['code' => 'PRINT_QUEUE', 'label' => 'Print Queue', 'color' => '#0d6efd', 'sort_order' => 50, 'active' => 1],
-            'PRODUCTION' => ['code' => 'PRODUCTION', 'label' => 'Production', 'color' => '#ffc107', 'sort_order' => 60, 'active' => 1],
-            'READY_TO_INVOICE' => ['code' => 'READY_TO_INVOICE', 'label' => 'Ready to Invoice', 'color' => '#28a745', 'sort_order' => 70, 'active' => 1],
-            'READY_TO_SHIP' => ['code' => 'READY_TO_SHIP', 'label' => 'Ready to Ship', 'color' => '#28a745', 'sort_order' => 80, 'active' => 1],
-            'DONE' => ['code' => 'DONE', 'label' => 'Done', 'color' => '#28a745', 'sort_order' => 90, 'active' => 1],
-            'SHIPPED' => ['code' => 'SHIPPED', 'label' => 'Shipped', 'color' => '#28a745', 'sort_order' => 100, 'active' => 1],
-            'HOLD' => ['code' => 'HOLD', 'label' => 'Hold', 'color' => '#6c757d', 'sort_order' => 110, 'active' => 1],
-            'CANCELLED' => ['code' => 'CANCELLED', 'label' => 'Cancelled', 'color' => '#6c757d', 'sort_order' => 120, 'active' => 1],
+            'PENDING' => ['code' => 'PENDING', 'label' => 'Pending payment', 'color' => '#7c3aed', 'sort_order' => 5, 'active' => 1, 'tab_bar' => 1],
+            'NEW' => ['code' => 'NEW', 'label' => 'New', 'color' => '#17a2b8', 'sort_order' => 10, 'active' => 1, 'tab_bar' => 1],
+            'IN_PROGRESS' => ['code' => 'IN_PROGRESS', 'label' => 'In Progress', 'color' => '#ffc107', 'sort_order' => 20, 'active' => 1, 'tab_bar' => 1],
+            'NEED_INFO' => ['code' => 'NEED_INFO', 'label' => 'Need Info', 'color' => '#dc3545', 'sort_order' => 30, 'active' => 1, 'tab_bar' => 1],
+            'DRAFT_REQUESTED' => ['code' => 'DRAFT_REQUESTED', 'label' => 'Draft Requested', 'color' => '#17a2b8', 'sort_order' => 35, 'active' => 1, 'tab_bar' => 1],
+            'DRAFT_READY' => ['code' => 'DRAFT_READY', 'label' => 'Draft Ready', 'color' => '#20c997', 'sort_order' => 40, 'active' => 1, 'tab_bar' => 1],
+            'RIPPED' => ['code' => 'RIPPED', 'label' => 'Ripped', 'color' => '#0d6efd', 'sort_order' => 45, 'active' => 1, 'tab_bar' => 1],
+            'PRINT_QUEUE' => ['code' => 'PRINT_QUEUE', 'label' => 'Print Queue', 'color' => '#0d6efd', 'sort_order' => 50, 'active' => 1, 'tab_bar' => 1],
+            'PRODUCTION' => ['code' => 'PRODUCTION', 'label' => 'Production', 'color' => '#ffc107', 'sort_order' => 60, 'active' => 1, 'tab_bar' => 1],
+            'READY_TO_INVOICE' => ['code' => 'READY_TO_INVOICE', 'label' => 'Ready to Invoice', 'color' => '#28a745', 'sort_order' => 70, 'active' => 1, 'tab_bar' => 1],
+            'READY_TO_SHIP' => ['code' => 'READY_TO_SHIP', 'label' => 'Ready to Ship', 'color' => '#28a745', 'sort_order' => 80, 'active' => 1, 'tab_bar' => 1],
+            'DONE' => ['code' => 'DONE', 'label' => 'Done', 'color' => '#28a745', 'sort_order' => 90, 'active' => 1, 'tab_bar' => 1],
+            'SHIPPED' => ['code' => 'SHIPPED', 'label' => 'Shipped', 'color' => '#28a745', 'sort_order' => 100, 'active' => 1, 'tab_bar' => 1],
+            'HOLD' => ['code' => 'HOLD', 'label' => 'Hold', 'color' => '#6c757d', 'sort_order' => 110, 'active' => 1, 'tab_bar' => 1],
+            'CANCELLED' => ['code' => 'CANCELLED', 'label' => 'Cancelled', 'color' => '#6c757d', 'sort_order' => 120, 'active' => 1, 'tab_bar' => 1],
         ],
         'item' => [
             'G' => [
-                'NEW' => ['code' => 'NEW', 'label' => 'New', 'color' => '#17a2b8', 'sort_order' => 10, 'active' => 1],
-                'RTP' => ['code' => 'RTP', 'label' => 'RTP', 'color' => '#17a2b8', 'sort_order' => 20, 'active' => 1],
-                'PRINT_QUEUE' => ['code' => 'PRINT_QUEUE', 'label' => 'Print Queue', 'color' => '#0d6efd', 'sort_order' => 30, 'active' => 1],
-                'PRINTED' => ['code' => 'PRINTED', 'label' => 'Printed', 'color' => '#20c997', 'sort_order' => 40, 'active' => 1],
-                'CUT' => ['code' => 'CUT', 'label' => 'Cut', 'color' => '#fd7e14', 'sort_order' => 50, 'active' => 1],
-                'READY' => ['code' => 'READY', 'label' => 'Ready', 'color' => '#28a745', 'sort_order' => 60, 'active' => 1],
-                'WAITING' => ['code' => 'WAITING', 'label' => 'Waiting', 'color' => '#dc3545', 'sort_order' => 70, 'active' => 1],
+                'NEW' => ['code' => 'NEW', 'label' => 'New', 'color' => '#17a2b8', 'sort_order' => 10, 'active' => 1, 'tab_bar' => 1],
+                'RTP' => ['code' => 'RTP', 'label' => 'RTP', 'color' => '#17a2b8', 'sort_order' => 20, 'active' => 1, 'tab_bar' => 1],
+                'PRINT_QUEUE' => ['code' => 'PRINT_QUEUE', 'label' => 'Print Queue', 'color' => '#0d6efd', 'sort_order' => 30, 'active' => 1, 'tab_bar' => 1],
+                'PRINTED' => ['code' => 'PRINTED', 'label' => 'Printed', 'color' => '#20c997', 'sort_order' => 40, 'active' => 1, 'tab_bar' => 1],
+                'CUT' => ['code' => 'CUT', 'label' => 'Cut', 'color' => '#fd7e14', 'sort_order' => 50, 'active' => 1, 'tab_bar' => 1],
+                'READY' => ['code' => 'READY', 'label' => 'Ready', 'color' => '#28a745', 'sort_order' => 60, 'active' => 1, 'tab_bar' => 1],
+                'WAITING' => ['code' => 'WAITING', 'label' => 'Waiting', 'color' => '#dc3545', 'sort_order' => 70, 'active' => 1, 'tab_bar' => 1],
             ],
             'S' => [
-                'NEW' => ['code' => 'NEW', 'label' => 'New', 'color' => '#17a2b8', 'sort_order' => 10, 'active' => 1],
-                'PROCESSING' => ['code' => 'PROCESSING', 'label' => 'Processing', 'color' => '#ffc107', 'sort_order' => 20, 'active' => 1],
-                'READY' => ['code' => 'READY', 'label' => 'Ready', 'color' => '#28a745', 'sort_order' => 30, 'active' => 1],
-                'WAITING' => ['code' => 'WAITING', 'label' => 'Waiting', 'color' => '#dc3545', 'sort_order' => 40, 'active' => 1],
+                'NEW' => ['code' => 'NEW', 'label' => 'New', 'color' => '#17a2b8', 'sort_order' => 10, 'active' => 1, 'tab_bar' => 1],
+                'PROCESSING' => ['code' => 'PROCESSING', 'label' => 'Processing', 'color' => '#ffc107', 'sort_order' => 20, 'active' => 1, 'tab_bar' => 1],
+                'READY' => ['code' => 'READY', 'label' => 'Ready', 'color' => '#28a745', 'sort_order' => 30, 'active' => 1, 'tab_bar' => 1],
+                'WAITING' => ['code' => 'WAITING', 'label' => 'Waiting', 'color' => '#dc3545', 'sort_order' => 40, 'active' => 1, 'tab_bar' => 1],
             ],
             'P' => [
-                'NEW' => ['code' => 'NEW', 'label' => 'New', 'color' => '#17a2b8', 'sort_order' => 10, 'active' => 1],
-                'PROCESSING' => ['code' => 'PROCESSING', 'label' => 'Processing', 'color' => '#ffc107', 'sort_order' => 20, 'active' => 1],
-                'READY' => ['code' => 'READY', 'label' => 'Ready', 'color' => '#28a745', 'sort_order' => 30, 'active' => 1],
-                'WAITING' => ['code' => 'WAITING', 'label' => 'Waiting', 'color' => '#dc3545', 'sort_order' => 40, 'active' => 1],
+                'NEW' => ['code' => 'NEW', 'label' => 'New', 'color' => '#17a2b8', 'sort_order' => 10, 'active' => 1, 'tab_bar' => 1],
+                'PROCESSING' => ['code' => 'PROCESSING', 'label' => 'Processing', 'color' => '#ffc107', 'sort_order' => 20, 'active' => 1, 'tab_bar' => 1],
+                'READY' => ['code' => 'READY', 'label' => 'Ready', 'color' => '#28a745', 'sort_order' => 30, 'active' => 1, 'tab_bar' => 1],
+                'WAITING' => ['code' => 'WAITING', 'label' => 'Waiting', 'color' => '#dc3545', 'sort_order' => 40, 'active' => 1, 'tab_bar' => 1],
             ],
             'F' => [
-                'NEW' => ['code' => 'NEW', 'label' => 'New', 'color' => '#17a2b8', 'sort_order' => 10, 'active' => 1],
-                'PROCESSING' => ['code' => 'PROCESSING', 'label' => 'Processing', 'color' => '#ffc107', 'sort_order' => 20, 'active' => 1],
-                'DONE' => ['code' => 'DONE', 'label' => 'Done', 'color' => '#20c997', 'sort_order' => 30, 'active' => 1],
-                'READY' => ['code' => 'READY', 'label' => 'Ready', 'color' => '#28a745', 'sort_order' => 40, 'active' => 1],
-                'WAITING' => ['code' => 'WAITING', 'label' => 'Waiting', 'color' => '#dc3545', 'sort_order' => 50, 'active' => 1],
+                'NEW' => ['code' => 'NEW', 'label' => 'New', 'color' => '#17a2b8', 'sort_order' => 10, 'active' => 1, 'tab_bar' => 1],
+                'PROCESSING' => ['code' => 'PROCESSING', 'label' => 'Processing', 'color' => '#ffc107', 'sort_order' => 20, 'active' => 1, 'tab_bar' => 1],
+                'DONE' => ['code' => 'DONE', 'label' => 'Done', 'color' => '#20c997', 'sort_order' => 30, 'active' => 1, 'tab_bar' => 1],
+                'READY' => ['code' => 'READY', 'label' => 'Ready', 'color' => '#28a745', 'sort_order' => 40, 'active' => 1, 'tab_bar' => 1],
+                'WAITING' => ['code' => 'WAITING', 'label' => 'Waiting', 'color' => '#dc3545', 'sort_order' => 50, 'active' => 1, 'tab_bar' => 1],
             ],
         ],
     ];
@@ -107,8 +107,9 @@ function ordersLoadStatusDefinitions(mysqli $conn): array
 
     $extensionsAvailable = statusDefinitionEnsureExtensions($conn);
 
+    $tabBarSelect = statusDefinitionHasTabBarColumn($conn) ? 'tab_bar' : 'active AS tab_bar';
     $sql = "
-        SELECT id, scope, department, code, label, color, sort_order, active
+        SELECT id, scope, department, code, label, color, sort_order, active, $tabBarSelect
         FROM status_definitions
         ORDER BY scope ASC, department ASC, sort_order ASC, id ASC
     ";
@@ -141,6 +142,8 @@ function ordersLoadStatusDefinitions(mysqli $conn): array
             'color' => trim((string)($row['color'] ?? '')) ?: null,
             'sort_order' => (int)($row['sort_order'] ?? 0),
             'active' => (int)($row['active'] ?? 1),
+            'tab_bar' => (int)($row['tab_bar'] ?? 0),
+            'tab_bar_position_ids' => [],
             'department' => ordersNormalizeDepartmentCode($row['department'] ?? null),
             'targets' => ['ALL'],
         ];
@@ -197,6 +200,26 @@ function ordersLoadStatusDefinitions(mysqli $conn): array
             }
             unset($departmentStatuses);
         }
+
+        $tabBarPositionsByDefinition = statusDefinitionFetchTabBarPositionsByDefinition($conn);
+        foreach ($cache['order'] as &$statusMeta) {
+            $definitionId = (int)($statusMeta['id'] ?? 0);
+            $statusMeta['tab_bar_position_ids'] = !empty($tabBarPositionsByDefinition[$definitionId])
+                ? statusDefinitionNormalizeTabBarPositionIds($conn, $tabBarPositionsByDefinition[$definitionId])
+                : statusDefinitionDefaultTabBarPositionIds($conn, 'order', null);
+        }
+        unset($statusMeta);
+
+        foreach ($cache['item'] as $department => &$departmentStatuses) {
+            foreach ($departmentStatuses as &$statusMeta) {
+                $definitionId = (int)($statusMeta['id'] ?? 0);
+                $statusMeta['tab_bar_position_ids'] = !empty($tabBarPositionsByDefinition[$definitionId])
+                    ? statusDefinitionNormalizeTabBarPositionIds($conn, $tabBarPositionsByDefinition[$definitionId])
+                    : statusDefinitionDefaultTabBarPositionIds($conn, 'item', (string)$department);
+            }
+            unset($statusMeta);
+        }
+        unset($departmentStatuses);
     }
 
     foreach (['G', 'S', 'P', 'F'] as $department) {
@@ -208,6 +231,23 @@ function ordersLoadStatusDefinitions(mysqli $conn): array
     if (empty($cache['order'])) {
         $cache['order'] = $fallbacks['order'];
     }
+
+    foreach ($cache['order'] as &$statusMeta) {
+        if (empty($statusMeta['tab_bar_position_ids'])) {
+            $statusMeta['tab_bar_position_ids'] = statusDefinitionDefaultTabBarPositionIds($conn, 'order', null);
+        }
+    }
+    unset($statusMeta);
+
+    foreach ($cache['item'] as $department => &$departmentStatuses) {
+        foreach ($departmentStatuses as &$statusMeta) {
+            if (empty($statusMeta['tab_bar_position_ids'])) {
+                $statusMeta['tab_bar_position_ids'] = statusDefinitionDefaultTabBarPositionIds($conn, 'item', (string)$department);
+            }
+        }
+        unset($statusMeta);
+    }
+    unset($departmentStatuses);
 
     return $cache;
 }
@@ -239,6 +279,93 @@ function ordersGetItemStatusDefinitions(mysqli $conn, string $itemType, bool $ac
     return array_filter($statuses, static function (array $meta): bool {
         return (int)($meta['active'] ?? 1) === 1;
     });
+}
+
+function ordersStatusDefinitionAppliesToPosition(array $definition, ?int $positionId): bool
+{
+    if ((int)($definition['tab_bar'] ?? 0) !== 1) {
+        return false;
+    }
+
+    $positionId = (int)($positionId ?? 0);
+    if ($positionId <= 0) {
+        return true;
+    }
+
+    $positionIds = $definition['tab_bar_position_ids'] ?? [];
+    if (!is_array($positionIds) || !$positionIds) {
+        $department = ordersNormalizeDepartmentCode($definition['department'] ?? null);
+        $defaultItemPositionByDepartment = ['G' => 2, 'P' => 6, 'S' => 8, 'F' => 9];
+        return isset($defaultItemPositionByDepartment[$department])
+            ? $positionId === $defaultItemPositionByDepartment[$department]
+            : true;
+    }
+
+    foreach ($positionIds as $allowedPositionId) {
+        if ((int)$allowedPositionId === $positionId) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+function ordersGetOrderTabBarStatusDefinitions(mysqli $conn, ?int $positionId = null): array
+{
+    return array_filter(ordersGetOrderStatusDefinitions($conn, true), static function (array $meta) use ($positionId): bool {
+        return ordersStatusDefinitionAppliesToPosition($meta, $positionId);
+    });
+}
+
+function ordersGetItemTabBarStatusDefinitions(mysqli $conn, string $itemType, ?int $positionId = null): array
+{
+    return array_filter(ordersGetItemStatusDefinitions($conn, $itemType, true), static function (array $meta) use ($positionId): bool {
+        return ordersStatusDefinitionAppliesToPosition($meta, $positionId);
+    });
+}
+
+function ordersGetItemTabBarStatusDefinitionsForPosition(mysqli $conn, int $positionId): array
+{
+    $definitions = ordersLoadStatusDefinitions($conn);
+    $tabs = [];
+
+    foreach (($definitions['item'] ?? []) as $department => $departmentStatuses) {
+        $department = ordersNormalizeDepartmentCode((string)$department);
+        if ($department === '' || !is_array($departmentStatuses)) {
+            continue;
+        }
+
+        foreach ($departmentStatuses as $code => $meta) {
+            if ((int)($meta['active'] ?? 1) !== 1 || !ordersStatusDefinitionAppliesToPosition($meta, $positionId)) {
+                continue;
+            }
+
+            $statusCode = strtoupper(trim((string)($meta['code'] ?? $code)));
+            if ($statusCode === '') {
+                continue;
+            }
+
+            $meta['department'] = $department;
+            $meta['code'] = $statusCode;
+            $tabs[$department . '|' . $statusCode] = $meta;
+        }
+    }
+
+    uasort($tabs, static function (array $left, array $right): int {
+        $sortCompare = ((int)($left['sort_order'] ?? 0)) <=> ((int)($right['sort_order'] ?? 0));
+        if ($sortCompare !== 0) {
+            return $sortCompare;
+        }
+
+        $departmentCompare = strcmp((string)($left['department'] ?? ''), (string)($right['department'] ?? ''));
+        if ($departmentCompare !== 0) {
+            return $departmentCompare;
+        }
+
+        return strcmp((string)($left['code'] ?? ''), (string)($right['code'] ?? ''));
+    });
+
+    return $tabs;
 }
 
 function ordersResolveGraphicsSubcategory(array $item): string
@@ -364,6 +491,60 @@ function ordersGetStatusColor(mysqli $conn, string $scope, string $code, ?string
     $color = trim((string)($meta['color'] ?? ''));
 
     return $color !== '' ? $color : null;
+}
+
+/** Return order counts keyed by normalized overall status code. */
+function ordersGetOrderStatusCounts(mysqli $conn): array
+{
+    $counts = [];
+    $result = $conn->query("SELECT UPPER(TRIM(COALESCE(status, ''))) AS status_code, COUNT(*) AS cnt FROM orders GROUP BY UPPER(TRIM(COALESCE(status, '')))");
+    if (!$result instanceof mysqli_result) {
+        return $counts;
+    }
+
+    while ($row = $result->fetch_assoc()) {
+        $code = strtoupper(trim((string)($row['status_code'] ?? '')));
+        if ($code !== '') {
+            $counts[$code] = (int)($row['cnt'] ?? 0);
+        }
+    }
+    $result->free();
+
+    return $counts;
+}
+
+/** Return distinct-order counts keyed by item department and status. */
+function ordersGetItemStatusCounts(mysqli $conn): array
+{
+    $counts = [];
+    $result = $conn->query("
+        SELECT
+            CASE
+                WHEN UPPER(TRIM(COALESCE(oi.item_type_code, ''))) IN ('T', 'M') THEN 'P'
+                ELSE UPPER(TRIM(COALESCE(oi.item_type_code, '')))
+            END AS department,
+            UPPER(TRIM(COALESCE(oi.status, 'NEW'))) AS status_code,
+            COUNT(DISTINCT oi.order_id) AS cnt
+        FROM order_items oi
+        LEFT JOIN orders o ON o.id = oi.order_id
+        WHERE oi.deleted_at IS NULL
+          AND UPPER(TRIM(COALESCE(o.status, ''))) NOT IN ('PENDING', 'CANCELLED', 'SHIPPED')
+        GROUP BY department, status_code
+    ");
+    if (!$result instanceof mysqli_result) {
+        return $counts;
+    }
+
+    while ($row = $result->fetch_assoc()) {
+        $department = ordersNormalizeDepartmentCode((string)($row['department'] ?? ''));
+        $code = strtoupper(trim((string)($row['status_code'] ?? '')));
+        if ($department !== '' && $code !== '') {
+            $counts[$department][$code] = (int)($row['cnt'] ?? 0);
+        }
+    }
+    $result->free();
+
+    return $counts;
 }
 
 /**

@@ -1282,6 +1282,25 @@ if (!$customOrdersDetailRequest) {
     min-width: 280px;
   }
 
+  .custom-order-header-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .custom-order-email-import-form label {
+    cursor: pointer;
+  }
+
+  .custom-order-email-import-input {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    opacity: 0;
+  }
   .custom-orders-filter-toolbar {
     display: flex;
     align-items: center;
@@ -3298,9 +3317,17 @@ if (!$customOrdersDetailRequest) {
       </div>
     </div>
     <?php if ($customOrdersCanManage): ?>
-      <form method="post" action="scripts/custom_orders/create_order.php" class="mb-0">
-        <button type="submit" class="btn btn-success">New Custom Lead</button>
-      </form>
+      <div class="custom-order-header-actions">
+        <form method="post" action="scripts/custom_orders/import_email_lead.php" enctype="multipart/form-data" class="mb-0 custom-order-email-import-form">
+          <label class="btn btn-info mb-0">
+            <i class="fas fa-envelope-open-text mr-1"></i>Import Email Lead
+            <input type="file" name="email_file" accept=".eml,message/rfc822,text/plain" class="custom-order-email-import-input" onchange="if (this.files && this.files.length) this.form.submit();">
+          </label>
+        </form>
+        <form method="post" action="scripts/custom_orders/create_order.php" class="mb-0">
+          <button type="submit" class="btn btn-success">New Custom Lead</button>
+        </form>
+      </div>
     <?php else: ?>
       <span class="badge badge-secondary"><i class="fas fa-eye mr-1"></i>Read-only access</span>
     <?php endif; ?>

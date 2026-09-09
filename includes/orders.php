@@ -321,34 +321,22 @@ $allAccess = in_array($dpt, [1, 3, 4, 5, 7], true);
 
 // --- Filters (GET) ---
 $page = 'orders';
-$fDept = isset($_GET['dept']) ? (int) $_GET['dept'] : 0;
+$fDept = isset($_GET['dept']) ? (int) $_GET['dept'] : -1;
 $fCat = isset($_GET['cat']) ? trim((string) $_GET['cat']) : '';
 $fType = isset($_GET['type']) ? trim((string) $_GET['type']) : '';
 $fQ = isset($_GET['q']) ? trim((string) $_GET['q']) : '';
 
 // ── Nové filtre ──────────────────────────────────────────────────────────────
 $fStatus = isset($_GET['status']) ? trim((string) $_GET['status']) : '';
+$fItemStatus = isset($_GET['item_status']) ? strtoupper(trim((string) $_GET['item_status'])) : '';
+$fItemDepartment = isset($_GET['item_department']) ? ordersNormalizeDepartmentCode((string) $_GET['item_department']) : '';
 $fSource = isset($_GET['source']) ? trim((string) $_GET['source']) : '';
 
-// Špeciálny parameter pre "Open Orders" tab — vylúčenie viacerých statusov
+// Špeciálny parameter pre pracovné queue — vylúčenie viacerých overall statusov.
 // Hodnoty oddelené čiarkou, napr. "PENDING,SHIPPED"
 $fExcludeStatuses = isset($_GET['exclude_status']) ? trim((string) $_GET['exclude_status']) : '';
+$defaultHiddenOrderStatuses = ['SHIPPED', 'CANCELLED', 'PENDING'];
 
-// Defaultný "Open Orders" exclude (PENDING, SHIPPED) má platiť takmer vždy —
-// aj keď si niekto zvolí department/cat/source/country/... filter. Zrušiť ho
-// má iba explicitný status filter, explicitný exclude_status, alebo fulltext
-// search (ten má hľadať naprieč úplne všetkým). Predtým stačilo nastaviť
-// hocijaký iný filter (napr. len prepnúť department select) a exclude sa
-// vôbec nezapol → natiahli sa všetky objednávky vrátane rokmi nazbieraných
-// SHIPPED/PENDING (rádovo desaťtisíce záznamov).
-$noStatusFilterSet = (
-  empty($_GET['status']) &&
-  empty($_GET['exclude_status']) &&
-  empty($_GET['q'])
-);
-if ($noStatusFilterSet) {
-  $fExcludeStatuses = 'CANCELLED,PENDING,SHIPPED';
-}
 $fCountry = isset($_GET['country']) ? strtoupper(trim((string) $_GET['country'])) : '';
 $fPayment = isset($_GET['payment']) ? trim((string) $_GET['payment']) : '';
 $fShipping = isset($_GET['shipping']) ? trim((string) $_GET['shipping']) : '';
@@ -457,17 +445,23 @@ $allowedStatuses = array_keys($orderStatusLabels);
 if ($fStatus !== '' && !in_array($fStatus, $allowedStatuses, true))
   $fStatus = '';
 
-// Ak je zvolený konkrétny status tabom alebo filtrom, má mať prednosť
-// pred "open orders" exclude_status logikou.
-if ($fStatus !== '') {
-  $fExcludeStatuses = '';
-}
-
-// Horné fulltext vyhľadávanie má hľadať naprieč všetkými objednávkami,
+// Horné fulltext vyhľadávanie má hľadať naprieč pracovnými objednávkami,
 // nie len v aktuálne aktívnom quick tabe.
 if ($fQ !== '') {
   $fStatus = '';
+  $fItemStatus = '';
+  $fItemDepartment = '';
+}
+
+// Ak je zvolený konkrétny overall status tabom alebo filtrom, má prednosť.
+// Inak pracovné queue schovávajú finálne/neplatené overall statusy.
+if ($fStatus !== '') {
   $fExcludeStatuses = '';
+} else {
+  $excludedStatuses = array_filter(array_map(static function ($status) {
+    return strtoupper(trim((string) $status));
+  }, explode(',', $fExcludeStatuses)));
+  $fExcludeStatuses = implode(',', array_values(array_unique(array_merge($excludedStatuses, $defaultHiddenOrderStatuses))));
 }
 
 $detailColumnTitle = 'Detail';
@@ -480,25 +474,37 @@ if ($detailStatusCode !== '' && isset($statusDateDetailRules[$detailStatusCode])
 }
 
 // ── Počty objednávok pre jednotlivé taby ──────────────────────────────────────────────────────────
-$quickTabCounts = [];
-$qtRes = $conn->query("SELECT
-  SUM(status='SHIPPED') AS cnt_shipped,
-  SUM(status='PENDING') AS cnt_pending,
-  SUM(status='COMMUNICATION') AS cnt_communication,
-  SUM(status='DRAFT_READY') AS cnt_draft_ready,
-  SUM(status='READY_TO_INVOICE') AS cnt_ready_to_invoice,
-  SUM(status='READY_TO_SHIP') AS cnt_ready_to_ship,
-  SUM(status NOT IN ('PENDING','SHIPPED')) AS cnt_open
-FROM orders");
-if ($qtRes && $qtRow = $qtRes->fetch_assoc()) {
-  $quickTabCounts['shipped'] = (int) ($qtRow['cnt_shipped'] ?? 0);
-  $quickTabCounts['pending'] = (int) ($qtRow['cnt_pending'] ?? 0);
-  $quickTabCounts['communication'] = (int) ($qtRow['cnt_communication'] ?? 0);
-  $quickTabCounts['draft_ready'] = (int) ($qtRow['cnt_draft_ready'] ?? 0);
-  $quickTabCounts['ready_to_invoice'] = (int) ($qtRow['cnt_ready_to_invoice'] ?? 0);
-  $quickTabCounts['ready_to_ship'] = (int) ($qtRow['cnt_ready_to_ship'] ?? 0);
-  $quickTabCounts['open_orders'] = (int) ($qtRow['cnt_open'] ?? 0);
+$quickTabCounts = ordersGetOrderStatusCounts($conn);
+$itemQuickTabCounts = ordersGetItemStatusCounts($conn);
+$openOrdersCount = 0;
+foreach ($quickTabCounts as $statusCode => $statusCount) {
+  if (!in_array($statusCode, ['SHIPPED', 'CANCELLED', 'PENDING'], true)) {
+    $openOrdersCount += (int)$statusCount;
+  }
 }
+
+
+$itemDepartmentLabels = [
+  'G' => 'Item - Graphics (G)',
+  'S' => 'Item - Seat Cover (S)',
+  'P' => 'Item - Plastics (P)',
+  'F' => 'Item - Fitting (F)',
+];
+$allowedItemDepartments = ['G', 'S', 'P', 'F'];
+if (!in_array($fItemDepartment, $allowedItemDepartments, true)) {
+  $fItemDepartment = '';
+  $fItemStatus = '';
+}
+if ($fItemDepartment !== '') {
+  $allowedItemStatuses = array_keys(ordersGetItemStatusDefinitions($conn, $fItemDepartment, true));
+  if (!in_array($fItemStatus, $allowedItemStatuses, true)) {
+    $fItemStatus = '';
+  }
+} else {
+  $fItemStatus = '';
+}
+
+
 // ─────────────────────────────────────────────────────────────────────────────
 
 $allowedSources = ['EBAY', 'SHOPTET', 'MX_LOCKER', 'SO'];
@@ -707,6 +713,28 @@ if ($fStatus !== '') {
   $where[] = 'o.status = ?';
   $types .= 's';
   $params[] = $fStatus;
+}
+
+// Department item status. Match the order when at least one item in the
+// selected department currently has this status. T/M are legacy Plastics.
+if ($fItemDepartment !== '' && $fItemStatus !== '') {
+  $itemDepartmentSql = $fItemDepartment === 'P'
+    ? "UPPER(TRIM(COALESCE(oist.item_type_code, ''))) IN ('P', 'T', 'M')"
+    : "UPPER(TRIM(COALESCE(oist.item_type_code, ''))) = ?";
+  $where[] = "EXISTS (
+    SELECT 1
+    FROM order_items oist
+    WHERE oist.order_id = o.id
+      AND oist.deleted_at IS NULL
+      AND $itemDepartmentSql
+      AND UPPER(TRIM(COALESCE(oist.status, 'NEW'))) = ?
+  )";
+  if ($fItemDepartment !== 'P') {
+    $types .= 's';
+    $params[] = $fItemDepartment;
+  }
+  $types .= 's';
+  $params[] = $fItemStatus;
 }
 
 // Exclude statuses (pre Open Orders tab)
@@ -1096,7 +1124,6 @@ if ($orderIds) {
 }
 
 $deptOptions = [
-  0 => 'Auto (By my department)',
   -1 => '🌐 All Orders',
   2 => 'Graphics',
   6 => 'Plastics',
@@ -1451,7 +1478,9 @@ $deptOptions = [
   .orders-quicktabs {
     display: flex;
     align-items: flex-end;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overflow-y: hidden;
     background: transparent;
     padding: 8px 12px 0 12px;
     gap: 3px;
@@ -1490,7 +1519,7 @@ $deptOptions = [
     color: #fff;
     background: rgba(255, 255, 255, 0.10);
     border-color: rgba(255, 255, 255, 0.20);
-    border-bottom: 2px solid #3f9eff;
+    border-bottom: 2px solid var(--status-color, #3f9eff);
     padding-bottom: 9px;
     text-decoration: none;
   }
@@ -1505,8 +1534,162 @@ $deptOptions = [
     border-radius: 9px;
     font-size: 10px;
     font-weight: 700;
-    background: #dc3545;
-    color: #fff;
+    background: var(--status-color, #dc3545);
+    color: var(--status-text-color, #fff);
+  }
+
+  .orders-quicktabs .qtab.is-empty {
+    opacity: .38;
+    filter: saturate(.35);
+  }
+
+  .orders-quicktabs .qtab.is-empty:hover,
+  .orders-quicktabs .qtab.is-empty:focus {
+    opacity: .7;
+    filter: saturate(.7);
+  }
+
+  .orders-quicktabs .qtab.is-empty.active {
+    opacity: .82;
+    filter: saturate(.8);
+  }
+
+  .orders-quicktabs .qtab.has-orders {
+    color: rgba(255, 255, 255, .88);
+    background: rgba(255, 255, 255, .085);
+    border-color: rgba(255, 255, 255, .17);
+    box-shadow: inset 0 2px 0 color-mix(in srgb, var(--status-color, #6c757d) 60%, transparent);
+  }
+
+  .orders-quicktabs .qtab.has-orders .qtab-badge {
+    box-shadow: 0 0 0 2px rgba(255, 255, 255, .10),
+                0 0 8px color-mix(in srgb, var(--status-color, #6c757d) 55%, transparent);
+  }
+
+  .orders-tab-stack {
+    position: sticky;
+    top: calc(var(--orders-sticky-top) + var(--orders-header-h));
+    z-index: 1000;
+    background: #343a40;
+  }
+
+  .orders-tab-stack .orders-quicktabs {
+    position: static;
+    top: auto;
+  }
+
+  .orders-item-tabs {
+    padding-top: 4px;
+    background: rgba(0, 0, 0, .12);
+  }
+
+  .orders-tab-row-label {
+    position: sticky;
+    left: 0;
+    z-index: 2;
+    align-self: stretch;
+    display: inline-flex;
+    align-items: center;
+    padding: 0 10px;
+    color: rgba(255, 255, 255, .58);
+    background: #343a40;
+    border-right: 1px solid rgba(255, 255, 255, .12);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+
+  .orders-item-tabs .orders-tab-row-label {
+    background: #30353a;
+  }
+
+  /* Department status rows use a compact grid for every department, so
+     custom status lists do not create a horizontal scrollbar. */
+  .orders-item-tabs {
+    display: grid;
+    grid-template-columns: auto repeat(12, minmax(0, 1fr));
+    grid-auto-flow: row;
+    align-items: stretch;
+    gap: 3px;
+    overflow: visible;
+    padding-bottom: 4px;
+  }
+
+  .orders-item-tabs .orders-tab-row-label {
+    grid-column: 1;
+    grid-row: 1 / span var(--orders-item-tab-rows, 1);
+  }
+
+  .orders-item-tabs .qtab {
+    min-width: 0;
+    justify-content: center;
+    padding: 7px 5px;
+    margin-bottom: 0;
+    white-space: normal;
+    text-align: center;
+    line-height: 1.15;
+  }
+
+  @media (max-width: 1399.98px) {
+    .orders-item-tabs {
+      grid-template-columns: auto repeat(6, minmax(0, 1fr));
+    }
+
+    .orders-item-tabs .orders-tab-row-label {
+      grid-row: 1 / span var(--orders-item-tab-rows-medium, 1);
+    }
+
+    .orders-overall-tabs {
+      display: grid;
+      grid-template-columns: auto repeat(8, minmax(0, 1fr));
+      grid-auto-flow: row;
+      align-items: stretch;
+      gap: 3px;
+      overflow: visible;
+      padding-bottom: 4px;
+    }
+
+    .orders-overall-tabs .orders-tab-row-label {
+      grid-column: 1;
+      grid-row: 1 / span var(--orders-overall-tab-rows-medium, 1);
+    }
+
+    .orders-overall-tabs .qtab {
+      min-width: 0;
+      justify-content: center;
+      padding: 7px 5px;
+      margin-bottom: 0;
+      white-space: normal;
+      text-align: center;
+      line-height: 1.15;
+    }
+  }
+
+  @media (max-width: 1199.98px) {
+    .orders-overall-tabs {
+      grid-template-columns: auto repeat(6, minmax(0, 1fr));
+    }
+
+    .orders-overall-tabs .orders-tab-row-label {
+      grid-row: 1 / span var(--orders-overall-tab-rows-narrow, 1);
+    }
+  }
+
+  @media (max-width: 767.98px) {
+    .orders-overall-tabs,
+    .orders-item-tabs {
+      grid-template-columns: auto repeat(3, minmax(0, 1fr));
+    }
+
+    .orders-overall-tabs .orders-tab-row-label {
+      grid-row: 1 / span var(--orders-overall-tab-rows-small, 1);
+    }
+
+    .orders-item-tabs .orders-tab-row-label {
+      grid-row: 1 / span var(--orders-item-tab-rows-small, 1);
+    }
   }
 
   .orders-quicktabs .qtab .qtab-badge.badge-purple {
@@ -1557,6 +1740,7 @@ $deptOptions = [
      co v kombinacii so sticky theadom sposobovalo, ze hlavicka skoncila
      na nespravnom mieste (napr. medzi riadkami tabulky). */
   .orders-search-header,
+  .orders-tab-stack,
   .orders-quicktabs,
   .orders-toolbar,
   #ordersFilterCollapse,
@@ -1574,9 +1758,7 @@ $deptOptions = [
 
   /* Quick tabs sticky pod search headerom */
   .orders-quicktabs {
-    position: sticky;
-    top: calc(var(--orders-sticky-top) + var(--orders-header-h));
-    z-index: 1000;
+    position: static;
     background: #343a40;
   }
 
@@ -1666,23 +1848,26 @@ $deptOptions = [
   // ── Quick-tab helpers ────────────────────────────────────────────────────
   function qtabIsActive(array $tabParams): bool
   {
-    $filterKeys = ['status', 'exclude_status', 'source', 'country', 'payment', 'shipping', 'priority', 'date_from', 'date_to', 'worker', 'dept', 'cat', 'type', 'q', 'print_printer', 'print_material', 'print_finish'];
+    global $fExcludeStatuses;
+    $filterKeys = ['status', 'item_status', 'item_department', 'exclude_status', 'source', 'country', 'payment', 'shipping', 'priority', 'date_from', 'date_to', 'worker', 'dept', 'cat', 'type', 'q', 'print_printer', 'print_material', 'print_finish'];
     foreach ($tabParams as $k => $v) {
-      if (($_GET[$k] ?? '') !== $v)
+      $actualValue = $k === 'exclude_status' ? $fExcludeStatuses : ($_GET[$k] ?? '');
+      if ((string)$actualValue !== (string)$v)
         return false;
     }
-    if (empty($tabParams)) {
-      foreach ($filterKeys as $k) {
-        if (!empty($_GET[$k]))
-          return false;
+    foreach ($filterKeys as $k) {
+      if (array_key_exists($k, $tabParams)) {
+        continue;
       }
+      if (!empty($_GET[$k]))
+        return false;
     }
     return true;
   }
   function qtabUrl(array $tabParams): string
   {
     $current = $_GET;
-    foreach (['status', 'exclude_status', 'source', 'country', 'payment', 'shipping', 'priority', 'date_from', 'date_to', 'worker', 'dept', 'cat', 'type', 'q', 'print_printer', 'print_material', 'print_finish'] as $k) {
+    foreach (['status', 'item_status', 'item_department', 'exclude_status', 'source', 'country', 'payment', 'shipping', 'priority', 'date_from', 'date_to', 'worker', 'dept', 'cat', 'type', 'q', 'print_printer', 'print_material', 'print_finish'] as $k) {
       unset($current[$k]);
     }
     $qs = http_build_query(array_merge($current, $tabParams));
@@ -1690,42 +1875,95 @@ $deptOptions = [
   }
   // taby v hornej časti
   $quickTabs = [
-    /*['id' => 'all',         'label' => 'Všetky objednávky', 'params' => []],*/
-    ['id' => 'open_orders', 'label' => 'Open Orders', 'params' => ['exclude_status' => 'CANCELLED,PENDING,SHIPPED'], 'badge_key' => 'open_orders'],
-    ['id' => 'cnt_communication', 'label' => 'Communication', 'params' => ['status' => 'COMMUNICATION'], 'badge_key' => 'communication'],
-    [
-      'id' => 'draft_ready',
-      'label' => 'Draft Ready',
-      'params' => ['status' => 'DRAFT_READY'],
-      'badge_key' => 'draft_ready',
-      'badge_class' => 'badge-info'
-    ],
-    ['id' => 'ready_to_invoice', 'label' => 'Ready for Invoice', 'params' => ['status' => 'READY_TO_INVOICE'], 'badge_key' => 'ready_to_invoice', 'badge_class' => 'badge-success'],
-    ['id' => 'ready_to_ship', 'label' => 'Ready to Ship', 'params' => ['status' => 'READY_TO_SHIP'], 'badge_key' => 'ready_to_ship', 'badge_class' => 'badge-success'],
-    ['id' => 'pending', 'label' => '⏳ Pending', 'params' => ['status' => 'PENDING'], 'badge_key' => 'pending', 'badge_class' => 'badge-purple'],
-    // -- sem pridaj ďalšie taby --
+    ['id' => 'open_orders', 'label' => 'Open Orders', 'params' => ['exclude_status' => implode(',', $defaultHiddenOrderStatuses)], 'count' => $openOrdersCount, 'color' => '#6c757d', 'text_color' => ordersContrastColor('#6c757d')],
   ];
+  foreach (ordersGetOrderTabBarStatusDefinitions($conn, (int)$dpt) as $code => $meta) {
+    if (in_array($code, $defaultHiddenOrderStatuses, true)) {
+      continue;
+    }
+    $quickTabs[] = [
+      'id' => 'order_' . strtolower($code),
+      'label' => (string)($meta['label'] ?? $code),
+      'params' => ['status' => $code],
+      'count' => (int)($quickTabCounts[$code] ?? 0),
+      'color' => (string)($meta['color'] ?? '#6c757d'),
+      'text_color' => ordersContrastColor((string)($meta['color'] ?? '#6c757d')),
+    ];
+  }
+
+  $itemQuickTabs = [];
+  $itemQuickTabDefinitions = ordersGetItemTabBarStatusDefinitionsForPosition($conn, (int)$dpt);
+  $itemQuickTabDepartments = [];
+  foreach ($itemQuickTabDefinitions as $meta) {
+    $department = ordersNormalizeDepartmentCode((string)($meta['department'] ?? ''));
+    if ($department !== '') {
+      $itemQuickTabDepartments[$department] = true;
+    }
+  }
+  $showDepartmentInItemTabLabel = count($itemQuickTabDepartments) !== 1;
+
+  foreach ($itemQuickTabDefinitions as $meta) {
+    $department = ordersNormalizeDepartmentCode((string)($meta['department'] ?? ''));
+    $code = strtoupper(trim((string)($meta['code'] ?? '')));
+    if ($department === '' || $code === '') {
+      continue;
+    }
+
+    $itemQuickTabs[] = [
+      'id' => 'item_' . strtolower($department . '_' . $code),
+      'label' => ($showDepartmentInItemTabLabel ? $department . ' - ' : '') . (string)($meta['label'] ?? $code),
+      'params' => ['item_department' => $department, 'item_status' => $code, 'exclude_status' => implode(',', $defaultHiddenOrderStatuses)],
+      'count' => (int)($itemQuickTabCounts[$department][$code] ?? 0),
+      'color' => (string)($meta['color'] ?? '#6c757d'),
+      'text_color' => ordersContrastColor((string)($meta['color'] ?? '#6c757d')),
+    ];
+  }
+
+  $itemQuickTabGroupLabel = 'Item Statuses';
+  if (count($itemQuickTabDepartments) === 1) {
+    $onlyItemQuickTabDepartment = (string)array_key_first($itemQuickTabDepartments);
+    $itemQuickTabGroupLabel = $itemDepartmentLabels[$onlyItemQuickTabDepartment] ?? $onlyItemQuickTabDepartment;
+  }
+  $quickTabCount = count($quickTabs);
+  $quickTabRowsMedium = max(1, (int) ceil($quickTabCount / 8));
+  $quickTabRowsNarrow = max(1, (int) ceil($quickTabCount / 6));
+  $quickTabRowsSmall = max(1, (int) ceil($quickTabCount / 3));
+
+  $itemQuickTabCount = count($itemQuickTabs);
+  $itemQuickTabRows = max(1, (int) ceil($itemQuickTabCount / 12));
+  $itemQuickTabRowsMedium = max(1, (int) ceil($itemQuickTabCount / 6));
+  $itemQuickTabRowsSmall = max(1, (int) ceil($itemQuickTabCount / 3));
   ?>
 
-  <div class="orders-quicktabs">
-    <?php foreach ($quickTabs as $tab):
-      $isActive = qtabIsActive($tab['params']);
-      $url = qtabUrl($tab['params']);
-      $badgeHtml = '';
-
-      if (!empty($tab['badge_key'])) {
-        $cnt = (int) ($quickTabCounts[$tab['badge_key']] ?? 0);
-
-        if ($cnt > 0) {
-          $bc = htmlspecialchars($tab['badge_class'] ?? '');
-          $badgeHtml = '<span class="qtab-badge ' . $bc . '">' . $cnt . '</span>';
-        }
-      }
-      ?>
-      <a href="<?= htmlspecialchars($url) ?>" class="qtab <?= $isActive ? 'active' : '' ?>">
-        <?= htmlspecialchars($tab['label']) ?>   <?= $badgeHtml ?>
-      </a>
-    <?php endforeach; ?>
+  <div class="orders-tab-stack">
+    <div class="orders-quicktabs orders-overall-tabs"
+      style="--orders-overall-tab-rows-medium: <?= (int) $quickTabRowsMedium ?>; --orders-overall-tab-rows-narrow: <?= (int) $quickTabRowsNarrow ?>; --orders-overall-tab-rows-small: <?= (int) $quickTabRowsSmall ?>;"
+      aria-label="Overall order statuses">
+      <span class="orders-tab-row-label">Overall</span>
+      <?php foreach ($quickTabs as $tab): ?>
+        <a href="<?= htmlspecialchars(qtabUrl($tab['params'])) ?>"
+          class="qtab <?= qtabIsActive($tab['params']) ? 'active' : '' ?> <?= (int)$tab['count'] === 0 ? 'is-empty' : 'has-orders' ?>"
+          style="--status-color:<?= htmlspecialchars($tab['color'], ENT_QUOTES, 'UTF-8') ?>;--status-text-color:<?= htmlspecialchars($tab['text_color'], ENT_QUOTES, 'UTF-8') ?>">
+          <?= htmlspecialchars($tab['label']) ?>
+          <span class="qtab-badge"><?= (int)$tab['count'] ?></span>
+        </a>
+      <?php endforeach; ?>
+    </div>
+    <?php if ($itemQuickTabs): ?>
+      <div class="orders-quicktabs orders-item-tabs"
+        style="--orders-item-tab-rows: <?= (int) $itemQuickTabRows ?>; --orders-item-tab-rows-medium: <?= (int) $itemQuickTabRowsMedium ?>; --orders-item-tab-rows-small: <?= (int) $itemQuickTabRowsSmall ?>;"
+        aria-label="Department item statuses">
+        <span class="orders-tab-row-label"><?= htmlspecialchars($itemQuickTabGroupLabel) ?></span>
+        <?php foreach ($itemQuickTabs as $tab): ?>
+          <a href="<?= htmlspecialchars(qtabUrl($tab['params'])) ?>"
+            class="qtab <?= qtabIsActive($tab['params']) ? 'active' : '' ?> <?= (int)$tab['count'] === 0 ? 'is-empty' : 'has-orders' ?>"
+            style="--status-color:<?= htmlspecialchars($tab['color'], ENT_QUOTES, 'UTF-8') ?>;--status-text-color:<?= htmlspecialchars($tab['text_color'], ENT_QUOTES, 'UTF-8') ?>">
+            <?= htmlspecialchars($tab['label']) ?>
+            <span class="qtab-badge"><?= (int)$tab['count'] ?></span>
+          </a>
+        <?php endforeach; ?>
+      </div>
+    <?php endif; ?>
   </div>
 
   <div class="card-body">
@@ -1745,6 +1983,11 @@ $deptOptions = [
     $activeFilterBadges = [];
     if ($fStatus !== '')
       $activeFilterBadges[] = ['label' => 'Status', 'display' => str_replace('_', ' ', $fStatus)];
+    if ($fItemStatus !== '' && $fItemDepartment !== '')
+      $activeFilterBadges[] = [
+        'label' => $fItemDepartment . ' item status',
+        'display' => ordersGetStatusLabel($conn, 'item', $fItemStatus, $fItemDepartment),
+      ];
     if ($fSource !== '')
       $activeFilterBadges[] = ['label' => 'Source', 'display' => $fSource];
     if ($fPriority !== '')
@@ -1767,9 +2010,7 @@ $deptOptions = [
       $activeFilterBadges[] = ['label' => 'From', 'display' => $fDateFrom];
     if ($fDateTo !== '')
       $activeFilterBadges[] = ['label' => 'To', 'display' => $fDateTo];
-    if ($fDept === -1)
-      $activeFilterBadges[] = ['label' => 'Dept', 'display' => 'All Orders'];
-    elseif ($fDept > 0)
+    if ($fDept > 0)
       $activeFilterBadges[] = ['label' => 'Dept', 'display' => ($deptOptions[$fDept] ?? $fDept)];
     if ($fPrinter !== '')
       $activeFilterBadges[] = ['label' => '🖨️ Printer', 'display' => $fPrinter];
@@ -1786,7 +2027,7 @@ $deptOptions = [
     }
     function fActiveDept(int $val): string
     {
-      return $val !== 0 ? 'filter-active' : '';
+      return $val > 0 ? 'filter-active' : '';
     }
     ?>
 
@@ -1959,7 +2200,7 @@ $deptOptions = [
     // Zisti či je aktívny filter nastavený TABom — v takom prípade collapse NEOTVÁRAŤ
     $tabStatuses = [];
 
-    foreach ($quickTabs as $qt) {
+    foreach (array_merge($quickTabs, $itemQuickTabs) as $qt) {
       if (!empty($qt['params']['status'])) {
         $tabStatuses[] = strtoupper($qt['params']['status']);
       }
@@ -1971,6 +2212,11 @@ $deptOptions = [
         && isset($activeFilterBadges[0]['label'])
         && $activeFilterBadges[0]['label'] === 'Status'
         && in_array(strtoupper($fStatus), $tabStatuses, true)
+      )
+      || (
+        $fItemStatus !== ''
+        && $fItemDepartment !== ''
+        && count($activeFilterBadges) === 1
       )
       || (
         $fExcludeStatuses !== ''
@@ -1991,7 +2237,7 @@ $deptOptions = [
       && $fShipping === ''
       && $fDateFrom === ''
       && $fDateTo === ''
-      && $fDept === 0
+      && $fDept === -1
       && $fPrinter === ''
       && $fPrintMat === ''
       && $fPrintFin === ''
@@ -2272,7 +2518,7 @@ $deptOptions = [
               <i class="fas fa-search mr-1"></i>Search
             </button>
 
-            <a class="btn btn-secondary btn-sm" href="?page=orders&exclude_status=CANCELLED%2CPENDING%2CSHIPPED">
+            <a class="btn btn-secondary btn-sm" href="?page=orders&exclude_status=SHIPPED%2CCANCELLED%2CPENDING">
               <i class="fas fa-times mr-1"></i>Reset
             </a>
 
@@ -4156,7 +4402,7 @@ $deptOptions = [
     const baseTop = 50;
 
     const headerH = $('.orders-search-header').outerHeight() || 58;
-    const tabsH = $('.orders-quicktabs').outerHeight() || 42;
+    const tabsH = $('.orders-tab-stack').outerHeight() || 42;
     const toolbarH = $('.orders-toolbar').outerHeight() || 38;
 
     document.documentElement.style.setProperty('--orders-header-h', headerH + 'px');
@@ -4204,7 +4450,7 @@ $deptOptions = [
       updateOrdersStickyOffsets();
       forceOrdersTheadReflow();
     });
-    ['.orders-search-header', '.orders-quicktabs', '.orders-toolbar'].forEach(function (sel) {
+    ['.orders-search-header', '.orders-tab-stack', '.orders-toolbar'].forEach(function (sel) {
       const el = document.querySelector(sel);
       if (el) ordersStickyResizeObserver.observe(el);
     });

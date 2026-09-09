@@ -29,20 +29,43 @@
 </style>
 <?php 
 include 'sviatky.php'; 
-  session_start();
+  if (session_status() === PHP_SESSION_NONE && PHP_SAPI !== 'cli') {
+    session_start();
+  }
   ?>
 <body class="hold-transition skin-blue sidebar-mini">
 <div class="wrapper">
-<? $today = date('Y-m-d'); ?>
-<? $year = $_REQUEST['year']; ?>
+<?php
+$today = date('Y-m-d');
+$Year = isset($_REQUEST['year']) ? (int)$_REQUEST['year'] : (int)date('Y');
+$year = $Year;
+$detailEmployeeId = isset($_GET['eno']) ? (int)$_GET['eno'] : 0;
+$detailDate = $_GET['date'] ?? $today;
+if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', (string)$detailDate)) {
+  $detailDate = $today;
+}
 
-  <?php $redirect = $_SERVER['REQUEST_URI']; ?>
+$Month = isset($_GET['month']) ? (int)$_GET['month'] : (int)date('m', strtotime($detailDate));
+if ($Month < 1 || $Month > 12) {
+  $Month = (int)date('m', strtotime($detailDate));
+}
+$Month = str_pad((string)$Month, 2, '0', STR_PAD_LEFT);
+
+$ActiveDisp = $_GET['activedisp'] ?? 'attendance';
+if (!in_array($ActiveDisp, ['attendance', 'active', 'inactive', 'all'], true)) {
+  $ActiveDisp = 'attendance';
+}
+
+$redirect = $_SERVER['REQUEST_URI'] ?? '?page=attendance_detail&eno='.$detailEmployeeId.'&date='.$detailDate.'&year='.$Year.'&month='.$Month.'&activedisp='.$ActiveDisp;
+$_SERVER['REQUEST_URI'] = $_SERVER['REQUEST_URI'] ?? $redirect;
+?>
+
   <!-- Content Wrapper. Contains page content -->
 
     <!-- Content Header (Page header) -->
     <section class="content-header">
       <h1>
-        Detaily Dochádzky dňa <?php echo date('d.m.Y', strtotime($_GET['date'])); ?> 
+        Detaily Dochádzky dňa <?php echo date('d.m.Y', strtotime($detailDate)); ?> 
       </h1>     
     </section>
     <!-- Main content -->
@@ -76,7 +99,7 @@ include 'sviatky.php';
               <div class="box-tools pull-right">
                 <a href="#addnew" data-toggle="modal" class="btn btn-success btn-sm btn-flat"><i class="fa fa-plus"></i> Pridať</a>
                 <a href="#addovolenka" data-toggle="modal" class="btn btn-info btn-sm btn-flat"><i class="fa fa-plus"></i> Dovolenka / Maródka</a>
-                <a href="?page=calendar&eno=<?php echo $_GET['eno']; ?>&year=<?php echo $_GET['year']; ?>&month=<?php echo $_GET['month']; ?>&activedisp=<?php echo $_GET['activedisp']; ?>" class="btn btn-warning btn-sm btn-flat"><i class="fa fa-arrow-left"></i> Späť na prehľad</a>
+                <a href="?page=calendar&eno=<?php echo $detailEmployeeId; ?>&year=<?php echo $Year; ?>&month=<?php echo $Month; ?>&activedisp=<?php echo htmlspecialchars($ActiveDisp, ENT_QUOTES, 'UTF-8'); ?>" class="btn btn-warning btn-sm btn-flat"><i class="fa fa-arrow-left"></i> Späť na prehľad</a>
               </div>
             </div>
             <br /><br/>
@@ -97,10 +120,12 @@ include 'sviatky.php';
                 </thead>
                 <tbody>
                   <?php
-                    $sql = "SELECT *, employees.employee_id AS empid, ".$attdn_table.".id AS attid FROM ".$attdn_table." LEFT JOIN employees ON employees.id=".$attdn_table.".employee_id WHERE ".$attdn_table.".employee_id = '".$_GET['eno']."' AND ".$attdn_table.".date = '".$_GET['date']."' ORDER BY ".$attdn_table.".date DESC, ".$attdn_table.".time_in ASC";
+                    $detailDateSql = $conn->real_escape_string($detailDate);
+                    $sql = "SELECT *, employees.employee_id AS empid, ".$attdn_table.".id AS attid FROM ".$attdn_table." LEFT JOIN employees ON employees.id=".$attdn_table.".employee_id WHERE ".$attdn_table.".employee_id = '".$detailEmployeeId."' AND ".$attdn_table.".date = '".$detailDateSql."' ORDER BY ".$attdn_table.".date DESC, ".$attdn_table.".time_in ASC";
                     $query = $conn->query($sql);
                     while($row = $query->fetch_assoc()){ 
                       $rowClass = '';
+                      $status = '';
 
                       switch($row['movement']){
                           case 1: // Práca
@@ -116,13 +141,19 @@ include 'sviatky.php';
                               break;
                       }
                                                                
+                      if ($row['time_out'] === '23:59:59' && $row['date'] !== $today) {
+                        $status = ' <span class="badge badge-danger ml-1">Problém</span>';
+                      } elseif ($row['time_out'] === '23:59:59') {
+                        $status = ' <span class="badge badge-warning ml-1">Otvorené</span>';
+                      }
+
                       //$status = ($row['status'])?'<span class="label label-warning pull-right">ontime</span>':'<span class="label label-danger pull-right">late</span>';
                       echo "<tr class='".$rowClass."'>                                                  
                           <td>".date('M d, Y', strtotime($row['date']))."</td>
                           <td>".$row['empid']."</td>                          
                           <td>".$row['firstname'].' '.$row['lastname']."</td>
-                          <td>".date('H:i:s', strtotime($row['time_in'])).$status."</td>
-                          <td>".date('H:i:s', strtotime($row['time_out']))."</td>
+                          <td>".date('H:i:s', strtotime($row['time_in']))."</td>
+                          <td>".date('H:i:s', strtotime($row['time_out'])).$status."</td>
                           <td>";
                           SWITCH($row['movement']){
                             case 1: echo "Práca"; break;
@@ -175,7 +206,7 @@ function getRow(id){
   $.ajax({
     type: 'POST',   
     url: 'scripts/attendance_row.php',
-    data: {id:id,year:<?echo $_REQUEST['year'];?>},
+    data: {id:id,year:<?php echo (int)$Year; ?>},
     dataType: 'json',
     success: function(response){
       // Date: prefer tempusdominus if available, fallback to input value

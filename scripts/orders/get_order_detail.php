@@ -1007,6 +1007,7 @@ $r = $stmt->get_result();
 while ($x = $r->fetch_assoc())
   $cats[] = $x['code'];
 $stmt->close();
+$orderHasPlasticsCategory = in_array('PLASTICS', array_map('strtoupper', $cats), true);
 
 // --- addresses ---
 $stmt = $conn->prepare("SELECT type, name, company, company_id, street, city, zip, country, email, phone
@@ -1659,14 +1660,60 @@ function optionValue(array $data, array $keys): string
   return '';
 }
 
+function ebayItemNumberForItem(array $item): string
+{
+  $data = jsonDecodeAssocSafe((string) ($item['options_json'] ?? ''));
+
+  $itemNumber = optionValue($data, [
+    'item_number',
+    'Item number',
+    'item_id',
+    'Item ID',
+    'ebay_item_id',
+    'legacy_item_id'
+  ]);
+
+  if ($itemNumber !== '') {
+    return $itemNumber;
+  }
+
+  foreach (['sku', 'custom_label', 'title'] as $field) {
+    if (preg_match('/\b([13][0-9]{8,15})\b/', (string) ($item[$field] ?? ''), $m)) {
+      return $m[1];
+    }
+  }
+
+  return '';
+}
 
 // Generuje URL produktu podľa zdroja objednávky (SHOPTET, EBAY, atď.)
-function itemProductUrl(array $order, array $item): string
+function itemProductUrl(array $order, array $item, bool $forPlasticsDepartment = false): string
 {
   // Extrahuje zdroj, SKU a manuálnu URL z údajov
   $source = strtoupper((string) ($order['source_code'] ?? ''));
   $sku = trim((string) ($item['sku'] ?? ''));
   $manualUrl = trim((string) ($item['product_url'] ?? ''));
+  $isEbayOrder = strpos($source, 'EBAY') !== false;
+  $itemNumber = '';
+
+  if ($isEbayOrder) {
+    $itemNumber = ebayItemNumberForItem($item);
+
+    if ($forPlasticsDepartment && $itemNumber !== '') {
+      $orderNumber = trim((string) ($order['order_number'] ?? $order['external_order_id'] ?? ''));
+
+      if ($orderNumber !== '') {
+        // Plastics need the seller order detail; everyone else keeps the item listing.
+        if (strpos($itemNumber, '3') === 0) {
+          return 'https://www.ebay.com/sh/ord/details?orderid=' . rawurlencode($orderNumber);
+        }
+
+        if (strpos($itemNumber, '1') === 0) {
+          return 'https://www.ebay.de/mesh/ord/details?orderid=' . rawurlencode($orderNumber);
+        }
+      }
+    }
+  }
 
   // Ak je zadaná manuálna URL, použije sa
   if ($manualUrl !== '') {
@@ -1679,30 +1726,7 @@ function itemProductUrl(array $order, array $item): string
   }
 
   // Pre EBAY objednávky vytvorí link na základe čísla položky
-  if (strpos($source, 'EBAY') !== false) {
-    // Dekódovanie voliteľných parametrov z JSON
-    $data = jsonDecodeAssocSafe((string) ($item['options_json'] ?? ''));
-
-    // Hľadá číslo položky v rôznych možných kľúčoch
-    $itemNumber = optionValue($data, [
-      'item_number',
-      'Item number',
-      'item_id',
-      'Item ID',
-      'ebay_item_id',
-      'legacy_item_id'
-    ]);
-
-    // Ak sa nenašlo číslo, hľadaj ho v SKU, návestí alebo názve pomocou regex
-    if ($itemNumber === '') {
-      foreach (['sku', 'custom_label', 'title'] as $field) {
-        if (preg_match('/\b([13][0-9]{8,15})\b/', (string) ($item[$field] ?? ''), $m)) {
-          $itemNumber = $m[1];
-          break;
-        }
-      }
-    }
-
+  if ($isEbayOrder) {
     // Ak sa našlo číslo, vytvorí správny link podľa domény
     if ($itemNumber !== '') {
       // Položky začínajúce 3 = eBay UK
@@ -1719,7 +1743,6 @@ function itemProductUrl(array $order, array $item): string
 
   return '';
 }
-
 // --- order photos ---
 $orderPhotos = [];
 $photoTableExists = false;
@@ -4153,7 +4176,7 @@ ob_start();
                   </select>
                 </td>
                 <?php
-                $productUrl = itemProductUrl($order, $it);
+                $productUrl = itemProductUrl($order, $it, $dpt === 6 && $orderHasPlasticsCategory);
                 // --- Printing settings (stored in internal_options_json) ---
                 $internalOptRaw = (string) ($it['internal_options_json'] ?? '{}');
                 if (trim($internalOptRaw) === '')

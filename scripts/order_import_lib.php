@@ -1,7 +1,9 @@
 <?php
 
 declare(strict_types=1);
-session_start();
+if (session_status() === PHP_SESSION_NONE) {
+  session_start();
+}
 
 if (!function_exists('str_starts_with')) {
   function str_starts_with($haystack, $needle) {

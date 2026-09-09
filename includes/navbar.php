@@ -32,8 +32,8 @@ if (isset($conn) && $conn instanceof mysqli) {
 ?>
 <style>
   @media (min-width: 576px) {
-    .plastics-nav-dropdown:hover > .dropdown-menu,
-    .plastics-nav-dropdown:focus-within > .dropdown-menu {
+    .main-nav-dropdown:hover > .dropdown-menu,
+    .main-nav-dropdown:focus-within > .dropdown-menu {
       display: block;
       margin-top: 0;
     }
@@ -45,9 +45,26 @@ if (isset($conn) && $conn instanceof mysqli) {
       <li class="nav-item">
         <a class="nav-link" data-widget="pushmenu" href="#" role="button"><i class="fas fa-bars"></i></a>
       </li>
-      <li class="nav-item dropdown d-none d-sm-inline-block plastics-nav-dropdown">
+      <li class="nav-item d-none d-sm-inline-block">
+        <a href="?page=orders" class="nav-link">Production</a>
+      </li>
+      <li class="nav-item d-none d-sm-inline-block">
+        <a href="?page=custom_orders" class="nav-link">Custom</a>
+      </li>
+      <li class="nav-item dropdown d-none d-sm-inline-block main-nav-dropdown">
         <a href="#" class="nav-link dropdown-toggle" data-toggle="dropdown" role="button" aria-haspopup="true" aria-expanded="false">
-          Plastics
+          Dashboard
+        </a>
+        <div class="dropdown-menu">
+          <a href="?page=status_dashboard" class="dropdown-item">Order Status Dashboard</a>
+          <a href="?page=plastics_dashboard" class="dropdown-item">Warehouse Dashboard</a>
+          <a href="?page=orders_dashboard" class="dropdown-item">Orders Dashboard</a>
+          <a href="tv.php" class="dropdown-item">TV Dashboard</a>
+        </div>
+      </li>
+      <li class="nav-item dropdown d-none d-sm-inline-block main-nav-dropdown">
+        <a href="#" class="nav-link dropdown-toggle" data-toggle="dropdown" role="button" aria-haspopup="true" aria-expanded="false">
+          Warehouse
         </a>
         <div class="dropdown-menu">
           <a href="?page=inventory_report" class="dropdown-item">Plastics Inventory</a>
@@ -56,26 +73,26 @@ if (isset($conn) && $conn instanceof mysqli) {
         </div>
       </li>
       <li class="nav-item d-none d-sm-inline-block">
-        <a href="?page=shoptet_order_download" class="nav-link">Web Order Download</a>
-      </li>
-      <li class="nav-item d-none d-sm-inline-block">
-        <a href="?page=chat" class="nav-link">Chat</a>
-      </li>
-      <li class="nav-item d-none d-sm-inline-block">
-        <a href="?page=orders&exclude_status=CANCELLED%2CPENDING%2CSHIPPED" class="nav-link">Production</a>
-      </li>
-      <li class="nav-item d-none d-sm-inline-block">
-        <a href="?page=custom_orders" class="nav-link">Custom</a>
-      </li>
-      <li class="nav-item d-none d-sm-inline-block">
         <a href="?page=projects" class="nav-link">Projects</a>
       </li>
       <li class="nav-item d-none d-sm-inline-block">
-        <a href="?page=holidays" class="nav-link">Holidays</a>
+        <a href="?page=product_chart" class="nav-link">Model database</a>
+      </li>
+      <li class="nav-item d-none d-sm-inline-block">
+        <a href="?page=product_listing_catalog" class="nav-link">Product database</a>
       </li>
     </ul>
     <!-- Right navbar links -->
     <ul class="navbar-nav ml-auto">
+      <li class="nav-item d-none d-sm-inline-block">
+        <a href="?page=chat" class="nav-link">Chat</a>
+      </li>
+      <li class="nav-item d-none d-sm-inline-block">
+        <a href="?page=profile" class="nav-link">Attendance</a>
+      </li>
+      <li class="nav-item d-none d-sm-inline-block">
+        <a href="?page=holidays" class="nav-link">Holidays</a>
+      </li>
           <li class="nav-item dropdown">
         <a class="nav-link" data-toggle="dropdown" href="#" id="chatNotifToggle">
           <i class="far fa-comments"></i>

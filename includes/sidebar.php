@@ -12,6 +12,19 @@
 </style>
 <?php
 $currentPage = $_GET['page'] ?? '';
+$canSeeFullOrdersSection = intval($_SESSION['permission'] ?? 0) >= 300;
+$ordersSectionPages = ['kit_diss'];
+if ($canSeeFullOrdersSection) {
+  $ordersSectionPages = [
+    'kit_diss',
+    'plastics_orders_active',
+    'receive_supply',
+    'plastics_orders_sent',
+    'plastics_orders_all',
+    'order_prepare',
+    'intake_print'
+  ];
+}
 function isActive($page)
 {
   global $currentPage;
@@ -93,7 +106,9 @@ function isMenuOpen($pages = [])
             'employee',
             'controlls',
             'calendar',
+            'attendance_databases',
             'import_orders',
+            'shoptet_order_download',
             'status_policies',
             'vykaz_prace'
           ]) ? 'menu-open' : '' ?>">
@@ -123,6 +138,14 @@ function isMenuOpen($pages = [])
             echo '</a>';
             echo '</li>';
             echo '<li class="nav-item active">';
+            echo '<a href="' . basename($_SERVER['PHP_SELF']) . '?page=attendance_databases" class="nav-link  ' . isActive('attendance_databases') . '">';
+            echo '<i class="nav-icon fas fa-database"></i>';
+            echo '<p>';
+            echo 'Attendance DBs';
+            echo '</p>';
+            echo '</a>';
+            echo '</li>';
+            echo '<li class="nav-item active">';
             echo '<a href="' . basename($_SERVER['PHP_SELF']) . '?page=controlls" class="nav-link  ' . isActive('controlls') . '">';
             echo '<i class="nav-icon fas fa-th"></i>';
             //echo '<i class="nav-icon fas fa-cogs"></i>';
@@ -137,6 +160,14 @@ function isMenuOpen($pages = [])
             //echo '<i class="nav-icon fas fa-cogs"></i>';
             echo '<p>';
             echo 'Import Orders';
+            echo '</p>';
+            echo '</a>';
+            echo '</li>';
+            echo '<li class="nav-item active">';
+            echo '<a href="' . basename($_SERVER['PHP_SELF']) . '?page=shoptet_order_download" class="nav-link  ' . isActive('shoptet_order_download') . '">';
+            echo '<i class="fas fa-file-download nav-icon"></i>';
+            echo '<p>';
+            echo 'Shoptet Order Download';
             echo '</p>';
             echo '</a>';
             echo '</li>';
@@ -241,7 +272,7 @@ function isMenuOpen($pages = [])
               <? if ($path == 'tab') {
                 echo '<a href=pages/orders.php" class="nav-link">';
               } else {
-                echo '<a href="' . $path . '?page=orders&exclude_status=CANCELLED%2CPENDING%2CSHIPPED" class="nav-link ' . isActive('orders') . '">';
+                echo '<a href="' . $path . '?page=orders&exclude_status=SHIPPED%2CCANCELLED%2CPENDING" class="nav-link ' . isActive('orders') . '">';
               } ?><i
                 class="far fa fa-caret-right nav-icon"></i>
               <p>Open Orders</p></a>
@@ -425,21 +456,14 @@ function isMenuOpen($pages = [])
 
               </ul>
             </li>
-            <!-- 📝 ORDERS SECTION (kept untouched) -->
-            <li class="nav-item <?= isMenuOpen([
-              'kit_diss',
-              'plastics_orders_active',
-              'receive_supply',
-              'plastics_orders_sent',
-              'plastics_orders_all',
-              'order_prepare',
-              'intake_print'
-            ]) ? 'menu-open' : '' ?>">
+            <!-- 📝 ORDERS SECTION -->
+            <li class="nav-item <?= isMenuOpen($ordersSectionPages) ? 'menu-open' : '' ?>">
               <a href="#" class="nav-link" style="background-color:#2a3036;">
                 <i class="fas fa-list nav-icon" style="color:#17a2b8;"></i>
                 <p>Orders Section <i class="fas fa-angle-left right"></i></p>
               </a>
               <ul class="nav nav-treeview">
+                <?php if ($canSeeFullOrdersSection) { ?>
                 <li class="nav-item"><a href="?page=order_prepare" class="nav-link <?= isActive('order_prepare') ?>"><i
                       class="fas fa-clock nav-icon"></i>
                     <p> Prepare Order</p>
@@ -462,14 +486,17 @@ function isMenuOpen($pages = [])
                     class="nav-link <?= isActive('plastics_orders_all') ?>"><i class="fas fa-clipboard-list nav-icon"></i>
                     <p>All Orders</p>
                   </a></li>
+                <?php } ?>
                 <li class="nav-item"><a href="?page=kit_diss" class="nav-link <?= isActive('kit_diss') ?>"><i
                       class="fas fa-puzzle-piece nav-icon"></i>
                     <p>Kit Diss</p>
                   </a></li>
+                <?php if ($canSeeFullOrdersSection) { ?>
                 <li class="nav-item"><a href="?page=intake_print" class="nav-link <?= isActive('intake_print') ?>"><i
                       class="fas fa-print nav-icon"></i>
                     <p>Intake Print</p>
                   </a></li>
+                <?php } ?>
               </ul>
             </li>
             <!-- 🛠 MAINTENANCE -->

@@ -57,6 +57,7 @@ $pageLabels = [
   'intake_print_labels' => 'Print Intake Labels',
   'logs' => 'System Logs',
   'calendar' => 'Dochádzka',
+  'attendance_databases' => 'Databázy dochádzky',
   'orders_dashboard' => 'Orders Dashboard',
   'custom_orders' => 'Custom Orders',
   'cleanup' => 'Cleanup',

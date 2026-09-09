@@ -8,6 +8,8 @@
 </style>
 <section class="content">
     <?
+    $canEditItems = intval($_SESSION['permission'] ?? 0) >= 300;
+
     if(isset($_SESSION['error'])){
           echo "
             <div class='alert alert-danger alert-dismissible'>
@@ -139,13 +141,17 @@ foreach ($filterFields as $field) {
 
     echo '<tr>';
     echo '<td>
-      <div style="display:flex; gap:5px; align-items:center;">
+      <div style="display:flex; gap:5px; align-items:center;">';
+    if ($canEditItems) {
+        echo '
         <form method="get" action="index.php" style="margin:0; display:inline-block;">
           <input type="hidden" name="page" value="edit_item">
           <input type="hidden" name="id" value="'.$row['id'].'">
           <button type="submit" class="btn btn-sm btn-warning">Edit</button>
-        </form>
+        </form>';
+    }
 
+    echo '
         <button class="btn btn-sm btn-info viewDetailsBtn"
             data-barcode="'.htmlspecialchars($row['barcode']).'"
             data-brand="'.htmlspecialchars($row['brand']).'"

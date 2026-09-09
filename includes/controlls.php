@@ -1,4 +1,4 @@
-﻿<!-- pracovne departmenty -->
+<!-- pracovne departmenty -->
 <div class="container-fluid">
   <div class="row">
     <div class="col-md-6">
@@ -574,7 +574,11 @@
   }
   [$currentStatusScope, $currentStatusDepartment] = array_pad(explode('|', $currentStatusGroup, 2), 2, '');
   $currentStatusDepartmentOrNull = $currentStatusDepartment !== '' ? $currentStatusDepartment : null;
+  $statusDefinitionTabBarSelect = statusDefinitionHasTabBarColumn($conn) ? 'tab_bar' : 'active AS tab_bar';
   $statusTargetOptions = statusDefinitionAllowedTargetKeys($currentStatusDepartmentOrNull);
+  $statusTabBarPositionOptions = statusDefinitionFetchPositionOptions($conn);
+  $statusDefaultTabBarPositionIds = statusDefinitionDefaultTabBarPositionIds($conn, $currentStatusScope, $currentStatusDepartmentOrNull);
+  $statusTabBarPositionsByDefinition = statusDefinitionFetchTabBarPositionsByDefinition($conn);
   $statusTargetsByDefinition = [];
   $statusTargetResult = $conn->query("SELECT status_definition_id, target_type, subcategory_code FROM status_definition_targets ORDER BY target_type, subcategory_code");
   if ($statusTargetResult instanceof mysqli_result) {
@@ -694,6 +698,10 @@
       min-width: 110px;
     }
 
+    .settings-compact-card .status-definitions-table .status-tabbar-positions-cell {
+      min-width: 220px;
+    }
+
     .settings-compact-card .status-definitions-table td:last-child,
     .settings-compact-card .product-spec-options-table td:last-child {
       white-space: nowrap;
@@ -790,13 +798,15 @@
                 <th style="background-color:gray; width:85px;">Order</th>
                 <th style="background-color:gray; min-width:180px;">Applies To</th>
                 <th style="background-color:gray; width:75px;">Active</th>
+                <th style="background-color:gray; width:80px;">Tab Bar</th>
+                <th style="background-color:gray; min-width:220px;">Tab Bar Applies To</th>
                 <th style="background-color:gray; width:180px;">Tools</th>
               </tr>
             </thead>
             <tbody>
               <?php
               $stmt = $conn->prepare("
-                SELECT id, scope, department, code, label, color, sort_order, active
+                SELECT id, scope, department, code, label, color, sort_order, active, $statusDefinitionTabBarSelect
                 FROM status_definitions
                 WHERE scope = ?
                   AND ((? IS NULL AND department IS NULL) OR department = ?)
@@ -814,6 +824,17 @@
                   $rowTargetLabels = [];
                   foreach ($rowTargets as $targetKey) {
                     $rowTargetLabels[] = $statusTargetOptions[$targetKey] ?? $targetKey;
+                  }
+                  $rowTabBarPositionIds = statusDefinitionNormalizeTabBarPositionIds(
+                    $conn,
+                    $statusTabBarPositionsByDefinition[(int)$row['id']]
+                      ?? statusDefinitionDefaultTabBarPositionIds($conn, (string)$row['scope'], $row['department'])
+                  );
+                  $rowTabBarPositionLabels = [];
+                  foreach ($rowTabBarPositionIds as $positionId) {
+                    if (isset($statusTabBarPositionOptions[$positionId])) {
+                      $rowTabBarPositionLabels[] = $statusTabBarPositionOptions[$positionId];
+                    }
                   }
                   ?>
                   <tr data-id="<?= (int) $row['id']; ?>"
@@ -834,6 +855,10 @@
                       <?= $row['scope'] === 'item' ? htmlspecialchars(implode(', ', $rowTargetLabels), ENT_QUOTES, 'UTF-8') : '&mdash;'; ?>
                     </td>
                     <td class="status-active-cell"><?= ((int) $row['active'] === 1 ? 'Yes' : 'No'); ?></td>
+                    <td class="status-tabbar-cell"><?= ((int) $row['tab_bar'] === 1 ? 'Yes' : 'No'); ?></td>
+                    <td class="status-tabbar-positions-cell" data-tabbar-positions="<?= htmlspecialchars(json_encode($rowTabBarPositionIds, JSON_UNESCAPED_UNICODE), ENT_QUOTES, 'UTF-8'); ?>">
+                      <?= $rowTabBarPositionLabels ? htmlspecialchars(implode(', ', $rowTabBarPositionLabels), ENT_QUOTES, 'UTF-8') : '&mdash;'; ?>
+                    </td>
                     <td>
                       <button class="btn bg-gradient-primary btn-sm edit-status-definition"><i class="fa fa-edit"></i>
                         Edit</button>
@@ -1698,6 +1723,8 @@
 
       const statusGroupLabels = <?= json_encode($statusDropdownGroups, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES); ?>;
       const statusTargetLabels = <?= json_encode($statusTargetOptions, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES); ?>;
+      const statusTabBarPositionLabels = <?= json_encode($statusTabBarPositionOptions, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES); ?>;
+      const statusDefaultTabBarPositionIds = <?= json_encode(array_values($statusDefaultTabBarPositionIds), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES); ?>.map(String);
 
       function escapeHtml(value) {
         return String(value || '')
@@ -1738,7 +1765,51 @@
       function renderStatusTargetsCell(targets, isItem) {
         if (!isItem) return '&mdash;';
         const normalized = Array.isArray(targets) && targets.length ? targets : ['ALL'];
-        return normalized.map(function (key) { return statusTargetLabels[key] || key; }).join(', ');
+        return normalized.map(function (key) {
+          return escapeHtml(statusTargetLabels[key] || key);
+        }).join(', ');
+      }
+
+      function normalizeTabBarPositionIds(positionIds) {
+        const raw = Array.isArray(positionIds) ? positionIds : [];
+        const seen = new Set();
+
+        return raw.map(String).filter(function (id) {
+          if (!Object.prototype.hasOwnProperty.call(statusTabBarPositionLabels, id) || seen.has(id)) {
+            return false;
+          }
+          seen.add(id);
+          return true;
+        });
+      }
+
+      function buildStatusTabBarPositionOptions(selected) {
+        const selectedIds = normalizeTabBarPositionIds(selected);
+        const selectedSet = new Set(selectedIds.length ? selectedIds : statusDefaultTabBarPositionIds);
+        return Object.keys(statusTabBarPositionLabels).map(function (id) {
+          return `<option value="${escapeHtml(id)}" ${selectedSet.has(id) ? 'selected' : ''}>${escapeHtml(statusTabBarPositionLabels[id])}</option>`;
+        }).join('');
+      }
+
+      function selectedTabBarPositions($select) {
+        return normalizeTabBarPositionIds($select.val() || []);
+      }
+
+      function readStoredTabBarPositions($cell) {
+        let positionIds = $cell.data('tabbar-positions');
+        if (typeof positionIds === 'string') {
+          try { positionIds = JSON.parse(positionIds); } catch (e) { positionIds = []; }
+        }
+        positionIds = normalizeTabBarPositionIds(positionIds);
+        return positionIds.length ? positionIds : statusDefaultTabBarPositionIds.slice();
+      }
+
+      function renderStatusTabBarPositionsCell(positionIds) {
+        const normalized = normalizeTabBarPositionIds(positionIds);
+        if (!normalized.length) return '&mdash;';
+        return normalized.map(function (id) {
+          return escapeHtml(statusTabBarPositionLabels[id] || id);
+        }).join(', ');
       }
 
       $('.status-definition-group-filter').on('change', function () {
@@ -1771,6 +1842,13 @@
               </select>
             </td>
             <td>
+              <select class="form-control form-control-sm new-status-tabbar">
+                <option value="1">Yes</option>
+                <option value="0" selected>No</option>
+              </select>
+            </td>
+            <td><select multiple size="5" class="form-control form-control-sm new-status-tabbar-positions">${buildStatusTabBarPositionOptions(statusDefaultTabBarPositionIds)}</select></td>
+            <td>
               <button class="btn bg-gradient-success btn-sm confirm-status-definition-add"><i class="fa fa-check"></i> Confirm</button>
               <button class="btn bg-gradient-secondary btn-sm cancel-status-definition-add"><i class="fa fa-times"></i> Cancel</button>
             </td>
@@ -1791,11 +1869,17 @@
         const color = $row.find('.new-status-color').val().trim();
         const sortOrder = parseInt($row.find('.new-status-sort').val(), 10) || 0;
         const active = parseInt($row.find('.new-status-active').val(), 10) || 0;
+        const tabBar = parseInt($row.find('.new-status-tabbar').val(), 10) || 0;
         const isItem = isItemStatusGroup(groupKey);
         const targets = isItem ? normalizeSelectedTargets($row.find('.new-status-targets')) : [];
+        const tabBarPositions = selectedTabBarPositions($row.find('.new-status-tabbar-positions'));
 
         if (code === '' || label === '') {
           alert('Code and label are required.');
+          return;
+        }
+        if (tabBar === 1 && tabBarPositions.length === 0) {
+          alert('Select at least one Tab Bar Applies To position.');
           return;
         }
 
@@ -1803,13 +1887,14 @@
           url: 'scripts/settings/insert_status_definition.php',
           method: 'POST',
           dataType: 'json',
-          data: { group_key: groupKey, code: code, label: label, color: color, sort_order: sortOrder, targets: targets, active: active },
+          data: { group_key: groupKey, code: code, label: label, color: color, sort_order: sortOrder, targets: targets, active: active, tab_bar: tabBar, tab_bar_positions: tabBarPositions },
           success: function (data) {
             if (!data || !data.ok) {
               alert(data && data.error ? data.error : 'Insert failed.');
               return;
             }
             const groupName = statusGroupLabels[groupKey] || groupKey;
+            const savedTabBarPositions = normalizeTabBarPositionIds(data.tab_bar_positions || tabBarPositions);
             $row.replaceWith(`
               <tr data-id="${data.id}" data-group-key="${escapeHtml(groupKey)}">
                 <td>${data.id}</td>
@@ -1818,8 +1903,10 @@
                 <td class="status-label-cell">${escapeHtml(label)}</td>
                 <td class="status-color-cell">${renderStatusColorCell(color)}</td>
                 <td class="status-sort-cell">${sortOrder}</td>
-                <td class="status-targets-cell" data-targets="${escapeHtml(JSON.stringify(targets))}">${escapeHtml(renderStatusTargetsCell(targets, isItem))}</td>
+                <td class="status-targets-cell" data-targets="${escapeHtml(JSON.stringify(targets))}">${renderStatusTargetsCell(targets, isItem)}</td>
                 <td class="status-active-cell">${active === 1 ? 'Yes' : 'No'}</td>
+                <td class="status-tabbar-cell">${tabBar === 1 ? 'Yes' : 'No'}</td>
+                <td class="status-tabbar-positions-cell" data-tabbar-positions="${escapeHtml(JSON.stringify(savedTabBarPositions))}">${renderStatusTabBarPositionsCell(savedTabBarPositions)}</td>
                 <td>
                   <button class="btn bg-gradient-primary btn-sm edit-status-definition"><i class="fa fa-edit"></i> Edit</button>
                   <button class="btn bg-gradient-success btn-sm save-status-definition" style="display:none;"><i class="fa fa-save"></i> Save</button>
@@ -1838,6 +1925,7 @@
         const pickerColor = normalizeStatusColorValue(color);
         const sortOrder = $row.find('.status-sort-cell').text().trim();
         const active = $row.find('.status-active-cell').text().trim() === 'Yes' ? '1' : '0';
+        const tabBar = $row.find('.status-tabbar-cell').text().trim() === 'Yes' ? '1' : '0';
         const groupKey = String($row.data('group-key') || '');
         const isItem = isItemStatusGroup(groupKey);
         let targets = $row.find('.status-targets-cell').data('targets');
@@ -1845,6 +1933,7 @@
           try { targets = JSON.parse(targets); } catch (e) { targets = ['ALL']; }
         }
         if (!Array.isArray(targets) || !targets.length) targets = ['ALL'];
+        const tabBarPositions = readStoredTabBarPositions($row.find('.status-tabbar-positions-cell'));
 
         $row.find('.status-code-cell').html(`<input type="text" class="form-control form-control-sm status-code-input" value="${escapeHtml(code)}">`);
         $row.find('.status-label-cell').html(`<input type="text" class="form-control form-control-sm status-label-input" value="${escapeHtml(label)}">`);
@@ -1858,6 +1947,12 @@
             <option value="1" ${active === '1' ? 'selected' : ''}>Yes</option>
             <option value="0" ${active === '0' ? 'selected' : ''}>No</option>
           </select>`);
+        $row.find('.status-tabbar-cell').html(`
+          <select class="form-control form-control-sm status-tabbar-input">
+            <option value="1" ${tabBar === '1' ? 'selected' : ''}>Yes</option>
+            <option value="0" ${tabBar === '0' ? 'selected' : ''}>No</option>
+          </select>`);
+        $row.find('.status-tabbar-positions-cell').html(`<select multiple size="5" class="form-control form-control-sm status-tabbar-positions-input">${buildStatusTabBarPositionOptions(tabBarPositions)}</select>`);
 
         $(this).hide();
         $row.find('.save-status-definition').show();
@@ -1871,12 +1966,18 @@
         const color = $row.find('.status-color-input').val().trim();
         const sortOrder = parseInt($row.find('.status-sort-input').val(), 10) || 0;
         const active = parseInt($row.find('.status-active-input').val(), 10) || 0;
+        const tabBar = parseInt($row.find('.status-tabbar-input').val(), 10) || 0;
         const groupKey = String($row.data('group-key') || '');
         const isItem = isItemStatusGroup(groupKey);
         const targets = isItem ? normalizeSelectedTargets($row.find('.status-targets-input')) : [];
+        const tabBarPositions = selectedTabBarPositions($row.find('.status-tabbar-positions-input'));
 
         if (!id || code === '' || label === '') {
           alert('Code and label are required.');
+          return;
+        }
+        if (tabBar === 1 && tabBarPositions.length === 0) {
+          alert('Select at least one Tab Bar Applies To position.');
           return;
         }
 
@@ -1884,18 +1985,24 @@
           url: 'scripts/settings/update_status_definition.php',
           method: 'POST',
           dataType: 'json',
-          data: { id: id, code: code, label: label, color: color, sort_order: sortOrder, targets: targets, active: active },
+          data: { id: id, code: code, label: label, color: color, sort_order: sortOrder, targets: targets, active: active, tab_bar: tabBar, tab_bar_positions: tabBarPositions },
           success: function (data) {
             if (!data || !data.ok) {
               alert(data && data.error ? data.error : 'Save failed.');
               return;
             }
+            const savedTabBarPositions = normalizeTabBarPositionIds(data.tab_bar_positions || tabBarPositions);
             $row.find('.status-code-cell').text(code);
             $row.find('.status-label-cell').text(label);
             $row.find('.status-color-cell').html(renderStatusColorCell(color));
             $row.find('.status-sort-cell').text(sortOrder);
-            $row.find('.status-targets-cell').attr('data-targets', JSON.stringify(targets)).data('targets', targets).text(renderStatusTargetsCell(targets, isItem));
+            $row.find('.status-targets-cell').attr('data-targets', JSON.stringify(targets)).data('targets', targets).html(renderStatusTargetsCell(targets, isItem));
             $row.find('.status-active-cell').text(active === 1 ? 'Yes' : 'No');
+            $row.find('.status-tabbar-cell').text(tabBar === 1 ? 'Yes' : 'No');
+            $row.find('.status-tabbar-positions-cell')
+              .attr('data-tabbar-positions', JSON.stringify(savedTabBarPositions))
+              .data('tabbar-positions', savedTabBarPositions)
+              .html(renderStatusTabBarPositionsCell(savedTabBarPositions));
             $row.find('.save-status-definition').hide();
             $row.find('.edit-status-definition').show();
           }
