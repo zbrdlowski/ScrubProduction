@@ -13,6 +13,10 @@ if ($orderId <= 0) {
 }
 
 try {
+  $order = customOrdersGetOrder($conn, $orderId);
+  if ($order && (int) ($order['production_order_id'] ?? 0) > 0) {
+    throw new RuntimeException('Official number cannot be changed after export to Production.');
+  }
   $number = customOrdersAssignOfficialNumber($conn, $orderId, $prefix, $userId);
   customOrdersFlash('success', 'Official number assigned: ' . $number);
 } catch (Throwable $e) {

@@ -12,7 +12,18 @@
 </style>
 <?php
 $currentPage = $_GET['page'] ?? '';
-$canSeeFullOrdersSection = intval($_SESSION['permission'] ?? 0) >= 300;
+$sidebarPermission = intval($_SESSION['permission'] ?? 0);
+$sidebarUserId = intval($_SESSION['user_id'] ?? 0);
+$canSeeFullOrdersSection = $sidebarPermission >= 300;
+$canSeeRestrictedAdminItems = $sidebarPermission === 900 || in_array($sidebarUserId, [3, 5], true);
+$canSeeStandardAdminItems = $sidebarPermission > 300;
+$adminMenuPages = [];
+if ($canSeeRestrictedAdminItems) {
+  $adminMenuPages = array_merge($adminMenuPages, ['employee', 'calendar', 'attendance_databases', 'vykaz_prace']);
+}
+if ($canSeeStandardAdminItems) {
+  $adminMenuPages = array_merge($adminMenuPages, ['controlls', 'import_orders', 'shoptet_order_download', 'status_policies']);
+}
 $ordersSectionPages = ['kit_diss'];
 if ($canSeeFullOrdersSection) {
   $ordersSectionPages = [
@@ -100,18 +111,9 @@ function isMenuOpen($pages = [])
           'import_orders'
         ]) ? 'menu-open' : '' ?>">
           <?
-          if ($_SESSION['permission'] > 300) {
+          if ($canSeeRestrictedAdminItems || $canSeeStandardAdminItems) {
             ?>
-          <li class="nav-item <?= isMenuOpen([
-            'employee',
-            'controlls',
-            'calendar',
-            'attendance_databases',
-            'import_orders',
-            'shoptet_order_download',
-            'status_policies',
-            'vykaz_prace'
-          ]) ? 'menu-open' : '' ?>">
+          <li class="nav-item <?= isMenuOpen($adminMenuPages) ? 'menu-open' : '' ?>">
             <?
             echo ' <a href="#" class="nav-link"style="background-color:#2a3036;">';
             echo '<i class="nav-icon fas fa-user-secret" ></i>';
@@ -121,6 +123,7 @@ function isMenuOpen($pages = [])
             echo '</p>';
             echo ' </a>';
             echo '<ul class="nav nav-treeview">';
+            if ($canSeeRestrictedAdminItems) {
             echo '<li class="nav-item">';
             echo '<a href="' . basename($_SERVER['PHP_SELF']) . '?page=employee" class="nav-link  ' . isActive('employee') . '">';
             echo '<i class="nav-icon fas fa-users"></i>';
@@ -145,6 +148,8 @@ function isMenuOpen($pages = [])
             echo '</p>';
             echo '</a>';
             echo '</li>';
+            }
+            if ($canSeeStandardAdminItems) {
             echo '<li class="nav-item active">';
             echo '<a href="' . basename($_SERVER['PHP_SELF']) . '?page=controlls" class="nav-link  ' . isActive('controlls') . '">';
             echo '<i class="nav-icon fas fa-th"></i>';
@@ -179,6 +184,8 @@ function isMenuOpen($pages = [])
             echo '</p>';
             echo '</a>';
             echo '</li>';
+            }
+            if ($canSeeRestrictedAdminItems) {
             echo '<li class="nav-item active">';
             echo '<a href="' . basename($_SERVER['PHP_SELF']) . '?page=vykaz_prace" class="nav-link  ' . isActive('vykaz_prace') . '">';
             echo '<i class="fas fa-file-invoice nav-icon"></i>';
@@ -187,6 +194,7 @@ function isMenuOpen($pages = [])
             echo '</p>';
             echo '</a>';
             echo '</li>';
+            }
             echo ' </ul>';
             echo '</li>';
             //echo ' </ul>';      

@@ -56,14 +56,19 @@ $customOrderTabs = [
   'lead' => ['label' => 'Lead', 'status' => 'LEAD'],
   'open_so' => ['label' => 'Open SO'],
   'deposit_paid' => ['label' => 'Deposit Paid', 'status' => 'DEPOSIT_PAID'],
+  'draft_x' => ['label' => 'Draft ✗', 'status' => 'DRAFT_X', 'color' => '#ff1f1f'],
+  'draft_ad_changes' => ['label' => 'Draft Ad.changes', 'status' => 'DRAFT_AD_CHANGES', 'color' => '#d7df00'],
+  'draft_ready' => ['label' => 'Draft Ready', 'statuses' => ['DRAFT_READY', 'DRAFT_READY_NOTES'], 'color' => '#d42aff'],
+  'draft_sent' => ['label' => 'Draft Sent', 'status' => 'DRAFT_SENT', 'color' => '#24a44f'],
   'contact_customer' => ['label' => 'Contact Customer', 'status' => 'CONTACT_CUSTOMER'],
   'customer_contacted' => ['label' => 'Customer Contacted', 'status' => 'CUSTOMER_CONTACTED'],
 ];
 $customOrderTabSets = [
   ['all', 'lead', 'open_so', 'deposit_paid'],
+  ['draft_x', 'draft_ad_changes', 'draft_ready', 'draft_sent'],
   ['contact_customer', 'customer_contacted'],
 ];
-$customOrderDraftTabCodes = ['DRAFT_✗', 'DRAFT_AD_CHANGES', 'DRAFT_READY', 'DRAFT_SENT'];
+$customOrderDraftTabCodes = ['DRAFT_X', 'DRAFT_AD_CHANGES', 'DRAFT_READY', 'DRAFT_SENT'];
 $customOrderComplexityOptions = [
   1 => 'Standard',
   2 => 'Simple',
@@ -107,6 +112,19 @@ if (!isset($customOrderTabs[$tabFilter])) {
   $tabFilter = 'all';
 }
 $draftStatusFilter = strtoupper(trim((string) ($_GET['draft_status'] ?? '')));
+$customOrderLegacyDraftTabMap = [
+  'DRAFT' => 'draft_x',
+  'DRAFT_✗' => 'draft_x',
+  'DRAFT_X' => 'draft_x',
+  'DRAFT_AD_CHANGES' => 'draft_ad_changes',
+  'DRAFT_READY' => 'draft_ready',
+  'DRAFT_READY_NOTES' => 'draft_ready',
+  'DRAFT_SENT' => 'draft_sent',
+];
+if ($draftStatusFilter !== '' && isset($customOrderLegacyDraftTabMap[$draftStatusFilter])) {
+  $tabFilter = $customOrderLegacyDraftTabMap[$draftStatusFilter];
+  $draftStatusFilter = '';
+}
 $query = trim((string) ($_GET['q'] ?? ''));
 $difficultyFilter = (int) ($_GET['difficulty'] ?? 0);
 if (!isset($customOrderComplexityOptions[$difficultyFilter])) {
@@ -231,12 +249,26 @@ try {
     $where[] = "TRIM(COALESCE(co.official_order_number, '')) <> '' AND co.status NOT IN ('LEAD', 'EXPORTED', 'CANCELLED', 'DEAD') AND COALESCE(co.production_order_id, 0) <= 0";
   } else {
     $activeTabMeta = $customOrderTabs[$tabFilter] ?? [];
-    $tabStatus = strtoupper(trim((string) ($activeTabMeta['status'] ?? '')));
-    if ($tabStatus !== '') {
-      $where[] = "co.status = '" . $conn->real_escape_string($tabStatus) . "'";
+    $tabStatuses = [];
+    if (!empty($activeTabMeta['statuses']) && is_array($activeTabMeta['statuses'])) {
+      $tabStatuses = array_values(array_filter(array_map(static function ($status): string {
+        return strtoupper(trim((string) $status));
+      }, $activeTabMeta['statuses'])));
+    } else {
+      $tabStatus = strtoupper(trim((string) ($activeTabMeta['status'] ?? '')));
+      if ($tabStatus !== '') {
+        $tabStatuses[] = $tabStatus;
+      }
     }
-  }
-  $sql = "
+    if (count($tabStatuses) === 1) {
+      $where[] = "co.status = '" . $conn->real_escape_string($tabStatuses[0]) . "'";
+    } elseif (count($tabStatuses) > 1) {
+      $safeTabStatuses = array_map(static function (string $status) use ($conn): string {
+        return "'" . $conn->real_escape_string($status) . "'";
+      }, $tabStatuses);
+      $where[] = 'co.status IN (' . implode(',', $safeTabStatuses) . ')';
+    }
+  }  $sql = "
     SELECT
       co.*,
       TRIM(CONCAT_WS(' ', eo.firstname, eo.lastname)) AS owner_name,
@@ -275,7 +307,7 @@ try {
   if ($where) {
     $sql .= ' WHERE ' . implode(' AND ', $where);
   }
-  $sql .= ' ORDER BY co.updated_at DESC, co.id DESC LIMIT 300';
+  $sql .= ' ORDER BY co.created_at ASC, co.id ASC LIMIT 300';
   $res = $conn->query($sql);
   if (!$res) {
     throw new RuntimeException('Custom orders list query failed: ' . $conn->error);
@@ -335,6 +367,10 @@ try {
       COALESCE(SUM(CASE WHEN co.status = 'LEAD' THEN 1 ELSE 0 END), 0) AS lead_count,
       COALESCE(SUM(CASE WHEN TRIM(COALESCE(co.official_order_number, '')) <> '' AND co.status NOT IN ('LEAD', 'EXPORTED', 'CANCELLED', 'DEAD') AND COALESCE(co.production_order_id, 0) <= 0 THEN 1 ELSE 0 END), 0) AS open_so_count,
       COALESCE(SUM(CASE WHEN co.status = 'DEPOSIT_PAID' THEN 1 ELSE 0 END), 0) AS deposit_paid_count,
+      COALESCE(SUM(CASE WHEN co.status = 'DRAFT_X' THEN 1 ELSE 0 END), 0) AS draft_x_count,
+      COALESCE(SUM(CASE WHEN co.status = 'DRAFT_AD_CHANGES' THEN 1 ELSE 0 END), 0) AS draft_ad_changes_count,
+      COALESCE(SUM(CASE WHEN co.status IN ('DRAFT_READY', 'DRAFT_READY_NOTES') THEN 1 ELSE 0 END), 0) AS draft_ready_count,
+      COALESCE(SUM(CASE WHEN co.status = 'DRAFT_SENT' THEN 1 ELSE 0 END), 0) AS draft_sent_count,
       COALESCE(SUM(CASE WHEN co.status = 'CONTACT_CUSTOMER' THEN 1 ELSE 0 END), 0) AS contact_customer_count,
       COALESCE(SUM(CASE WHEN co.status = 'CUSTOMER_CONTACTED' THEN 1 ELSE 0 END), 0) AS customer_contacted_count
     FROM custom_orders co
@@ -345,6 +381,10 @@ try {
     $tabCounts['lead'] = (int) ($row['lead_count'] ?? 0);
     $tabCounts['open_so'] = (int) ($row['open_so_count'] ?? 0);
     $tabCounts['deposit_paid'] = (int) ($row['deposit_paid_count'] ?? 0);
+    $tabCounts['draft_x'] = (int) ($row['draft_x_count'] ?? 0);
+    $tabCounts['draft_ad_changes'] = (int) ($row['draft_ad_changes_count'] ?? 0);
+    $tabCounts['draft_ready'] = (int) ($row['draft_ready_count'] ?? 0);
+    $tabCounts['draft_sent'] = (int) ($row['draft_sent_count'] ?? 0);
     $tabCounts['contact_customer'] = (int) ($row['contact_customer_count'] ?? 0);
     $tabCounts['customer_contacted'] = (int) ($row['customer_contacted_count'] ?? 0);
   }
@@ -669,7 +709,7 @@ function customOrderHelpMap(string $lang = 'sk'): array
     'contact_autocomplete' => 'Zadaj aspon 2 znaky z nicku, mena, firmy, emailu, telefonu alebo adresy. Vyber ulozeny kontakt a cely formular sa doplni automaticky.',
     'billing_address' => 'Fakturacne udaje. Pri znamom dealerovi staci zacat pisat do lubovolneho pola a vybrat ho z ponuky.',
     'shipping_address' => 'Adresa realneho dorucenia. Moze byt ina ako fakturacna; tato adresa sa pouzije pri exporte a doprave.',
-    'draft_queues' => 'Pocet kusov v jednotlivych draft stavoch. Kliknutim zobrazis objednavky, ktore obsahuju item v danom stave.',
+    'draft_queues' => 'Pocet objednavok v jednotlivych draft stavoch podla overall statusu objednavky.',
     'list_order_number' => 'Oficialne cislo objednavky a pod nim interny kod leadu.',
     'list_customer' => 'Meno zakaznika alebo firmy z hlavicky custom objednavky.',
     'list_nick' => 'Nick zakaznika na komunikacnej platforme.',
@@ -794,7 +834,7 @@ function customOrderHelpMap(string $lang = 'sk'): array
     'contact_autocomplete' => 'Type at least 2 characters from a nickname, name, company, email, phone, or address. Select a saved contact to fill the whole form.',
     'billing_address' => 'Billing details. For a known dealer, start typing in any field and select the saved profile.',
     'shipping_address' => 'Actual delivery address. It may differ from billing and is used for export and shipping.',
-    'draft_queues' => 'Number of items in each draft state. Click a badge to show orders containing an item in that state.',
+    'draft_queues' => 'Number of orders in each draft state by the overall order status.',
     'list_order_number' => 'Official order number with the internal lead code below it.',
     'list_customer' => 'Customer or company name stored in the custom-order header.',
     'list_nick' => 'Customer nickname on the communication platform.',
@@ -894,6 +934,16 @@ function customOrderFlagIcon(string $countryCode, string $label): string
     . 'style="width:18px;height:13px;object-fit:cover;border-radius:2px;vertical-align:-2px;box-shadow:0 0 0 1px rgba(255,255,255,.18);">';
 }
 
+function customOrderCustomerDisplay(array $row): string
+{
+  foreach (['customer_name', 'social_handle', 'shipping_name', 'billing_name', 'customer_email', 'shipping_email', 'billing_email', 'customer_phone', 'shipping_phone'] as $field) {
+    $value = trim((string) ($row[$field] ?? ''));
+    if ($value !== '') {
+      return $value;
+    }
+  }
+  return 'Unnamed lead';
+}
 function customOrderTruncate(string $value, int $limit = 36): string
 {
   $value = trim($value);
@@ -1270,16 +1320,29 @@ if (!$customOrdersDetailRequest) {
     background: #20252b;
   }
 
-  .custom-orders-quick-search form {
-    display: flex;
-    align-items: flex-end;
-    flex-wrap: wrap;
+
+
+  .custom-orders-page-header {
     gap: 10px;
   }
 
-  .custom-orders-quick-search-field {
+  .custom-orders-header-title {
+    flex: 0 0 auto;
+    min-width: 0;
+  }
+
+  .custom-orders-header-search {
     flex: 1 1 420px;
     min-width: 280px;
+    max-width: 560px;
+  }
+
+  .custom-orders-header-search .input-group {
+    width: 100%;
+  }
+
+  .custom-orders-header-search .form-control {
+    min-width: 0;
   }
 
   .custom-order-header-actions {
@@ -1455,6 +1518,58 @@ if (!$customOrdersDetailRequest) {
     flex-wrap: wrap;
     gap: 6px;
     min-width: 0;
+  }
+
+  .custom-official-number-editor {
+    display: inline-flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 5px;
+    min-width: 0;
+  }
+
+  .custom-official-number-input {
+    width: 132px;
+    min-width: 132px;
+    font-weight: 700;
+  }
+
+  .custom-official-number-edit-btn {
+    width: 28px;
+    height: 28px;
+    padding: 0 !important;
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .btn-copy-inline {
+    transition: color .18s ease, text-shadow .18s ease, transform .18s ease;
+  }
+
+  .btn-copy-inline.is-copied {
+    color: #35d07f !important;
+    text-shadow: 0 0 10px rgba(53, 208, 127, .45);
+    transform: translateY(-1px);
+  }
+
+  .custom-copy-feedback {
+    display: inline-flex;
+    align-items: center;
+    margin-left: 2px;
+    color: #35d07f;
+    font-size: 11px;
+    font-weight: 700;
+    line-height: 1;
+    pointer-events: none;
+    animation: customCopyFeedback 1.1s ease forwards;
+  }
+
+  @keyframes customCopyFeedback {
+    0% { opacity: 0; transform: translateY(3px); }
+    18% { opacity: 1; transform: translateY(0); }
+    72% { opacity: 1; transform: translateY(0); }
+    100% { opacity: 0; transform: translateY(-3px); }
   }
 
   .custom-activity-header-btn {
@@ -1906,6 +2021,58 @@ if (!$customOrdersDetailRequest) {
     margin-top: 7px;
   }
 
+  #custom-order-payments-block .custom-payment-datetime-input::-webkit-calendar-picker-indicator {
+    width: 17px;
+    height: 17px;
+    padding: 3px;
+    margin-right: 1px;
+    cursor: pointer;
+    border: 1px solid rgba(248, 249, 250, .55);
+    border-radius: 4px;
+    background-color: rgba(248, 249, 250, .08);
+    filter: invert(1) brightness(1.55);
+    opacity: .88;
+  }
+
+  #custom-order-payments-block .custom-payment-datetime-input::-webkit-calendar-picker-indicator:hover {
+    border-color: rgba(248, 249, 250, .85);
+    background-color: rgba(248, 249, 250, .16);
+    opacity: 1;
+  }
+  .custom-payment-history td,
+  .custom-payment-history th {
+    vertical-align: middle !important;
+  }
+
+  .custom-payment-history .form-control-sm {
+    min-height: 28px;
+    padding-top: 3px;
+    padding-bottom: 3px;
+  }
+
+  .custom-payment-kind-select {
+    min-width: 122px;
+  }
+
+  .custom-payment-amount-input {
+    width: 92px;
+  }
+
+  .custom-payment-currency-input {
+    width: 70px;
+  }
+
+  .custom-payment-date-input {
+    min-width: 160px;
+  }
+
+  .custom-payment-actions {
+    display: inline-flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 5px;
+    white-space: nowrap;
+  }
   .custom-payment-history {
     margin-top: 9px !important;
     margin-bottom: 0 !important;
@@ -3301,8 +3468,8 @@ if (!$customOrdersDetailRequest) {
     </div>
   <?php endif; ?>
 
-  <div class="d-flex justify-content-between align-items-center mb-3">
-    <div class="d-flex align-items-center">
+  <div class="d-flex justify-content-between align-items-center flex-wrap mb-3 custom-orders-page-header">
+    <div class="d-flex align-items-center custom-orders-header-title">
       <h3 class="mb-0 mr-3">Custom Orders</h3>
       <div class="btn-group btn-group-sm" role="group" aria-label="Tooltip language">
         <a href="<?= h(customOrderBuildUrl($selectedOrderId > 0 ? $selectedOrderId : null, ['help_lang' => 'sk'])) ?>"
@@ -3316,6 +3483,32 @@ if (!$customOrdersDetailRequest) {
         </a>
       </div>
     </div>
+
+    <form method="get" class="mb-0 custom-orders-header-search">
+      <input type="hidden" name="page" value="custom_orders">
+      <?php if ($tabFilter !== 'all'): ?><input type="hidden" name="tab" value="<?= h($tabFilter) ?>"><?php endif; ?>
+      <?php if ($draftStatusFilter !== ''): ?><input type="hidden" name="draft_status" value="<?= h($draftStatusFilter) ?>"><?php endif; ?>
+      <?php if ($customOrderHelpLang !== ''): ?><input type="hidden" name="help_lang" value="<?= h($customOrderHelpLang) ?>"><?php endif; ?>
+      <?php if ($difficultyFilter > 0): ?><input type="hidden" name="difficulty" value="<?= (int) $difficultyFilter ?>"><?php endif; ?>
+      <?php if ($ownerFilter > 0): ?><input type="hidden" name="owner" value="<?= (int) $ownerFilter ?>"><?php endif; ?>
+      <?php if ($countryFilter !== ''): ?><input type="hidden" name="country" value="<?= h($countryFilter) ?>"><?php endif; ?>
+      <?php if ($sourceFilter !== ''): ?><input type="hidden" name="source" value="<?= h($sourceFilter) ?>"><?php endif; ?>
+      <?php if ($paymentFilter !== ''): ?><input type="hidden" name="payment" value="<?= h($paymentFilter) ?>"><?php endif; ?>
+      <?php if ($shippingFilter !== ''): ?><input type="hidden" name="shipping" value="<?= h($shippingFilter) ?>"><?php endif; ?>
+      <?php if ($itemTypeFilter !== ''): ?><input type="hidden" name="item_type" value="<?= h($itemTypeFilter) ?>"><?php endif; ?>
+      <?php if ($dateFromFilter !== ''): ?><input type="hidden" name="date_from" value="<?= h($dateFromFilter) ?>"><?php endif; ?>
+      <?php if ($dateToFilter !== ''): ?><input type="hidden" name="date_to" value="<?= h($dateToFilter) ?>"><?php endif; ?>
+      <div class="input-group input-group-sm <?= customOrderFilterActive($query) ?>">
+        <input type="text" name="q" class="form-control form-control-sm" value="<?= h($query) ?>" placeholder="Lead no., order no., email, name, company, company ID, phone, nick" aria-label="Search custom orders">
+        <div class="input-group-append">
+          <button type="submit" class="btn btn-primary btn-sm" title="Search" aria-label="Search"><i class="fas fa-search"></i></button>
+          <?php if ($query !== ''): ?>
+            <a class="btn btn-secondary btn-sm" href="<?= h(customOrderBuildUrl(null, ['q' => null, 'custom_order_id' => null, 'edit_item_id' => null], false)) ?>" title="Clear search" aria-label="Clear search"><i class="fas fa-times"></i></a>
+          <?php endif; ?>
+        </div>
+      </div>
+    </form>
+
     <?php if ($customOrdersCanManage): ?>
       <div class="custom-order-header-actions">
         <form method="post" action="scripts/custom_orders/import_email_lead.php" enctype="multipart/form-data" class="mb-0 custom-order-email-import-form">
@@ -3332,33 +3525,6 @@ if (!$customOrdersDetailRequest) {
       <span class="badge badge-secondary"><i class="fas fa-eye mr-1"></i>Read-only access</span>
     <?php endif; ?>
   </div>
-
-  <div class="custom-orders-toolbar custom-orders-quick-search">
-    <form method="get" class="mb-0">
-      <input type="hidden" name="page" value="custom_orders">
-      <?php if ($tabFilter !== 'all'): ?><input type="hidden" name="tab" value="<?= h($tabFilter) ?>"><?php endif; ?>
-      <?php if ($draftStatusFilter !== ''): ?><input type="hidden" name="draft_status" value="<?= h($draftStatusFilter) ?>"><?php endif; ?>
-      <?php if ($customOrderHelpLang !== ''): ?><input type="hidden" name="help_lang" value="<?= h($customOrderHelpLang) ?>"><?php endif; ?>
-      <?php if ($difficultyFilter > 0): ?><input type="hidden" name="difficulty" value="<?= (int) $difficultyFilter ?>"><?php endif; ?>
-      <?php if ($ownerFilter > 0): ?><input type="hidden" name="owner" value="<?= (int) $ownerFilter ?>"><?php endif; ?>
-      <?php if ($countryFilter !== ''): ?><input type="hidden" name="country" value="<?= h($countryFilter) ?>"><?php endif; ?>
-      <?php if ($sourceFilter !== ''): ?><input type="hidden" name="source" value="<?= h($sourceFilter) ?>"><?php endif; ?>
-      <?php if ($paymentFilter !== ''): ?><input type="hidden" name="payment" value="<?= h($paymentFilter) ?>"><?php endif; ?>
-      <?php if ($shippingFilter !== ''): ?><input type="hidden" name="shipping" value="<?= h($shippingFilter) ?>"><?php endif; ?>
-      <?php if ($itemTypeFilter !== ''): ?><input type="hidden" name="item_type" value="<?= h($itemTypeFilter) ?>"><?php endif; ?>
-      <?php if ($dateFromFilter !== ''): ?><input type="hidden" name="date_from" value="<?= h($dateFromFilter) ?>"><?php endif; ?>
-      <?php if ($dateToFilter !== ''): ?><input type="hidden" name="date_to" value="<?= h($dateToFilter) ?>"><?php endif; ?>
-      <div class="form-group mb-0 custom-orders-quick-search-field">
-        <label class="small mb-1">Search<?= customOrderHelp('search') ?></label>
-        <input type="text" name="q" class="form-control form-control-sm" value="<?= h($query) ?>" placeholder="Lead no., order no., email, name, company, company ID, phone, nick">
-      </div>
-      <button type="submit" class="btn btn-primary btn-sm"><i class="fas fa-search mr-1"></i>Search</button>
-      <?php if ($query !== ''): ?>
-        <a class="btn btn-secondary btn-sm" href="<?= h(customOrderBuildUrl(null, ['q' => null, 'custom_order_id' => null, 'edit_item_id' => null], false)) ?>"><i class="fas fa-times mr-1"></i>Clear search</a>
-      <?php endif; ?>
-    </form>
-  </div>
-
   <?php if ($customOrdersCanManage): ?>
   <div class="modal fade" id="custom-order-seeds-modal" tabindex="-1" role="dialog" aria-hidden="true">
     <div class="modal-dialog" role="document">
@@ -3394,27 +3560,26 @@ if (!$customOrdersDetailRequest) {
         </a>
       <?php endforeach; ?>
     </div>
-    <?php if ($draftStatusDefinitions): ?>
-      <span class="custom-status-tabs-divider" aria-hidden="true"></span>
-      <div class="custom-status-tab-set">
-        <span class="custom-draft-tab-prefix">Draft items<?= customOrderHelp('draft_queues') ?></span>
-        <?php foreach ($customOrderDraftTabCodes as $code): ?>
-          <?php if (!isset($draftStatusDefinitions[$code])) { continue; } ?>
-          <?php $meta = $draftStatusDefinitions[$code]; ?>
-          <?php $draftCount = $draftStatusCounts[$code] ?? ['qty' => 0, 'orders' => 0]; ?>
-          <a href="<?= h(customOrderBuildUrl(null, ['tab' => null, 'draft_status' => $code, 'custom_order_id' => null, 'edit_item_id' => null], false)) ?>"
-            class="custom-status-tab custom-draft-status-tab <?= $draftStatusFilter === $code ? 'active' : '' ?>"
-            style="--draft-color:<?= h((string) ($meta['color'] ?? '#17a2b8')) ?>"
-            title="<?= (int) $draftCount['qty'] ?> pcs in <?= (int) $draftCount['orders'] ?> custom orders">
-            <span><?= h((string) ($meta['label'] ?? $code)) ?></span>
-            <span class="custom-status-tab-count"><?= (int) ($draftCount['orders'] ?? 0) ?></span>
-          </a>
-        <?php endforeach; ?>
-      </div>
-    <?php endif; ?>
     <span class="custom-status-tabs-divider" aria-hidden="true"></span>
     <div class="custom-status-tab-set">
+      <span class="custom-draft-tab-prefix">Draft status<?= customOrderHelp('draft_queues') ?></span>
       <?php foreach ($customOrderTabSets[1] as $tabKey): ?>
+        <?php $tabMeta = $customOrderTabs[$tabKey] ?? ['label' => $tabKey]; ?>
+        <?php $tabLabel = (string) ($tabMeta['label'] ?? $tabKey); ?>
+        <?php $tabColor = (string) ($tabMeta['color'] ?? '#17a2b8'); ?>
+        <?php $tabStatuses = !empty($tabMeta['statuses']) && is_array($tabMeta['statuses']) ? $tabMeta['statuses'] : [($tabMeta['status'] ?? '')]; ?>
+        <?php $tabStatusTitle = 'Overall status: ' . implode(', ', array_filter(array_map(static function ($status): string { return (string) $status; }, $tabStatuses))); ?>
+        <a href="<?= h(customOrderBuildUrl(null, ['tab' => $tabKey, 'draft_status' => null, 'custom_order_id' => null, 'edit_item_id' => null], false)) ?>"
+          class="custom-status-tab custom-draft-status-tab <?= $draftStatusFilter === '' && $tabFilter === $tabKey ? 'active' : '' ?>"
+          style="--draft-color:<?= h($tabColor) ?>"
+          title="<?= h($tabStatusTitle) ?>">
+          <span><?= h($tabLabel) ?></span><span class="custom-status-tab-count"><?= (int) ($tabCounts[$tabKey] ?? 0) ?></span>
+        </a>
+      <?php endforeach; ?>
+    </div>
+    <span class="custom-status-tabs-divider" aria-hidden="true"></span>
+    <div class="custom-status-tab-set">
+      <?php foreach ($customOrderTabSets[2] as $tabKey): ?>
         <?php $tabLabel = (string) ($customOrderTabs[$tabKey]['label'] ?? $tabKey); ?>
         <a href="<?= h(customOrderBuildUrl(null, ['tab' => $tabKey, 'draft_status' => null, 'custom_order_id' => null, 'edit_item_id' => null], false)) ?>"
           class="custom-status-tab <?= $draftStatusFilter === '' && $tabFilter === $tabKey ? 'active' : '' ?>">
@@ -3596,7 +3761,7 @@ if (!$customOrdersDetailRequest) {
           <div class="custom-order-section-title">Customer Context</div>
           <div class="custom-field-cluster mb-3">
             <div class="custom-summary-list">
-              <div class="custom-summary-row"><strong>Customer</strong><span><?= h($selectedOrder['customer_name'] ?: 'Unnamed lead') ?></span></div>
+              <div class="custom-summary-row"><strong>Customer</strong><span><?= h(customOrderCustomerDisplay($selectedOrder)) ?></span></div>
               <div class="custom-summary-row"><strong>Handle</strong><span><?= h($selectedOrder['social_handle'] ?: '-') ?></span></div>
               <div class="custom-summary-row"><strong>Email</strong><span><?= h($selectedOrder['customer_email'] ?: '-') ?></span></div>
               <div class="custom-summary-row"><strong>Phone</strong><span><?= h($selectedOrder['customer_phone'] ?: $selectedOrder['shipping_phone'] ?: $selectedOrder['billing_phone'] ?: '-') ?></span></div>
@@ -3653,7 +3818,7 @@ if (!$customOrdersDetailRequest) {
                   <span
                     class="badge badge-<?= $row['status'] === 'EXPORTED' ? 'success' : ($row['status'] === 'DEAD' ? 'danger' : 'warning') ?>"><?= h(selectedText($statuses, (string) $row['status'])) ?></span>
                 </div>
-                <div><?= h($row['customer_name'] ?: $row['social_handle'] ?: 'Unnamed lead') ?></div>
+                <div><?= h(customOrderCustomerDisplay($row)) ?></div>
                 <div class="custom-order-meta">
                   Owner <?= h($row['owner_name'] ?: '-') ?> | Updated <?= h(date('d.m.Y H:i', strtotime((string) $row['updated_at']))) ?>
                 </div>
@@ -3695,7 +3860,7 @@ if (!$customOrdersDetailRequest) {
           <div class="panel-body">
             <div class="d-flex justify-content-between align-items-center mb-3">
               <div class="custom-order-section-title mb-0">Orders List</div>
-              <div class="text-muted small">Showing up to 300 most recently updated rows</div>
+              <div class="text-muted small">Showing up to 300 matching rows, oldest first</div>
             </div>
             <div class="table-responsive custom-orders-list-table-wrap">
               <table id="customOrdersTable" class="table table-sm table-dark table-striped custom-mini-table mb-0">
@@ -3722,7 +3887,7 @@ if (!$customOrdersDetailRequest) {
                         <div><strong><?= h($row['official_order_number'] ?: $row['internal_code']) ?></strong></div>
                         <div class="custom-order-meta"><?= h($row['official_order_number'] ? $row['internal_code'] : 'No official number yet') ?></div>
                       </td>
-                      <td><?= h($row['customer_name'] ?: 'Unnamed lead') ?></td>
+                      <td><?= h(customOrderCustomerDisplay($row)) ?></td>
                       <td><?= h($row['social_handle'] ?: '-') ?></td>
                       <td>
                         <?php
@@ -3833,7 +3998,10 @@ if (!$customOrdersDetailRequest) {
           }
           $customTypeTotals[$breakdownType] += (float) ($breakdownItem['qty'] ?? 0) * (float) ($breakdownItem['unit_price'] ?? 0);
         }
-        $customDisplayNumber = (string) ($selectedOrder['official_order_number'] ?: $selectedOrder['internal_code']);
+        $customOfficialNumber = trim((string) ($selectedOrder['official_order_number'] ?? ''));
+        $customDisplayNumber = (string) ($customOfficialNumber !== '' ? $customOfficialNumber : $selectedOrder['internal_code']);
+        $customOfficialNumberLocked = (int) ($selectedOrder['production_order_id'] ?? 0) > 0;
+        $customOfficialNumberEditable = $customOrdersCanManage && $customOfficialNumber !== '' && !$customOfficialNumberLocked;
         $customHeaderHasInvalid = (bool) array_intersect_key($invalidFields, array_flip([
           'customer_name', 'social_handle', 'shipping_name', 'shipping_street', 'shipping_city',
           'shipping_zip', 'shipping_country', 'shipping_state', 'customer_email', 'shipping_email', 'shipping_phone',
@@ -3861,13 +4029,21 @@ if (!$customOrdersDetailRequest) {
         <div id="custom-order-accounting-panel" data-scroll-block class="custom-twin-order-card<?= $customHeaderHasInvalid ? ' custom-panel-invalid' : '' ?>">
           <div class="custom-twin-order-header d-flex justify-content-between align-items-center flex-wrap">
             <div class="d-flex align-items-center flex-wrap" style="gap:6px;">
-              <b class="btn-copy-inline" data-copy="<?= h($customDisplayNumber) ?>" style="cursor:pointer;">#<?= h($customDisplayNumber) ?></b>
+              <span class="custom-official-number-editor" data-official-number-editor>
+                <b class="btn-copy-inline custom-official-number-display" data-copy="<?= h($customDisplayNumber) ?>" style="cursor:pointer;">#<?= h($customDisplayNumber) ?></b>
+                <?php if ($customOfficialNumberEditable): ?>
+                  <button type="button" class="btn btn-outline-light btn-sm custom-official-number-edit-btn" data-official-number-toggle title="Edit official number" aria-label="Edit official number">
+                    <i class="fas fa-pencil-alt" aria-hidden="true"></i>
+                  </button>
+                  <input type="text" name="official_order_number" form="custom-twin-header-form-<?= (int) $selectedOrder['id'] ?>" class="form-control form-control-sm custom-official-number-input" value="<?= h($customOfficialNumber) ?>" placeholder="SO00000" maxlength="40" required hidden>
+                <?php endif; ?>
+              </span>
               <?php if ($customOrdersCanManage): ?>
                 <button type="submit" form="custom-twin-header-form-<?= (int) $selectedOrder['id'] ?>" class="btn btn-warning btn-sm">
                   <i class="fas fa-save mr-1"></i>Save changes
                 </button>
               <?php endif; ?>
-              <?php if ($customOrdersCanManage && trim((string) ($selectedOrder['official_order_number'] ?? '')) === ''): ?>
+              <?php if ($customOrdersCanManage && trim((string) ($selectedOrder['official_order_number'] ?? '')) === '' && !$customOfficialNumberLocked): ?>
                 <form method="post" action="scripts/custom_orders/assign_official_number.php" class="d-inline-flex align-items-center mb-0" style="gap:4px;">
                   <input type="hidden" name="custom_order_id" value="<?= (int) $selectedOrder['id'] ?>">
                   <select name="official_prefix" class="form-control form-control-sm" style="width:72px;">
@@ -3890,6 +4066,14 @@ if (!$customOrdersDetailRequest) {
                 <a class="btn btn-outline-success btn-sm" href="index.php?page=orders&amp;q=<?= urlencode((string) $selectedOrder['official_order_number']) ?>#order-<?= (int) $selectedOrder['production_order_id'] ?>">
                   <i class="fas fa-external-link-alt mr-1"></i>Open Production #<?= (int) $selectedOrder['production_order_id'] ?>
                 </a>
+              <?php endif; ?>
+              <?php if ($customOrdersCanManage && !$customOfficialNumberLocked): ?>
+                <form method="post" action="scripts/custom_orders/delete_order.php" class="d-inline-flex align-items-center mb-0" onsubmit="return confirm('Delete this custom order? This cannot be undone.');">
+                  <input type="hidden" name="custom_order_id" value="<?= (int) $selectedOrder['id'] ?>">
+                  <button type="submit" class="btn btn-outline-danger btn-sm" title="Delete custom order">
+                    <i class="fas fa-trash-alt mr-1"></i>Delete
+                  </button>
+                </form>
               <?php endif; ?>
             </div>
             <div class="custom-twin-header-controls">
@@ -4039,7 +4223,7 @@ if (!$customOrdersDetailRequest) {
           <div class="panel-body custom-collapsible-body" data-custom-collapsible-body <?= $paymentsDefaultExpanded ? '' : 'hidden' ?>>
             <fieldset class="custom-field-cluster">
           <legend class="custom-field-cluster-title">Payment Details</legend>
-          <form method="post" action="scripts/custom_orders/save_payment.php" data-scroll-target="#custom-order-payments-block">
+          <form method="post" action="scripts/custom_orders/save_payment.php" data-scroll-target="#custom-order-payments-block" data-custom-detail-refresh-form>
             <input type="hidden" name="custom_order_id" value="<?= (int) $selectedOrder['id'] ?>">
             <div class="custom-payment-entry-grid">
               <div><label>Kind<?= customOrderHelp('payment_kind') ?></label><select name="payment_kind"
@@ -4053,7 +4237,7 @@ if (!$customOrdersDetailRequest) {
               <div><label>Currency<?= customOrderHelp('payment_currency') ?></label><input type="text" name="currency"
                   class="form-control form-control-sm" value="<?= h($selectedOrder['currency']) ?>"></div>
               <div><label>Received at<?= customOrderHelp('payment_received_at') ?></label><input type="datetime-local"
-                  name="received_at" class="form-control form-control-sm"></div>
+                  name="received_at" class="form-control form-control-sm custom-payment-datetime-input"></div>
             </div>
             <div class="custom-payment-note-row">
               <div><label>Note<?= customOrderHelp('payment_note') ?></label><input type="text" name="note" class="form-control form-control-sm"></div>
@@ -4065,26 +4249,52 @@ if (!$customOrdersDetailRequest) {
               <tr>
                 <th>Kind<?= customOrderHelp('payment_kind') ?></th>
                 <th>Amount<?= customOrderHelp('payment_amount') ?></th>
+                <th>Currency<?= customOrderHelp('payment_currency') ?></th>
                 <th>PayPal<?= customOrderHelp('paypal_transaction_id') ?></th>
                 <th>Note<?= customOrderHelp('payment_note') ?></th>
                 <th>At<?= customOrderHelp('payment_received_at') ?></th>
-                <th></th>
+                <th class="text-right"></th>
               </tr>
             </thead>
             <tbody>
               <?php foreach ($selectedOrder['payments'] as $payment): ?>
+                <?php
+                $paymentId = (int) ($payment['id'] ?? 0);
+                $paymentEditFormId = 'custom-payment-edit-' . $paymentId;
+                $paymentReceivedValue = '';
+                if (!empty($payment['received_at'])) {
+                  $paymentTimestamp = strtotime((string) $payment['received_at']);
+                  if ($paymentTimestamp !== false) {
+                    $paymentReceivedValue = date('Y-m-d\TH:i', $paymentTimestamp);
+                  }
+                }
+                ?>
                 <tr>
-                  <td><?= h($payment['payment_kind']) ?></td>
-                  <td><?= number_format((float) $payment['amount'], 2) ?></td>
-                  <td><?= h($payment['paypal_transaction_id']) ?></td>
-                  <td><?= customOrderTruncate((string) ($payment['note'] ?? ''), 42) ?></td>
-                  <td><?= h($payment['received_at']) ?></td>
                   <td>
-                    <form method="post" action="scripts/custom_orders/delete_payment.php" data-scroll-target="#custom-order-payments-block" onsubmit="return confirm('Delete this payment record?');">
-                      <input type="hidden" name="custom_order_id" value="<?= (int) $selectedOrder['id'] ?>">
-                      <input type="hidden" name="payment_id" value="<?= (int) $payment['id'] ?>">
-                      <button type="submit" class="btn btn-danger btn-xs">Delete</button>
-                    </form>
+                    <select name="payment_kind" form="<?= h($paymentEditFormId) ?>" class="form-control form-control-sm custom-payment-kind-select">
+                      <?php foreach ($paymentKinds as $code => $label): ?>
+                        <option value="<?= h($code) ?>" <?= strtoupper((string) ($payment['payment_kind'] ?? '')) === strtoupper((string) $code) ? 'selected' : '' ?>><?= h($label) ?></option>
+                      <?php endforeach; ?>
+                    </select>
+                  </td>
+                  <td><input type="number" step="0.01" name="amount" form="<?= h($paymentEditFormId) ?>" class="form-control form-control-sm custom-payment-amount-input" value="<?= h(number_format((float) ($payment['amount'] ?? 0), 2, '.', '')) ?>" required></td>
+                  <td><input type="text" name="currency" form="<?= h($paymentEditFormId) ?>" class="form-control form-control-sm custom-payment-currency-input" value="<?= h((string) ($payment['currency'] ?? $selectedOrder['currency'])) ?>"></td>
+                  <td><input type="text" name="paypal_transaction_id" form="<?= h($paymentEditFormId) ?>" class="form-control form-control-sm" value="<?= h((string) ($payment['paypal_transaction_id'] ?? '')) ?>"></td>
+                  <td><input type="text" name="note" form="<?= h($paymentEditFormId) ?>" class="form-control form-control-sm" value="<?= h((string) ($payment['note'] ?? '')) ?>"></td>
+                  <td><input type="datetime-local" name="received_at" form="<?= h($paymentEditFormId) ?>" class="form-control form-control-sm custom-payment-datetime-input custom-payment-date-input" value="<?= h($paymentReceivedValue) ?>"></td>
+                  <td class="text-right">
+                    <span class="custom-payment-actions">
+                      <form method="post" action="scripts/custom_orders/save_payment.php" id="<?= h($paymentEditFormId) ?>" class="mb-0" data-scroll-target="#custom-order-payments-block" data-custom-detail-refresh-form>
+                        <input type="hidden" name="custom_order_id" value="<?= (int) $selectedOrder['id'] ?>">
+                        <input type="hidden" name="payment_id" value="<?= (int) $paymentId ?>">
+                        <button type="submit" class="btn btn-outline-success btn-xs" title="Save payment"><i class="fas fa-save"></i></button>
+                      </form>
+                      <form method="post" action="scripts/custom_orders/delete_payment.php" class="mb-0" data-scroll-target="#custom-order-payments-block" data-custom-detail-refresh-form onsubmit="return confirm('Delete this payment record?');">
+                        <input type="hidden" name="custom_order_id" value="<?= (int) $selectedOrder['id'] ?>">
+                        <input type="hidden" name="payment_id" value="<?= (int) $paymentId ?>">
+                        <button type="submit" class="btn btn-outline-danger btn-xs" title="Delete payment"><i class="fas fa-trash-alt"></i></button>
+                      </form>
+                    </span>
                   </td>
                 </tr>
               <?php endforeach; ?>
@@ -4881,6 +5091,7 @@ if (!$customOrdersDetailRequest) {
     var customOrdersHighlightStorageKey = 'custom-orders-highlight:' + window.location.pathname;
     var customBuilderStatusMap = <?= json_encode($customBuilderStatusMap, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE) ?>;
     var customOrdersCanManage = <?= $customOrdersCanManage ? 'true' : 'false' ?>;
+    var customOrdersHelpLang = <?= json_encode($customOrderHelpLang === 'en' ? 'en' : 'sk', JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
 
     function applyCustomOrdersAccess(root) {
       if (!root || customOrdersCanManage) return;
@@ -4908,6 +5119,140 @@ if (!$customOrdersDetailRequest) {
       select.style.setProperty('--item-status-color', option ? (option.getAttribute('data-color') || '#17a2b8') : '#17a2b8');
     }
 
+    function initializeCustomOfficialNumberEditors(root) {
+      if (!root) return;
+      root.querySelectorAll('[data-official-number-editor]').forEach(function (editor) {
+        if (editor.dataset.officialNumberBound === '1') return;
+        editor.dataset.officialNumberBound = '1';
+        var toggle = editor.querySelector('[data-official-number-toggle]');
+        var input = editor.querySelector('.custom-official-number-input');
+        var display = editor.querySelector('.custom-official-number-display');
+        if (!toggle || !input || !display) return;
+        toggle.addEventListener('click', function () {
+          var willOpen = !!input.hidden;
+          input.hidden = !willOpen;
+          if (willOpen) {
+            input.focus();
+            input.select();
+          }
+        });
+        input.addEventListener('input', function () {
+          var value = String(input.value || '').trim();
+          display.textContent = '#' + (value || input.getAttribute('placeholder') || '');
+          display.setAttribute('data-copy', value);
+        });
+      });
+    }
+
+    function showCustomCopyFeedback(btn) {
+      if (!btn) return;
+      if (navigator.vibrate) {
+        try { navigator.vibrate(18); } catch (vibrateError) {}
+      }
+      btn.classList.add('is-copied');
+      if (btn._customCopyTimer) window.clearTimeout(btn._customCopyTimer);
+      var parent = btn.parentNode;
+      if (parent) {
+        var existing = parent.querySelector('.custom-copy-feedback');
+        if (existing) existing.remove();
+        var feedback = document.createElement('span');
+        feedback.className = 'custom-copy-feedback';
+        feedback.textContent = 'Copied';
+        btn.insertAdjacentElement('afterend', feedback);
+        window.setTimeout(function () { if (feedback.parentNode) feedback.remove(); }, 1100);
+      }
+      btn._customCopyTimer = window.setTimeout(function () {
+        btn.classList.remove('is-copied');
+      }, 900);
+    }
+
+    function copyCustomInlineValue(btn) {
+      if (!btn) return;
+      var value = btn.getAttribute('data-copy') || '';
+      if (!value) return;
+      var done = function () { showCustomCopyFeedback(btn); };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(value).then(done).catch(done);
+        return;
+      }
+      var textarea = document.createElement('textarea');
+      textarea.value = value;
+      textarea.setAttribute('readonly', 'readonly');
+      textarea.style.position = 'fixed';
+      textarea.style.left = '-9999px';
+      document.body.appendChild(textarea);
+      textarea.select();
+      try { document.execCommand('copy'); } catch (copyError) {}
+      textarea.remove();
+      done();
+    }
+
+    function bindCustomCopyButtons(root) {
+      if (!root) return;
+      root.querySelectorAll('.btn-copy-inline').forEach(function (btn) {
+        if (btn.dataset.copyBound === '1') return;
+        btn.dataset.copyBound = '1';
+        btn.addEventListener('click', function () {
+          copyCustomInlineValue(btn);
+        });
+      });
+    }
+
+    function refreshCustomOrderDetailFromForm(form) {
+      var orderIdInput = form ? form.querySelector('input[name="custom_order_id"]') : null;
+      var orderId = orderIdInput ? parseInt(orderIdInput.value || '0', 10) : 0;
+      var detailWrap = form ? form.closest('.custom-order-detail-wrap') : null;
+      if (detailWrap && orderId > 0) {
+        detailWrap.style.minHeight = detailWrap.offsetHeight + 'px';
+        detailWrap.dataset.loaded = '0';
+        openCustomOrderDetail(orderId);
+      }
+    }
+
+    function initializeCustomDetailRefreshForms(root) {
+      if (!root) return;
+      root.querySelectorAll('form[data-custom-detail-refresh-form]').forEach(function (form) {
+        if (form.dataset.detailRefreshBound === '1') return;
+        form.dataset.detailRefreshBound = '1';
+        form.addEventListener('submit', function (event) {
+          if (event.defaultPrevented) return;
+          event.preventDefault();
+          var submitButton = event.submitter || form.querySelector('button[type="submit"]');
+          var originalText = submitButton ? submitButton.innerHTML : '';
+          if (submitButton) {
+            submitButton.disabled = true;
+            submitButton.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+          }
+          fetch(form.action, {
+            method: 'POST',
+            headers: { 'X-Requested-With': 'XMLHttpRequest' },
+            body: new FormData(form)
+          })
+            .then(function (response) {
+              return response.text().then(function (rawBody) {
+                var payload;
+                try {
+                  payload = JSON.parse(rawBody);
+                } catch (parseError) {
+                  throw new Error(String(rawBody || 'Invalid server response').trim().substring(0, 400));
+                }
+                if (!response.ok || !payload.ok) throw new Error(payload.message || 'Payment could not be saved.');
+                return payload;
+              });
+            })
+            .then(function () {
+              refreshCustomOrderDetailFromForm(form);
+            })
+            .catch(function (error) {
+              if (submitButton) {
+                submitButton.disabled = false;
+                submitButton.innerHTML = originalText;
+              }
+              alert(error && error.message ? error.message : String(error));
+            });
+        });
+      });
+    }
     function syncCustomBuilderStatusOptions(form, typeCode, subcategory) {
       if (!form) return;
       var select = form.querySelector('select[data-status-dynamic="1"]');
@@ -5092,6 +5437,33 @@ if (!$customOrdersDetailRequest) {
       syncCustomBuilderStatusOptions(form, typeCode, subcategory);
     }
 
+
+    function customOrderItemTypeNeedsCategoryWarning(form) {
+      var field = form.querySelector('[name="item_type_code"]');
+      var typeCode = String(field ? field.value : '').toUpperCase();
+      return ['G', 'P', 'S', 'F'].indexOf(typeCode) !== -1;
+    }
+
+    function confirmCustomOrderMissingCategoryInfo(form) {
+      var categoryInput = form.querySelector('input[name="category_info"]');
+      var modelCodeInput = form.querySelector('input[name="category_modelcode"]');
+      var categoryInfo = categoryInput ? String(categoryInput.value || '').trim() : '';
+      var modelCode = modelCodeInput ? String(modelCodeInput.value || '').trim() : '';
+      if ((categoryInfo !== '' && modelCode !== '') || !customOrderItemTypeNeedsCategoryWarning(form)) return true;
+
+      var message = customOrdersHelpLang === 'en'
+        ? 'Brother, Category Info / model code is empty for this item. Most custom products need it for compatibility.\n\nOK = save without Category Info\nCancel = go back and fill it in'
+        : 'Brácho, pri tejto položke nie je vyplnený Category Info / model kód. Pri väčšine custom produktov ho potrebujeme kvôli kompatibilite.\n\nOK = uložiť bez Category Info\nZrušiť = vrátim sa a doplním ho';
+
+      if (window.confirm(message)) return true;
+
+      var trigger = form.querySelector('.custom-category-info-trigger');
+      if (trigger) {
+        trigger.focus();
+        trigger.click();
+      }
+      return false;
+    }
     function syncBuilderPreview(form) {
       if (!form) return;
       var skuInput = form.querySelector('input[name="sku"]');
@@ -6062,6 +6434,8 @@ if (!$customOrdersDetailRequest) {
       applyCustomOrdersAccess(root);
       initializeCustomCountryState(root);
       initializeCustomBillingSame(root);
+      initializeCustomOfficialNumberEditors(root);
+      initializeCustomDetailRefreshForms(root);
       initializeCustomCategoryPicker(root);
       initializeCustomOrderPhotos(root);
       initializeCustomContactSuggestions(root);
@@ -6100,6 +6474,7 @@ if (!$customOrdersDetailRequest) {
         form.dataset.inlineSaveBound = '1';
         form.addEventListener('submit', function (event) {
           event.preventDefault();
+          if (!confirmCustomOrderMissingCategoryInfo(form)) return;
           var saveButton = form.querySelector('button[type="submit"]');
           var originalText = saveButton ? saveButton.textContent : 'Save';
           if (saveButton) {
@@ -6125,6 +6500,15 @@ if (!$customOrdersDetailRequest) {
               });
             })
             .then(function (payload) {
+              var refreshedOrderIdInput = form.querySelector('input[name="custom_order_id"]');
+              var refreshedOrderId = refreshedOrderIdInput ? parseInt(refreshedOrderIdInput.value || '0', 10) : 0;
+              var refreshedDetailWrap = form.closest('.custom-order-detail-wrap');
+              if (refreshedDetailWrap && refreshedOrderId > 0) {
+                refreshedDetailWrap.style.minHeight = refreshedDetailWrap.offsetHeight + 'px';
+                refreshedDetailWrap.dataset.loaded = '0';
+                openCustomOrderDetail(refreshedOrderId);
+                return;
+              }
               if (form.classList.contains('custom-add-item-form')) {
                 var orderIdInput = form.querySelector('input[name="custom_order_id"]');
                 var orderId = orderIdInput ? parseInt(orderIdInput.value || '0', 10) : 0;
@@ -6184,14 +6568,7 @@ if (!$customOrdersDetailRequest) {
         select.addEventListener('change', function () { syncCustomItemStatusColor(select); });
       });
 
-      root.querySelectorAll('.btn-copy-inline').forEach(function (btn) {
-        if (btn.dataset.copyBound === '1') return;
-        btn.dataset.copyBound = '1';
-        btn.addEventListener('click', function () {
-          var value = btn.getAttribute('data-copy') || '';
-          if (value && navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(value);
-        });
-      });
+      bindCustomCopyButtons(root);
 
       root.querySelectorAll('.custom-order-activity-toggle').forEach(function (activityToggle) {
         if (activityToggle.dataset.activityToggleBound === '1') return;
@@ -6341,15 +6718,7 @@ if (!$customOrdersDetailRequest) {
       syncBuilderPreview(form);
     });
 
-    document.querySelectorAll('.btn-copy-inline').forEach(function (btn) {
-      btn.addEventListener('click', function () {
-        var value = btn.getAttribute('data-copy') || '';
-        if (!value) return;
-        if (navigator.clipboard && navigator.clipboard.writeText) {
-          navigator.clipboard.writeText(value);
-        }
-      });
-    });
+    bindCustomCopyButtons(document);
 
     document.querySelectorAll('.custom-order-activity-toggle').forEach(function (activityToggle) {
       if (activityToggle.dataset.activityToggleBound === '1') return;
@@ -6378,6 +6747,8 @@ if (!$customOrdersDetailRequest) {
     });
 
     initializeCustomCountryState(document);
+    initializeCustomOfficialNumberEditors(document);
+    initializeCustomDetailRefreshForms(document);
     applyCustomOrdersAccess(document);
     initializeCustomCollapsiblePanels(document);
     initializeCustomNoteReplies(document);

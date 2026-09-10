@@ -283,6 +283,7 @@
                 $user_chat = $row['chat'];
                 $user_grid = (int)($row['grid'] ?? 0);
                 $user_attendance_enabled = (int)($row['attendance_enabled'] ?? 1);
+                $user_holiday_planner_enabled = (int)($row['holiday_planner_enabled'] ?? 0);
                 $user_personal_orders = (int)($row['personal_orders'] ?? 0);
               }
               ?>
@@ -680,6 +681,23 @@
           <div class="custom-control custom-switch">
             <input type="checkbox"
                    class="custom-control-input"
+                   id="edit_holiday_planner_enabled"
+                   name="holiday_planner_enabled"
+                   value="1"
+                   <?= !empty($user_holiday_planner_enabled) ? 'checked' : '' ?>
+                   <?= $is_moderator ? 'disabled' : '' ?>>
+            <label class="custom-control-label" for="edit_holiday_planner_enabled">Holiday planner</label>
+          </div>
+          <small>Employee can be included in the holiday planner.</small>
+          <?php if($is_moderator): ?>
+            <input type="hidden" name="holiday_planner_enabled" value="<?= (int)$user_holiday_planner_enabled ?>">
+          <?php endif; ?>
+        </div>
+
+        <div class="employee-switch-card">
+          <div class="custom-control custom-switch">
+            <input type="checkbox"
+                   class="custom-control-input"
                    id="edit_personal_orders"
                    name="personal_orders"
                    value="1"
@@ -779,6 +797,7 @@ $(function () {
     if (this.value === 'contractor') {
       $('#edit_grid').prop('checked', false);
       $('#edit_attendance_enabled').prop('checked', false);
+      $('#edit_holiday_planner_enabled').prop('checked', false);
     }
   });
 

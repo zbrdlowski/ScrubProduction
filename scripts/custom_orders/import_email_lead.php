@@ -236,10 +236,52 @@ function customOrdersImportNormalizeKey(string $value): string
   return trim($value, '_');
 }
 
+function customOrdersImportCleanLabel(string $label): string
+{
+  $label = trim($label);
+  $label = preg_replace('/^\*+|\*+$/', '', $label) ?? $label;
+  return trim(rtrim($label, ':'));
+}
+
+function customOrdersImportCleanValue(string $value): string
+{
+  $value = trim($value);
+  $value = preg_replace('/^\*+\s*/', '', $value) ?? $value;
+  return trim($value);
+}
+
+function customOrdersImportLooksLikeSectionHeading(string $line): bool
+{
+  $line = trim($line);
+  if ($line === '') {
+    return false;
+  }
+  $normalized = customOrdersImportNormalizeKey($line);
+  $knownHeadings = [
+    'custom_design_form',
+    'forwarded_message',
+    'motorcycle_information',
+    'design_information',
+    'material_options',
+    'other_products',
+    'payment_information',
+    'uploaded_files',
+  ];
+  if (in_array($normalized, $knownHeadings, true)) {
+    return true;
+  }
+  $folded = trim(customOrdersImportAsciiFold($line));
+  return strlen($folded) >= 4
+    && strlen($folded) <= 80
+    && strtoupper($folded) === $folded
+    && preg_match('/[A-Z]/', $folded) === 1
+    && preg_match('/@|https?:\/\/|\d{3,}/i', $folded) !== 1;
+}
+
 function customOrdersImportAliases(): array
 {
   return [
-    'customer_name' => ['name', 'full_name', 'your_name', 'customer_name', 'meno', 'jmeno', 'jmeno_a_prijmeni', 'meno_a_priezvisko', 'kontaktni_osoba'],
+    'customer_name' => ['fullname', 'full_name', 'your_name', 'customer_name', 'customer_fullname', 'name', 'meno', 'jmeno', 'jmeno_a_prijmeni', 'meno_a_priezvisko', 'kontaktni_osoba'],
     'customer_email' => ['email', 'e_mail', 'mail', 'your_email', 'kontakt_email', 'emailova_adresa'],
     'customer_phone' => ['phone', 'telefon', 'tel', 'telephone', 'mobile', 'mobil', 'whatsapp', 'contact_phone'],
     'customer_country' => ['country', 'krajina', 'stat', 'zeme', 'zem', 'state_country'],
@@ -291,11 +333,19 @@ function customOrdersImportExtractLabelValues(string $text): array
   foreach ($lines as $line) {
     $line = trim($line);
     if ($line === '') {
+      $currentLabel = '';
       continue;
     }
     if (preg_match('/^([^:]{1,90}):\s*(.*)$/u', $line, $m)) {
-      $currentLabel = trim($m[1]);
-      $pairs[$currentLabel] = trim($m[2]);
+      $currentLabel = customOrdersImportCleanLabel((string) $m[1]);
+      if ($currentLabel === '') {
+        continue;
+      }
+      $pairs[$currentLabel] = customOrdersImportCleanValue((string) $m[2]);
+      continue;
+    }
+    if (customOrdersImportLooksLikeSectionHeading($line)) {
+      $currentLabel = '';
       continue;
     }
     if ($currentLabel !== '') {
@@ -310,9 +360,9 @@ function customOrdersImportExtractLabelValues(string $text): array
     }
   }
   for ($i = 0, $count = count($lines); $i < $count - 1; $i++) {
-    $label = trim($lines[$i]);
-    $value = trim($lines[$i + 1]);
-    if ($label === '' || $value === '') {
+    $label = customOrdersImportCleanLabel((string) $lines[$i]);
+    $value = customOrdersImportCleanValue((string) $lines[$i + 1]);
+    if ($label === '' || $value === '' || customOrdersImportLooksLikeSectionHeading($label)) {
       continue;
     }
     $normalized = customOrdersImportNormalizeKey($label);

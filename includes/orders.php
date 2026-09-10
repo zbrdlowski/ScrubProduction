@@ -445,7 +445,7 @@ $allowedStatuses = array_keys($orderStatusLabels);
 if ($fStatus !== '' && !in_array($fStatus, $allowedStatuses, true))
   $fStatus = '';
 
-// Horné fulltext vyhľadávanie má hľadať naprieč pracovnými objednávkami,
+// Horné fulltext vyhľadávanie má hľadať naprieč všetkými objednávkami,
 // nie len v aktuálne aktívnom quick tabe.
 if ($fQ !== '') {
   $fStatus = '';
@@ -454,8 +454,11 @@ if ($fQ !== '') {
 }
 
 // Ak je zvolený konkrétny overall status tabom alebo filtrom, má prednosť.
-// Inak pracovné queue schovávajú finálne/neplatené overall statusy.
+// Search je výnimka: musí vedieť nájsť aj finálne/neplatené overall statusy.
+// Inak pracovné queue tieto statusy schovávajú.
 if ($fStatus !== '') {
+  $fExcludeStatuses = '';
+} elseif ($fQ !== '') {
   $fExcludeStatuses = '';
 } else {
   $excludedStatuses = array_filter(array_map(static function ($status) {

@@ -15,6 +15,7 @@ if (!$existing) {
   customOrdersFlash('danger', 'Custom order not found.');
   customOrdersRedirect();
 }
+$orderAlreadyExported = (int) ($existing['production_order_id'] ?? 0) > 0;
 
 $posted = static function (string $key): bool {
   return array_key_exists($key, $_POST);
@@ -105,6 +106,19 @@ if ((int) ($_POST['billing_same_as_shipping'] ?? 0) === 1) {
   }
 }
 
+if ($data['customer_name'] === '') {
+  $data['customer_name'] = trim((string) ($data['shipping_name'] ?: $data['billing_name']));
+}
+if ($data['customer_email'] === '') {
+  $data['customer_email'] = trim((string) ($data['shipping_email'] ?: $data['billing_email']));
+}
+if ($data['customer_phone'] === '') {
+  $data['customer_phone'] = trim((string) ($data['shipping_phone'] ?: $data['billing_phone']));
+}
+if ($data['customer_country'] === null || $data['customer_country'] === '') {
+  $data['customer_country'] = $data['shipping_country'] ?: $data['billing_country'];
+}
+
 if (!customOrdersCountryRequiresState($data['shipping_country'])) {
   $data['shipping_state'] = null;
 }
@@ -116,8 +130,19 @@ if (!isset(customOrdersOrderStatuses()[$data['status']])) {
   $data['status'] = 'LEAD';
 }
 
+if (!$orderAlreadyExported && $posted('official_order_number')) {
+  $manualOfficialNumber = trim((string) ($_POST['official_order_number'] ?? ''));
+  if ($manualOfficialNumber !== '') {
+    $data['official_order_number'] = $manualOfficialNumber;
+    $manualPrefix = strtoupper(substr($manualOfficialNumber, 0, 2));
+    if (in_array($manualPrefix, ['SO', 'GO', 'SC'], true)) {
+      $data['official_prefix'] = $manualPrefix;
+    }
+  }
+}
+
 $autoAssignedOfficialNumber = '';
-if ($data['status'] === 'DRAFT_X' && trim((string) ($existing['official_order_number'] ?? '')) === '') {
+if ($data['status'] === 'DRAFT_X' && trim((string) ($existing['official_order_number'] ?? '')) === '' && trim((string) ($data['official_order_number'] ?? '')) === '') {
   $autoAssignedOfficialNumber = customOrdersAssignOfficialNumber($conn, $orderId, 'SO', $userId);
 }
 

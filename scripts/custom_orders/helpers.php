@@ -574,6 +574,7 @@ function customOrdersActivityActionLabel(string $action): string
     'item_updated' => 'Item updated',
     'item_deleted' => 'Item deleted',
     'payment_added' => 'Payment added',
+    'payment_updated' => 'Payment updated',
     'payment_deleted' => 'Payment deleted',
     'followup_added' => 'Follow-up added',
     'note_added' => 'Note added',
@@ -784,10 +785,23 @@ function customOrdersActivityDetail(array $activity): string
     }
   }
 
+  if ($action === 'payment_updated') {
+    $parts = [];
+    if (!empty($payload['kind'])) {
+      $parts[] = trim((string) $payload['kind']);
+    }
+    if (isset($payload['amount'])) {
+      $parts[] = number_format((float) $payload['amount'], 2, '.', '') . ' ' . trim((string) ($payload['currency'] ?? ''));
+    }
+    if (!empty($payload['note'])) {
+      $parts[] = trim((string) $payload['note']);
+    }
+    return $parts ? ('Updated payment: ' . implode(' | ', array_filter($parts))) : 'Payment updated';
+  }
+
   if ($action === 'payment_deleted' && isset($payload['amount'])) {
     return 'Deleted payment: ' . number_format((float) $payload['amount'], 2, '.', '') . ' ' . trim((string) ($payload['currency'] ?? ''));
   }
-
   if ($action === 'followup_added') {
     $parts = [];
     if (!empty($payload['channel'])) {

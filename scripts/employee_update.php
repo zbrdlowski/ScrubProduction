@@ -66,6 +66,7 @@ $permission = (int)($_POST['permission'] ?? $current['permission']);
 $active = isset($_POST['active']) && $_POST['active'] === 'Active' ? 'Active' : 'Inactive';
 $grid = isset($_POST['grid']) ? 1 : 0;
 $attendance_enabled = isset($_POST['attendance_enabled']) ? 1 : 0;
+$holiday_planner_enabled = isset($_POST['holiday_planner_enabled']) ? 1 : 0;
 $personal_orders = isset($_POST['personal_orders']) ? 1 : 0;
 $chat = isset($_POST['chat']) && $_POST['chat'] === 'yes' ? 'yes' : 'no';
 
@@ -103,6 +104,7 @@ if ($editor_permission == 300) {
     $worker_type = $current['worker_type'] ?? 'employee';
     $grid = (int)$current['grid'];
     $attendance_enabled = (int)($current['attendance_enabled'] ?? 1);
+    $holiday_planner_enabled = (int)($current['holiday_planner_enabled'] ?? 0);
     $personal_orders = (int)$current['personal_orders'];
     $personal = $current['personal'];
     $created_on = $current['created_on'];
@@ -127,6 +129,7 @@ if ($password !== '' && $editor_permission >= 500) {
             worker_type = ?,
             grid = ?,
             attendance_enabled = ?,
+            holiday_planner_enabled = ?,
             personal_orders = ?,
             personal = ?,
             permission = ?,
@@ -135,7 +138,7 @@ if ($password !== '' && $editor_permission >= 500) {
     ");
 
     $stmt->bind_param(
-        "ssssssiissssiiisisi",
+        "ssssssiissssiiiisisi",
         $firstname,
         $lastname,
         $address,
@@ -150,6 +153,7 @@ if ($password !== '' && $editor_permission >= 500) {
         $worker_type,
         $grid,
         $attendance_enabled,
+        $holiday_planner_enabled,
         $personal_orders,
         $personal,
         $permission,
@@ -172,6 +176,7 @@ if ($password !== '' && $editor_permission >= 500) {
             worker_type = ?,
             grid = ?,
             attendance_enabled = ?,
+            holiday_planner_enabled = ?,
             personal_orders = ?,
             personal = ?,
             permission = ?
@@ -179,7 +184,7 @@ if ($password !== '' && $editor_permission >= 500) {
     ");
 
     $stmt->bind_param(
-        "ssssssiissssiiisii",
+        "ssssssiissssiiiisii",
         $firstname,
         $lastname,
         $address,
@@ -194,6 +199,7 @@ if ($password !== '' && $editor_permission >= 500) {
         $worker_type,
         $grid,
         $attendance_enabled,
+        $holiday_planner_enabled,
         $personal_orders,
         $personal,
         $permission,

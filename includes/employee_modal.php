@@ -264,6 +264,15 @@
 
                   <div class="employee-switch-card">
                     <div class="custom-control custom-switch">
+                      <input type="checkbox" class="custom-control-input" id="add_holiday_planner_enabled"
+                        name="holiday_planner_enabled" value="1">
+                      <label class="custom-control-label" for="add_holiday_planner_enabled">Holiday planner</label>
+                    </div>
+                    <small>Zamestnanec môže byť zaradený do plánovača dovoleniek.</small>
+                  </div>
+
+                  <div class="employee-switch-card">
+                    <div class="custom-control custom-switch">
                       <input type="checkbox" class="custom-control-input" id="add_personal_orders"
                         name="personal_orders" value="1">
                       <label class="custom-control-label" for="add_personal_orders">Profile Orders</label>
@@ -322,6 +331,7 @@
       if (isContractor) {
         $('#add_grid').prop('checked', false);
         $('#add_attendance_enabled').prop('checked', false);
+        $('#add_holiday_planner_enabled').prop('checked', false);
       }
     });
   });

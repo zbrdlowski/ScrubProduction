@@ -27,6 +27,7 @@ if (isset($_POST['add'])) {
     }
     $grid = isset($_POST['grid']) ? 1 : 0;
     $attendance_enabled = isset($_POST['attendance_enabled']) ? 1 : 0;
+    $holiday_planner_enabled = isset($_POST['holiday_planner_enabled']) ? 1 : 0;
     $personal_orders = isset($_POST['personal_orders']) ? 1 : 0;
     $chat = isset($_POST['chat']) ? 'yes' : 'no';
 
@@ -81,13 +82,14 @@ if (isset($_POST['add'])) {
             worker_type,
             grid,
             attendance_enabled,
+            holiday_planner_enabled,
             personal_orders,
             personal,
             username,
             permission,
             password
         ) VALUES (
-            ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), 2, ?, ?, ?, ?, ?, ?, ?, ?, ?, PASSWORD(?)
+            ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), 2, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, PASSWORD(?)
         )
     ");
 
@@ -98,7 +100,7 @@ if (isset($_POST['add'])) {
     }
 
     $stmt->bind_param(
-        "sssssssiissssiiissss",
+        "sssssssiissssiiiissss",
         $employee_id,
         $firstname,
         $lastname,
@@ -114,6 +116,7 @@ if (isset($_POST['add'])) {
         $worker_type,
         $grid,
         $attendance_enabled,
+        $holiday_planner_enabled,
         $personal_orders,
         $personal,
         $username,
