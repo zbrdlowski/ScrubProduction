@@ -345,7 +345,7 @@ function productSpecFieldMeta(array $definition): array
   return $meta;
 }
 
-function productSpecFieldCurrentValue(array $meta, array $extOptArr, array $internalOptArr): string
+function productSpecFieldCurrentValue(array $meta, array $extOptArr, array $internalOptArr, string $sourceCode = ''): string
 {
   $internalKey = (string) ($meta['internal_key'] ?? '');
   if ($internalKey !== '' && array_key_exists($internalKey, $internalOptArr)) {
@@ -403,7 +403,28 @@ function productSpecFieldCurrentValue(array $meta, array $extOptArr, array $inte
     }
   }
 
-  return productSpecValueFromKeys($extOptArr, (array) ($meta['source_keys'] ?? []));
+  $currentValue = productSpecValueFromKeys($extOptArr, (array) ($meta['source_keys'] ?? []));
+  if ($currentValue !== '') {
+    return $currentValue;
+  }
+
+  $sourceCode = strtoupper(trim($sourceCode));
+  $sourceKeyNormalized = productSpecNormalizeKey((string) ($meta['source_key'] ?? ''));
+  $labelNormalized = productSpecNormalizeKey((string) ($meta['label'] ?? ''));
+  $specKeyNormalized = productSpecNormalizeKey((string) ($meta['spec_key'] ?? ''));
+
+  if (
+    strpos($sourceCode, 'SHOPTET') !== false
+    && (
+      $sourceKeyNormalized === 'buyer-note'
+      || $labelNormalized === 'buyer-note'
+      || preg_match('/(?:^|-)buyer-note$/', $specKeyNormalized)
+    )
+  ) {
+    return productSpecValueFromKeys($extOptArr, ['note']);
+  }
+
+  return '';
 }
 
 function productSpecFieldHasAnyValue(array $meta, array $extOptArr, array $internalOptArr): bool
@@ -4244,7 +4265,7 @@ ob_start();
                       continue;
                     }
 
-                    $fieldMeta['current_value'] = productSpecFieldCurrentValue($fieldMeta, $extOptArr, $internalOptArr);
+                    $fieldMeta['current_value'] = productSpecFieldCurrentValue($fieldMeta, $extOptArr, $internalOptArr, (string) ($order['source_code'] ?? ''));
                     $fieldMeta['has_any_value'] = productSpecFieldHasAnyValue($fieldMeta, $extOptArr, $internalOptArr);
 
                     if ($fieldMeta['spec_key'] === 'graphics_material') {
@@ -4785,21 +4806,70 @@ ob_start();
       $('.print-ac-dropdown').hide().empty();
     }
 
-    function savePrintSettings($tr, itemId, orderId) {
-      // g-item-options-row nemá btn-view-options — hľadaj v predchádzajúcom riadku
-      var $infoRow = $tr;
-      if ($tr.hasClass('g-item-options-row')) {
-        $infoRow = $tr.prev('tr');
+    function findProductSpecContext($tr, itemId) {
+      itemId = parseInt(itemId, 10) || parseInt($tr.data('item-id'), 10) || parseInt($tr.find('.btn-view-options').data('item-id'), 10) || 0;
+
+      var $infoRow = $tr.hasClass('item-info-row') ? $tr : $tr.prevAll('tr.item-info-row').filter(function () {
+        var rowItemId = parseInt($(this).find('.btn-view-options').data('item-id'), 10) || 0;
+        return !itemId || rowItemId === itemId;
+      }).first();
+
+      if (!$infoRow.length) {
+        $infoRow = $tr.prevAll('tr.item-info-row').first();
       }
-      var $optRow = $infoRow.next('tr.g-item-options-row');
 
-      var printer = ($optRow.length ? $optRow : $tr).find('.item-print-printer').val() || $infoRow.find('.item-print-printer').val() || '';
-      var material = ($optRow.length ? $optRow : $tr).find('.item-print-material').val() || $infoRow.find('.item-print-material').val() || '';
-      var finish = ($optRow.length ? $optRow : $tr).find('.item-print-finish').val() || $infoRow.find('.item-print-finish').val() || '';
-      var grip = ($optRow.length ? $optRow : $tr).find('.item-print-grip').val() || $infoRow.find('.item-print-grip').val() || '';
-      var trSwingarms = ($optRow.length ? $optRow : $tr).find('.item-print-tr-swingarms').val() || $infoRow.find('.item-print-tr-swingarms').val() || '';
+      var $detailBtn = $infoRow.find('.btn-view-options').first();
+      if (!itemId) {
+        itemId = parseInt($detailBtn.data('item-id'), 10) || 0;
+      }
 
-      var $detailBtn = $infoRow.find('.btn-view-options');
+      var $specRows = $();
+      if ($infoRow.length) {
+        $specRows = $infoRow.nextUntil('tr.item-info-row, tr.item-repeat-header-row').filter('tr.g-item-options-row').filter(function () {
+          var rowItemId = parseInt($(this).data('item-id'), 10) || 0;
+          return !itemId || !rowItemId || rowItemId === itemId;
+        });
+      }
+
+      if (!$specRows.length && $tr.hasClass('g-item-options-row')) {
+        $specRows = $tr;
+      }
+
+      return {
+        itemId: itemId,
+        infoRow: $infoRow,
+        detailBtn: $detailBtn,
+        specRows: $specRows,
+        searchScope: $specRows.length ? $specRows : $tr
+      };
+    }
+
+    function savePrintSettings($tr, itemId, orderId) {
+      var deferred = $.Deferred();
+      var context = findProductSpecContext($tr, itemId);
+      var $infoRow = context.infoRow;
+      var $detailBtn = context.detailBtn;
+      var $searchScope = context.searchScope;
+      itemId = context.itemId;
+
+      if (!itemId || !$detailBtn.length) {
+        deferred.resolve({ skipped: true });
+        return deferred.promise();
+      }
+
+      function scopedValue(selector) {
+        var $field = $searchScope.find(selector).first();
+        if (!$field.length) {
+          $field = $infoRow.find(selector).first();
+        }
+        return $field.length ? ($field.val() || '') : '';
+      }
+
+      var printer = scopedValue('.item-print-printer');
+      var material = scopedValue('.item-print-material');
+      var finish = scopedValue('.item-print-finish');
+      var grip = scopedValue('.item-print-grip');
+      var trSwingarms = scopedValue('.item-print-tr-swingarms');
 
       var existing = {};
       try {
@@ -4828,26 +4898,12 @@ ob_start();
       existing['_print_grip'] = grip;
       existing['_print_tr_swingarms'] = trSwingarms;
 
-      // Zbieraj všetky item-print-generic selecty z options row
-      var $searchRow = $optRow.length ? $optRow : $tr;
-      $searchRow.find('.item-print-generic[data-internal-key]').each(function () {
+      $searchScope.find('.item-print-generic[data-internal-key], .print-ac-input[data-internal-key], textarea[data-internal-key]').each(function () {
         var key = $(this).data('internal-key');
         if (key) existing[key] = $(this).val() || '';
       });
 
-      // Zbieraj print-ac-input s data-internal-key
-      $searchRow.find('.print-ac-input[data-internal-key]').each(function () {
-        var key = $(this).data('internal-key');
-        if (key) existing[key] = $(this).val() || '';
-      });
-
-      // Zbieraj textarea s data-internal-key
-      $searchRow.find('textarea[data-internal-key]').each(function () {
-        var key = $(this).data('internal-key');
-        if (key) existing[key] = $(this).val() || '';
-      });
-
-      $searchRow.find('.item-product-spec-field[data-source-key]').each(function () {
+      $searchScope.find('.item-product-spec-field[data-source-key]').each(function () {
         var $field = $(this);
         var sourceKey = String($field.data('source-key') || '');
         if (!sourceKey) {
@@ -4869,11 +4925,18 @@ ob_start();
         $detailBtn.attr('data-print-grip', grip);
         $detailBtn.attr('data-print-tr-swingarms', trSwingarms);
 
-        var $flashTargets = $searchRow.find('select, input, textarea').add($infoRow.find('.print-settings-cell input, .print-settings-cell select'));
+        var $flashTargets = $searchScope.find('select, input, textarea').add($infoRow.find('.print-settings-cell input, .print-settings-cell select'));
         $flashTargets.css('border-color', '#28a745');
         setTimeout(function () {
           $flashTargets.css('border-color', '');
         }, 1000);
+
+        deferred.resolve({ ok: true });
+      }
+
+      function failSave(message, xhr) {
+        alert(message);
+        deferred.reject(xhr || message);
       }
 
       function saveInternalOptions() {
@@ -4882,12 +4945,12 @@ ob_start();
           internal_options_json: newJson
         }, function (res) {
           if (!res || !res.ok) {
-            alert(res && res.error ? res.error : 'Save failed');
+            failSave(res && res.error ? res.error : 'Save failed', res);
             return;
           }
           finishSave();
         }, 'json').fail(function (xhr) {
-          alert('Update request failed:\n' + xhr.status + '\n' + xhr.responseText);
+          failSave('Update request failed:\n' + xhr.status + '\n' + xhr.responseText, xhr);
         });
       }
 
@@ -4896,15 +4959,85 @@ ob_start();
         options_json: newOptionsJson
       }, function (res) {
         if (!res || !res.ok) {
-          alert(res && res.error ? res.error : 'Save failed');
+          failSave(res && res.error ? res.error : 'Save failed', res);
           return;
         }
         saveInternalOptions();
       }, 'json').fail(function (xhr) {
-        alert('Update request failed:\n' + xhr.status + '\n' + xhr.responseText);
+        failSave('Update request failed:\n' + xhr.status + '\n' + xhr.responseText, xhr);
       });
+
+      return deferred.promise();
     }
 
+    function reloadAfterUnifiedItemSave(orderId) {
+      orderId = parseInt(orderId, 10) || 0;
+      if (orderId && typeof reloadOrderDetail === 'function') {
+        reloadOrderDetail(orderId);
+        return;
+      }
+      window.location.reload();
+    }
+
+    $('.order-detail-card .btn-save-item').off('click.productSpecUnifiedSave').on('click.productSpecUnifiedSave', function (e) {
+      var $btn = $(this);
+      var $infoRow = $btn.closest('tr.item-info-row');
+      var itemId = parseInt($btn.data('id'), 10) || 0;
+      var context = findProductSpecContext($infoRow, itemId);
+
+      if (!context.specRows.length) {
+        return;
+      }
+
+      e.preventDefault();
+      e.stopImmediatePropagation();
+
+      var orderId = parseInt($btn.data('order-id'), 10) || parseInt($btn.closest('.order-detail-card').data('order-id'), 10) || 0;
+      var originalHtml = $btn.html();
+      var title = $infoRow.find('.item-title').val() || $.trim($infoRow.find('.item-title').text()) || '';
+      var type = $infoRow.find('.item-type').val() || $infoRow.data('item-type') || '';
+      var qty = $infoRow.find('.item-qty').val() || 1;
+      var sku = $infoRow.find('.item-sku').val() || '';
+      var label = $infoRow.find('.item-label').val() || '';
+      var unitPrice = $infoRow.find('.item-unit-price').val();
+
+      if (!itemId || !title || !type) {
+        alert('Invalid item data');
+        return;
+      }
+
+      $btn.prop('disabled', true).text('Saving...');
+
+      savePrintSettings($infoRow, itemId, orderId).done(function () {
+        var payload = {
+          item_id: itemId,
+          title: title,
+          type: type,
+          qty: qty,
+          sku: sku,
+          custom_label: label
+        };
+
+        if (unitPrice !== undefined) {
+          payload.unit_price = unitPrice;
+        }
+
+        $.post('scripts/orders/update_order_item.php', payload, function (res) {
+          if (!res || !res.ok) {
+            alert(res && res.error ? res.error : 'Update failed');
+            $btn.prop('disabled', false).html(originalHtml);
+            return;
+          }
+
+          reloadAfterUnifiedItemSave(orderId);
+        }, 'json').fail(function () {
+          alert('Update request failed');
+          $btn.prop('disabled', false).html(originalHtml);
+        });
+      }).fail(function () {
+        $btn.prop('disabled', false).html(originalHtml);
+      });
+    });
     // Input events — autocomplete
     function getBinaryProductSpecState($select) {
       var value = $.trim(String($select.val() || '')).toLowerCase();

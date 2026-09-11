@@ -1881,9 +1881,6 @@ $deptOptions = [
     ['id' => 'open_orders', 'label' => 'Open Orders', 'params' => ['exclude_status' => implode(',', $defaultHiddenOrderStatuses)], 'count' => $openOrdersCount, 'color' => '#6c757d', 'text_color' => ordersContrastColor('#6c757d')],
   ];
   foreach (ordersGetOrderTabBarStatusDefinitions($conn, (int)$dpt) as $code => $meta) {
-    if (in_array($code, $defaultHiddenOrderStatuses, true)) {
-      continue;
-    }
     $quickTabs[] = [
       'id' => 'order_' . strtolower($code),
       'label' => (string)($meta['label'] ?? $code),

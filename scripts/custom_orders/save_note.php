@@ -19,7 +19,7 @@ if ($noteBody === '') {
 
 $newNoteId = customOrdersAddNote($conn, $orderId, 'INTERNAL', $noteBody, $userId, $parentNoteId);
 if ($newNoteId <= 0) {
-  customOrdersFlash('danger', 'Note could not be saved.');
+  customOrdersFlash('danger', $parentNoteId > 0 ? 'Reply could not be saved. Replies are allowed only once on the original note.' : 'Note could not be saved.');
   customOrdersRedirect($orderId);
 }
 customOrdersFlash('success', $parentNoteId > 0 ? 'Reply submitted.' : 'Note submitted.');

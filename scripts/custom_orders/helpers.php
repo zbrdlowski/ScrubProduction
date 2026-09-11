@@ -1251,16 +1251,33 @@ function customOrdersAddNote(mysqli $conn, int $orderId, string $noteType, strin
   $supportsReplies = isset($noteColumns['parent_note_id']);
   $resolvedParentNoteId = 0;
   if ($supportsReplies && $parentNoteId > 0) {
-    $parentStmt = $conn->prepare('SELECT id, parent_note_id FROM custom_order_notes WHERE id = ? AND custom_order_id = ? LIMIT 1');
-    if ($parentStmt) {
-      $parentStmt->bind_param('ii', $parentNoteId, $orderId);
-      $parentStmt->execute();
-      $parentRow = $parentStmt->get_result()->fetch_assoc();
-      $parentStmt->close();
-      if ($parentRow) {
-        $resolvedParentNoteId = (int) (($parentRow['parent_note_id'] ?? 0) ?: $parentRow['id']);
-      }
+    $parentStmt = $conn->prepare('SELECT id, parent_note_id, deleted_at FROM custom_order_notes WHERE id = ? AND custom_order_id = ? LIMIT 1');
+    if (!$parentStmt) {
+      return 0;
     }
+    $parentStmt->bind_param('ii', $parentNoteId, $orderId);
+    $parentStmt->execute();
+    $parentRow = $parentStmt->get_result()->fetch_assoc();
+    $parentStmt->close();
+
+    if (!$parentRow || !empty($parentRow['deleted_at']) || (int) ($parentRow['parent_note_id'] ?? 0) > 0) {
+      return 0;
+    }
+
+    $parentRootId = (int) $parentRow['id'];
+    $replyStmt = $conn->prepare('SELECT id FROM custom_order_notes WHERE custom_order_id = ? AND parent_note_id = ? LIMIT 1');
+    if (!$replyStmt) {
+      return 0;
+    }
+    $replyStmt->bind_param('ii', $orderId, $parentRootId);
+    $replyStmt->execute();
+    $existingReply = $replyStmt->get_result()->fetch_assoc();
+    $replyStmt->close();
+    if ($existingReply) {
+      return 0;
+    }
+
+    $resolvedParentNoteId = $parentRootId;
   }
 
   if ($supportsReplies) {

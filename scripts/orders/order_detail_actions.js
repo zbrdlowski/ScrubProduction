@@ -966,6 +966,7 @@ $(document)
 
         const $field = $(this);
         if ($field.is(":disabled, [readonly]")) return;
+        if ($field.is(".item-product-spec-field")) return;
 
         if (triggerEnterSave($field)) {
           e.preventDefault();

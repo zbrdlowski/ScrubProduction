@@ -341,9 +341,92 @@ function dashboardFlag(string $code): string
     ' . htmlspecialchars($code) . '
   </span>';
 }
+
+function dashboardInfoIcon(string $tooltip): string
+{
+  $escapedTooltip = htmlspecialchars($tooltip, ENT_QUOTES, 'UTF-8');
+
+  return '<span class="dashboard-filter-help" tabindex="0" data-dashboard-tooltip="' . $escapedTooltip . '" aria-label="' . $escapedTooltip . '">
+    <i class="fas fa-info-circle" aria-hidden="true"></i>
+  </span>';
+}
 ?>
 
 <style>
+  .dashboard-filter-title {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .dashboard-filter-help {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+    color: inherit;
+    cursor: help;
+    font-size: 12px;
+    line-height: 1;
+    opacity: .82;
+    position: relative;
+    vertical-align: middle;
+  }
+
+  .dashboard-filter-help:hover,
+  .dashboard-filter-help:focus {
+    color: inherit;
+    outline: none;
+    opacity: 1;
+  }
+
+  .dashboard-filter-help::before,
+  .dashboard-filter-help::after {
+    opacity: 0;
+    pointer-events: none;
+    position: absolute;
+    visibility: hidden;
+  }
+
+  .dashboard-filter-help::before {
+    border: 5px solid transparent;
+    border-top-color: #111827;
+    bottom: calc(100% + 3px);
+    content: "";
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 1071;
+  }
+
+  .dashboard-filter-help::after {
+    background: #111827;
+    border: 1px solid rgba(255, 255, 255, .18);
+    border-radius: 4px;
+    bottom: calc(100% + 12px);
+    box-shadow: 0 8px 18px rgba(0, 0, 0, .28);
+    color: #f8f9fa;
+    content: attr(data-dashboard-tooltip);
+    font-size: 12px;
+    font-weight: 400;
+    left: 50%;
+    line-height: 1.3;
+    padding: 7px 9px;
+    text-align: left;
+    transform: translateX(-50%);
+    white-space: normal;
+    width: 260px;
+    z-index: 1070;
+  }
+
+  .dashboard-filter-help:hover::before,
+  .dashboard-filter-help:hover::after,
+  .dashboard-filter-help:focus::before,
+  .dashboard-filter-help:focus::after {
+    opacity: 1;
+    visibility: visible;
+  }
+
   .addon-sales-card-header {
     gap: 10px;
   }
@@ -558,7 +641,10 @@ function dashboardFlag(string $code): string
 
       <div class="card card-info flex-fill">
         <div class="card-header">
-          <h3 class="card-title">Active Work by Department</h3>
+          <h3 class="card-title dashboard-filter-title">
+            Active Work by Department
+            <?= dashboardInfoIcon('Filters open orders that still contain work for the selected department. Shipped and cancelled orders are excluded.') ?>
+          </h3>
         </div>
         <div class="card-body">
           <a href="index.php?page=orders&type=G" class="btn btn-block btn-outline-info text-left">
@@ -578,7 +664,10 @@ function dashboardFlag(string $code): string
 
       <div class="card card-warning flex-fill">
         <div class="card-header">
-          <h3 class="card-title">Unfinished Work by Department</h3>
+          <h3 class="card-title dashboard-filter-title">
+            Unfinished Work by Department
+            <?= dashboardInfoIcon('Filters open orders where the selected department is waiting or blocked, based on orange or red traffic status. Shipped and cancelled orders are excluded.') ?>
+          </h3>
         </div>
         <div class="card-body">
           <a href="index.php?page=orders&type=G" class="btn btn-block btn-outline-warning text-left">
@@ -722,7 +811,10 @@ function dashboardFlag(string $code): string
     <div class="col-md-6 d-flex">
       <div class="card card-danger flex-fill">
         <div class="card-header">
-          <h3 class="card-title">Oldest Waiting / Blocked</h3>
+          <h3 class="card-title dashboard-filter-title">
+            Oldest Waiting / Blocked
+            <?= dashboardInfoIcon('Shows the oldest open orders whose overall traffic light is orange or red. Shipped and cancelled orders are excluded.') ?>
+          </h3>
         </div>
 
         <div class="card-body table-responsive p-0">
@@ -788,7 +880,10 @@ function dashboardFlag(string $code): string
     <div class="col-md-6 d-flex">
       <div class="card card-secondary flex-fill">
         <div class="card-header">
-          <h3 class="card-title">Department Workload</h3>
+          <h3 class="card-title dashboard-filter-title">
+            Department Workload
+            <?= dashboardInfoIcon('Shows open order items grouped by department item type. Shipped and cancelled orders are excluded.') ?>
+          </h3>
         </div>
 
         <div class="card-body d-flex flex-column justify-content-around">

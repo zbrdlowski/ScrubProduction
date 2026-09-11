@@ -7,9 +7,9 @@ header('Content-Type: text/html; charset=utf-8');
 require_once dirname(__DIR__, 2) . '/includes/conn.php';
 require_once __DIR__ . '/activity_helper.php';
 
-if ((int) ($_SESSION['permission'] ?? 0) < 400) {
+if (!isset($_SESSION['permission'])) {
   http_response_code(403);
-  echo '<div class="alert alert-danger mb-0">No permission.</div>';
+  echo '<div class="alert alert-danger mb-0">Please log in first.</div>';
   exit;
 }
 

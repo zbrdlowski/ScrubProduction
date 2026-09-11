@@ -2006,6 +2006,16 @@ if (!$customOrdersDetailRequest) {
     border-left: 4px solid var(--item-status-color, #17a2b8) !important;
   }
 
+  .custom-item-status-select.is-workflow-disabled,
+  .custom-item-status-select:disabled {
+    opacity: .48;
+    cursor: not-allowed;
+  }
+
+  .custom-item-status-select.is-workflow-disabled {
+    border-left-color: #6c757d !important;
+  }
+
   .custom-payment-entry-grid {
     display: grid;
     grid-template-columns: 1.05fr 1.05fr .85fr .7fr 1.05fr;
@@ -4381,7 +4391,7 @@ if (!$customOrdersDetailRequest) {
                             <span class="custom-builder-type-badge" data-builder-type-badge><?= h($currentBuilderType !== '' ? $currentBuilderType : '?') ?></span>
                           </td>
                           <td style="min-width:280px;">
-                            <input type="text" name="title" class="form-control form-control-sm mb-1" value="<?= h($builderTitleValue) ?>" required>
+                            <input type="text" name="title" class="form-control form-control-sm mb-1" value="<?= h($builderTitleValue) ?>" placeholder="Product name" required>
                             <div class="custom-existing-item-meta-edit">
                               <input type="text" name="sku" class="form-control form-control-sm" value="<?= h($editItem['sku'] ?? '') ?>" placeholder="SKU / MANUAL">
                               <input type="text" name="custom_label" class="form-control form-control-sm" value="<?= h($editItem['custom_label'] ?? '') ?>" placeholder="Custom label">
@@ -4418,10 +4428,14 @@ if (!$customOrdersDetailRequest) {
                             <button type="button" class="btn btn-xs btn-outline-info custom-builder-mini-btn" disabled>Detail</button>
                           </td>
                           <td style="min-width:140px;">
-                            <select name="item_status" class="form-control form-control-sm custom-item-status-select" data-status-dynamic="1" <?= $itemWorkflowStatusEnabled ? '' : 'disabled aria-disabled="true" title="Item workflow starts after export to Production."' ?>>
+                            <select name="item_status" class="form-control form-control-sm custom-item-status-select<?= $itemWorkflowStatusEnabled ? '' : ' is-workflow-disabled' ?>" data-status-dynamic="1" <?= $itemWorkflowStatusEnabled ? '' : 'disabled aria-disabled="true" title="Item workflow starts after export to Production."' ?>>
+                              <?php if (!$itemWorkflowStatusEnabled): ?>
+                                <option value="" data-color="#6c757d" selected>Disabled until export</option>
+                              <?php else: ?>
                               <?php foreach ($builderStatusDefinitions as $statusCode => $statusMeta): ?>
                                 <option value="<?= h($statusCode) ?>" data-color="<?= h((string) ($statusMeta['color'] ?? '')) ?>" <?= $builderCurrentStatus === $statusCode ? 'selected' : '' ?>><?= h((string) ($statusMeta['label'] ?? $statusCode)) ?></option>
                               <?php endforeach; ?>
+                              <?php endif; ?>
                             </select>
                           </td>
                           <td style="min-width:170px;">
@@ -4581,7 +4595,7 @@ if (!$customOrdersDetailRequest) {
                           </td>
                           <td class="text-center" style="width:46px;"><span class="custom-builder-type-badge"><?= h($itemTypeCode) ?></span></td>
                           <td style="min-width:280px;">
-                            <input name="title" class="form-control form-control-sm mb-1" value="<?= h($item['title']) ?>" required>
+                            <input type="text" name="title" class="form-control form-control-sm mb-1" value="<?= h($item['title']) ?>" placeholder="Product name" required>
                             <div class="custom-existing-item-meta-edit">
                               <input name="sku" class="form-control form-control-sm" value="<?= h($item['sku'] ?: 'MANUAL') ?>" placeholder="SKU">
                               <input name="custom_label" class="form-control form-control-sm" value="<?= h($item['custom_label']) ?>" placeholder="Custom label">
@@ -4606,10 +4620,14 @@ if (!$customOrdersDetailRequest) {
                           <td class="text-center" style="width:76px;"><button type="button" class="btn btn-sm btn-outline-info custom-builder-link-btn" disabled><i class="fas fa-external-link-alt"></i></button></td>
                           <td class="text-center" style="width:92px;"><button type="button" class="btn btn-xs btn-outline-info custom-builder-mini-btn" data-toggle="modal" data-target="#<?= h($itemModalId) ?>">Detail</button></td>
                           <td style="min-width:160px;">
-                            <select name="item_status" class="form-control form-control-sm custom-item-status-select" <?= $itemWorkflowStatusEnabled ? '' : 'disabled aria-disabled="true" title="Item workflow starts after export to Production."' ?>>
+                            <select name="item_status" class="form-control form-control-sm custom-item-status-select<?= $itemWorkflowStatusEnabled ? '' : ' is-workflow-disabled' ?>" <?= $itemWorkflowStatusEnabled ? '' : 'disabled aria-disabled="true" title="Item workflow starts after export to Production."' ?>>
+                              <?php if (!$itemWorkflowStatusEnabled): ?>
+                                <option value="" data-color="#6c757d" selected>Disabled until export</option>
+                              <?php else: ?>
                               <?php foreach ($itemStatusDefinitions as $statusCode => $statusMeta): ?>
                                 <option value="<?= h($statusCode) ?>" data-color="<?= h((string) ($statusMeta['color'] ?? '')) ?>" <?= $itemCurrentStatus === $statusCode ? 'selected' : '' ?>><?= h((string) ($statusMeta['label'] ?? $statusCode)) ?></option>
                               <?php endforeach; ?>
+                              <?php endif; ?>
                             </select>
                           </td>
                           <td style="min-width:170px;">
@@ -4864,6 +4882,7 @@ if (!$customOrdersDetailRequest) {
                 $noteIsDeleted = !empty($note['deleted_at']);
                 $noteCanModify = !$noteIsDeleted && ($customOrdersCanManage || (int) ($note['created_by'] ?? 0) === $customOrdersCurrentUserId);
                 $noteAuditRevisions = (array) (($selectedOrder['note_revisions'] ?? [])[(int) $noteId] ?? []);
+                $noteHasReply = !empty($noteReplies[$noteId]);
                 ?>
                 <div class="custom-note-thread">
                   <article id="custom-note-<?= (int) $noteId ?>" class="custom-note-entry<?= $noteIsDeleted ? ' is-deleted' : '' ?>">
@@ -4874,7 +4893,7 @@ if (!$customOrdersDetailRequest) {
                         <span class="custom-note-entry-actions">
                           <?php if (!empty($note['updated_at'])): ?><span class="custom-note-audit-badge">Edited</span><?php endif; ?>
                           <?php if ($noteIsDeleted): ?><span class="custom-note-audit-badge is-deleted">Deleted</span><?php endif; ?>
-                          <?php if (!$noteIsDeleted): ?><button type="button" class="custom-note-reply-button" data-note-reply-toggle data-reply-form="#<?= h($replyFormId) ?>">Reply</button><?php endif; ?>
+                          <?php if (!$noteIsDeleted && !$noteHasReply): ?><button type="button" class="custom-note-reply-button" data-note-reply-toggle data-reply-form="#<?= h($replyFormId) ?>">Reply</button><?php endif; ?>
                           <?php if ($noteCanModify): ?>
                             <button type="button" class="custom-note-reply-button" data-note-edit-toggle data-edit-form="#<?= h($editFormId) ?>">Edit</button>
                             <form method="post" action="scripts/custom_orders/delete_note.php" data-scroll-target="#custom-order-notes-panel" onsubmit="return confirm('Delete this note?');">
@@ -4920,7 +4939,6 @@ if (!$customOrdersDetailRequest) {
                                 <span class="custom-note-entry-actions">
                                   <?php if (!empty($reply['updated_at'])): ?><span class="custom-note-audit-badge">Edited</span><?php endif; ?>
                                   <?php if ($replyIsDeleted): ?><span class="custom-note-audit-badge is-deleted">Deleted</span><?php endif; ?>
-                                  <?php if (!$replyIsDeleted): ?><button type="button" class="custom-note-reply-button" data-note-reply-toggle data-reply-form="#<?= h($replyFormId) ?>">Reply</button><?php endif; ?>
                                   <?php if ($replyCanModify): ?>
                                     <button type="button" class="custom-note-reply-button" data-note-edit-toggle data-edit-form="#<?= h($replyEditFormId) ?>">Edit</button>
                                     <form method="post" action="scripts/custom_orders/delete_note.php" data-scroll-target="#custom-order-notes-panel" onsubmit="return confirm('Delete this reply?');">
@@ -4951,6 +4969,7 @@ if (!$customOrdersDetailRequest) {
                     </div>
                   <?php endif; ?>
 
+                  <?php if (!$noteIsDeleted && !$noteHasReply): ?>
                   <form method="post" action="scripts/custom_orders/save_note.php" id="<?= h($replyFormId) ?>" class="custom-note-reply-form" data-scroll-target="#custom-order-notes-panel" hidden>
                     <input type="hidden" name="custom_order_id" value="<?= (int) $selectedOrder['id'] ?>">
                     <input type="hidden" name="parent_note_id" value="<?= (int) $noteId ?>">
@@ -4961,6 +4980,7 @@ if (!$customOrdersDetailRequest) {
                       <button type="submit" class="btn btn-outline-info btn-sm">Submit</button>
                     </div>
                   </form>
+                  <?php endif; ?>
                 </div>
               <?php endforeach; ?>
               <?php if (!$rootNotes): ?><div class="text-muted">No notes yet. Start the discussion below.</div><?php endif; ?>
@@ -5091,6 +5111,7 @@ if (!$customOrdersDetailRequest) {
     var customOrdersHighlightStorageKey = 'custom-orders-highlight:' + window.location.pathname;
     var customBuilderStatusMap = <?= json_encode($customBuilderStatusMap, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE) ?>;
     var customOrdersCanManage = <?= $customOrdersCanManage ? 'true' : 'false' ?>;
+    var customItemWorkflowStatusEnabled = <?= isset($selectedOrder) && (int) ($selectedOrder['production_order_id'] ?? 0) > 0 ? 'true' : 'false' ?>;
     var customOrdersHelpLang = <?= json_encode($customOrderHelpLang === 'en' ? 'en' : 'sk', JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
 
     function applyCustomOrdersAccess(root) {
@@ -5257,6 +5278,17 @@ if (!$customOrdersDetailRequest) {
       if (!form) return;
       var select = form.querySelector('select[data-status-dynamic="1"]');
       if (!select) return;
+      if (!customItemWorkflowStatusEnabled) {
+        select.innerHTML = '';
+        var option = document.createElement('option');
+        option.value = '';
+        option.textContent = 'Disabled until export';
+        option.setAttribute('data-color', '#6c757d');
+        option.selected = true;
+        select.appendChild(option);
+        syncCustomItemStatusColor(select);
+        return;
+      }
       var key = String(typeCode || '').toUpperCase() + '|' + String(subcategory || '').toUpperCase();
       var definitions = customBuilderStatusMap[key] || customBuilderStatusMap[String(typeCode || '').toUpperCase() + '|'] || {};
       var previous = String(select.value || '').toUpperCase();
