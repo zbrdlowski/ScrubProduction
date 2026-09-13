@@ -330,6 +330,8 @@ $fQ = isset($_GET['q']) ? trim((string) $_GET['q']) : '';
 $fStatus = isset($_GET['status']) ? trim((string) $_GET['status']) : '';
 $fItemStatus = isset($_GET['item_status']) ? strtoupper(trim((string) $_GET['item_status'])) : '';
 $fItemDepartment = isset($_GET['item_department']) ? ordersNormalizeDepartmentCode((string) $_GET['item_department']) : '';
+$fTrafficDepartment = isset($_GET['traffic_department']) ? ordersNormalizeDepartmentCode((string) $_GET['traffic_department']) : '';
+$fTrafficState = isset($_GET['traffic_state']) ? strtolower(trim((string) $_GET['traffic_state'])) : '';
 $fSource = isset($_GET['source']) ? trim((string) $_GET['source']) : '';
 
 // Špeciálny parameter pre pracovné queue — vylúčenie viacerých overall statusov.
@@ -505,6 +507,14 @@ if ($fItemDepartment !== '') {
   }
 } else {
   $fItemStatus = '';
+}
+
+$allowedTrafficDepartments = ['G', 'P', 'F', 'S'];
+$allowedTrafficStates = ['active', 'unfinished'];
+if (!in_array($fTrafficDepartment, $allowedTrafficDepartments, true)
+  || !in_array($fTrafficState, $allowedTrafficStates, true)) {
+  $fTrafficDepartment = '';
+  $fTrafficState = '';
 }
 
 
@@ -740,6 +750,21 @@ if ($fItemDepartment !== '' && $fItemStatus !== '') {
   $params[] = $fItemStatus;
 }
 
+// Dashboard shortcuts for department traffic. "Active" matches every order
+// represented in the department summary; "unfinished" narrows it to orange/red.
+if ($fTrafficDepartment !== '' && $fTrafficState !== '') {
+  if ($fTrafficState === 'unfinished') {
+    $where[] = "(o.traffic_summary_json LIKE ? OR o.traffic_summary_json LIKE ?)";
+    $types .= 'ss';
+    $params[] = '%"' . $fTrafficDepartment . '":"ORANGE"%';
+    $params[] = '%"' . $fTrafficDepartment . '":"RED"%';
+  } else {
+    $where[] = 'o.traffic_summary_json LIKE ?';
+    $types .= 's';
+    $params[] = '%"' . $fTrafficDepartment . '":%';
+  }
+}
+
 // Exclude statuses (pre Open Orders tab)
 if ($fExcludeStatuses !== '') {
   $excList = array_filter(array_map('trim', explode(',', $fExcludeStatuses)));
@@ -849,8 +874,10 @@ $sql = " SELECT
   o.order_number,
   o.external_order_id,
   o.order_date,
+  o.production_started_at,
   o.imported_at,
   o.status,
+  o.status_override,
   o.priority,
   o.priority_date,
   o.traffic_light,
@@ -984,9 +1011,10 @@ ORDER BY
 
   CASE
     WHEN o.priority > 0 THEN o.priority_date
-    ELSE o.order_date
+    ELSE COALESCE(o.production_started_at, o.order_date)
   END ASC,
 
+  COALESCE(o.production_started_at, o.order_date) ASC,
   o.order_date ASC,
   o.id ASC
 LIMIT 1000";
@@ -1852,7 +1880,7 @@ $deptOptions = [
   function qtabIsActive(array $tabParams): bool
   {
     global $fExcludeStatuses;
-    $filterKeys = ['status', 'item_status', 'item_department', 'exclude_status', 'source', 'country', 'payment', 'shipping', 'priority', 'date_from', 'date_to', 'worker', 'dept', 'cat', 'type', 'q', 'print_printer', 'print_material', 'print_finish'];
+    $filterKeys = ['status', 'item_status', 'item_department', 'traffic_department', 'traffic_state', 'exclude_status', 'source', 'country', 'payment', 'shipping', 'priority', 'date_from', 'date_to', 'worker', 'dept', 'cat', 'type', 'q', 'print_printer', 'print_material', 'print_finish'];
     foreach ($tabParams as $k => $v) {
       $actualValue = $k === 'exclude_status' ? $fExcludeStatuses : ($_GET[$k] ?? '');
       if ((string)$actualValue !== (string)$v)
@@ -1870,7 +1898,7 @@ $deptOptions = [
   function qtabUrl(array $tabParams): string
   {
     $current = $_GET;
-    foreach (['status', 'item_status', 'item_department', 'exclude_status', 'source', 'country', 'payment', 'shipping', 'priority', 'date_from', 'date_to', 'worker', 'dept', 'cat', 'type', 'q', 'print_printer', 'print_material', 'print_finish'] as $k) {
+    foreach (['status', 'item_status', 'item_department', 'traffic_department', 'traffic_state', 'exclude_status', 'source', 'country', 'payment', 'shipping', 'priority', 'date_from', 'date_to', 'worker', 'dept', 'cat', 'type', 'q', 'print_printer', 'print_material', 'print_finish'] as $k) {
       unset($current[$k]);
     }
     $qs = http_build_query(array_merge($current, $tabParams));
@@ -1987,6 +2015,11 @@ $deptOptions = [
       $activeFilterBadges[] = [
         'label' => $fItemDepartment . ' item status',
         'display' => ordersGetStatusLabel($conn, 'item', $fItemStatus, $fItemDepartment),
+      ];
+    if ($fTrafficDepartment !== '' && $fTrafficState !== '')
+      $activeFilterBadges[] = [
+        'label' => $fTrafficDepartment . ' traffic',
+        'display' => $fTrafficState === 'unfinished' ? 'Unfinished work' : 'Active work',
       ];
     if ($fSource !== '')
       $activeFilterBadges[] = ['label' => 'Source', 'display' => $fSource];
@@ -2219,6 +2252,11 @@ $deptOptions = [
         && count($activeFilterBadges) === 1
       )
       || (
+        $fTrafficDepartment !== ''
+        && $fTrafficState !== ''
+        && count($activeFilterBadges) === 1
+      )
+      || (
         $fExcludeStatuses !== ''
         && empty($fStatus)
         && count($activeFilterBadges) === 0
@@ -2231,6 +2269,8 @@ $deptOptions = [
       && $fPriority === ''
       && $fCat === ''
       && $fType === ''
+      && $fTrafficDepartment === ''
+      && $fTrafficState === ''
       && $fWorker <= 0
       && $fCountry === ''
       && $fPayment === ''
@@ -2595,6 +2635,9 @@ $deptOptions = [
             $hasCompanyInfo = ($billingCompany !== '' || $billingCompanyId !== '');
             $detailStatusDateRaw = $detailStatusDateRule ? ($detailStatusDates[$orderId][$detailStatusCode] ?? '') : '';
             $detailStatusDateFmt = ordersFormatDetailStatusDate($detailStatusDateRaw);
+            $productionQueueDate = !empty($row['production_started_at'])
+              ? (string) $row['production_started_at']
+              : (string) ($row['order_date'] ?? '');
             $externalOrderDisplay = ordersExternalOrderDisplay(
               (string) ($row['external_order_id'] ?? ''),
               (string) ($row['source_meta'] ?? '')
@@ -2605,14 +2648,19 @@ $deptOptions = [
               data-priority-sort="<?= ($priorityValue >= 20 ? 0 : ($priorityValue >= 10 ? 1 : 2)) ?>" data-date-sort="<?= htmlspecialchars((string) (
                               ($priorityValue > 0 && !empty($row['priority_date']))
                               ? $row['priority_date']
-                              : ($row['order_date'] ?? '9999-12-31')
+                              : ($productionQueueDate !== '' ? $productionQueueDate : '9999-12-31')
                             )) ?>">
               <td class="text-center">
                 <?php
-                $dateRaw = $row['order_date'] ?? null;
+                $dateRaw = $productionQueueDate;
                 if (!empty($dateRaw)) {
                   $dt = new DateTime($dateRaw);
-                  echo $dt->format('d.m.Y');
+                  $originalOrderDate = (string) ($row['order_date'] ?? '');
+                  $dateTitle = !empty($row['production_started_at']) && $originalOrderDate !== ''
+                    ? 'Production: ' . $dt->format('d.m.Y H:i:s') . '; Order: ' . (new DateTime($originalOrderDate))->format('d.m.Y H:i:s')
+                    : '';
+                  echo '<span' . ($dateTitle !== '' ? ' title="' . htmlspecialchars($dateTitle, ENT_QUOTES, 'UTF-8') . '"' : '') . '>'
+                    . $dt->format('d.m.Y') . '</span>';
                 } else {
                   echo '—';
                 }
@@ -2829,6 +2877,11 @@ $deptOptions = [
                 <button type="button" class="btn btn-xs orders-status-chip" style="<?= $statusStyle ?> pointer-events:none;">
                   <?= htmlspecialchars($statusLabel ?: '-') ?>
                 </button>
+                <?php if ((int) ($row['status_override'] ?? 0) === 1): ?>
+                  <span class="badge badge-warning ml-1" title="Item changes are saved, but the overall order status is locked">
+                    <i class="fas fa-lock mr-1"></i>Workflow paused
+                  </span>
+                <?php endif; ?>
               </td>
               <td data-assigned-cell="<?= $orderId ?>"><?= render_assigned_users_html($conn, $orderId, (string) ($row['assigned_users'] ?? '')) ?></td>
 
@@ -3704,6 +3757,7 @@ $deptOptions = [
     const wasLockedByWarranty = $checkbox.prop('disabled');
 
     if (type === 'WARRANTY') {
+      $panel.find('.followup-item-qty').prop('readonly', false);
       $checkbox.prop('checked', true).prop('disabled', true);
       $state.text('Do not invoice').removeClass('bg-secondary').addClass('bg-danger');
       $hint.text('Warranty claim creates a no-invoice production order and keeps the workflow out of Ready to Invoice.');
@@ -3713,10 +3767,12 @@ $deptOptions = [
     if (type === 'SPLIT') {
       $checkbox.prop('checked', true).prop('disabled', true);
       $state.text('Do not invoice').removeClass('bg-secondary').addClass('bg-danger');
-      $hint.text('Order split moves selected items into a separate order for their own box and tracking number (Q1, Q2, ...).');
+      $panel.find('.followup-item-qty').val(1).prop('readonly', true);
+      $hint.text('Order split moves exactly 1 unit from every selected item and automatically subtracts it from the original order (Q1, Q2, ...).');
       return;
     }
 
+    $panel.find('.followup-item-qty').prop('readonly', false);
     $checkbox.prop('disabled', false);
     if (wasLockedByWarranty) {
       $checkbox.prop('checked', false);
@@ -3749,7 +3805,23 @@ $deptOptions = [
     const $checks = $panel.find('.followup-item-check');
     const shouldCheck = $checks.filter(':checked').length !== $checks.length;
     $checks.prop('checked', shouldCheck);
+    if (shouldCheck && String($panel.find('.followup-type-select').val() || '').toUpperCase() === 'SPLIT') {
+      $checks.each(function () {
+        const itemId = parseInt($(this).data('item-id') || '0', 10);
+        $panel.find('.followup-item-qty[data-item-id="' + itemId + '"]').val(1);
+      });
+    }
     $(this).text(shouldCheck ? 'Clear all' : 'Select all');
+  });
+
+  $(document).on('change', '.followup-item-check', function () {
+    const $check = $(this);
+    if (!$check.is(':checked')) return;
+    const $panel = $check.closest('.order-followup-panel');
+    if (String($panel.find('.followup-type-select').val() || '').toUpperCase() !== 'SPLIT') return;
+
+    const itemId = parseInt($check.data('item-id') || '0', 10);
+    $panel.find('.followup-item-qty[data-item-id="' + itemId + '"]').val(1);
   });
 
   $(document).on('change', '.followup-type-select, .followup-do-not-invoice', function () {
@@ -3772,7 +3844,9 @@ $deptOptions = [
     let selectedCount = 0;
     $panel.find('.followup-item-check:checked').each(function () {
       const itemId = parseInt($(this).data('item-id') || '0', 10);
-      const qty = parseInt($panel.find('.followup-item-qty[data-item-id="' + itemId + '"]').val() || '0', 10);
+      const qty = type === 'SPLIT'
+        ? 1
+        : parseInt($panel.find('.followup-item-qty[data-item-id="' + itemId + '"]').val() || '0', 10);
       if (!itemId || qty <= 0) return;
       payload['selected_items[' + itemId + ']'] = qty;
       selectedCount++;

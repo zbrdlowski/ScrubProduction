@@ -52,7 +52,9 @@ $sql = "SELECT
     o.order_number,
     o.external_order_id,
     o.status,
+    o.status_override,
     o.order_date,
+    o.production_started_at,
     o.imported_at,
     o.traffic_light,
     o.traffic_summary_json,
@@ -127,7 +129,7 @@ WHERE
       )
     )
     AND UPPER(o.status) != 'SHIPPED'
-ORDER BY o.order_date ASC
+ORDER BY COALESCE(o.production_started_at, o.order_date) ASC, o.order_date ASC
 ";
 
 $stmt = $conn->prepare($sql);
@@ -327,8 +329,11 @@ function profileRoleBadge(string $role): string
             <tr class="profile-order-row order-row <?= $rowClass ?>" data-order-id="<?= $orderId ?>">
                 <td>
                     <?php
-                    if (!empty($row['order_date'])) {
-                        echo date('d.m.Y', strtotime((string)$row['order_date']));
+                    $profileQueueDate = !empty($row['production_started_at'])
+                        ? (string)$row['production_started_at']
+                        : (string)($row['order_date'] ?? '');
+                    if ($profileQueueDate !== '') {
+                        echo date('d.m.Y', strtotime($profileQueueDate));
                     } else {
                         echo '—';
                     }
@@ -383,6 +388,11 @@ function profileRoleBadge(string $role): string
                     <button class="btn btn-xs <?= profileStatusButtonClass($statusUpper) ?>" style="pointer-events:none;">
                         <?= htmlspecialchars(str_replace('_', ' ', $statusUpper) ?: '-') ?>
                     </button>
+                    <?php if ((int)($row['status_override'] ?? 0) === 1): ?>
+                        <span class="badge badge-warning ml-1" title="Item changes are saved, but the overall order status is locked">
+                            <i class="fas fa-lock mr-1"></i>Workflow paused
+                        </span>
+                    <?php endif; ?>
                 </td>
 
                 <td><?= profileRoleBadge((string)$row['role']) ?></td>

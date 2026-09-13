@@ -62,38 +62,38 @@ $shippedToday = dash_scalar($conn, "SELECT COUNT(DISTINCT order_id)
 
 $deptBlocked = [
   'G' => dash_scalar($conn, "SELECT COUNT(*) FROM orders
-    WHERE status NOT IN ('SHIPPED','CANCELLED')
+    WHERE status NOT IN ('SHIPPED','CANCELLED','PENDING')
       AND (traffic_summary_json LIKE '%\"G\":\"ORANGE\"%' OR traffic_summary_json LIKE '%\"G\":\"RED\"%')
   "),
   'P' => dash_scalar($conn, "SELECT COUNT(*) FROM orders
-    WHERE status NOT IN ('SHIPPED','CANCELLED')
+    WHERE status NOT IN ('SHIPPED','CANCELLED','PENDING')
       AND (traffic_summary_json LIKE '%\"P\":\"ORANGE\"%' OR traffic_summary_json LIKE '%\"P\":\"RED\"%')
   "),
   'F' => dash_scalar($conn, "SELECT COUNT(*) FROM orders
-    WHERE status NOT IN ('SHIPPED','CANCELLED')
+    WHERE status NOT IN ('SHIPPED','CANCELLED','PENDING')
       AND (traffic_summary_json LIKE '%\"F\":\"ORANGE\"%' OR traffic_summary_json LIKE '%\"F\":\"RED\"%')
   "),
   'S' => dash_scalar($conn, "SELECT COUNT(*) FROM orders
-    WHERE status NOT IN ('SHIPPED','CANCELLED')
+    WHERE status NOT IN ('SHIPPED','CANCELLED','PENDING')
       AND (traffic_summary_json LIKE '%\"S\":\"ORANGE\"%' OR traffic_summary_json LIKE '%\"S\":\"RED\"%')
   "),
 ];
 
 $deptActive = [
   'G' => dash_scalar($conn, "SELECT COUNT(*) FROM orders
-    WHERE status NOT IN ('SHIPPED','CANCELLED')
+    WHERE status NOT IN ('SHIPPED','CANCELLED','PENDING')
       AND traffic_summary_json LIKE '%\"G\":%'
   "),
   'P' => dash_scalar($conn, "SELECT COUNT(*) FROM orders
-    WHERE status NOT IN ('SHIPPED','CANCELLED')
+    WHERE status NOT IN ('SHIPPED','CANCELLED','PENDING')
       AND traffic_summary_json LIKE '%\"P\":%'
   "),
   'F' => dash_scalar($conn, "SELECT COUNT(*) FROM orders
-    WHERE status NOT IN ('SHIPPED','CANCELLED')
+    WHERE status NOT IN ('SHIPPED','CANCELLED','PENDING')
       AND traffic_summary_json LIKE '%\"F\":%'
   "),
   'S' => dash_scalar($conn, "SELECT COUNT(*) FROM orders
-    WHERE status NOT IN ('SHIPPED','CANCELLED')
+    WHERE status NOT IN ('SHIPPED','CANCELLED','PENDING')
       AND traffic_summary_json LIKE '%\"S\":%'
   "),
 ];
@@ -133,6 +133,8 @@ $blockedRows = dash_rows($conn, "SELECT
     o.traffic_light,
     o.traffic_summary_json,
     o.order_date,
+    o.production_started_at,
+    DATE_FORMAT(COALESCE(o.production_started_at, o.order_date), '%d.%m.%Y - %H:%i:%s') AS order_date_formatted,
     o.manual_types_override,
     cu.name AS customer_name,
     cu.email AS customer_email,
@@ -154,8 +156,8 @@ $blockedRows = dash_rows($conn, "SELECT
   LEFT JOIN order_addresses oa_bill
     ON oa_bill.order_id = o.id AND UPPER(oa_bill.type) = 'BILLING'
   WHERE o.traffic_light IN ('ORANGE','RED')
-    AND o.status NOT IN ('SHIPPED','CANCELLED')
-  ORDER BY o.order_date ASC
+    AND o.status NOT IN ('SHIPPED','CANCELLED','PENDING')
+  ORDER BY COALESCE(o.production_started_at, o.order_date) ASC, o.order_date ASC
   LIMIT 10
 ");
 
@@ -643,20 +645,20 @@ function dashboardInfoIcon(string $tooltip): string
         <div class="card-header">
           <h3 class="card-title dashboard-filter-title">
             Active Work by Department
-            <?= dashboardInfoIcon('Filters open orders that still contain work for the selected department. Shipped and cancelled orders are excluded.') ?>
+            <?= dashboardInfoIcon('Filters open orders that still contain work for the selected department. Pending, shipped and cancelled orders are excluded.') ?>
           </h3>
         </div>
         <div class="card-body">
-          <a href="index.php?page=orders&type=G" class="btn btn-block btn-outline-info text-left">
+          <a href="index.php?page=orders&amp;traffic_department=G&amp;traffic_state=active" class="btn btn-block btn-outline-info text-left">
             Graphics <span class="float-right badge badge-info"><?= $deptActive['G'] ?></span>
           </a>
-          <a href="index.php?page=orders&type=P" class="btn btn-block btn-outline-primary text-left">
+          <a href="index.php?page=orders&amp;traffic_department=P&amp;traffic_state=active" class="btn btn-block btn-outline-primary text-left">
             Plastics <span class="float-right badge badge-primary"><?= $deptActive['P'] ?></span>
           </a>
-          <a href="index.php?page=orders&type=F" class="btn btn-block btn-outline-danger text-left">
+          <a href="index.php?page=orders&amp;traffic_department=F&amp;traffic_state=active" class="btn btn-block btn-outline-danger text-left">
             Fitting <span class="float-right badge badge-danger"><?= $deptActive['F'] ?></span>
           </a>
-          <a href="index.php?page=orders&type=S" class="btn btn-block btn-outline-success text-left">
+          <a href="index.php?page=orders&amp;traffic_department=S&amp;traffic_state=active" class="btn btn-block btn-outline-success text-left">
             Seat Cover <span class="float-right badge badge-success"><?= $deptActive['S'] ?></span>
           </a>
         </div>
@@ -666,20 +668,20 @@ function dashboardInfoIcon(string $tooltip): string
         <div class="card-header">
           <h3 class="card-title dashboard-filter-title">
             Unfinished Work by Department
-            <?= dashboardInfoIcon('Filters open orders where the selected department is waiting or blocked, based on orange or red traffic status. Shipped and cancelled orders are excluded.') ?>
+            <?= dashboardInfoIcon('Filters open orders where the selected department is waiting or blocked, based on orange or red traffic status. Pending, shipped and cancelled orders are excluded.') ?>
           </h3>
         </div>
         <div class="card-body">
-          <a href="index.php?page=orders&type=G" class="btn btn-block btn-outline-warning text-left">
+          <a href="index.php?page=orders&amp;traffic_department=G&amp;traffic_state=unfinished" class="btn btn-block btn-outline-warning text-left">
             Graphics <span class="float-right badge badge-warning"><?= $deptBlocked['G'] ?></span>
           </a>
-          <a href="index.php?page=orders&type=P" class="btn btn-block btn-outline-warning text-left">
+          <a href="index.php?page=orders&amp;traffic_department=P&amp;traffic_state=unfinished" class="btn btn-block btn-outline-warning text-left">
             Plastics <span class="float-right badge badge-warning"><?= $deptBlocked['P'] ?></span>
           </a>
-          <a href="index.php?page=orders&type=F" class="btn btn-block btn-outline-warning text-left">
+          <a href="index.php?page=orders&amp;traffic_department=F&amp;traffic_state=unfinished" class="btn btn-block btn-outline-warning text-left">
             Fitting <span class="float-right badge badge-warning"><?= $deptBlocked['F'] ?></span>
           </a>
-          <a href="index.php?page=orders&type=S" class="btn btn-block btn-outline-warning text-left">
+          <a href="index.php?page=orders&amp;traffic_department=S&amp;traffic_state=unfinished" class="btn btn-block btn-outline-warning text-left">
             Seat Cover <span class="float-right badge badge-warning"><?= $deptBlocked['S'] ?></span>
           </a>
         </div>
@@ -813,7 +815,7 @@ function dashboardInfoIcon(string $tooltip): string
         <div class="card-header">
           <h3 class="card-title dashboard-filter-title">
             Oldest Waiting / Blocked
-            <?= dashboardInfoIcon('Shows the oldest open orders whose overall traffic light is orange or red. Shipped and cancelled orders are excluded.') ?>
+            <?= dashboardInfoIcon('Shows the oldest open orders whose overall traffic light is orange or red. Pending, shipped and cancelled orders are excluded.') ?>
           </h3>
         </div>
 
@@ -868,7 +870,7 @@ function dashboardInfoIcon(string $tooltip): string
                     </span>
                   </td>
 
-                  <td><?= htmlspecialchars((string) $r['order_date']) ?></td>
+                  <td><?= htmlspecialchars((string) ($r['order_date_formatted'] ?? $r['order_date'])) ?></td>
                 </tr>
               <?php endforeach; ?>
             </tbody>
@@ -1162,6 +1164,10 @@ function dashboardInfoIcon(string $tooltip): string
         let wheelZoomLocked = false;
 
         mapElement.addEventListener('wheel', function (event) {
+          // The mouse wheel belongs to the map while the pointer is over it,
+          // including at the minimum and maximum zoom limits.
+          event.preventDefault();
+
           const mapObject = worldMap.data('mapObject');
           if (!mapObject || event.deltaY === 0) {
             return;
@@ -1172,12 +1178,10 @@ function dashboardInfoIcon(string $tooltip): string
             ? mapObject.zoomCurStep < mapObject.zoomMaxStep
             : mapObject.zoomCurStep > 1;
 
-          // At the zoom limits, leave the wheel available for normal page scrolling.
           if (!canZoom) {
             return;
           }
 
-          event.preventDefault();
           if (wheelZoomLocked) {
             return;
           }

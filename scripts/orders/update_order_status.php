@@ -47,11 +47,16 @@ if ($oldStatus === $newStatus) {
   out(['ok' => true, 'unchanged' => true]);
 }
 
+if ($oldStatus === 'PENDING' && $newStatus !== 'CANCELLED') {
+  out(['ok' => false, 'error' => 'Use Payment confirmed to release a PENDING order to production']);
+}
+
 $stmt = $conn->prepare("UPDATE orders
   SET status = ?,
       status_override = 1,
       status_override_by = ?,
-      status_override_at = NOW()
+      status_override_at = NOW(),
+      status_override_note = 'Manual status change'
   WHERE id = ?
   LIMIT 1
 ");

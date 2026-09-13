@@ -1058,7 +1058,12 @@ function customOrderBuilderDefinitionIsTextarea(array $definition): bool
   return false;
 }
 
-function customOrderItemOptionGroups(mysqli $conn, string $itemTypeCode, array $options): array
+function customOrderItemOptionGroups(
+  mysqli $conn,
+  string $itemTypeCode,
+  array $options,
+  string $graphicsSubcategory = ''
+): array
 {
   $department = customOrdersItemTypeToDepartment($itemTypeCode);
   $sortMap = [];
@@ -1096,7 +1101,12 @@ function customOrderItemOptionGroups(mysqli $conn, string $itemTypeCode, array $
     }
 
     $row = [
-      'label' => productSpecDisplayLabelForOptionKey($conn, (string) $rawKey, $department),
+      'label' => productSpecDisplayLabelForOptionKey(
+        $conn,
+        (string) $rawKey,
+        $department,
+        $graphicsSubcategory
+      ),
       'value' => $value,
       'sort_order' => $sortMap[$normalizedKey] ?? 999,
     ];
@@ -4673,7 +4683,12 @@ if (!$customOrdersDetailRequest) {
             <?php foreach ($selectedOrder['items'] as $item): ?>
               <?php $itemOptions = json_decode((string) ($item['options_json'] ?? ''), true) ?: []; ?>
               <?php $itemCategoryInfo = trim((string) ($itemOptions['category_info'] ?? '')); ?>
-              <?php $itemOptionGroups = customOrderItemOptionGroups($conn, (string) ($item['item_type_code'] ?? ''), $itemOptions); ?>
+              <?php $itemOptionGroups = customOrderItemOptionGroups(
+                $conn,
+                (string) ($item['item_type_code'] ?? ''),
+                $itemOptions,
+                $itemSubcategory
+              ); ?>
               <?php $itemModalId = 'custom-item-modal-' . (int) $item['id']; ?>
               <div class="modal fade custom-item-modal" id="<?= h($itemModalId) ?>" tabindex="-1" role="dialog"
                 aria-hidden="true">

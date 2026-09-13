@@ -291,7 +291,33 @@ function productSpecHumanizeOptionKey(string $key): string
   return $label !== '' ? mb_convert_case($label, MB_CASE_TITLE, 'UTF-8') : $key;
 }
 
-function productSpecDisplayLabelForOptionKey(mysqli $conn, string $optionKey, string $department = ''): string
+function productSpecDefinitionGraphicsSubcategory(array $definition): string
+{
+  if (strtoupper(trim((string) ($definition['department'] ?? ''))) !== 'G') {
+    return '';
+  }
+
+  $specKey = strtolower(trim((string) ($definition['spec_key'] ?? '')));
+  if ($specKey === '' || !defined('GRAPHICS_SUBCAT_LABELS')) {
+    return '';
+  }
+
+  foreach (GRAPHICS_SUBCAT_LABELS as $subCategoryCode => $_label) {
+    $slug = strtolower((string) preg_replace('/[^a-z0-9]+/i', '_', (string) $subCategoryCode));
+    if ($slug !== '' && strpos($specKey, 'graphics_' . $slug . '_') === 0) {
+      return strtoupper((string) $subCategoryCode);
+    }
+  }
+
+  return '';
+}
+
+function productSpecDisplayLabelForOptionKey(
+  mysqli $conn,
+  string $optionKey,
+  string $department = '',
+  string $graphicsSubcategory = ''
+): string
 {
   static $cache = [];
 
@@ -301,33 +327,57 @@ function productSpecDisplayLabelForOptionKey(mysqli $conn, string $optionKey, st
   }
 
   $department = strtoupper(trim($department));
-  $cacheKey = $department . '|' . $normalizedOptionKey;
+  $graphicsSubcategory = $department === 'G' ? strtoupper(trim($graphicsSubcategory)) : '';
+  $cacheKey = $department . '|' . $graphicsSubcategory . '|' . $normalizedOptionKey;
   if (isset($cache[$cacheKey])) {
     return $cache[$cacheKey];
   }
 
-  $departmentsToCheck = [];
-  if ($department !== '') {
-    $departmentsToCheck[] = $department;
-  }
-  foreach (['G', 'S', 'P', 'F'] as $departmentCode) {
-    if (!in_array($departmentCode, $departmentsToCheck, true)) {
-      $departmentsToCheck[] = $departmentCode;
-    }
-  }
+  // A source key such as name-font is shared by main graphics, Moto Carpet,
+  // Stand, Stickers and other subcategories. Never borrow a friendly label
+  // from a different product group merely because the raw key is identical.
+  $departmentsToCheck = $department !== '' ? [$department] : [];
 
   foreach ($departmentsToCheck as $departmentCode) {
+    $matchingDefinitions = [];
     foreach (productSpecFieldDefinitions($conn, $departmentCode) as $definition) {
       $sourceKey = productSpecNormalizeSourceKey((string) ($definition['source_key'] ?? ''));
       if ($sourceKey === '' || $sourceKey !== $normalizedOptionKey) {
         continue;
       }
 
+      if ($departmentCode === 'G') {
+        $definitionSubcategory = productSpecDefinitionGraphicsSubcategory($definition);
+        if ($graphicsSubcategory === '') {
+          if ($definitionSubcategory !== '') {
+            continue;
+          }
+          $rank = 0;
+        } else {
+          if ($definitionSubcategory === $graphicsSubcategory) {
+            $rank = 0;
+          } elseif ($definitionSubcategory === '' && (int) ($definition['apply_to_subcategories'] ?? 0) === 1) {
+            $rank = 1;
+          } elseif ($definitionSubcategory === '') {
+            $rank = 2;
+          } else {
+            continue;
+          }
+        }
+      } else {
+        $rank = 0;
+      }
+
       $label = trim((string) ($definition['label'] ?? ''));
       if ($label !== '') {
-        $cache[$cacheKey] = $label;
-        return $label;
+        $matchingDefinitions[] = ['rank' => $rank, 'label' => $label];
       }
+    }
+
+    if ($matchingDefinitions) {
+      usort($matchingDefinitions, static fn(array $a, array $b): int => $a['rank'] <=> $b['rank']);
+      $cache[$cacheKey] = (string) $matchingDefinitions[0]['label'];
+      return $cache[$cacheKey];
     }
   }
 

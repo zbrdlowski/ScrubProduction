@@ -1357,6 +1357,10 @@ $orderValueBreakdown['shipping'] = orderDetailMoneyValue($sourceMeta['shipping_p
 $orderValueBreakdown['total'] = orderDetailMoneyValue($sourceMeta['total_price_with_vat'] ?? null)
   ?? orderDetailMoneyValue($order['total'] ?? null)
   ?? array_sum($orderValueBreakdown);
+$paymentReceivedAmount = orderDetailMoneyValue($order['payment_received_amount'] ?? null);
+$paymentDifference = $paymentReceivedAmount !== null
+  ? round($paymentReceivedAmount - $orderValueBreakdown['total'], 2)
+  : null;
 
 $percentageBreakdownConfig = orderDetailPercentageBreakdownBySource();
 $breakdownSourceCode = strtoupper(trim((string) ($order['source_code'] ?? '')));
@@ -1648,7 +1652,12 @@ function prepareEditableOptionsJsonForModal(string $json): string
   return jsonEncodeForModal($editable);
 }
 
-function optionLabelMapForModal(mysqli $conn, array $data, string $itemTypeCode = ''): array
+function optionLabelMapForModal(
+  mysqli $conn,
+  array $data,
+  string $itemTypeCode = '',
+  string $graphicsSubcategory = ''
+): array
 {
   $department = productSpecDepartmentForItemType($itemTypeCode);
   $labels = [];
@@ -1663,7 +1672,12 @@ function optionLabelMapForModal(mysqli $conn, array $data, string $itemTypeCode 
       continue;
     }
 
-    $labels[$stringKey] = productSpecDisplayLabelForOptionKey($conn, $stringKey, $department);
+    $labels[$stringKey] = productSpecDisplayLabelForOptionKey(
+      $conn,
+      $stringKey,
+      $department,
+      $graphicsSubcategory
+    );
   }
 
   return $labels;
@@ -2125,6 +2139,16 @@ ob_start();
 
   .order-detail-header-selects .order-types-select {
     width: 86px !important;
+  }
+
+  .order-detail-header-selects .status-override-indicator {
+    align-self: center;
+    white-space: nowrap;
+  }
+
+  .order-detail-header-selects .btn-confirm-order-payment,
+  .order-detail-header-selects .btn-resume-order-workflow {
+    white-space: nowrap;
   }
 
   .order-detail-header .form-control {
@@ -3080,6 +3104,9 @@ ob_start();
           if (!in_array($currentStatus, $statusOptions, true)) {
             $statusOptions[] = $currentStatus;
           }
+          $isPendingStatus = $currentStatus === 'PENDING';
+          $hasStatusOverride = (int) ($order['status_override'] ?? 0) === 1;
+          $isFinalStatus = in_array($currentStatus, ['SHIPPED', 'CANCELLED', 'DELIVERED'], true);
 
           ?>
 
@@ -3090,12 +3117,37 @@ ob_start();
               data-order-id="<?php echo (int) $orderId; ?>" data-original-status="<?php echo h($currentStatus); ?>">
 
               <?php foreach ($statusOptions as $st): ?>
-                <option value="<?php echo h($st); ?>" <?php echo ($currentStatus === $st ? 'selected' : ''); ?>>
+                <?php $pendingOptionDisabled = $isPendingStatus && !in_array($st, ['PENDING', 'CANCELLED'], true); ?>
+                <option value="<?php echo h($st); ?>"
+                  <?php echo ($currentStatus === $st ? 'selected' : ''); ?>
+                  <?php echo ($pendingOptionDisabled ? 'disabled' : ''); ?>>
                   <?php echo h($statusLabels[$st] ?? str_replace('_', ' ', $st)); ?>
                 </option>
               <?php endforeach; ?>
 
             </select>
+
+            <?php if ($isPendingStatus && (int) ($_SESSION['permission'] ?? 0) >= 400): ?>
+              <button type="button" class="btn btn-sm btn-success btn-confirm-order-payment"
+                data-order-id="<?php echo (int) $orderId; ?>"
+                data-expected-amount="<?php echo h(number_format($orderValueBreakdown['total'], 2, '.', '')); ?>"
+                data-currency="<?php echo h((string) ($order['currency'] ?? '')); ?>">
+                <i class="fas fa-money-check-alt mr-1"></i>Payment confirmed
+              </button>
+            <?php endif; ?>
+
+            <?php if ($hasStatusOverride): ?>
+              <span class="badge badge-warning status-override-indicator"
+                title="Item status changes are still saved, but they cannot change the overall order status until automatic workflow is resumed.">
+                <i class="fas fa-lock mr-1"></i>Manual status – workflow paused
+              </span>
+              <?php if (!$isFinalStatus && !$isPendingStatus && (int) ($_SESSION['permission'] ?? 0) >= 400): ?>
+                <button type="button" class="btn btn-sm btn-outline-warning btn-resume-order-workflow"
+                  data-order-id="<?php echo (int) $orderId; ?>">
+                  <i class="fas fa-unlock-alt mr-1"></i>Resume automatic workflow
+                </button>
+              <?php endif; ?>
+            <?php endif; ?>
             <?php
             $manualTypes = strtoupper((string) ($order['manual_types_override'] ?? ''));
             $hasManualTypes = $manualTypes !== '';
@@ -3199,6 +3251,9 @@ ob_start();
               <div class="text-muted">
                 <b>Dátum:</b> <?php echo h($order['order_date'] ?? '-'); ?>
                 <span class="ml-2"><b>Import:</b> <?php echo h($order['imported_at'] ?? '-'); ?></span>
+                <?php if (!empty($order['production_started_at'])): ?>
+                  <span class="ml-2"><b>Production:</b> <?php echo h($order['production_started_at']); ?></span>
+                <?php endif; ?>
               </div>
             </div>
 
@@ -3555,6 +3610,16 @@ ob_start();
               <span>Total Order Value:</span>
               <span><?php echo number_format($orderValueBreakdown['total'], 2, '.', ''); ?><?php echo h($orderCurrencySuffix); ?></span>
             </div>
+            <?php if ($paymentReceivedAmount !== null): ?>
+              <div class="order-value-breakdown-row text-success">
+                <span>Payment received:</span>
+                <span><?php echo number_format($paymentReceivedAmount, 2, '.', ''); ?><?php echo h($orderCurrencySuffix); ?></span>
+              </div>
+              <div class="order-value-breakdown-row <?php echo abs((float) $paymentDifference) < 0.005 ? 'text-muted' : ((float) $paymentDifference > 0 ? 'text-info' : 'text-warning'); ?>">
+                <span>Payment difference:</span>
+                <span><?php echo ((float) $paymentDifference > 0 ? '+' : ''); ?><?php echo number_format((float) $paymentDifference, 2, '.', ''); ?><?php echo h($orderCurrencySuffix); ?></span>
+              </div>
+            <?php endif; ?>
             <?php if ($isShoptetOrder && !empty($shoptetBreakdown)): ?>
               <?php foreach ($shoptetBreakdown as $shoptetRow): ?>
                 <div class="order-value-breakdown-row">
@@ -4437,7 +4502,12 @@ ob_start();
                 $formattedOptions = jsonEncodeForModal($modalOptionsRaw);
                 $formattedOptions = prepareOptionsJsonForModal($conn, $formattedOptions);
                 $editableOptions = prepareEditableOptionsJsonForModal(jsonEncodeForModal($modalOptionsRaw));
-                $optionLabels = jsonEncodeForModal(optionLabelMapForModal($conn, $modalOptionsRaw, (string) ($it['item_type_code'] ?? '')));
+                $optionLabels = jsonEncodeForModal(optionLabelMapForModal(
+                  $conn,
+                  $modalOptionsRaw,
+                  (string) ($it['item_type_code'] ?? ''),
+                  $itemSubcat
+                ));
                 // Strip _printer/_print_material/_print_finish from modal display — they are shown separately
                 $internalOptForModal = $internalOptArr;
                 unset($internalOptForModal['_printer'], $internalOptForModal['_print_material'], $internalOptForModal['_print_finish'], $internalOptForModal['_print_grip'], $internalOptForModal['_print_tr_swingarms'], $internalOptForModal['_seat_cover_ops_confirmed']);

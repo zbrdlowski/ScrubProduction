@@ -1994,6 +1994,214 @@ $(document)
       });
     });
 
+  function refreshOrderAfterWorkflowChange(orderId) {
+    if (typeof window.refreshProfileOrdersList === "function") {
+      window.refreshProfileOrdersList(orderId);
+      return;
+    }
+
+    location.reload();
+  }
+
+  function ensurePaymentConfirmationModal() {
+    let $modal = $("#paymentConfirmationModal");
+    if ($modal.length) return $modal;
+
+    if (!$("#paymentConfirmationModalStyles").length) {
+      $("<style>", { id: "paymentConfirmationModalStyles" })
+        .text(
+          ".payment-confirmation-overlay{position:fixed;inset:0;z-index:2050;display:none;align-items:center;justify-content:center;padding:1rem;background:rgba(0,0,0,.72)}" +
+            ".payment-confirmation-overlay.is-open{display:flex}" +
+            ".payment-confirmation-dialog{width:100%;max-width:460px;background:#343a40;color:#f8f9fa;border:1px solid #6c757d;border-radius:.35rem;box-shadow:0 1rem 3rem rgba(0,0,0,.5)}" +
+            ".payment-confirmation-header,.payment-confirmation-footer{display:flex;align-items:center;padding:1rem;border-color:#6c757d}" +
+            ".payment-confirmation-header{justify-content:space-between;border-bottom:1px solid #6c757d}" +
+            ".payment-confirmation-footer{justify-content:flex-end;gap:.5rem;border-top:1px solid #6c757d}" +
+            ".payment-confirmation-body{padding:1rem}" +
+            ".payment-confirmation-close{border:0;background:transparent;color:#fff;font-size:1.6rem;line-height:1;cursor:pointer}" +
+            ".payment-confirmation-summary{display:flex;justify-content:space-between;margin-top:.75rem;padding:.65rem .75rem;background:rgba(0,0,0,.2);border-radius:.25rem}" +
+            ".payment-confirmation-error{display:none;margin-top:.75rem;color:#ffc107;font-size:.875rem}",
+        )
+        .appendTo("head");
+    }
+
+    $modal = $(
+      '<div id="paymentConfirmationModal" class="payment-confirmation-overlay" role="dialog" aria-modal="true" aria-labelledby="paymentConfirmationTitle">' +
+        '<div class="payment-confirmation-dialog">' +
+        '<div class="payment-confirmation-header"><h5 id="paymentConfirmationTitle" class="mb-0"><i class="fas fa-money-check-alt mr-2"></i>Confirm payment</h5><button type="button" class="payment-confirmation-close" aria-label="Close">&times;</button></div>' +
+        '<div class="payment-confirmation-body">' +
+        '<input type="hidden" class="payment-confirmation-order-id">' +
+        '<div class="form-group"><label class="text-muted small mb-1">Expected order value</label><input type="text" class="form-control form-control-sm bg-dark text-light border-secondary payment-confirmation-expected" readonly></div>' +
+        '<div class="form-group mb-0"><label class="small mb-1" for="paymentConfirmationReceived">Amount actually received</label><div class="input-group input-group-sm"><input id="paymentConfirmationReceived" type="number" min="0.01" step="0.01" inputmode="decimal" class="form-control bg-dark text-light border-info payment-confirmation-received" autocomplete="off"><div class="input-group-append"><span class="input-group-text bg-secondary text-light border-secondary payment-confirmation-currency"></span></div></div></div>' +
+        '<div class="payment-confirmation-summary"><span>Difference:</span><strong class="payment-confirmation-difference">0.00</strong></div>' +
+        '<div class="payment-confirmation-error"></div>' +
+        '<small class="text-muted d-block mt-3">Confirmation saves the received amount, sets the production date to now, and starts automatic workflow.</small>' +
+        '</div>' +
+        '<div class="payment-confirmation-footer"><button type="button" class="btn btn-sm btn-secondary payment-confirmation-cancel">Cancel</button><button type="button" class="btn btn-sm btn-success payment-confirmation-save"><i class="fas fa-check mr-1"></i>Confirm and start workflow</button></div>' +
+        '</div></div>',
+    ).appendTo("body");
+
+    return $modal;
+  }
+
+  function closePaymentConfirmationModal() {
+    const $modal = $("#paymentConfirmationModal");
+    $modal.removeClass("is-open").attr("aria-hidden", "true");
+  }
+
+  function updatePaymentDifference($modal) {
+    const expected = Number($modal.data("expected-amount"));
+    const received = Number(String($modal.find(".payment-confirmation-received").val()).replace(",", "."));
+    const currency = String($modal.data("currency") || "");
+    const $difference = $modal.find(".payment-confirmation-difference");
+
+    if (!Number.isFinite(expected) || !Number.isFinite(received)) {
+      $difference.text("—").removeClass("text-info text-warning text-muted");
+      return;
+    }
+
+    const difference = Math.round((received - expected) * 100) / 100;
+    const sign = difference > 0 ? "+" : "";
+    $difference
+      .text(sign + difference.toFixed(2) + (currency ? " " + currency : ""))
+      .removeClass("text-info text-warning text-muted")
+      .addClass(Math.abs(difference) < 0.005 ? "text-muted" : difference > 0 ? "text-info" : "text-warning");
+  }
+
+  $(document)
+    .off("click.confirmOrderPayment", ".btn-confirm-order-payment")
+    .on("click.confirmOrderPayment", ".btn-confirm-order-payment", function (e) {
+      e.preventDefault();
+      e.stopPropagation();
+
+      const $button = $(this);
+      const orderId = $button.data("order-id");
+      if (!orderId) return;
+
+      const expectedAmount = Number($button.attr("data-expected-amount"));
+      const currency = String($button.attr("data-currency") || "");
+      const $modal = ensurePaymentConfirmationModal();
+      const amountText = Number.isFinite(expectedAmount) ? expectedAmount.toFixed(2) : "";
+
+      $modal.data("source-button", $button);
+      $modal.data("expected-amount", expectedAmount);
+      $modal.data("currency", currency);
+      $modal.find(".payment-confirmation-order-id").val(orderId);
+      $modal.find(".payment-confirmation-expected").val(amountText + (currency ? " " + currency : ""));
+      $modal.find(".payment-confirmation-received").val(amountText);
+      $modal.find(".payment-confirmation-currency").text(currency);
+      $modal.find(".payment-confirmation-error").hide().text("");
+      $modal.find(".payment-confirmation-save").prop("disabled", false);
+      updatePaymentDifference($modal);
+      $modal.addClass("is-open").attr("aria-hidden", "false");
+      setTimeout(function () {
+        $modal.find(".payment-confirmation-received").trigger("focus").select();
+      }, 0);
+    });
+
+  $(document)
+    .off("input.confirmOrderPayment", ".payment-confirmation-received")
+    .on("input.confirmOrderPayment", ".payment-confirmation-received", function () {
+      updatePaymentDifference($(this).closest(".payment-confirmation-overlay"));
+    })
+    .off("click.closeOrderPayment", ".payment-confirmation-close, .payment-confirmation-cancel")
+    .on("click.closeOrderPayment", ".payment-confirmation-close, .payment-confirmation-cancel", function () {
+      closePaymentConfirmationModal();
+    })
+    .off("click.saveOrderPayment", ".payment-confirmation-save")
+    .on("click.saveOrderPayment", ".payment-confirmation-save", function () {
+      const $saveButton = $(this);
+      const $modal = $saveButton.closest(".payment-confirmation-overlay");
+      const orderId = $modal.find(".payment-confirmation-order-id").val();
+      const receivedAmount = String($modal.find(".payment-confirmation-received").val() || "").trim();
+      const amountPattern = /^\d+(?:[.,]\d{1,2})?$/;
+      const amountNumber = Number(receivedAmount.replace(",", "."));
+      const $error = $modal.find(".payment-confirmation-error");
+
+      if (!amountPattern.test(receivedAmount) || !Number.isFinite(amountNumber) || amountNumber <= 0) {
+        $error.text("Enter a valid received amount greater than zero, with no more than 2 decimal places.").show();
+        $modal.find(".payment-confirmation-received").trigger("focus");
+        return;
+      }
+
+      $error.hide().text("");
+      $saveButton.prop("disabled", true);
+      $.ajax({
+        url: "scripts/orders/confirm_order_payment.php",
+        method: "POST",
+        dataType: "json",
+        data: { order_id: orderId, received_amount: receivedAmount },
+        success: function (resp) {
+          if (!resp || !resp.ok) {
+            $error.text(resp && resp.error ? resp.error : "Payment confirmation failed").show();
+            $saveButton.prop("disabled", false);
+            return;
+          }
+
+          closePaymentConfirmationModal();
+          refreshOrderAfterWorkflowChange(orderId);
+        },
+        error: function (xhr) {
+          console.log(xhr.responseText);
+          $error.text("Payment confirmation request failed").show();
+          $saveButton.prop("disabled", false);
+        },
+      });
+    });
+
+  $(document)
+    .off("keydown.confirmOrderPaymentModal")
+    .on("keydown.confirmOrderPaymentModal", function (e) {
+      const $modal = $("#paymentConfirmationModal.is-open");
+      if (!$modal.length) return;
+
+      if (e.key === "Escape") {
+        e.preventDefault();
+        closePaymentConfirmationModal();
+      } else if (e.key === "Enter" && $(e.target).is(".payment-confirmation-received")) {
+        e.preventDefault();
+        $modal.find(".payment-confirmation-save").trigger("click");
+      }
+    });
+
+  $(document)
+    .off("click.resumeOrderWorkflow", ".btn-resume-order-workflow")
+    .on("click.resumeOrderWorkflow", ".btn-resume-order-workflow", function (e) {
+      e.preventDefault();
+      e.stopPropagation();
+
+      const $button = $(this);
+      const orderId = $button.data("order-id");
+      if (!orderId) return;
+
+      const confirmed = confirm(
+        "Resume automatic workflow?\n\n" +
+          "The current manual status may immediately change according to item statuses.",
+      );
+      if (!confirmed) return;
+
+      $button.prop("disabled", true);
+      $.ajax({
+        url: "scripts/orders/resume_order_workflow.php",
+        method: "POST",
+        dataType: "json",
+        data: { order_id: orderId },
+        success: function (resp) {
+          if (!resp || !resp.ok) {
+            alert(resp && resp.error ? resp.error : "Workflow resume failed");
+            $button.prop("disabled", false);
+            return;
+          }
+
+          refreshOrderAfterWorkflowChange(orderId);
+        },
+        error: function (xhr) {
+          console.log(xhr.responseText);
+          alert("Workflow resume request failed");
+          $button.prop("disabled", false);
+        },
+      });
+    });
+
   $(document)
     .off("change.orderStatus", ".order-status-select")
     .on("change.orderStatus", ".order-status-select", function (e) {
@@ -2014,24 +2222,15 @@ $(document)
         return;
       }
 
-      // Ochrana: zmena Z stavu PENDING je nezvratná — vyžaduj potvrdenie
       const wasPending =
         prevStatus === "PENDING" ||
         ($select.find('option[value="PENDING"]').length &&
           $select.data("original-status") === "PENDING");
 
-      if (wasPending && status !== "PENDING") {
-        const ok = confirm(
-          "⚠️ Táto objednávka je PENDING (nezaplatená).\n\n" +
-            'Zmenou statusu na "' +
-            status.replace(/_/g, " ") +
-            '" potvrzuješ, že platba bola prijatá.\n\n' +
-            "Pokračovať?",
-        );
-        if (!ok) {
-          $select.val("PENDING");
-          return;
-        }
+      if (wasPending && status !== "PENDING" && status !== "CANCELLED") {
+        alert('Use the "Payment confirmed" button to release this order to production.');
+        $select.val("PENDING");
+        return;
       }
 
       $select.prop("disabled", true);
@@ -2053,12 +2252,7 @@ $(document)
 
           // V profile contexte refreshujeme zoznam (lebo sa mohol zmeniť status badge)
           // + znova otvoríme detail — bez full reload
-          if (typeof window.refreshProfileOrdersList === "function") {
-            window.refreshProfileOrdersList(orderId);
-            return;
-          }
-
-          location.reload();
+          refreshOrderAfterWorkflowChange(orderId);
         },
         error: function (xhr) {
           console.log(xhr.responseText);

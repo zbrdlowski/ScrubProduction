@@ -7,6 +7,7 @@ require_once dirname(__DIR__, 2) . '/includes/conn.php';
 require_once __DIR__ . '/activity_helper.php';
 require_once __DIR__ . '/category_sync_helper.php';
 require_once dirname(__DIR__, 2) . '/includes/orders_workflow_helpers.php';
+require_once dirname(__DIR__, 2) . '/includes/orders_plastics_gate_helpers.php';
 
 function out_followup(int $code, array $payload): void
 {
@@ -94,7 +95,10 @@ if (!is_array($selectedItemsRaw) || !$selectedItemsRaw) {
 $selectedItems = [];
 foreach ($selectedItemsRaw as $itemIdRaw => $qtyRaw) {
   $itemId = (int) $itemIdRaw;
-  $qty = max(0, (int) $qtyRaw);
+  // A split always peels off exactly one physical unit per selected line.
+  // Enforce this on the server because a stale browser tab may still submit
+  // the source quantity (for example 2).
+  $qty = $followupType === 'SPLIT' ? 1 : max(0, (int) $qtyRaw);
   if ($itemId > 0 && $qty > 0) {
     $selectedItems[$itemId] = $qty;
   }
@@ -320,7 +324,7 @@ try {
     INSERT INTO order_items
       (order_id, line_no, sku, title, custom_label, item_type_code, qty, unit_price, options_json, internal_options_json, created_by, updated_by, updated_at, status)
     VALUES
-      (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), 'NEW')
+      (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), ?)
   ");
   if (!$stmt) {
     throw new RuntimeException($conn->error);
@@ -338,9 +342,16 @@ try {
     $internalOptions = followup_decode_json_map((string) ($item['internal_options_json'] ?? '{}'));
     $internalOptions['_followup_parent_item_id'] = (int) ($item['id'] ?? 0);
     $internalOptionsJson = json_encode($internalOptions, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    $initialItemStatus = ordersPlasticsGateDefaultStatusForItem($conn, [
+      'item_type_code' => $itemTypeCode,
+      'sku' => $sku,
+      'custom_label' => $customLabel,
+      'options_json' => $optionsJson,
+      'internal_options_json' => $internalOptionsJson,
+    ]);
 
     $stmt->bind_param(
-      'iissssidssii',
+      'iissssidssiis',
       $newOrderId,
       $lineNo,
       $sku,
@@ -352,15 +363,64 @@ try {
       $optionsJson,
       $internalOptionsJson,
       $userId,
-      $userId
+      $userId,
+      $initialItemStatus
     );
     $stmt->execute();
     $lineNo++;
   }
   $stmt->close();
 
+  // Orders containing plastics start behind the same stock gate as imported
+  // production orders: P checks stock, while G/S/F wait for that confirmation.
+  ordersApplyPlasticsStockGate($conn, $newOrderId);
+
   sync_order_categories($conn, $newOrderId);
   recalculateOrderWorkflow($conn, $newOrderId);
+
+  $movedItems = [];
+  if ($followupType === 'SPLIT') {
+    $decrementStmt = $conn->prepare("
+      UPDATE order_items
+      SET deleted_at = CASE WHEN qty = ? THEN NOW() ELSE deleted_at END,
+          qty = qty - ?,
+          updated_by = ?,
+          updated_at = NOW()
+      WHERE id = ?
+        AND order_id = ?
+        AND deleted_at IS NULL
+        AND qty >= ?
+      LIMIT 1
+    ");
+    if (!$decrementStmt) {
+      throw new RuntimeException($conn->error);
+    }
+
+    foreach ($itemsToClone as $item) {
+      $sourceItemId = (int) ($item['id'] ?? 0);
+      $movedQty = (int) ($item['followup_qty'] ?? 0);
+      if ($sourceItemId <= 0 || $movedQty !== 1) {
+        continue;
+      }
+
+      $decrementStmt->bind_param('iiiiii', $movedQty, $movedQty, $userId, $sourceItemId, $orderId, $movedQty);
+      $decrementStmt->execute();
+      if ($decrementStmt->affected_rows !== 1) {
+        throw new RuntimeException('Source item quantity changed while the split was being created. Refresh the order and try again.');
+      }
+
+      $remainingQty = max(0, (int) ($item['qty'] ?? 0) - $movedQty);
+      $movedItems[] = [
+        'source_item_id' => $sourceItemId,
+        'moved_qty' => $movedQty,
+        'remaining_qty' => $remainingQty,
+      ];
+    }
+    $decrementStmt->close();
+
+    sync_order_categories($conn, $orderId);
+    recalculateOrderWorkflow($conn, $orderId);
+  }
 
   log_order_activity(
     $conn,
@@ -375,6 +435,7 @@ try {
       'followup_type' => $followupType,
       'do_not_invoice' => $doNotInvoice === 1 ? 1 : 0,
       'reason' => $reason,
+      'moved_items' => $movedItems,
     ],
     'Follow-up order created from order #' . (string) ($sourceOrder['order_number'] ?? $orderId)
   );
@@ -392,6 +453,7 @@ try {
       'followup_type' => $followupType,
       'do_not_invoice' => $doNotInvoice === 1 ? 1 : 0,
       'reason' => $reason,
+      'moved_items' => $movedItems,
     ],
     'Created follow-up order #' . $newOrderNumber
   );
