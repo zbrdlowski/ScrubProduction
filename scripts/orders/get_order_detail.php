@@ -2929,6 +2929,140 @@ ob_start();
     min-height: 0;
   }
 
+  .order-header-summary {
+    min-width: 0;
+  }
+
+  .order-summary-meta {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 8px;
+    margin-bottom: 10px;
+  }
+
+  .order-summary-meta-item,
+  .order-summary-card,
+  .order-header-operations-card {
+    border: 1px solid rgba(255, 255, 255, .10);
+    border-radius: 10px;
+    background: rgba(255, 255, 255, .035);
+  }
+
+  .order-summary-meta-item {
+    padding: 8px 10px;
+    min-width: 0;
+  }
+
+  .order-summary-label {
+    display: block;
+    margin-bottom: 3px;
+    color: rgba(255, 255, 255, .52);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+  }
+
+  .order-summary-value {
+    color: #f2f5f8;
+    overflow-wrap: anywhere;
+  }
+
+  .order-summary-address-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .order-summary-card {
+    position: relative;
+    min-width: 0;
+    padding: 12px;
+    overflow: hidden;
+  }
+
+  .order-summary-card::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: 3px;
+    background: rgba(23, 162, 184, .75);
+  }
+
+  .order-summary-card-title {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 9px;
+    padding-left: 3px;
+    color: #f8f9fa;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: .025em;
+  }
+
+  .order-summary-card-title .btn-copy-inline {
+    flex: 0 0 auto;
+    color: #8fd7e6 !important;
+    border: 1px solid rgba(23, 162, 184, .38);
+    border-radius: 6px;
+    background: rgba(23, 162, 184, .08);
+    padding: 2px 7px;
+  }
+
+  .order-summary-primary {
+    margin-bottom: 4px;
+    color: #fff;
+    font-weight: 700;
+  }
+
+  .order-summary-line {
+    min-height: 18px;
+    color: rgba(255, 255, 255, .70);
+    overflow-wrap: anywhere;
+  }
+
+  .order-summary-line .btn-copy-inline {
+    padding: 0 3px;
+    color: rgba(255, 255, 255, .62) !important;
+  }
+
+  .order-summary-country {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin-top: 5px;
+    color: rgba(255, 255, 255, .82);
+  }
+
+  .order-header-edit .card {
+    border-radius: 10px;
+    overflow: hidden;
+  }
+
+  .order-header-operations {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+    margin-top: 10px;
+  }
+
+  .order-header-operations-card {
+    padding: 10px 12px;
+  }
+
+  .order-header-operations-title {
+    margin-bottom: 8px;
+    color: rgba(255, 255, 255, .62);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: .05em;
+    text-transform: uppercase;
+  }
+
   .order-photos-span-col {
     min-height: 0;
   }
@@ -3015,6 +3149,15 @@ ob_start();
   }
 
   @media (max-width: 991.98px) {
+    .order-summary-meta,
+    .order-summary-address-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .order-summary-address-grid .order-summary-card:last-child {
+      grid-column: 1 / -1;
+    }
+
     .order-detail-secondary-row>[class*="col-"]:not(:last-child) {
       margin-bottom: 1rem;
     }
@@ -3025,6 +3168,18 @@ ob_start();
 
     .order-photos-card-user {
       min-height: 120px;
+    }
+  }
+
+  @media (max-width: 575.98px) {
+    .order-summary-meta,
+    .order-summary-address-grid,
+    .order-header-operations {
+      grid-template-columns: 1fr;
+    }
+
+    .order-summary-address-grid .order-summary-card:last-child {
+      grid-column: auto;
     }
   }
 
@@ -3194,32 +3349,25 @@ ob_start();
       <div class="row order-header-main-row align-items-stretch">
         <div class="col-lg-8 order-header-left-stack d-flex flex-column">
 
-          <div class="row">
-            <div class="col-md-6">
-              <div>
-                <b>Zákazník:</b><br />
-                <?php $val = $order['customer_name'] ?: $order['customer_email'] ?: '-'; ?>
-                <?php echo h($val); ?>
-                <button class="btn btn-xs btn-copy-inline ml-1" data-copy="<?php echo h($val); ?>">📋</button>
+          <div class="order-header-summary order-summary-meta">
+            <?php $customerDisplayName = $order['customer_name'] ?: $order['customer_email'] ?: '-'; ?>
+            <div class="order-summary-meta-item">
+              <span class="order-summary-label">Customer</span>
+              <div class="order-summary-value font-weight-bold">
+                <?php echo h($customerDisplayName); ?>
+                <button class="btn btn-xs btn-copy-inline ml-1" data-copy="<?php echo h($customerDisplayName); ?>"
+                  title="Copy customer name">📋</button>
               </div>
-              <?php if (!empty($order['customer_email'])): ?>
-                <div class="text-muted">
-                  <?php echo h($order['customer_email']); ?>
-                  <button class="btn btn-xs btn-copy-inline ml-1"
-                    data-copy="<?php echo h($order['customer_email']); ?>">📋</button>
-                </div>
-              <?php endif; ?>
-              <?php if ($displayCustomerPhone !== ''): ?>
-                <div class="text-muted">
-                  <?php echo h($displayCustomerPhone); ?>
-                  <button class="btn btn-xs btn-copy-inline ml-1"
-                    data-copy="<?php echo h($displayCustomerPhone); ?>">📋</button>
-                </div>
-              <?php endif; ?>
             </div>
-            <div class="col-md-6">
-              <div><b>Shipping:</b> <?php echo h($order['shipping_method'] ?? '-'); ?></div>
-              <div><b>Payment:</b> <?php echo h($order['payment_method'] ?? '-'); ?></div>
+
+            <div class="order-summary-meta-item">
+              <span class="order-summary-label">Shipping</span>
+              <div class="order-summary-value"><?php echo h($order['shipping_method'] ?? '-'); ?></div>
+            </div>
+
+            <div class="order-summary-meta-item">
+              <span class="order-summary-label">Payment</span>
+              <div class="order-summary-value"><?php echo h($order['payment_method'] ?? '-'); ?></div>
               <?php if ($followupLabel !== ''): ?>
                 <div class="mt-1">
                   <span class="badge badge-info"><?php echo h($followupLabel); ?></span>
@@ -3227,37 +3375,28 @@ ob_start();
                     <span class="badge badge-danger">Do not invoice</span>
                   <?php endif; ?>
                 </div>
-                <div class="small text-muted mt-1">
-                  Parent:
-                  <?php echo h($followupParentOrderNumber !== '' ? $followupParentOrderNumber : ('#' . $followupParentOrderId)); ?>
-                  <?php if ($followupReason !== ''): ?>
-                    <span class="ml-2">Reason: <?php echo h($followupReason); ?></span>
-                  <?php endif; ?>
-                </div>
               <?php endif; ?>
-
-              <div>
-                <b>Country:</b>
-                <span class="order-country-display"><?php echo h($orderCountry ?: '-'); ?></span>
-
-                <?php if ((int) ($_SESSION['permission'] ?? 0) >= 300): ?>
-                  <button type="button" class="btn btn-xs btn-outline-warning btn-edit-country ml-2"
-                    data-order-id="<?php echo (int) $orderId; ?>" data-country="<?php echo h($orderCountry); ?>">
-                    Edit
-                  </button>
-                <?php endif; ?>
-              </div>
-
-              <div class="text-muted">
-                <b>Dátum:</b> <?php echo h($order['order_date'] ?? '-'); ?>
-                <span class="ml-2"><b>Import:</b> <?php echo h($order['imported_at'] ?? '-'); ?></span>
-                <?php if (!empty($order['production_started_at'])): ?>
-                  <span class="ml-2"><b>Production:</b> <?php echo h($order['production_started_at']); ?></span>
-                <?php endif; ?>
-              </div>
             </div>
 
+            <div class="order-summary-meta-item">
+              <span class="order-summary-label">Order timeline</span>
+              <div class="order-summary-line small"><b>Order:</b> <?php echo h($order['order_date'] ?? '-'); ?></div>
+              <div class="order-summary-line small"><b>Import:</b> <?php echo h($order['imported_at'] ?? '-'); ?></div>
+              <?php if (!empty($order['production_started_at'])): ?>
+                <div class="order-summary-line small"><b>Production:</b> <?php echo h($order['production_started_at']); ?></div>
+              <?php endif; ?>
+            </div>
           </div>
+
+          <?php if ($followupLabel !== ''): ?>
+            <div class="order-header-summary small text-muted mb-2">
+              Parent:
+              <?php echo h($followupParentOrderNumber !== '' ? $followupParentOrderNumber : ('#' . $followupParentOrderId)); ?>
+              <?php if ($followupReason !== ''): ?>
+                <span class="ml-2">Reason: <?php echo h($followupReason); ?></span>
+              <?php endif; ?>
+            </div>
+          <?php endif; ?>
 
           <?php if ((int) ($_SESSION['permission'] ?? 0) >= 300): ?>
             <div class="order-header-edit mt-3" style="display:none;">
@@ -3359,249 +3498,150 @@ ob_start();
             </div>
           <?php endif; ?>
 
-          <hr class="my-3 order-header-split-line">
+          <?php
+          $b = $addr['BILLING'] ?? [];
+          $s = $addr['SHIPPING'] ?? [];
+          $billingState = strtoupper((string) ($b['country'] ?? '')) === 'US'
+            ? usStateFromZip(normalizeUsZipFromAddress($b))
+            : '';
+          $shippingState = strtoupper((string) ($s['country'] ?? '')) === 'US'
+            ? usStateFromZip(normalizeUsZipFromAddress($s))
+            : '';
+          $deliveryContactPhone = trim((string) ($s['phone'] ?? ''));
+          if ($deliveryContactPhone === '') {
+            $deliveryContactPhone = trim($displayCustomerPhone);
+          }
+          $deliveryEmail = trim((string) ($s['email'] ?? ''));
+          if ($deliveryEmail === '') {
+            $deliveryEmail = trim((string) ($order['customer_email'] ?? $b['email'] ?? ''));
+          }
+          $fullBilling = $b ? addressCopyText($b, $billingState) . (!empty($b['country']) ? "\n" . strtoupper((string) $b['country']) : '') : '';
+          $fullShipping = $s ? trim(
+            addressCopyText($s, $shippingState) .
+            (!empty($s['country']) ? "\n" . strtoupper((string) $s['country']) : '') .
+            ($deliveryEmail !== '' ? "\nEmail: " . $deliveryEmail : '') .
+            ($deliveryContactPhone !== '' ? "\nPhone: " . $deliveryContactPhone : '')
+          ) : '';
+          $billingPhone = trim((string) ($b['phone'] ?? ''));
+          ?>
 
-          <div class="row order-header-extra-row align-items-stretch">
-            <?php if ((int) ($_SESSION['permission'] ?? 0) >= 300): ?>
-              <div class="col-md-6">
-                <h6 class="text-muted"><span class="badge badge-secondary">Billing</span></h6>
-                <?php $b = $addr['BILLING']; ?>
-                <?php if ($b): ?>
-                  <?php
-                  $billingState = '';
-                  if (strtoupper($b['country'] ?? '') === 'US') {
-                    $billingZip = normalizeUsZipFromAddress($b);
-                    $billingState = usStateFromZip($billingZip);
-                  }
-
-                  $fullBilling = trim(
-                    ($b['name'] ?? '') . "\n" .
-                    ($b['company'] ?? '') . "\n" .
-                    ($b['street'] ?? '') . "\n" .
-                    trim(($b['city'] ?? '') . " " . ($b['zip'] ?? '')) .
-                    ($billingState !== '' ? "\n" . $billingState : '')
-                  );
-                  ?>
-                  <button class="btn btn-xs btn-copy-inline mb-2" data-copy="<?php echo h($fullBilling); ?>">
-                    📋 Copy address
-                  </button>
-                  <div>
-                    <?php echo h($b['name'] ?? '-'); ?>
-                    <?php
-                    $companyPart = '';
-                    if (!empty($b['company'])) {
-                      $companyPart = h($b['company']);
-                    }
-                    if (!empty($b['company_id'])) {
-                      if ($companyPart) {
-                        $companyPart .= ' [' . h($b['company_id']) . ']';
-                      } else {
-                        $companyPart = '[' . h($b['company_id']) . ']';
-                      }
-                    }
-                    if ($companyPart) {
-                      echo ' (' . $companyPart . ')';
-                    }
-                    ?>
-                  </div>
-                  <div class="text-muted">
-                    <?php echo h(trim(($b['street'] ?? '') . ', ' . ($b['city'] ?? '') . ' ' . ($b['zip'] ?? ''))); ?>
-                  </div>
-                  <?php if (!empty($b['phone'])): ?>
-                    <div class="text-muted">
-                      <b>Phone:</b> <?php echo h($b['phone']); ?>
-                      <button class="btn btn-xs btn-copy-inline ml-1" data-copy="<?php echo h($b['phone']); ?>">📋</button>
-                    </div>
-                  <?php endif; ?>
-                  <?php if (!empty($b['country'])): ?>
-                    <div class="text-muted">
-                      <?php if ($billingState !== ''): ?>
-                        <div>
-                          <span><b><?php echo h($billingState); ?></b></span>
-                        </div>
-                      <?php endif; ?>
-
-                      <?php
-                      $cc = strtoupper($b['country']);
-                      echo countryFlag($cc) . ' ' . h($cc);
-                      ?>
-
-                      <hr class="my-2">
-
-                      <h6 class="text-muted mb-2">
-                        <span class="badge badge-secondary">Invoices</span>
-                      </h6>
-
-                      <?php
-                      $invStmt = $conn->prepare("
-                      SELECT id, invoice_number
-                      FROM order_invoices
-                      WHERE order_id = ? AND deleted_at IS NULL
-                      ORDER BY id DESC
-                    ");
-                      $invStmt->bind_param('i', $orderId);
-                      $invStmt->execute();
-                      $invRes = $invStmt->get_result();
-                      ?>
-
-                      <?php while ($inv = $invRes->fetch_assoc()): ?>
-                        <div class="small mb-1 d-flex align-items-center">
-
-                          <div>
-                            <b><?php echo h($inv['invoice_number']); ?></b>
-                          </div>
-
-                          <?php if ((int) ($_SESSION['permission'] ?? 0) >= 300): ?>
-                            <button class="btn btn-xs btn-outline-danger ml-2 py-0 px-2 btn-delete-invoice"
-                              data-id="<?php echo (int) $inv['id']; ?>" data-order-id="<?php echo (int) $orderId; ?>"> × </button>
-                          <?php endif; ?>
-
-                        </div>
-
-                      <?php endwhile; ?>
-                      <?php $invStmt->close(); ?>
-
-                      <?php if ((int) ($_SESSION['permission'] ?? 0) >= 300): ?>
-                        <div class="form-row mt-2">
-                          <div class="col-md-8">
-                            <input class="form-control form-control-sm invoice-number" placeholder="Invoice number">
-                          </div>
-                          <div class="col-md-4">
-                            <button class="btn btn-sm btn-info btn-block btn-add-invoice"
-                              data-order-id="<?php echo (int) $orderId; ?>">
-                              Add Invoice
-                            </button>
-                          </div>
-                        </div>
-                      <?php endif; ?>
-                    </div>
-                  <?php endif; ?>
-                <?php else: ?>
-                  <div class="text-muted">—</div>
+          <div class="order-header-summary order-summary-address-grid">
+            <section class="order-summary-card">
+              <div class="order-summary-card-title">
+                <span><i class="fas fa-file-invoice mr-1"></i>Billing address</span>
+                <?php if ($fullBilling !== ''): ?>
+                  <button class="btn btn-xs btn-copy-inline" data-copy="<?php echo h($fullBilling); ?>">📋 Copy</button>
                 <?php endif; ?>
               </div>
-
-              <div class="col-md-6">
-                <h6 class="text-muted"><span class="badge badge-secondary">Delivery</span></h6>
-                <?php $s = $addr['SHIPPING']; ?>
-                <?php if ($s): ?>
-                  <?php
-                  $shippingZip = normalizeUsZipFromAddress($s);
-                  $shippingState = '';
-
-                  if (strtoupper($s['country'] ?? '') === 'US') {
-                    $shippingZip = normalizeUsZipFromAddress($s);
-                    $shippingState = usStateFromZip($shippingZip);
-                  }
-                  $fullShipping = addressCopyText($s, $shippingState);
-                  ?>
-
-                  <button class="btn btn-xs btn-copy-inline mb-2" data-copy="<?php echo h($fullShipping); ?>">
-                    📋 Copy address
-                  </button>
-
-                  <div>
-                    <?php echo h($s['name'] ?? '-'); ?>
-                    <?php
-                    $companyPart = '';
-                    if (!empty($s['company'])) {
-                      $companyPart = h($s['company']);
-                    }
-                    if (!empty($s['company_id'])) {
-                      if ($companyPart) {
-                        $companyPart .= ' [' . h($s['company_id']) . ']';
-                      } else {
-                        $companyPart = '[' . h($s['company_id']) . ']';
-                      }
-                    }
-                    if ($companyPart) {
-                      echo ' (' . $companyPart . ')';
-                    }
-                    ?>
-                  </div>
-
-                  <div class="text-muted">
-                    <?php echo h(trim(($s['street'] ?? '') . ', ' . ($s['city'] ?? '') . ' ' . ($s['zip'] ?? ''))); ?>
-                  </div>
-
-                  <?php if ($shippingState !== ''): ?>
-                    <div>
-                      <span><?php echo h($shippingState); ?></span>
-                    </div>
-                  <?php endif; ?>
-                  <?php if (!empty($s['phone'])): ?>
-                    <div class="text-muted">
-                      <b>Phone:</b> <?php echo h($s['phone']); ?>
-                      <button class="btn btn-xs btn-copy-inline ml-1" data-copy="<?php echo h($s['phone']); ?>">📋</button>
-                    </div>
-                  <?php endif; ?>
-                  <?php if (!empty($s['country'])): ?>
-                    <div class="text-muted">
-                      <?php
-                      $cc = strtoupper($s['country']);
-                      echo countryFlag($cc) . ' ' . h($cc);
-                      ?>
-                    </div>
-                  <?php endif; ?>
-
-                <?php else: ?>
-                  <div class="text-muted">—</div>
+              <?php if ($b): ?>
+                <div class="order-summary-primary"><?php echo h($b['name'] ?? '-'); ?></div>
+                <?php if (!empty($b['company'])): ?>
+                  <div class="order-summary-line"><?php echo h($b['company']); ?><?php echo !empty($b['company_id']) ? ' [' . h($b['company_id']) . ']' : ''; ?></div>
+                <?php elseif (!empty($b['company_id'])): ?>
+                  <div class="order-summary-line">Company ID: <?php echo h($b['company_id']); ?></div>
                 <?php endif; ?>
-                <hr class="my-2">
+                <div class="order-summary-line"><?php echo h($b['street'] ?? ''); ?></div>
+                <div class="order-summary-line"><?php echo h(trim(($b['city'] ?? '') . ' ' . ($b['zip'] ?? ''))); ?></div>
+                <?php if ($billingState !== ''): ?><div class="order-summary-line">State: <b><?php echo h($billingState); ?></b></div><?php endif; ?>
+                <?php if (!empty($b['country'])): ?>
+                  <div class="order-summary-country"><?php echo countryFlag($b['country']); ?> <?php echo h(strtoupper((string) $b['country'])); ?></div>
+                <?php endif; ?>
+                <?php if ($billingPhone !== '' && $billingPhone !== $deliveryContactPhone): ?>
+                  <div class="order-summary-line mt-1"><i class="fas fa-phone-alt mr-1"></i><?php echo h($billingPhone); ?><button class="btn btn-xs btn-copy-inline ml-1" data-copy="<?php echo h($billingPhone); ?>">📋</button></div>
+                <?php endif; ?>
+              <?php else: ?>
+                <div class="text-muted">No billing address</div>
+              <?php endif; ?>
+            </section>
 
-                <h6 class="text-muted mb-2">
-                  <span class="badge badge-secondary">Tracking</span>
-                </h6>
+            <section class="order-summary-card">
+              <div class="order-summary-card-title">
+                <span><i class="fas fa-shipping-fast mr-1"></i>Delivery address</span>
+                <?php if ($fullShipping !== ''): ?>
+                  <button class="btn btn-xs btn-copy-inline" data-copy="<?php echo h($fullShipping); ?>">📋 Copy</button>
+                <?php endif; ?>
+              </div>
+              <?php if ($s): ?>
+                <div class="order-summary-primary"><?php echo h($s['name'] ?? '-'); ?></div>
+                <?php if (!empty($s['company'])): ?>
+                  <div class="order-summary-line"><?php echo h($s['company']); ?><?php echo !empty($s['company_id']) ? ' [' . h($s['company_id']) . ']' : ''; ?></div>
+                <?php elseif (!empty($s['company_id'])): ?>
+                  <div class="order-summary-line">Company ID: <?php echo h($s['company_id']); ?></div>
+                <?php endif; ?>
+                <div class="order-summary-line"><?php echo h($s['street'] ?? ''); ?></div>
+                <div class="order-summary-line"><?php echo h(trim(($s['city'] ?? '') . ' ' . ($s['zip'] ?? ''))); ?></div>
+                <?php if ($shippingState !== ''): ?><div class="order-summary-line">State: <b><?php echo h($shippingState); ?></b></div><?php endif; ?>
+                <div class="order-summary-country">
+                  <?php if (!empty($s['country'])): ?><?php echo countryFlag($s['country']); ?><?php endif; ?>
+                  <span class="order-country-display"><?php echo h($orderCountry ?: '-'); ?></span>
+                  <?php if ((int) ($_SESSION['permission'] ?? 0) >= 300): ?>
+                    <button type="button" class="btn btn-xs btn-outline-warning btn-edit-country ml-1"
+                      data-order-id="<?php echo (int) $orderId; ?>" data-country="<?php echo h($orderCountry); ?>">Edit</button>
+                  <?php endif; ?>
+                </div>
+              <?php else: ?>
+                <div class="text-muted">No delivery address</div>
+              <?php endif; ?>
+            </section>
 
+            <section class="order-summary-card">
+              <div class="order-summary-card-title"><span><i class="fas fa-address-card mr-1"></i>Delivery contact</span></div>
+              <div class="order-summary-primary"><?php echo h($s['name'] ?? $customerDisplayName); ?></div>
+              <?php if ($deliveryEmail !== ''): ?>
+                <div class="order-summary-line"><i class="fas fa-envelope mr-1"></i><?php echo h($deliveryEmail); ?><button class="btn btn-xs btn-copy-inline ml-1" data-copy="<?php echo h($deliveryEmail); ?>">📋</button></div>
+              <?php endif; ?>
+              <?php if ($deliveryContactPhone !== ''): ?>
+                <div class="order-summary-line"><i class="fas fa-phone-alt mr-1"></i><?php echo h($deliveryContactPhone); ?><button class="btn btn-xs btn-copy-inline ml-1" data-copy="<?php echo h($deliveryContactPhone); ?>">📋</button></div>
+              <?php endif; ?>
+              <div class="small text-muted mt-2">Contact details used to verify the FedEx shipment.</div>
+            </section>
+          </div>
 
+          <?php if ((int) ($_SESSION['permission'] ?? 0) >= 300): ?>
+            <div class="order-header-summary order-header-operations">
+              <div class="order-header-operations-card">
+                <div class="order-header-operations-title">Invoices</div>
                 <?php
-                $trackingStmt = $conn->prepare("
-                SELECT id, tracking_number, carrier, created_at
-                FROM order_tracking_numbers
-                WHERE order_id = ? AND deleted_at IS NULL
-                ORDER BY id DESC
-              ");
+                $invStmt = $conn->prepare("SELECT id, invoice_number FROM order_invoices WHERE order_id = ? AND deleted_at IS NULL ORDER BY id DESC");
+                $invStmt->bind_param('i', $orderId);
+                $invStmt->execute();
+                $invRes = $invStmt->get_result();
+                ?>
+                <?php while ($inv = $invRes->fetch_assoc()): ?>
+                  <div class="small mb-1 d-flex align-items-center"><b><?php echo h($inv['invoice_number']); ?></b><button class="btn btn-xs btn-outline-danger ml-2 py-0 px-2 btn-delete-invoice" data-id="<?php echo (int) $inv['id']; ?>" data-order-id="<?php echo (int) $orderId; ?>">×</button></div>
+                <?php endwhile; ?>
+                <?php $invStmt->close(); ?>
+                <div class="form-row mt-2 invoice-add-row">
+                  <div class="col-md-8"><input class="form-control form-control-sm invoice-number" placeholder="Invoice number"></div>
+                  <div class="col-md-4"><button class="btn btn-sm btn-info btn-block btn-add-invoice" data-order-id="<?php echo (int) $orderId; ?>">Add Invoice</button></div>
+                </div>
+              </div>
+
+              <div class="order-header-operations-card">
+                <div class="order-header-operations-title">Tracking</div>
+                <?php
+                $trackingStmt = $conn->prepare("SELECT id, tracking_number, carrier, created_at FROM order_tracking_numbers WHERE order_id = ? AND deleted_at IS NULL ORDER BY id DESC");
                 $trackingStmt->bind_param('i', $orderId);
                 $trackingStmt->execute();
                 $trackingRes = $trackingStmt->get_result();
                 ?>
-
                 <?php while ($t = $trackingRes->fetch_assoc()): ?>
                   <div class="small mb-1 d-flex align-items-center">
-
-                    <div>
-                      <b><?php echo h($t['tracking_number']); ?></b>
-                      <?php if (!empty($t['carrier'])): ?>
-                        <span class="text-muted">(<?php echo h($t['carrier']); ?>)</span>
-                      <?php endif; ?>
-                      <?php if (!empty($t['created_at'])): ?>
-                        <span class="text-muted ml-2">| Shipped: <?php echo h(date('d.m.Y H:i', strtotime((string) $t['created_at']))); ?></span>
-                      <?php endif; ?>
-                    </div>
-
-                    <?php if ((int) ($_SESSION['permission'] ?? 0) >= 300): ?>
-                      <button class="btn btn-xs btn-outline-danger ml-2 py-0 px-2 btn-delete-tracking"
-                        data-id="<?php echo (int) $t['id']; ?>" data-order-id="<?php echo (int) $orderId; ?>">
-                        ×
-                      </button>
-                    <?php endif; ?>
-
+                    <b><?php echo h($t['tracking_number']); ?></b>
+                    <?php if (!empty($t['carrier'])): ?><span class="text-muted ml-1">(<?php echo h($t['carrier']); ?>)</span><?php endif; ?>
+                    <?php if (!empty($t['created_at'])): ?><span class="text-muted ml-2">| Shipped: <?php echo h(date('d.m.Y H:i', strtotime((string) $t['created_at']))); ?></span><?php endif; ?>
+                    <button class="btn btn-xs btn-outline-danger ml-2 py-0 px-2 btn-delete-tracking" data-id="<?php echo (int) $t['id']; ?>" data-order-id="<?php echo (int) $orderId; ?>">×</button>
                   </div>
                 <?php endwhile; ?>
                 <?php $trackingStmt->close(); ?>
-
-                <?php if ((int) ($_SESSION['permission'] ?? 0) >= 300): ?>
-                  <div class="form-row tracking-add-row mt-2">
-                    <input class="form-control form-control-sm tracking-number" placeholder="Tracking number">
-                    <input class="form-control form-control-sm tracking-carrier" placeholder="Carrier">
-                    <button type="button" class="btn btn-sm btn-info btn-add-tracking" data-order-id="<?php echo (int) $orderId; ?>">
-                      Add Tracking
-                    </button>
-                  </div>
-                <?php endif; ?>
+                <div class="form-row tracking-add-row mt-2">
+                  <input class="form-control form-control-sm tracking-number" placeholder="Tracking number">
+                  <input class="form-control form-control-sm tracking-carrier" placeholder="Carrier">
+                  <button type="button" class="btn btn-sm btn-info btn-add-tracking" data-order-id="<?php echo (int) $orderId; ?>">Add Tracking</button>
+                </div>
               </div>
-            <?php endif; ?>
-          </div>
+            </div>
+          <?php endif; ?>
         </div>
 
         <div class="col-lg-4 mt-3 mt-lg-0 d-flex">

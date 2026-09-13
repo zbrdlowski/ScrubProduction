@@ -2267,8 +2267,7 @@ $(document)
 // DOM: btn a .order-header-edit su surodenci — treba ist cez spolocneho rodica
 
 function getHeaderPanel($btn) {
-  // btn je v div.d-flex, ktory je child toho isteho parenta ako .order-header-edit
-  return $btn.closest("div").parent().find(".order-header-edit").first();
+  return $btn.closest(".order-detail-card").find(".order-header-edit").first();
 }
 
 function resetEditHeaderBtn($btn) {
@@ -2283,6 +2282,8 @@ $(document)
   .off("click.editHeaderToggle", ".btn-edit-order-header")
   .on("click.editHeaderToggle", ".btn-edit-order-header", function () {
     var $btn = $(this);
+    // orders.php owns this action in its detail-wrap; this handler covers profile detail.
+    if ($btn.closest(".detail-wrap").length) return;
     var mode = $btn.data("mode") || "edit";
     var $panel = getHeaderPanel($btn);
 
@@ -2292,6 +2293,7 @@ $(document)
     }
 
     if (mode === "edit") {
+      $btn.closest(".order-detail-card").find(".order-header-summary").stop(true, true).hide();
       $panel.slideDown(150);
       $btn
         .data("mode", "save")
@@ -2307,13 +2309,62 @@ $(document)
   .off("click.editHeaderCancel", ".btn-cancel-order-header")
   .on("click.editHeaderCancel", ".btn-cancel-order-header", function () {
     var $panel = $(this).closest(".order-header-edit");
+    if ($panel.closest(".detail-wrap").length) return;
     $panel.slideUp(150);
-    resetEditHeaderBtn($panel.parent().find(".btn-edit-order-header").first());
+    $panel.closest(".order-detail-card").find(".order-header-summary").stop(true, true).fadeIn(120);
+    resetEditHeaderBtn($panel.closest(".order-detail-card").find(".btn-edit-order-header").first());
   });
 
 $(document)
   .off("click.editHeaderSave", ".btn-save-order-header")
   .on("click.editHeaderSave", ".btn-save-order-header", function () {
     var $panel = $(this).closest(".order-header-edit");
-    resetEditHeaderBtn($panel.parent().find(".btn-edit-order-header").first());
+    if ($panel.closest(".detail-wrap").length) return;
+
+    var $saveBtn = $(this);
+    var orderId = $panel.find(".edit-order-id").val();
+    var $editBtn = $panel.closest(".order-detail-card").find(".btn-edit-order-header").first();
+    $saveBtn.prop("disabled", true).text("Saving...");
+
+    $.ajax({
+      url: "scripts/orders/update_order_header.php",
+      method: "POST",
+      dataType: "json",
+      data: {
+        order_id: orderId,
+        delivery: $panel.find(".edit-delivery").val(),
+        payment: $panel.find(".edit-payment").val(),
+        "billing[name]": $panel.find(".edit-billing-name").val(),
+        "billing[company]": $panel.find(".edit-billing-company").val(),
+        "billing[company_id]": $panel.find(".edit-billing-company-id").val(),
+        "billing[street]": $panel.find(".edit-billing-street").val(),
+        "billing[city]": $panel.find(".edit-billing-city").val(),
+        "billing[zip]": $panel.find(".edit-billing-zip").val(),
+        "billing[country]": $panel.find(".edit-billing-country").val(),
+        "billing[email]": $panel.find(".edit-billing-email").val(),
+        "billing[phone]": $panel.find(".edit-billing-phone").val(),
+        "shipping[name]": $panel.find(".edit-shipping-name").val(),
+        "shipping[company]": $panel.find(".edit-shipping-company").val(),
+        "shipping[company_id]": $panel.find(".edit-shipping-company-id").val(),
+        "shipping[street]": $panel.find(".edit-shipping-street").val(),
+        "shipping[city]": $panel.find(".edit-shipping-city").val(),
+        "shipping[zip]": $panel.find(".edit-shipping-zip").val(),
+        "shipping[country]": $panel.find(".edit-shipping-country").val(),
+        "shipping[email]": $panel.find(".edit-shipping-email").val(),
+        "shipping[phone]": $panel.find(".edit-shipping-phone").val(),
+      },
+      success: function (resp) {
+        if (!resp || !resp.ok) {
+          alert(resp && resp.error ? resp.error : "Save error");
+          $saveBtn.prop("disabled", false).text("Save changes");
+          return;
+        }
+        resetEditHeaderBtn($editBtn);
+        refreshOrderAfterWorkflowChange(orderId);
+      },
+      error: function () {
+        alert("Save request failed");
+        $saveBtn.prop("disabled", false).text("Save changes");
+      },
+    });
   });

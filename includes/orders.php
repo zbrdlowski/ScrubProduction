@@ -3555,6 +3555,7 @@ $deptOptions = [
     const $panel = $detail.find('.order-header-edit');
 
     if (mode === 'edit') {
+      $detail.find('.order-header-summary').stop(true, true).hide();
       $panel.slideDown(150);
       $editBtn.data('mode', 'save')
         .removeClass('btn-light').addClass('btn-warning')
@@ -3569,6 +3570,7 @@ $deptOptions = [
     const $panel = $(this).closest('.order-header-edit');
     const $editBtn = $panel.closest('.detail-wrap').find('.btn-edit-order-header');
     $panel.slideUp(150);
+    $panel.closest('.detail-wrap').find('.order-header-summary').stop(true, true).fadeIn(120);
     $editBtn.data('mode', 'edit')
       .removeClass('btn-warning').addClass('btn-light')
       .html('✏️ Edit header');
