@@ -2330,6 +2330,33 @@ $(document)
     flag.title = countryCode || '';
   }
 
+  function orderDetailCustomsCountryLabels(panel) {
+    if (!panel) return {};
+    try {
+      var labels = JSON.parse(panel.getAttribute('data-customs-country-labels') || '{}');
+      return labels && typeof labels === 'object' ? labels : {};
+    } catch (error) {
+      return {};
+    }
+  }
+
+  function updateOrderDetailCustomsIdentifier(panel) {
+    if (!panel || !panel.querySelector) return;
+    var field = panel.querySelector('[data-customs-identifier-field]');
+    if (!field) return;
+    var shipping = panel.querySelector('.edit-shipping-country');
+    var billing = panel.querySelector('.edit-billing-country');
+    var countryCode = normalizeOrderDetailCountryValue(shipping && shipping.value);
+    if (!countryCode) countryCode = normalizeOrderDetailCountryValue(billing && billing.value);
+    var labels = orderDetailCustomsCountryLabels(panel);
+    var required = Object.prototype.hasOwnProperty.call(labels, countryCode);
+    var input = field.querySelector('.edit-customs-identifier');
+    var label = field.querySelector('[data-customs-identifier-label]');
+    field.hidden = !required;
+    field.classList.toggle('is-missing', required && (!input || !String(input.value || '').trim()));
+    if (label) label.textContent = labels[countryCode] || 'Customs / Tax ID';
+  }
+
   function populateOrderDetailCountrySelect(select) {
     if (!select || select.dataset.countryPopulated === '1') return;
     var current = normalizeOrderDetailCountryValue(select.value);
@@ -2367,14 +2394,24 @@ $(document)
         countrySelect.addEventListener('change', function () {
           countrySelect.value = normalizeOrderDetailCountryValue(countrySelect.value);
           updateOrderDetailCountryFlag(countrySelect);
+          updateOrderDetailCustomsIdentifier(countrySelect.closest('.order-header-edit'));
         });
       }
       populateOrderDetailCountrySelect(countrySelect);
       updateOrderDetailCountryFlag(countrySelect);
     });
+    root.querySelectorAll('.order-header-edit[data-customs-country-labels]').forEach(function (panel) {
+      updateOrderDetailCustomsIdentifier(panel);
+    });
   }
 
   window.initializeOrderDetailCountrySelects = initializeOrderDetailCountrySelects;
+
+  $(document)
+    .off('input.orderDetailCustomsIdentifier', '.edit-customs-identifier')
+    .on('input.orderDetailCustomsIdentifier', '.edit-customs-identifier', function () {
+      updateOrderDetailCustomsIdentifier(this.closest('.order-header-edit'));
+    });
 
   $(document)
     .off('focus.orderDetailCountry mousedown.orderDetailCountry', '[data-order-detail-country-select]')
@@ -2802,6 +2839,7 @@ $(document)
         order_id: orderId,
         delivery: $panel.find(".edit-delivery").val(),
         payment: $panel.find(".edit-payment").val(),
+        customs_identifier: $panel.find(".edit-customs-identifier").val(),
         "billing[name]": $panel.find(".edit-billing-name").val(),
         "billing[company]": $panel.find(".edit-billing-company").val(),
         "billing[company_id]": $panel.find(".edit-billing-company-id").val(),

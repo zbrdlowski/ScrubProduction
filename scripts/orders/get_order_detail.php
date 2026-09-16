@@ -589,6 +589,7 @@ if (!is_file($connFile)) {
 }
 require_once $connFile;
 require_once $base . '/includes/orders_status_helpers.php';
+require_once $base . '/includes/orders_customs_helpers.php';
 require_once $base . '/includes/get_order_detail_product_spec_selects.php';
 require_once __DIR__ . '/department_config.php';
 require_once __DIR__ . '/manual_item_builder_helper.php';
@@ -1065,6 +1066,10 @@ if (!empty($addr['SHIPPING']['country'])) {
 } elseif (!empty($addr['BILLING']['country'])) {
   $orderCountry = strtoupper((string) $addr['BILLING']['country']);
 }
+$customsIdentifier = trim((string) ($order['customs_identifier'] ?? ''));
+$customsIdentifierMissing = ordersIsCustomsIdentifierMissing($orderCountry, $customsIdentifier);
+$customsIdentifierLabel = ordersCustomsIdentifierLabel($orderCountry);
+$customsCountryLabels = ordersCustomsIdentifierCountryLabels();
 $displayCustomerPhone = '';
 
 if (!empty($addr['SHIPPING']['phone'])) {
@@ -3381,6 +3386,43 @@ ob_start();
     display: none;
   }
 
+  .customs-identifier-alert {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 12px;
+    padding: 11px 13px;
+    border: 1px solid rgba(255, 79, 79, .82);
+    border-left: 6px solid #ff3b3b;
+    border-radius: 8px;
+    background: linear-gradient(90deg, rgba(220, 53, 69, .25), rgba(255, 193, 7, .10));
+    color: #fff;
+    font-weight: 700;
+  }
+
+  .customs-identifier-field {
+    margin-top: 7px;
+    padding: 8px;
+    border: 1px solid rgba(255, 193, 7, .62);
+    border-radius: 7px;
+    background: rgba(255, 193, 7, .09);
+  }
+
+  .customs-identifier-field.is-missing {
+    border-color: rgba(255, 79, 79, .92);
+    background: rgba(220, 53, 69, .15);
+    box-shadow: 0 0 0 2px rgba(220, 53, 69, .08);
+  }
+
+  .customs-identifier-field label {
+    margin-bottom: 4px;
+    color: #ffe8a1;
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: .035em;
+    text-transform: uppercase;
+  }
+
   .order-header-edit .card {
     border-radius: 10px;
     overflow: hidden;
@@ -3810,8 +3852,16 @@ ob_start();
             </div>
           <?php endif; ?>
 
+          <?php if ($customsIdentifierMissing): ?>
+            <div class="customs-identifier-alert" role="alert">
+              <i class="fas fa-exclamation-triangle" aria-hidden="true"></i>
+              <span>Customs clearance data missing: enter the customer's <?php echo h($customsIdentifierLabel); ?> in Edit order header.</span>
+            </div>
+          <?php endif; ?>
+
           <?php if ((int) ($_SESSION['permission'] ?? 0) >= 300): ?>
-            <div class="order-header-edit mt-3" style="display:none;">
+            <div class="order-header-edit mt-3" style="display:none;"
+              data-customs-country-labels="<?php echo h((string) json_encode($customsCountryLabels, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)); ?>">
               <div class="card bg-dark border-warning">
                 <div class="card-header">
                   <b>Edit order header</b>
@@ -3900,6 +3950,14 @@ ob_start();
                           <option value="<?php echo h((string) ($s['country'] ?? '')); ?>" selected><?php echo h((string) ($s['country'] ?? '')); ?></option>
                         </select>
                       </div>
+                      <div class="customs-identifier-field<?php echo $customsIdentifierMissing ? ' is-missing' : ''; ?>"
+                        data-customs-identifier-field<?php echo ordersRequiresCustomsIdentifier($orderCountry) ? '' : ' hidden'; ?>>
+                        <label><i class="fas fa-passport mr-1" aria-hidden="true"></i><span data-customs-identifier-label><?php echo h($customsIdentifierLabel); ?></span></label>
+                        <input class="form-control form-control-sm edit-customs-identifier" maxlength="128"
+                          placeholder="Enter customer customs / tax ID"
+                          value="<?php echo h($customsIdentifier); ?>">
+                        <small class="text-muted">Required for customs clearance in the selected destination country.</small>
+                      </div>
                       <input class="form-control form-control-sm mb-1 edit-shipping-email" placeholder="Email"
                         value="<?php echo h($s['email'] ?? ''); ?>">
                       <input class="form-control form-control-sm mb-1 edit-shipping-phone" placeholder="Phone"
@@ -3933,6 +3991,7 @@ ob_start();
           $fullShipping = $s ? trim(
             addressCopyText($s, $shippingState) .
             (!empty($s['country']) ? "\n" . strtoupper((string) $s['country']) : '') .
+            ($customsIdentifier !== '' ? "\n" . $customsIdentifierLabel . ': ' . $customsIdentifier : '') .
             ($deliveryEmail !== '' ? "\nEmail: " . $deliveryEmail : '') .
             ($deliveryContactPhone !== '' ? "\nPhone: " . $deliveryContactPhone : '')
           ) : '';
@@ -3993,6 +4052,13 @@ ob_start();
                       data-order-id="<?php echo (int) $orderId; ?>" data-country="<?php echo h($orderCountry); ?>">Edit</button>
                   <?php endif; ?>
                 </div>
+                <?php if ($customsIdentifier !== ''): ?>
+                  <div class="order-summary-line mt-2">
+                    <i class="fas fa-passport mr-1" aria-hidden="true"></i><b><?php echo h($customsIdentifierLabel); ?>:</b>
+                    <?php echo h($customsIdentifier); ?>
+                    <button class="btn btn-xs btn-copy-inline ml-1" data-copy="<?php echo h($customsIdentifier); ?>">📋</button>
+                  </div>
+                <?php endif; ?>
               <?php else: ?>
                 <div class="text-muted">No delivery address</div>
               <?php endif; ?>

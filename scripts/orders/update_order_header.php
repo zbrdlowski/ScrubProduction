@@ -19,12 +19,18 @@ if ((int)($_SESSION['permission'] ?? 0) < 400) {
 
 $base = dirname(__DIR__, 2);
 require_once $base . '/includes/conn.php';
+require_once $base . '/includes/orders_customs_helpers.php';
 
 $orderId = (int)($_POST['order_id'] ?? 0);
 if ($orderId <= 0) out(400, ['ok'=>false,'error'=>'Invalid order_id']);
 
 $delivery = trim((string)($_POST['delivery'] ?? ''));
 $payment  = trim((string)($_POST['payment'] ?? ''));
+$customsIdentifier = trim((string)($_POST['customs_identifier'] ?? ''));
+
+if (mb_strlen($customsIdentifier) > 128) {
+  out(400, ['ok'=>false,'error'=>'Customs / Tax ID is too long (maximum 128 characters)']);
+}
 
 $billing = $_POST['billing'] ?? [];
 $shipping = $_POST['shipping'] ?? [];
@@ -38,12 +44,12 @@ $conn->begin_transaction();
 try {
   $stmt = $conn->prepare("
     UPDATE orders
-    SET shipping_method = ?, payment_method = ?
+    SET shipping_method = ?, payment_method = ?, customs_identifier = ?
     WHERE id = ?
     LIMIT 1
   ");
   if (!$stmt) throw new Exception($conn->error);
-  $stmt->bind_param('ssi', $delivery, $payment, $orderId);
+  $stmt->bind_param('sssi', $delivery, $payment, $customsIdentifier, $orderId);
   $stmt->execute();
   $stmt->close();
 
@@ -107,7 +113,15 @@ try {
   }
 
   $conn->commit();
-  out(200, ['ok'=>true]);
+  $effectiveCountry = strtoupper(clean($shipping['country'] ?? ''));
+  if ($effectiveCountry === '') {
+    $effectiveCountry = strtoupper(clean($billing['country'] ?? ''));
+  }
+
+  out(200, [
+    'ok'=>true,
+    'customs_identifier_missing'=>ordersIsCustomsIdentifierMissing($effectiveCountry, $customsIdentifier),
+  ]);
 
 } catch (Throwable $e) {
   $conn->rollback();

@@ -254,9 +254,9 @@ $conn->begin_transaction();
 try {
   $stmt = $conn->prepare("
     INSERT INTO orders
-      (source_id, external_order_id, order_number, imported_at, order_date, status, currency, total, payment_method, shipping_method, note, source_meta, customer_id, manual_types_override, priority, priority_date)
+      (source_id, external_order_id, order_number, imported_at, order_date, status, currency, total, payment_method, shipping_method, customs_identifier, note, source_meta, customer_id, manual_types_override, priority, priority_date)
     VALUES
-      (?, ?, ?, NOW(), ?, 'NEW', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      (?, ?, ?, NOW(), ?, 'NEW', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   ");
   if (!$stmt) {
     throw new RuntimeException($conn->error);
@@ -264,6 +264,7 @@ try {
 
   $newExternalOrderId = 'FOLLOWUP:' . $orderId . ':' . $followupType . ':' . time();
   $currency = (string) ($sourceOrder['currency'] ?? 'EUR');
+  $customsIdentifier = (string) ($sourceOrder['customs_identifier'] ?? '');
   $manualTypes = (string) ($sourceOrder['manual_types_override'] ?? '');
   $sourceId = (int) ($sourceOrder['source_id'] ?? 0);
   $customerIdDb = ((int) ($sourceOrder['customer_id'] ?? 0) > 0)
@@ -271,7 +272,7 @@ try {
     : null;
 
   $stmt->bind_param(
-    'issssdssssisis',
+    'issssdsssssisis',
     $sourceId,
     $newExternalOrderId,
     $newOrderNumber,
@@ -280,6 +281,7 @@ try {
     $newTotal,
     $paymentMethod,
     $shippingMethod,
+    $customsIdentifier,
     $newNote,
     $sourceMetaJson,
     $customerIdDb,

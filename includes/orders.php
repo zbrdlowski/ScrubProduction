@@ -5,6 +5,7 @@ require_once __DIR__ . '/conn.php';
 require_once __DIR__ . '/render_assigned_users.php';
 require_once __DIR__ . '/orders_status_helpers.php';
 require_once __DIR__ . '/orders_workflow_helpers.php';
+require_once __DIR__ . '/orders_customs_helpers.php';
 
 if (!isset($conn) || !$conn instanceof mysqli) {
   echo '<div class="alert alert-danger">Database connection error.</div>';
@@ -961,6 +962,7 @@ $sql = " SELECT
   o.manual_types_override,
   o.payment_method,
   o.shipping_method,
+  o.customs_identifier,
   os.code AS source_code,
   cu.name AS customer_name,
   cu.email AS customer_email,
@@ -1465,6 +1467,32 @@ $deptOptions = [
     background: rgba(111, 66, 193, 0.10) !important;
     box-shadow: inset 4px 0 0 rgba(111, 66, 193, 0.70);
     opacity: 0.82;
+  }
+
+  #ordersTable .order-row.order-customs-id-missing:not(.order-row-open)>td {
+    background: linear-gradient(90deg, rgba(220, 53, 69, .25), rgba(255, 193, 7, .16)) !important;
+    border-top-color: rgba(255, 87, 87, .72) !important;
+    border-bottom-color: rgba(255, 87, 87, .72) !important;
+  }
+
+  #ordersTable .order-row.order-customs-id-missing:not(.order-row-open)>td:first-child {
+    box-shadow: inset 6px 0 0 #ff3b3b;
+  }
+
+  .order-customs-id-warning {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    margin-top: 3px;
+    padding: 2px 6px;
+    border: 1px solid rgba(255, 87, 87, .85);
+    border-radius: 999px;
+    background: rgba(220, 53, 69, .28);
+    color: #fff;
+    font-size: .68rem;
+    font-weight: 800;
+    line-height: 1.2;
+    white-space: nowrap;
   }
 
   /* Order Split (Q1, Q2, ...) child rows: visually attach to the parent order above them */
@@ -2684,6 +2712,13 @@ $deptOptions = [
             $orderId = (int) $row['id'];
             $hasTM = (int) ($row['has_tm'] ?? 0) === 1;
             $rowClasses = [];
+            $rowCountryCode = ordersNormalizeCountryCode((string) ($row['country_code'] ?? ''));
+            $customsIdentifier = trim((string) ($row['customs_identifier'] ?? ''));
+            $customsIdentifierMissing = ordersIsCustomsIdentifierMissing($rowCountryCode, $customsIdentifier);
+
+            if ($customsIdentifierMissing) {
+              $rowClasses[] = 'order-customs-id-missing';
+            }
 
             $statusUpper = strtoupper((string) ($row['status'] ?? ''));
 
@@ -2796,7 +2831,7 @@ $deptOptions = [
               </td>
               <td class="text-center">
                 <?php
-                $cc = strtoupper(trim((string) ($row['country_code'] ?? '')));
+                $cc = $rowCountryCode;
 
                 if ($cc === 'UM') {
                   $cc = 'US';
@@ -2811,6 +2846,12 @@ $deptOptions = [
                   echo 'style="margin-right:5px; vertical-align:-1px;">';
                   echo htmlspecialchars($cc);
                   echo '</span>';
+                  if ($customsIdentifierMissing) {
+                    echo '<div class="order-customs-id-warning" title="Customs identifier required before customs clearance">';
+                    echo '<i class="fas fa-exclamation-triangle" aria-hidden="true"></i> Missing ';
+                    echo htmlspecialchars(ordersCustomsIdentifierLabel($cc));
+                    echo '</div>';
+                  }
                 } else {
                   echo '-';
                 }
@@ -3682,6 +3723,7 @@ $deptOptions = [
         order_id: orderId,
         delivery: $box.find('.edit-delivery').val(),
         payment: $box.find('.edit-payment').val(),
+        customs_identifier: $box.find('.edit-customs-identifier').val(),
 
         'billing[name]': $box.find('.edit-billing-name').val(),
         'billing[company]': $box.find('.edit-billing-company').val(),
@@ -3714,6 +3756,22 @@ $deptOptions = [
         $editBtn.data('mode', 'edit')
           .removeClass('btn-warning').addClass('btn-light')
           .html('✏️ Edit header');
+
+        const customsMissing = resp.customs_identifier_missing === true;
+        const $orderRow = $('#ordersTable .order-row[data-order-id="' + orderId + '"]');
+        $orderRow.toggleClass('order-customs-id-missing', customsMissing);
+        if (!customsMissing) {
+          $orderRow.find('.order-customs-id-warning').remove();
+        } else if (!$orderRow.find('.order-customs-id-warning').length) {
+          const customsLabel = $box.find('[data-customs-identifier-label]').text() || 'Customs / Tax ID';
+          $('<div>', {
+            class: 'order-customs-id-warning',
+            title: 'Customs identifier required before customs clearance'
+          }).append($('<i>', {
+            class: 'fas fa-exclamation-triangle',
+            'aria-hidden': 'true'
+          })).append(document.createTextNode(' Missing ' + customsLabel)).appendTo($orderRow.children('td').eq(4));
+        }
 
         reloadOrderDetail(orderId);
       },
