@@ -591,6 +591,8 @@ require_once $connFile;
 require_once $base . '/includes/orders_status_helpers.php';
 require_once $base . '/includes/get_order_detail_product_spec_selects.php';
 require_once __DIR__ . '/department_config.php';
+require_once __DIR__ . '/manual_item_builder_helper.php';
+require_once __DIR__ . '/financial_helpers.php';
 
 $orderId = (int) ($_POST['order_id'] ?? 0);
 if ($orderId <= 0)
@@ -1000,6 +1002,19 @@ $sourceMeta = json_decode((string) ($order['source_meta'] ?? ''), true);
 if (!is_array($sourceMeta)) {
   $sourceMeta = [];
 }
+
+$financialInfo = order_financial_effective_totals($conn, $order, $sourceMeta);
+$financialAdjustmentRows = order_financial_fetch_adjustments($conn, $orderId);
+$financialBaseTotal = (float) $financialInfo['base_total'];
+$financialAdjustmentsTotal = (float) $financialInfo['adjustments_total'];
+$financialCalculatedTotal = (float) $financialInfo['calculated_total'];
+$financialTotalOverrideActive = (bool) $financialInfo['override_active'];
+$financialEffectiveTotal = (float) $financialInfo['effective_total'];
+$financialSourceCurrency = (string) $financialInfo['source_currency'];
+$financialEffectiveCurrency = (string) $financialInfo['effective_currency'];
+$financialOverrideCurrency = (string) $financialInfo['override_currency'];
+$financialCanEdit = (int) ($_SESSION['permission'] ?? 0) >= 400;
+
 $followupMeta = is_array($sourceMeta['_followup'] ?? null) ? $sourceMeta['_followup'] : [];
 $followupTypeLabels = [
   'REPEAT' => 'Repeat Order',
@@ -1058,6 +1073,15 @@ if (!empty($addr['SHIPPING']['phone'])) {
   $displayCustomerPhone = (string) $addr['BILLING']['phone'];
 } else {
   $displayCustomerPhone = (string) ($order['customer_phone'] ?? '');
+}
+
+$deliveryContactPhone = trim((string) ($addr['SHIPPING']['phone'] ?? ''));
+if ($deliveryContactPhone === '') {
+  $deliveryContactPhone = trim($displayCustomerPhone);
+}
+$deliveryEmail = trim((string) ($addr['SHIPPING']['email'] ?? ''));
+if ($deliveryEmail === '') {
+  $deliveryEmail = trim((string) ($order['customer_email'] ?? ($addr['BILLING']['email'] ?? '')));
 }
 
 // --- items (no fetch_all to avoid mysqlnd dependency issues) ---
@@ -1354,13 +1378,7 @@ foreach ($items as $breakdownItem) {
   }
 }
 $orderValueBreakdown['shipping'] = orderDetailMoneyValue($sourceMeta['shipping_price'] ?? null) ?? 0.0;
-$orderValueBreakdown['total'] = orderDetailMoneyValue($sourceMeta['total_price_with_vat'] ?? null)
-  ?? orderDetailMoneyValue($order['total'] ?? null)
-  ?? array_sum($orderValueBreakdown);
-$paymentReceivedAmount = orderDetailMoneyValue($order['payment_received_amount'] ?? null);
-$paymentDifference = $paymentReceivedAmount !== null
-  ? round($paymentReceivedAmount - $orderValueBreakdown['total'], 2)
-  : null;
+$orderValueBreakdown['total'] = $financialEffectiveTotal;
 
 $percentageBreakdownConfig = orderDetailPercentageBreakdownBySource();
 $breakdownSourceCode = strtoupper(trim((string) ($order['source_code'] ?? '')));
@@ -1488,9 +1506,8 @@ if ($activePercentageBreakdown !== null) {
     + $orderValueBreakdown['seat_covers']
     + $orderValueBreakdown['fitting']
     + $orderValueBreakdown['other'];
-  $storedOrderTotal = orderDetailMoneyValue($order['total'] ?? null);
-  $percentageTotal  = ($storedOrderTotal !== null && $storedOrderTotal > 0)
-    ? $storedOrderTotal
+  $percentageTotal = $financialEffectiveTotal > 0
+    ? $financialEffectiveTotal
     : ($pricedItemsTotal > 0 ? $pricedItemsTotal : $orderValueBreakdown['total']);
   $totalCents       = (int) round($percentageTotal * 100);
   $allocatedCents   = 0;
@@ -1516,8 +1533,44 @@ if ($activePercentageBreakdown !== null) {
   $orderValueBreakdown['total'] = $totalCents / 100;
 }
 
-$orderCurrency = strtoupper(trim((string) ($order['currency'] ?? 'EUR')));
-$orderCurrencySuffix = $orderCurrency === 'EUR' ? ' €' : ($orderCurrency !== '' ? ' ' . $orderCurrency : '');
+$orderValueBreakdown['total'] = $financialEffectiveTotal;
+$financialBreakdownAdjustment = 0.0;
+
+if ($activePercentageBreakdown === null) {
+  if ($isShoptetOrder && !empty($shoptetBreakdown)) {
+    $listedBreakdownTotal = array_sum(array_map(
+      static fn($row) => (float) ($row['value'] ?? 0.0),
+      $shoptetBreakdown
+    ));
+  } else {
+    $listedBreakdownTotal = $orderValueBreakdown['graphics']
+      + $orderValueBreakdown['plastics']
+      + $orderValueBreakdown['seat_covers']
+      + $orderValueBreakdown['fitting']
+      + $orderValueBreakdown['shipping']
+      + $orderValueBreakdown['other'];
+  }
+
+  $financialBreakdownAdjustment = round($financialEffectiveTotal - $listedBreakdownTotal, 2);
+}
+
+if ($isShoptetOrder && abs($financialBreakdownAdjustment) >= 0.005) {
+  $shoptetBreakdown[] = [
+    'label' => $financialBreakdownAdjustment >= 0 ? 'Financial adjustment' : 'Financial refund / adjustment',
+    'value' => $financialBreakdownAdjustment,
+  ];
+  $financialBreakdownAdjustment = 0.0;
+}
+
+$paymentReceivedAmount = orderDetailMoneyValue($order['payment_received_amount'] ?? null);
+$paymentDifference = $paymentReceivedAmount !== null
+  ? round($paymentReceivedAmount - $orderValueBreakdown['total'], 2)
+  : null;
+
+$orderCurrency = $financialEffectiveCurrency;
+$orderCurrencySuffix = order_financial_currency_suffix($orderCurrency);
+$financialSourceCurrencySuffix = order_financial_currency_suffix($financialSourceCurrency);
+$financialEffectiveCurrencySuffix = order_financial_currency_suffix($financialEffectiveCurrency);
 
 $status = (string) ($order['status'] ?? '');
 $detailAccentColor = status_accent_color($status);
@@ -2190,98 +2243,355 @@ ob_start();
     color: #0f1720 !important;
   }
 
-  .manual-item-box {
-    position: relative;
-    border-width: 1px !important;
+  .custom-item-builder-shell {
+    border: 1px solid rgba(60, 141, 188, .28);
     border-radius: 12px;
-    background:
-      linear-gradient(180deg, rgba(31, 41, 55, 0.92) 0%, rgba(23, 31, 43, 0.96) 100%) !important;
-    box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.03),
-      0 10px 24px rgba(0, 0, 0, 0.16);
-    transition: border-color .18s ease, box-shadow .18s ease, background .18s ease;
+    background: rgba(60, 141, 188, .06);
+    padding: 12px;
   }
 
-  .manual-item-box::before {
-    content: "";
-    position: absolute;
-    left: 0;
-    top: 0;
-    bottom: 0;
-    width: 4px;
-    border-radius: 12px 0 0 12px;
-    background: rgba(80, 180, 255, 0.85);
+  .custom-item-builder-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 12px;
   }
 
-  .manual-item-box .manual-item-generated-fields {
-    margin-top: 10px;
-    padding: 10px;
-    border: 1px solid rgba(255, 255, 255, 0.08);
+  .custom-item-builder-title {
+    font-size: 12px;
+    font-weight: 700;
+    color: #cfd6dc;
+    letter-spacing: .05em;
+    text-transform: uppercase;
+  }
+
+  .custom-builder-picker {
+    display: flex;
+    justify-content: flex-start;
+    align-items: flex-start;
+    gap: 12px;
+    margin-bottom: 12px;
+    flex-wrap: wrap;
+  }
+
+  .custom-builder-picker-label {
+    flex: 0 0 220px;
+    max-width: 220px;
+  }
+
+  .custom-builder-placeholder {
+    margin-top: 8px;
+    color: #8f9ba7;
+    font-size: 13px;
+  }
+
+  .custom-builder-order-shell {
+    border: 1px solid rgba(255, 255, 255, .1);
     border-radius: 10px;
-    background: rgba(255, 255, 255, 0.035);
+    background: rgba(255, 255, 255, .015);
+    overflow: hidden;
   }
 
-  .manual-item-box .manual-item-generated-fields:empty {
+  .custom-builder-order-shell>.table-responsive {
+    overflow-y: hidden;
+  }
+
+  @media (min-width: 1500px) {
+    .custom-builder-order-shell>.table-responsive {
+      overflow-x: hidden;
+      overflow-y: hidden;
+    }
+  }
+
+  .custom-builder-order-shell[hidden],
+  .custom-builder-placeholder[hidden],
+  .custom-item-spec-group[hidden],
+  [data-builder-body][hidden] {
+    display: none !important;
+  }
+
+  .custom-builder-subtitle {
+    padding: 12px 14px 8px;
+    color: #f4f6f8;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+  }
+
+  .custom-builder-order-table {
+    margin-bottom: 0;
+  }
+
+  .custom-builder-order-table td,
+  .custom-builder-order-table th {
+    outline: none !important;
+    vertical-align: middle;
+  }
+
+  .custom-builder-order-table tr.item-repeat-header-row>th {
+    background-color: #343a40 !important;
+    font-weight: 600;
+    font-size: .78rem;
+    color: #f0f3f6;
+    padding: .35rem .6rem !important;
+    border-top: 2px solid rgba(255, 255, 255, .15) !important;
+    border-bottom: 1px solid rgba(255, 255, 255, .1) !important;
+    border-left: 1px solid rgba(255, 255, 255, .14) !important;
+    border-right: 1px solid rgba(255, 255, 255, .14) !important;
+    white-space: nowrap;
+  }
+
+  .custom-builder-order-table tr.item-type-G {
+    --item-accent: #28a745;
+    --item-bg: rgba(40, 167, 69, .16);
+  }
+
+  .custom-builder-order-table tr.item-type-P {
+    --item-accent: #17a2b8;
+    --item-bg: rgba(23, 162, 184, .14);
+  }
+
+  .custom-builder-order-table tr.item-type-S {
+    --item-accent: #ebd618;
+    --item-bg: rgba(235, 214, 24, .12);
+  }
+
+  .custom-builder-order-table tr.item-type-F {
+    --item-accent: #fd7e14;
+    --item-bg: rgba(253, 126, 20, .13);
+  }
+
+  .custom-builder-order-table tr.item-type-T,
+  .custom-builder-order-table tr.item-type-M {
+    --item-accent: #ffc107;
+    --item-bg: rgba(255, 193, 7, .13);
+  }
+
+  .custom-builder-order-table tbody tr.item-info-row>td,
+  .custom-builder-order-table tbody tr.g-item-options-row>td {
+    box-shadow: none !important;
+    border-top: 1px solid rgba(255, 255, 255, .18) !important;
+    border-bottom: 1px solid rgba(255, 255, 255, .18) !important;
+    border-left: 1px solid rgba(255, 255, 255, .18) !important;
+    border-right: 0 !important;
+    background: var(--item-bg, rgba(255, 255, 255, .035)) !important;
+    background-clip: padding-box !important;
+  }
+
+  .custom-builder-order-table tbody tr.item-info-row>td:last-child,
+  .custom-builder-order-table tbody tr.g-item-options-row>td:last-child,
+  .custom-builder-order-table tbody tr.g-item-options-row>td[colspan] {
+    border-right: 1px solid rgba(255, 255, 255, .18) !important;
+  }
+
+  .custom-builder-order-table tbody tr.item-info-row>td:first-child,
+  .custom-builder-order-table tbody tr.g-item-options-row>td:first-child,
+  .custom-builder-order-table tbody tr.g-item-options-row>td[colspan] {
+    border-left: 10px solid var(--item-accent, #8a8f98) !important;
+  }
+
+  .custom-builder-order-table tbody tr.g-item-options-row>td {
+    border-top: 1px solid rgba(255, 255, 255, .26) !important;
+    padding: 5px 8px 7px !important;
+  }
+
+  .custom-builder-type-badge {
+    min-width: 28px;
+    height: 28px;
+    border-radius: 10px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background-color: #6c757d;
+    color: #fff;
+    font-weight: 700;
+    text-align: center;
+  }
+
+  .custom-builder-assigned-placeholder {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid rgba(255, 255, 255, .18);
+    background: rgba(255, 255, 255, .04);
+    color: #cdd6df;
+    font-size: 11px;
+    font-weight: 700;
+  }
+
+  .custom-existing-item-meta-edit {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 4px;
+  }
+
+  .manual-add-item-form .custom-builder-mini-btn,
+  .manual-add-item-form .custom-builder-link-btn {
+    white-space: nowrap;
+  }
+
+  .manual-add-item-form .custom-builder-order-table tbody tr.item-info-row>td {
+    padding: 7px 8px !important;
+  }
+
+  .manual-add-item-form .custom-builder-order-table .form-control,
+  .manual-add-item-form .custom-builder-order-table .custom-category-info-trigger {
+    min-height: 32px;
+    padding-top: .34rem;
+    padding-bottom: .34rem;
+  }
+
+  .manual-add-item-form .manual-item-title {
+    margin-bottom: 6px !important;
+  }
+
+  .manual-add-item-form .custom-existing-item-meta-edit {
+    gap: 6px;
+  }
+  .manual-add-item-form .manual-item-category-info {
+    min-width: 190px;
+  }
+  .custom-category-info-trigger {
+    width: 100%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    min-height: 31px;
+    text-align: left;
+  }
+
+  .custom-category-info-trigger.is-empty {
+    color: #b9c3cd;
+    border-style: dashed;
+  }
+
+  .custom-category-info-text {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .custom-category-picker-modal .modal-content {
+    background: #2b3239;
+    color: #f8f9fa;
+    border: 1px solid rgba(255, 255, 255, .18);
+  }
+
+  .custom-category-picker-steps {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px;
+    align-items: stretch;
+  }
+
+  .custom-category-picker-step {
+    min-width: 0;
+    padding: 10px;
+    border: 1px solid rgba(255, 255, 255, .16);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, .035);
+  }
+
+  .custom-category-picker-step label {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    margin-bottom: 7px;
+    font-size: 12px;
+    font-weight: 700;
+    color: #d7dee7;
+  }
+
+  .custom-category-picker-step-number {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 20px;
+    background: rgba(23, 162, 184, .25);
+    border: 1px solid rgba(23, 162, 184, .65);
+    color: #e7fbff;
+    font-size: 11px;
+    font-weight: 800;
+  }
+
+  .custom-category-picker-preview {
+    margin-top: 12px;
+    padding: 9px 10px;
+    border-radius: 8px;
+    border: 1px solid rgba(23, 162, 184, .28);
+    background: rgba(23, 162, 184, .08);
+    color: #d7eef5;
+    font-size: 12px;
+    line-height: 1.35;
+  }
+
+  @media (max-width: 900px) {
+    .custom-category-picker-steps {
+      grid-template-columns: 1fr;
+    }
+  }
+  .manual-add-item-form .custom-builder-subtitle {
     display: none;
   }
 
-  .manual-item-box:focus-within {
-    border-color: rgba(80, 180, 255, 0.7) !important;
-    box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.04),
-      0 0 0 1px rgba(80, 180, 255, 0.26),
-      0 14px 28px rgba(0, 0, 0, 0.22);
+  .manual-add-item-form .custom-builder-order-shell {
+    border-radius: 0;
+  }
+  .manual-add-item-form .manual-item-main-spec-row .g-options-bar {
+    display: flex;
+    flex-wrap: nowrap;
+    align-items: stretch;
+    gap: 6px;
+    width: 100%;
   }
 
-  .manual-item-box.manual-item-type-G {
-    background:
-      linear-gradient(180deg, rgba(18, 55, 69, 0.92) 0%, rgba(17, 42, 56, 0.96) 100%) !important;
-    border-color: rgba(23, 162, 184, 0.55) !important;
+  .manual-add-item-form .manual-item-note-spec-row .g-options-bar {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    align-items: stretch;
+    width: 100%;
   }
 
-  .manual-item-box.manual-item-type-G::before {
-    background: #1fbfd6;
+  .manual-add-item-form .manual-item-spec-group .product-spec-label {
+    width: 100%;
+    max-width: none;
+    min-width: 0 !important;
+    margin: 0 !important;
   }
 
-  .manual-item-box.manual-item-type-P,
-  .manual-item-box.manual-item-type-T,
-  .manual-item-box.manual-item-type-M {
-    background:
-      linear-gradient(180deg, rgba(35, 46, 74, 0.92) 0%, rgba(25, 34, 56, 0.96) 100%) !important;
-    border-color: rgba(64, 126, 231, 0.52) !important;
+  .manual-add-item-form .manual-item-main-spec-row .product-spec-label {
+    flex: 1 1 0 !important;
   }
 
-  .manual-item-box.manual-item-type-P::before,
-  .manual-item-box.manual-item-type-T::before,
-  .manual-item-box.manual-item-type-M::before {
-    background: #5b8cff;
+  .manual-add-item-form .manual-item-spec-group .product-spec-label-title {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
-  .manual-item-box.manual-item-type-S {
-    background:
-      linear-gradient(180deg, rgba(32, 68, 52, 0.92) 0%, rgba(23, 51, 39, 0.96) 100%) !important;
-    border-color: rgba(61, 179, 110, 0.5) !important;
+  .manual-add-item-form .manual-item-spec-group .form-control {
+    width: 100%;
+    min-width: 0;
+    padding-left: .42rem;
+    padding-right: .42rem;
   }
 
-  .manual-item-box.manual-item-type-S::before {
-    background: #4ad184;
+  @media (max-width: 767.98px) {
+    .manual-add-item-form .manual-item-note-spec-row .g-options-bar {
+      grid-template-columns: 1fr;
+    }
   }
-
-  .manual-item-box.manual-item-type-F {
-    background:
-      linear-gradient(180deg, rgba(82, 39, 34, 0.92) 0%, rgba(58, 29, 25, 0.96) 100%) !important;
-    border-color: rgba(224, 105, 88, 0.5) !important;
-  }
-
-  .manual-item-box.manual-item-type-F::before {
-    background: #f0725f;
-  }
-
-  .manual-item-box .manual-item-spec-row .product-spec-label {
-    background: rgba(255, 255, 255, 0.045);
-    border-color: rgba(255, 255, 255, 0.12);
-  }
-
   .order-detail-table tbody tr.item-info-row:focus-within>td,
   .order-detail-table tbody tr.g-item-options-row:focus-within>td {
     box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
@@ -2970,7 +3280,7 @@ ob_start();
 
   .order-summary-address-grid {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 10px;
   }
 
@@ -3036,6 +3346,39 @@ ob_start();
     gap: 4px;
     margin-top: 5px;
     color: rgba(255, 255, 255, .82);
+  }
+
+  .custom-country-select-wrap {
+    position: relative;
+    width: 100%;
+  }
+
+  .custom-country-select-wrap .custom-country-select {
+    padding-left: 35px;
+  }
+
+  .custom-country-select-wrap.no-flag .custom-country-select {
+    padding-left: .5rem;
+  }
+
+  .custom-country-flag {
+    position: absolute;
+    left: 10px;
+    top: 50%;
+    z-index: 3;
+    width: 18px;
+    height: 13px;
+    transform: translateY(-50%);
+    border-radius: 2px;
+    background-position: 50%;
+    background-repeat: no-repeat;
+    background-size: cover;
+    box-shadow: 0 0 0 1px rgba(255, 255, 255, .18);
+    pointer-events: none;
+  }
+
+  .custom-country-flag.is-empty {
+    display: none;
   }
 
   .order-header-edit .card {
@@ -3148,14 +3491,72 @@ ob_start();
     font-weight: 700;
   }
 
+  .order-value-breakdown-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 10px;
+    font-weight: 700;
+  }
+
+  .order-financial-total-editor {
+    margin-bottom: 10px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid rgba(255, 255, 255, .14);
+  }
+
+  .order-financial-total-editor label {
+    display: block;
+    margin-bottom: 4px;
+    font-size: .78rem;
+    text-transform: uppercase;
+    color: #9ecfe0;
+  }
+
+  .order-financial-total-input {
+    text-align: right;
+    font-weight: 700;
+  }
+
+  .order-financial-meta,
+  .order-financial-adjustment-meta {
+    font-size: .78rem;
+    color: #b8c3ca;
+  }
+
+  .order-financial-adjustment-list {
+    margin: 8px 0 10px;
+    padding: 8px 0;
+    border-top: 1px solid rgba(255, 255, 255, .1);
+    border-bottom: 1px solid rgba(255, 255, 255, .1);
+  }
+
+  .order-financial-adjustment-row {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 3px 0;
+  }
+
+  .order-financial-adjustment-main {
+    min-width: 0;
+  }
+
+  .order-financial-adjustment-purpose {
+    font-weight: 600;
+  }
+
+  .order-financial-adjustment-amount {
+    white-space: nowrap;
+    font-weight: 700;
+  }
+
   @media (max-width: 991.98px) {
     .order-summary-meta,
     .order-summary-address-grid {
       grid-template-columns: repeat(2, minmax(0, 1fr));
-    }
-
-    .order-summary-address-grid .order-summary-card:last-child {
-      grid-column: 1 / -1;
     }
 
     .order-detail-secondary-row>[class*="col-"]:not(:last-child) {
@@ -3178,9 +3579,6 @@ ob_start();
       grid-template-columns: 1fr;
     }
 
-    .order-summary-address-grid .order-summary-card:last-child {
-      grid-column: auto;
-    }
   }
 
   /* Tracking number / carrier / add-button row: flexible inputs, button always one line */
@@ -3358,6 +3756,20 @@ ob_start();
                 <button class="btn btn-xs btn-copy-inline ml-1" data-copy="<?php echo h($customerDisplayName); ?>"
                   title="Copy customer name">📋</button>
               </div>
+              <?php if ($deliveryEmail !== ''): ?>
+                <div class="order-summary-line mt-1">
+                  <i class="fas fa-envelope mr-1"></i><?php echo h($deliveryEmail); ?>
+                  <button class="btn btn-xs btn-copy-inline ml-1" data-copy="<?php echo h($deliveryEmail); ?>"
+                    title="Copy customer email">📋</button>
+                </div>
+              <?php endif; ?>
+              <?php if ($deliveryContactPhone !== ''): ?>
+                <div class="order-summary-line">
+                  <i class="fas fa-phone-alt mr-1"></i><?php echo h($deliveryContactPhone); ?>
+                  <button class="btn btn-xs btn-copy-inline ml-1" data-copy="<?php echo h($deliveryContactPhone); ?>"
+                    title="Copy customer phone">📋</button>
+                </div>
+              <?php endif; ?>
             </div>
 
             <div class="order-summary-meta-item">
@@ -3447,8 +3859,13 @@ ob_start();
                         value="<?php echo h($b['city'] ?? ''); ?>">
                       <input class="form-control form-control-sm mb-1 edit-billing-zip" placeholder="ZIP"
                         value="<?php echo h($b['zip'] ?? ''); ?>">
-                      <input class="form-control form-control-sm mb-1 edit-billing-country" placeholder="Country"
-                        value="<?php echo h($b['country'] ?? ''); ?>">
+                      <div class="mb-1 custom-country-select-wrap no-flag">
+                        <span class="custom-country-flag is-empty" data-country-flag aria-hidden="true"></span>
+                        <select class="form-control form-control-sm edit-billing-country custom-country-select"
+                          data-order-detail-country-select data-country-placeholder="Country">
+                          <option value="<?php echo h((string) ($b['country'] ?? '')); ?>" selected><?php echo h((string) ($b['country'] ?? '')); ?></option>
+                        </select>
+                      </div>
                       <input class="form-control form-control-sm mb-1 edit-billing-email" placeholder="Email"
                         value="<?php echo h($b['email'] ?? ''); ?>">
                       <input class="form-control form-control-sm mb-1 edit-billing-phone" placeholder="Phone"
@@ -3476,8 +3893,13 @@ ob_start();
                         value="<?php echo h($s['city'] ?? ''); ?>">
                       <input class="form-control form-control-sm mb-1 edit-shipping-zip" placeholder="ZIP"
                         value="<?php echo h($s['zip'] ?? ''); ?>">
-                      <input class="form-control form-control-sm mb-1 edit-shipping-country" placeholder="Country"
-                        value="<?php echo h($s['country'] ?? ''); ?>">
+                      <div class="mb-1 custom-country-select-wrap no-flag">
+                        <span class="custom-country-flag is-empty" data-country-flag aria-hidden="true"></span>
+                        <select class="form-control form-control-sm edit-shipping-country custom-country-select"
+                          data-order-detail-country-select data-country-placeholder="Country">
+                          <option value="<?php echo h((string) ($s['country'] ?? '')); ?>" selected><?php echo h((string) ($s['country'] ?? '')); ?></option>
+                        </select>
+                      </div>
                       <input class="form-control form-control-sm mb-1 edit-shipping-email" placeholder="Email"
                         value="<?php echo h($s['email'] ?? ''); ?>">
                       <input class="form-control form-control-sm mb-1 edit-shipping-phone" placeholder="Phone"
@@ -3507,14 +3929,6 @@ ob_start();
           $shippingState = strtoupper((string) ($s['country'] ?? '')) === 'US'
             ? usStateFromZip(normalizeUsZipFromAddress($s))
             : '';
-          $deliveryContactPhone = trim((string) ($s['phone'] ?? ''));
-          if ($deliveryContactPhone === '') {
-            $deliveryContactPhone = trim($displayCustomerPhone);
-          }
-          $deliveryEmail = trim((string) ($s['email'] ?? ''));
-          if ($deliveryEmail === '') {
-            $deliveryEmail = trim((string) ($order['customer_email'] ?? $b['email'] ?? ''));
-          }
           $fullBilling = $b ? addressCopyText($b, $billingState) . (!empty($b['country']) ? "\n" . strtoupper((string) $b['country']) : '') : '';
           $fullShipping = $s ? trim(
             addressCopyText($s, $shippingState) .
@@ -3584,17 +3998,6 @@ ob_start();
               <?php endif; ?>
             </section>
 
-            <section class="order-summary-card">
-              <div class="order-summary-card-title"><span><i class="fas fa-address-card mr-1"></i>Delivery contact</span></div>
-              <div class="order-summary-primary"><?php echo h($s['name'] ?? $customerDisplayName); ?></div>
-              <?php if ($deliveryEmail !== ''): ?>
-                <div class="order-summary-line"><i class="fas fa-envelope mr-1"></i><?php echo h($deliveryEmail); ?><button class="btn btn-xs btn-copy-inline ml-1" data-copy="<?php echo h($deliveryEmail); ?>">📋</button></div>
-              <?php endif; ?>
-              <?php if ($deliveryContactPhone !== ''): ?>
-                <div class="order-summary-line"><i class="fas fa-phone-alt mr-1"></i><?php echo h($deliveryContactPhone); ?><button class="btn btn-xs btn-copy-inline ml-1" data-copy="<?php echo h($deliveryContactPhone); ?>">📋</button></div>
-              <?php endif; ?>
-              <div class="small text-muted mt-2">Contact details used to verify the FedEx shipment.</div>
-            </section>
           </div>
 
           <?php if ((int) ($_SESSION['permission'] ?? 0) >= 300): ?>
@@ -3645,11 +4048,93 @@ ob_start();
         </div>
 
         <div class="col-lg-4 mt-3 mt-lg-0 d-flex">
-          <div class="order-value-breakdown-card">
-            <div class="order-value-breakdown-row order-value-breakdown-total">
-              <span>Total Order Value:</span>
-              <span><?php echo number_format($orderValueBreakdown['total'], 2, '.', ''); ?><?php echo h($orderCurrencySuffix); ?></span>
+          <div class="order-value-breakdown-card" data-order-financial-card data-order-id="<?php echo (int) $orderId; ?>">
+            <div class="order-value-breakdown-heading">
+              <span>Financial breakdown</span>
+              <?php if ($financialCanEdit): ?>
+                <button type="button" class="btn btn-xs btn-outline-info btn-add-financial-adjustment"
+                  data-order-id="<?php echo (int) $orderId; ?>">
+                  <i class="fas fa-plus mr-1"></i>Payment / refund
+                </button>
+              <?php endif; ?>
             </div>
+
+            <div class="order-financial-total-editor">
+              <label>Total value</label>
+              <?php if ($financialCanEdit): ?>
+                <div class="input-group input-group-sm">
+                  <input type="text" class="form-control bg-dark text-light border-info order-financial-total-input"
+                    value="<?php echo h(number_format($financialEffectiveTotal, 2, '.', '')); ?>"
+                    data-original-value="<?php echo h(number_format($financialEffectiveTotal, 2, '.', '')); ?>">
+                  <div class="input-group-append">
+                    <span class="input-group-text bg-info border-info text-white">EUR</span>
+                    <button type="button" class="btn btn-info btn-save-financial-total"
+                      data-order-id="<?php echo (int) $orderId; ?>">
+                      Save
+                    </button>
+                    <?php if ($financialTotalOverrideActive): ?>
+                      <button type="button" class="btn btn-outline-secondary btn-reset-financial-total"
+                        data-order-id="<?php echo (int) $orderId; ?>">
+                        Reset
+                      </button>
+                    <?php endif; ?>
+                  </div>
+                </div>
+              <?php else: ?>
+                <div class="order-value-breakdown-row order-value-breakdown-total mb-1">
+                  <span>Total Order Value:</span>
+                  <span><?php echo number_format($orderValueBreakdown['total'], 2, '.', ''); ?><?php echo h($orderCurrencySuffix); ?></span>
+                </div>
+              <?php endif; ?>
+              <div class="order-financial-meta mt-1">
+                Imported: <?php echo number_format($financialBaseTotal, 2, '.', ''); ?><?php echo h($financialSourceCurrencySuffix); ?>
+                <?php if (abs($financialAdjustmentsTotal) >= 0.005): ?>
+                  · Movements: <?php echo ($financialAdjustmentsTotal > 0 ? '+' : ''); ?><?php echo number_format($financialAdjustmentsTotal, 2, '.', ''); ?> €
+                  · Calculated: <?php echo number_format($financialCalculatedTotal, 2, '.', ''); ?> €
+                <?php endif; ?>
+                <?php if ($financialTotalOverrideActive): ?>
+                  · Manual total
+                <?php endif; ?>
+              </div>
+            </div>
+
+            <?php if (!empty($financialAdjustmentRows)): ?>
+              <div class="order-financial-adjustment-list">
+                <?php foreach ($financialAdjustmentRows as $financialAdjustment): ?>
+                  <?php
+                  $financialAdjustmentAmount = (float) ($financialAdjustment['amount'] ?? 0);
+                  $financialAdjustmentClass = $financialAdjustmentAmount < 0 ? 'text-warning' : 'text-info';
+                  $financialAdjustmentReference = trim((string) ($financialAdjustment['reference'] ?? ''));
+                  $financialAdjustmentPurpose = trim((string) ($financialAdjustment['purpose'] ?? ''));
+                  ?>
+                  <div class="order-financial-adjustment-row">
+                    <div class="order-financial-adjustment-main">
+                      <div class="order-financial-adjustment-purpose <?php echo h($financialAdjustmentClass); ?>">
+                        <?php echo h($financialAdjustmentPurpose !== '' ? $financialAdjustmentPurpose : ($financialAdjustmentAmount < 0 ? 'Refund' : 'Payment')); ?>
+                      </div>
+                      <div class="order-financial-adjustment-meta">
+                        <?php echo h($financialAdjustmentReference !== '' ? $financialAdjustmentReference : 'No reference'); ?>
+                        <?php if (!empty($financialAdjustment['created_at'])): ?>
+                          · <?php echo h(date('d.m.Y H:i', strtotime((string) $financialAdjustment['created_at']))); ?>
+                        <?php endif; ?>
+                      </div>
+                    </div>
+                    <div class="d-flex align-items-center">
+                      <span class="order-financial-adjustment-amount <?php echo h($financialAdjustmentClass); ?>">
+                        <?php echo ($financialAdjustmentAmount > 0 ? '+' : ''); ?><?php echo number_format($financialAdjustmentAmount, 2, '.', ''); ?> €
+                      </span>
+                      <?php if ($financialCanEdit): ?>
+                        <button type="button" class="btn btn-xs btn-outline-danger ml-2 btn-delete-financial-adjustment"
+                          data-id="<?php echo (int) ($financialAdjustment['id'] ?? 0); ?>">
+                          ×
+                        </button>
+                      <?php endif; ?>
+                    </div>
+                  </div>
+                <?php endforeach; ?>
+              </div>
+            <?php endif; ?>
+
             <?php if ($paymentReceivedAmount !== null): ?>
               <div class="order-value-breakdown-row text-success">
                 <span>Payment received:</span>
@@ -3664,7 +4149,7 @@ ob_start();
               <?php foreach ($shoptetBreakdown as $shoptetRow): ?>
                 <div class="order-value-breakdown-row">
                   <span><?php echo h($shoptetRow['label']); ?>:</span>
-                  <span><?php echo number_format($shoptetRow['value'], 2, '.', ''); ?><?php echo h($orderCurrencySuffix); ?></span>
+                  <span><?php echo number_format((float) $shoptetRow['value'], 2, '.', ''); ?><?php echo h($orderCurrencySuffix); ?></span>
                 </div>
               <?php endforeach; ?>
             <?php elseif ($activePercentageBreakdown !== null): ?>
@@ -3697,6 +4182,12 @@ ob_start();
                   <span><?php echo number_format($orderValueBreakdown[$breakdownKey], 2, '.', ''); ?><?php echo h($orderCurrencySuffix); ?></span>
                 </div>
               <?php endforeach; ?>
+              <?php if (abs($financialBreakdownAdjustment) >= 0.005): ?>
+                <div class="order-value-breakdown-row <?php echo $financialBreakdownAdjustment < 0 ? 'text-warning' : 'text-info'; ?>">
+                  <span><?php echo $financialBreakdownAdjustment < 0 ? 'Financial refund / adjustment' : 'Financial adjustment'; ?>:</span>
+                  <span><?php echo ($financialBreakdownAdjustment > 0 ? '+' : ''); ?><?php echo number_format($financialBreakdownAdjustment, 2, '.', ''); ?><?php echo h($orderCurrencySuffix); ?></span>
+                </div>
+              <?php endif; ?>
             <?php endif; ?>
           </div>
         </div>
@@ -4758,54 +5249,245 @@ ob_start();
         </table>
         <?php if ((int) ($_SESSION['permission'] ?? 0) >= 300): ?>
           <h6 class="text-muted mb-2 mt-3">Položky</h6>
-          <div class="card bg-dark border-info p-2 mb-3 manual-item-box manual-item-type-neutral">
-            <div class="d-flex justify-content-between align-items-center">
-              <b class="text-info">Add manual item</b>
+          <?php
+          $manualAllowedTypes = [
+            'G' => 'Graphics',
+            'P' => 'Plastics',
+            'S' => 'Seat Cover',
+            'F' => 'Fitting',
+            'T' => 'Accessories',
+            'M' => 'Misc / Upsell',
+          ];
+          $manualGraphicsSubcategoryLabels = manualItemGraphicsSubcategoryLabels();
+          $manualBuilderStatusMap = [];
+          foreach ($manualAllowedTypes as $manualTypeCode => $manualTypeLabel) {
+            $manualStatusScopes = $manualTypeCode === 'G' ? array_merge([''], array_keys($manualGraphicsSubcategoryLabels)) : [''];
+            foreach ($manualStatusScopes as $manualStatusSubcategory) {
+              $manualStatusItem = [
+                'item_type_code' => $manualTypeCode,
+                'sku' => 'MANUAL',
+                'custom_label' => '',
+                'options_json' => '{}',
+                'internal_options_json' => json_encode(['_subcat' => (string) $manualStatusSubcategory], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+              ];
+              $manualStatusMapKey = $manualTypeCode . '|' . strtoupper((string) $manualStatusSubcategory);
+              foreach (ordersGetItemStatusDefinitionsForItem($conn, $manualStatusItem, true) as $manualStatusCode => $manualStatusMeta) {
+                $manualBuilderStatusMap[$manualStatusMapKey][$manualStatusCode] = [
+                  'label' => (string) ($manualStatusMeta['label'] ?? $manualStatusCode),
+                  'color' => (string) ($manualStatusMeta['color'] ?? ''),
+                ];
+              }
+            }
+          }
+          $manualBuilderDepartments = ['G' => 'G', 'P' => 'P', 'S' => 'S', 'F' => 'F'];
+          ?>
+          <form class="manual-add-item-form mb-3" data-order-id="<?php echo (int) $orderId; ?>">
+            <input type="hidden" name="order_id" value="<?php echo (int) $orderId; ?>">
+            <script type="application/json" class="manual-builder-status-map"><?php echo json_encode($manualBuilderStatusMap, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_INVALID_UTF8_SUBSTITUTE); ?></script>
+            <div class="custom-item-builder-shell manual-item-box manual-item-type-neutral">
+              <div class="custom-builder-picker">
+                <div class="custom-builder-picker-label">
+                  <label>Product Type</label>
+                  <select name="item_type_code" class="form-control form-control-sm custom-item-type-select manual-item-type">
+                    <option value="">Select product type...</option>
+                    <?php foreach ($manualAllowedTypes as $manualTypeCode => $manualTypeLabel): ?><option value="<?= h($manualTypeCode) ?>"><?= h($manualTypeLabel) ?></option><?php endforeach; ?>
+                  </select>
+                </div>
+                <div class="custom-builder-picker-label" data-graphics-subcategory-wrap hidden>
+                  <label>Graphics subcategory</label>
+                  <select name="graphics_subcategory" class="form-control form-control-sm custom-graphics-subcategory-select manual-graphics-subcategory-select">
+                    <option value="">Graphics Kit</option>
+                    <?php foreach ($manualGraphicsSubcategoryLabels as $manualSubcatCode => $manualSubcatLabel): ?>
+                      <option value="<?= h((string) $manualSubcatCode) ?>"><?= h((string) $manualSubcatLabel) ?></option>
+                    <?php endforeach; ?>
+                  </select>
+                </div>
+              </div>
+
+              <div class="custom-builder-order-shell" data-builder-body hidden>
+                <div class="custom-builder-subtitle">Core Item Row</div>
+                <div class="table-responsive">
+                  <table class="table table-sm table-bordered mb-0 custom-builder-order-table">
+                    <tbody>
+                      <tr class="item-repeat-header-row">
+                        <th class="text-center">Assigned</th>
+                        <th>Type</th>
+                        <th class="text-center">Nazov</th>
+                        <th>Qty</th>
+                        <th>Price</th>
+                        <th>Category Info</th>
+                        <th>Link</th>
+                        <th class="text-center">Detail</th>
+                        <th>Action</th>
+                        <th>Waiting</th>
+                        <th class="text-center">Save</th>
+                        <th class="text-center">Delete</th>
+                      </tr>
+                      <tr class="item-info-row" data-builder-row>
+                        <td class="text-center" style="width:56px;">
+                          <span class="custom-builder-assigned-placeholder" title="Manual item">+</span>
+                        </td>
+                        <td class="text-center" style="width:46px;">
+                          <span class="custom-builder-type-badge" data-builder-type-badge>?</span>
+                        </td>
+                        <td style="min-width:280px;">
+                          <input type="text" name="title" class="form-control form-control-sm mb-1 manual-item-title" placeholder="Product name" required>
+                          <div class="custom-existing-item-meta-edit">
+                            <input type="text" name="sku" class="form-control form-control-sm manual-item-sku" value="MANUAL" placeholder="SKU / MANUAL">
+                            <input type="text" name="custom_label" class="form-control form-control-sm manual-item-custom-label" placeholder="Custom label">
+                          </div>
+                        </td>
+                        <td style="width:72px;">
+                          <input type="number" min="1" name="qty" class="form-control form-control-sm manual-item-qty" value="1">
+                        </td>
+                        <td style="width:92px;">
+                          <input type="number" step="0.01" name="unit_price" class="form-control form-control-sm manual-item-unit-price" value="0">
+                        </td>
+                        <td style="min-width:220px;">
+                          <input type="hidden" name="category_info" value="">
+                          <input type="hidden" name="category_brand" value="">
+                          <input type="hidden" name="category_model" value="">
+                          <input type="hidden" name="category_year_range" value="">
+                          <input type="hidden" name="category_modelcode" value="">
+                          <button type="button" class="btn btn-sm btn-outline-info custom-category-info-trigger manual-item-category-info is-empty" title="Select Brand, Model, Year range and Model Code">
+                            <span class="custom-category-info-text">Select Brand / Model / Year / Model Code</span>
+                            <i class="fas fa-chevron-right" aria-hidden="true"></i>
+                          </button>
+                        </td>
+                        <td class="text-center" style="width:76px;">
+                          <button type="button" class="btn btn-sm btn-outline-info custom-builder-link-btn" disabled><i class="fas fa-external-link-alt"></i></button>
+                        </td>
+                        <td class="text-center" style="width:92px;">
+                          <button type="button" class="btn btn-xs btn-outline-info custom-builder-mini-btn" disabled>Detail</button>
+                        </td>
+                        <td style="min-width:140px;">
+                          <select name="item_status" class="form-control form-control-sm custom-item-status-select manual-item-status-select" data-status-dynamic="1"></select>
+                        </td>
+                        <td style="min-width:170px;">
+                          <div class="input-group input-group-sm mb-1">
+                            <input type="text" class="form-control form-control-sm" placeholder="Na co cakame?" disabled>
+                            <div class="input-group-append">
+                              <button type="button" class="btn btn-outline-success" disabled><i class="fas fa-save"></i></button>
+                            </div>
+                          </div>
+                          <input type="date" class="form-control form-control-sm" disabled>
+                        </td>
+                        <td class="text-center" style="width:52px;">
+                          <button type="submit" class="btn btn-xs btn-outline-success custom-builder-mini-btn btn-add-manual-item" data-order-id="<?php echo (int) $orderId; ?>">Save</button>
+                        </td>
+                        <td class="text-center" style="width:58px;">
+                          <button type="button" class="btn btn-xs btn-outline-danger custom-builder-mini-btn" disabled>Delete</button>
+                        </td>
+                      </tr>
+
+                      <?php foreach ($manualBuilderDepartments as $manualDepartmentCode => $manualDefinitionType): ?>
+                        <?php
+                        $manualSubcatScopes = [''];
+                        if ($manualDepartmentCode === 'G') {
+                          $manualSubcatScopes = array_merge($manualSubcatScopes, array_keys($manualGraphicsSubcategoryLabels));
+                        }
+                        ?>
+                        <?php foreach ($manualSubcatScopes as $manualSubcatScope): ?>
+                          <?php
+                          $manualDefinitions = manualItemFieldDefinitions($conn, $manualDefinitionType, (string) $manualSubcatScope);
+                          $manualMainFields = [];
+                          $manualTextFields = [];
+                          foreach ($manualDefinitions as $manualDefinition) {
+                            $manualSourceKey = trim((string) ($manualDefinition['source_key'] ?? ''));
+                            $manualFieldType = trim((string) ($manualDefinition['field_type'] ?? 'dropdown'));
+                            if (in_array($manualSourceKey, ['note', 'my-item-note', 'buyer-note'], true)) {
+                              $manualTextFields[] = $manualDefinition;
+                            } else {
+                              $manualMainFields[] = $manualDefinition;
+                            }
+                          }
+                          ?>
+
+                          <?php if (!empty($manualMainFields)): ?>
+                            <tr class="g-item-options-row custom-item-spec-group manual-item-spec-group manual-item-main-spec-row" data-builder-row data-department="<?= h($manualDepartmentCode) ?>" data-subcategory="<?= h((string) $manualSubcatScope) ?>" hidden>
+                              <td colspan="99">
+                                <div class="g-options-bar">
+                                  <?php foreach ($manualMainFields as $manualDefinition): ?>
+                                    <label class="product-spec-label">
+                                      <span class="product-spec-label-title"><?= h(manualItemBuilderSpecLabel($manualDepartmentCode, $manualDefinition)) ?></span>
+                                      <?= manualItemRenderSpecFieldInput($conn, $manualDefinition) ?>
+                                    </label>
+                                  <?php endforeach; ?>
+                                </div>
+                              </td>
+                            </tr>
+                          <?php endif; ?>
+
+                          <?php if (!empty($manualTextFields)): ?>
+                            <tr class="g-item-options-row custom-item-spec-group manual-item-spec-group manual-item-note-spec-row" data-builder-row data-department="<?= h($manualDepartmentCode) ?>" data-subcategory="<?= h((string) $manualSubcatScope) ?>" hidden>
+                              <td colspan="99">
+                                <div class="g-options-bar">
+                                  <?php foreach ($manualTextFields as $manualDefinition): ?>
+                                    <label class="product-spec-label">
+                                      <span class="product-spec-label-title"><?= h(manualItemBuilderSpecLabel($manualDepartmentCode, $manualDefinition)) ?></span>
+                                      <?= manualItemRenderSpecFieldInput($conn, $manualDefinition) ?>
+                                    </label>
+                                  <?php endforeach; ?>
+                                </div>
+                              </td>
+                            </tr>
+                          <?php endif; ?>
+                        <?php endforeach; ?>
+                      <?php endforeach; ?>
+
+                      <tr class="item-spacer-row" aria-hidden="true">
+                        <td colspan="99"></td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
             </div>
+          </form>
 
-            <div class="form-row mt-2">
-              <div class="col-md-2">
-                <select class="form-control form-control-sm manual-item-type">
-                  <option value="">Select type...</option>
-                  <option value="G">G - Graphics</option>
-                  <option value="P">P - Plastics</option>
-                  <option value="S">S - Seat Cover</option>
-                  <option value="F">F - Fitting</option>
-                  <option value="T">T - Trim Kit</option>
-                  <option value="M">M - Bike Mats</option>
-                </select>
-              </div>
-
-              <div class="col-md-1">
-                <input type="number" class="form-control form-control-sm manual-item-qty" value="1" min="1"
-                  placeholder="Qty">
-              </div>
-
-              <div class="col-md-3">
-                <input class="form-control form-control-sm manual-item-sku" placeholder="SKU" value="MANUAL">
-              </div>
-
-              <div class="col-md-4">
-                <input class="form-control form-control-sm manual-item-title" placeholder="Item title / service name">
-              </div>
-
-              <div class="col-md-2">
-                <button type="button" class="btn btn-sm btn-info btn-block btn-add-manual-item"
-                  data-order-id="<?php echo (int) $orderId; ?>">
-                  Add item
-                </button>
+          <div class="modal fade custom-category-picker-modal" tabindex="-1" role="dialog" aria-hidden="true" data-category-picker-modal>
+            <div class="modal-dialog modal-lg" role="document">
+              <div class="modal-content">
+                <div class="modal-header">
+                  <div>
+                    <h5 class="modal-title mb-1">Select Category Info</h5>
+                    <div class="small text-muted">Choose compatibility in the same order as in Product Chart.</div>
+                  </div>
+                  <button type="button" class="close text-white" data-dismiss="modal" aria-label="Close"><span aria-hidden="true">&times;</span></button>
+                </div>
+                <div class="modal-body">
+                  <div class="custom-category-picker-steps">
+                    <div class="custom-category-picker-step">
+                      <label><span class="custom-category-picker-step-number">1</span> Brand</label>
+                      <select class="form-control form-control-sm" data-category-brand>
+                        <option value="">Loading brands...</option>
+                      </select>
+                    </div>
+                    <div class="custom-category-picker-step">
+                      <label><span class="custom-category-picker-step-number">2</span> Model</label>
+                      <select class="form-control form-control-sm" data-category-model disabled>
+                        <option value="">Select brand first</option>
+                      </select>
+                    </div>
+                    <div class="custom-category-picker-step">
+                      <label><span class="custom-category-picker-step-number">3</span> Year range / Model Code</label>
+                      <select class="form-control form-control-sm" data-category-year disabled>
+                        <option value="">Select model first</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div class="custom-category-picker-preview" data-category-preview>Select Brand, Model and Year range to load Model Code.</div>
+                  <div class="small text-danger mt-2" data-category-error hidden></div>
+                </div>
+                <div class="modal-footer">
+                  <button type="button" class="btn btn-sm btn-outline-danger mr-auto" data-category-clear>Clear Category Info</button>
+                  <button type="button" class="btn btn-sm btn-secondary" data-dismiss="modal">Cancel</button>
+                  <button type="button" class="btn btn-sm btn-success" data-category-apply disabled>Apply</button>
+                </div>
               </div>
             </div>
-
-            <div class="mt-2">
-              <input class="form-control form-control-sm manual-item-reason" placeholder="Reason / customer request note">
-            </div>
-
-            <div class="manual-item-generated-fields mt-2"></div>
           </div>
-
           <hr />
-
           <button type="button" class="btn btn-sm btn-outline-info btn-toggle-activity"
             data-order-id="<?php echo (int) $orderId; ?>">
             Activity log

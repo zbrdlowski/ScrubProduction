@@ -857,6 +857,11 @@ $(document)
       return clickButton($("#btnSaveInternalOptions"));
     }
 
+    const $financialCard = $field.closest("[data-order-financial-card]");
+    if ($financialCard.length) {
+      return clickButton($financialCard.find(".btn-save-financial-total"), true);
+    }
+
     const $scope = $field.closest(
       ".form-row, .card, .modal-content, .detail-wrap, .profile-order-detail-row",
     );
@@ -2261,6 +2266,469 @@ $(document)
         },
       });
     });
+})();
+
+(function () {
+  var ORDER_DETAIL_COUNTRY_CODES = ['AF','AX','AL','DZ','AS','AD','AO','AI','AQ','AG','AR','AM','AW','AU','AT','AZ','BS','BH','BD','BB','BY','BE','BZ','BJ','BM','BT','BO','BQ','BA','BW','BV','BR','IO','BN','BG','BF','BI','CV','KH','CM','CA','KY','CF','TD','CL','CN','CX','CC','CO','KM','CG','CD','CK','CR','CI','HR','CU','CW','CY','CZ','DK','DJ','DM','DO','EC','EG','SV','GQ','ER','EE','SZ','ET','FK','FO','FJ','FI','FR','GF','PF','TF','GA','GM','GE','DE','GH','GI','GR','GL','GD','GP','GU','GT','GG','GN','GW','GY','HT','HM','VA','HN','HK','HU','IS','IN','ID','IR','IQ','IE','IM','IL','IT','JM','JP','JE','JO','KZ','KE','KI','KP','KR','KW','KG','LA','LV','LB','LS','LR','LY','LI','LT','LU','MO','MG','MW','MY','MV','ML','MT','MH','MQ','MR','MU','YT','MX','FM','MD','MC','MN','ME','MS','MA','MZ','MM','NA','NR','NP','NL','NC','NZ','NI','NE','NG','NU','NF','MK','MP','NO','OM','PK','PW','PS','PA','PG','PY','PE','PH','PN','PL','PT','PR','QA','RE','RO','RU','RW','BL','SH','KN','LC','MF','PM','VC','WS','SM','ST','SA','SN','RS','SC','SL','SG','SX','SK','SI','SB','SO','ZA','GS','SS','ES','LK','SD','SR','SJ','SE','CH','SY','TW','TJ','TZ','TH','TL','TG','TK','TO','TT','TN','TR','TM','TC','TV','UG','UA','AE','GB','US','UM','UY','UZ','VU','VE','VN','VG','VI','WF','EH','YE','ZM','ZW','XK'];
+
+  function orderDetailCountryFlagUrl(code) {
+    code = String(code || '').toLowerCase();
+    if (!/^[a-z]{2}$/.test(code)) return '';
+    return 'plugins/flag-icon-css/flags/4x3/' + code + '.svg';
+  }
+
+  function orderDetailCountryName(code) {
+    code = String(code || '').toUpperCase();
+    if (code === 'XK') return 'Kosovo';
+    if (typeof Intl !== 'undefined' && Intl.DisplayNames) {
+      try {
+        return new Intl.DisplayNames(['en'], { type: 'region' }).of(code) || code;
+      } catch (error) {}
+    }
+    return code;
+  }
+
+  function normalizeOrderDetailCountryValue(value) {
+    var raw = String(value || '').trim();
+    var upper = raw.toUpperCase();
+    var aliases = {
+      UK: 'GB', EN: 'GB', USA: 'US',
+      'UNITED STATES': 'US', 'UNITED STATES OF AMERICA': 'US',
+      'UNITED KINGDOM': 'GB', 'GREAT BRITAIN': 'GB',
+      BOSNIA: 'BA', 'BOSNIA AND HERZEGOVINA': 'BA', 'BOSNIA & HERZEGOVINA': 'BA',
+      GERMANY: 'DE', SLOVAKIA: 'SK', 'SLOVAK REPUBLIC': 'SK',
+      CZECHIA: 'CZ', 'CZECH REPUBLIC': 'CZ', MEXICO: 'MX',
+      AUSTRIA: 'AT', POLAND: 'PL', CANADA: 'CA', AUSTRALIA: 'AU',
+      FRANCE: 'FR', ITALY: 'IT', SWITZERLAND: 'CH',
+      NETHERLANDS: 'NL', 'THE NETHERLANDS': 'NL', BELGIUM: 'BE', SPAIN: 'ES'
+    };
+    if (aliases[upper]) return aliases[upper];
+    if (/^[A-Z]{2}$/.test(upper)) return upper;
+    for (var i = 0; i < ORDER_DETAIL_COUNTRY_CODES.length; i++) {
+      var code = ORDER_DETAIL_COUNTRY_CODES[i];
+      if (orderDetailCountryName(code).toUpperCase() === upper) return code;
+    }
+    return upper;
+  }
+
+  function orderDetailCountryLabel(code) {
+    code = String(code || '').toUpperCase();
+    return code ? code + ' - ' + orderDetailCountryName(code) : '';
+  }
+
+  function updateOrderDetailCountryFlag(countrySelect) {
+    if (!countrySelect) return;
+    var wrap = countrySelect.closest('.custom-country-select-wrap');
+    if (!wrap) return;
+    var flag = wrap.querySelector('[data-country-flag]');
+    if (!flag) return;
+    var countryCode = normalizeOrderDetailCountryValue(countrySelect.value);
+    var flagUrl = orderDetailCountryFlagUrl(countryCode);
+    flag.classList.toggle('is-empty', !flagUrl);
+    wrap.classList.toggle('no-flag', !flagUrl);
+    flag.style.backgroundImage = flagUrl ? 'url("' + flagUrl + '")' : '';
+    flag.title = countryCode || '';
+  }
+
+  function populateOrderDetailCountrySelect(select) {
+    if (!select || select.dataset.countryPopulated === '1') return;
+    var current = normalizeOrderDetailCountryValue(select.value);
+    var countries = ORDER_DETAIL_COUNTRY_CODES.map(function (code) {
+      return { code: code, name: orderDetailCountryName(code) };
+    }).sort(function (a, b) {
+      return a.name.localeCompare(b.name, 'en');
+    });
+    select.innerHTML = '';
+    var emptyOption = document.createElement('option');
+    emptyOption.value = '';
+    emptyOption.textContent = select.getAttribute('data-country-placeholder') || 'Country';
+    select.appendChild(emptyOption);
+    countries.forEach(function (country) {
+      var option = document.createElement('option');
+      option.value = country.code;
+      option.textContent = orderDetailCountryLabel(country.code);
+      select.appendChild(option);
+    });
+    if (current && ORDER_DETAIL_COUNTRY_CODES.indexOf(current) === -1) {
+      var legacyOption = document.createElement('option');
+      legacyOption.value = current;
+      legacyOption.textContent = current;
+      select.appendChild(legacyOption);
+    }
+    select.value = current;
+    select.dataset.countryPopulated = '1';
+  }
+
+  function initializeOrderDetailCountrySelects(root) {
+    root = root && root.querySelectorAll ? root : document;
+    root.querySelectorAll('[data-order-detail-country-select]').forEach(function (countrySelect) {
+      if (countrySelect.dataset.countryBound !== '1') {
+        countrySelect.dataset.countryBound = '1';
+        countrySelect.addEventListener('change', function () {
+          countrySelect.value = normalizeOrderDetailCountryValue(countrySelect.value);
+          updateOrderDetailCountryFlag(countrySelect);
+        });
+      }
+      populateOrderDetailCountrySelect(countrySelect);
+      updateOrderDetailCountryFlag(countrySelect);
+    });
+  }
+
+  window.initializeOrderDetailCountrySelects = initializeOrderDetailCountrySelects;
+
+  $(document)
+    .off('focus.orderDetailCountry mousedown.orderDetailCountry', '[data-order-detail-country-select]')
+    .on('focus.orderDetailCountry mousedown.orderDetailCountry', '[data-order-detail-country-select]', function () {
+      initializeOrderDetailCountrySelects(this.closest('.order-header-edit') || document);
+    });
+
+  $(document)
+    .off('click.orderDetailCountryEdit', '.btn-edit-order-header')
+    .on('click.orderDetailCountryEdit', '.btn-edit-order-header', function () {
+      var root = this.closest('.order-detail-card') || this.closest('.detail-wrap') || document;
+      window.setTimeout(function () {
+        initializeOrderDetailCountrySelects(root);
+      }, 0);
+    });
+
+  function normalizeFinancialAmountInput(value) {
+    return String(value || "").replace(/\s+/g, "").replace(",", ".");
+  }
+
+  function isValidFinancialAmount(value, allowZero) {
+    var normalized = normalizeFinancialAmountInput(value);
+    if (!/^\d+(?:\.\d{1,2})?$/.test(normalized)) return false;
+    var amount = Number(normalized);
+    return Number.isFinite(amount) && (allowZero ? amount >= 0 : amount > 0);
+  }
+
+  function ensureFinancialAdjustmentModal() {
+    var $modal = $("#orderFinancialAdjustmentModal");
+    if ($modal.length) return $modal;
+
+    if (!$("#orderFinancialAdjustmentModalStyles").length) {
+      $("<style>", { id: "orderFinancialAdjustmentModalStyles" })
+        .text(
+          ".order-financial-adjustment-overlay{position:fixed;inset:0;z-index:2050;display:none;align-items:center;justify-content:center;padding:1rem;background:rgba(0,0,0,.72)}" +
+            ".order-financial-adjustment-overlay.is-open{display:flex}" +
+            ".order-financial-adjustment-dialog{width:100%;max-width:520px;background:#343a40;color:#f8f9fa;border:1px solid #6c757d;border-radius:.35rem;box-shadow:0 1rem 3rem rgba(0,0,0,.5)}" +
+            ".order-financial-adjustment-header,.order-financial-adjustment-footer{display:flex;align-items:center;padding:1rem;border-color:#6c757d}" +
+            ".order-financial-adjustment-header{justify-content:space-between;border-bottom:1px solid #6c757d}" +
+            ".order-financial-adjustment-footer{justify-content:flex-end;gap:.5rem;border-top:1px solid #6c757d}" +
+            ".order-financial-adjustment-body{padding:1rem}" +
+            ".order-financial-adjustment-close{border:0;background:transparent;color:#fff;font-size:1.5rem;line-height:1;cursor:pointer}" +
+            ".order-financial-adjustment-overlay label{font-size:.8rem;text-transform:uppercase;color:#9ecfe0;margin-bottom:.25rem}" +
+            ".order-financial-adjustment-error{display:none;margin-top:.75rem}"
+        )
+        .appendTo("head");
+    }
+
+    $modal = $(
+      '<div id="orderFinancialAdjustmentModal" class="order-financial-adjustment-overlay" aria-hidden="true">' +
+        '<div class="order-financial-adjustment-dialog" role="dialog" aria-modal="true" aria-labelledby="orderFinancialAdjustmentTitle">' +
+          '<div class="order-financial-adjustment-header">' +
+            '<h5 id="orderFinancialAdjustmentTitle" class="mb-0">Add payment / refund</h5>' +
+            '<button type="button" class="order-financial-adjustment-close" aria-label="Close">×</button>' +
+          '</div>' +
+          '<div class="order-financial-adjustment-body">' +
+            '<input type="hidden" class="order-financial-adjustment-order-id">' +
+            '<div class="form-row">' +
+              '<div class="form-group col-md-4">' +
+                '<label>Type</label>' +
+                '<select class="form-control form-control-sm bg-dark text-light border-secondary order-financial-adjustment-type">' +
+                  '<option value="PAYMENT">Payment</option>' +
+                  '<option value="REFUND">Refund</option>' +
+                '</select>' +
+              '</div>' +
+              '<div class="form-group col-md-8">' +
+                '<label>Reference</label>' +
+                '<input type="text" class="form-control form-control-sm bg-dark text-light border-secondary order-financial-adjustment-reference" placeholder="Payment reference">' +
+              '</div>' +
+            '</div>' +
+            '<div class="form-group">' +
+              '<label>Purpose</label>' +
+              '<input type="text" class="form-control form-control-sm bg-dark text-light border-secondary order-financial-adjustment-purpose" placeholder="Extra work / customization / refund">' +
+            '</div>' +
+            '<div class="form-group mb-0">' +
+              '<label>Amount</label>' +
+              '<div class="input-group input-group-sm">' +
+                '<input type="text" class="form-control bg-dark text-light border-secondary order-financial-adjustment-amount" placeholder="0.00">' +
+                '<div class="input-group-append"><span class="input-group-text bg-info border-info text-white">EUR</span></div>' +
+              '</div>' +
+            '</div>' +
+            '<div class="alert alert-danger py-2 order-financial-adjustment-error"></div>' +
+          '</div>' +
+          '<div class="order-financial-adjustment-footer">' +
+            '<button type="button" class="btn btn-sm btn-secondary order-financial-adjustment-cancel">Cancel</button>' +
+            '<button type="button" class="btn btn-sm btn-info order-financial-adjustment-save">Save</button>' +
+          '</div>' +
+        '</div>' +
+      '</div>'
+    ).appendTo("body");
+
+    return $modal;
+  }
+
+  function closeFinancialAdjustmentModal() {
+    $("#orderFinancialAdjustmentModal").removeClass("is-open").attr("aria-hidden", "true");
+  }
+
+  function refreshFinancialOrderDetail(orderId) {
+    orderId = parseInt(orderId, 10) || 0;
+    if (!orderId) {
+      location.reload();
+      return;
+    }
+
+    var $currentCard = $('[data-order-financial-card][data-order-id="' + orderId + '"]').first();
+    if (!$currentCard.length) {
+      refreshOrderDetail(orderId);
+      return;
+    }
+
+    $currentCard.addClass("is-refreshing").css("opacity", ".55");
+
+    $.post(
+      "scripts/orders/get_order_detail.php",
+      { order_id: orderId },
+      function (res) {
+        if (!res || !res.ok || !res.html) {
+          refreshOrderDetail(orderId);
+          return;
+        }
+
+        var $fresh = $("<div>").html(res.html);
+        var $freshCard = $fresh.find('[data-order-financial-card][data-order-id="' + orderId + '"]').first();
+        if (!$freshCard.length) {
+          refreshOrderDetail(orderId);
+          return;
+        }
+
+        $currentCard.replaceWith($freshCard);
+      },
+      "json",
+    ).fail(function () {
+      refreshOrderDetail(orderId);
+    });
+  }
+
+  $(document)
+    .off("click.saveFinancialTotal", ".btn-save-financial-total")
+    .on("click.saveFinancialTotal", ".btn-save-financial-total", function (e) {
+      e.preventDefault();
+      e.stopPropagation();
+
+      var $btn = $(this);
+      var $card = $btn.closest("[data-order-financial-card]");
+      var orderId = parseInt($btn.data("order-id") || $card.data("order-id"), 10) || 0;
+      var $input = $card.find(".order-financial-total-input").first();
+      var value = String($input.val() || "").trim();
+
+      if (!orderId) return;
+      if (!isValidFinancialAmount(value, true)) {
+        alert("Enter a valid total value with max 2 decimal places.");
+        $input.trigger("focus").select();
+        return;
+      }
+
+      $btn.prop("disabled", true).text("Saving...");
+      $.ajax({
+        url: "scripts/orders/update_order_financial_total.php",
+        method: "POST",
+        dataType: "json",
+        data: {
+          order_id: orderId,
+          total_value: value,
+        },
+        success: function (resp) {
+          if (!resp || !resp.ok) {
+            alert(resp && resp.error ? resp.error : "Financial total save failed");
+            $btn.prop("disabled", false).text("Save");
+            return;
+          }
+
+          refreshFinancialOrderDetail(orderId);
+        },
+        error: function (xhr) {
+          console.log(xhr.responseText);
+          alert("Financial total save request failed");
+          $btn.prop("disabled", false).text("Save");
+        },
+      });
+    })
+    .off("click.resetFinancialTotal", ".btn-reset-financial-total")
+    .on("click.resetFinancialTotal", ".btn-reset-financial-total", function (e) {
+      e.preventDefault();
+      e.stopPropagation();
+
+      var $btn = $(this);
+      var orderId = parseInt($btn.data("order-id"), 10) || 0;
+      if (!orderId) return;
+      if (!confirm("Reset manual total value?")) return;
+
+      $btn.prop("disabled", true).text("Resetting...");
+      $.ajax({
+        url: "scripts/orders/update_order_financial_total.php",
+        method: "POST",
+        dataType: "json",
+        data: { order_id: orderId, reset: 1 },
+        success: function (resp) {
+          if (!resp || !resp.ok) {
+            alert(resp && resp.error ? resp.error : "Financial total reset failed");
+            $btn.prop("disabled", false).text("Reset");
+            return;
+          }
+
+          refreshFinancialOrderDetail(orderId);
+        },
+        error: function (xhr) {
+          console.log(xhr.responseText);
+          alert("Financial total reset request failed");
+          $btn.prop("disabled", false).text("Reset");
+        },
+      });
+    })
+    .off("click.openFinancialAdjustment", ".btn-add-financial-adjustment")
+    .on("click.openFinancialAdjustment", ".btn-add-financial-adjustment", function (e) {
+      e.preventDefault();
+      e.stopPropagation();
+
+      var orderId = parseInt($(this).data("order-id"), 10) || 0;
+      if (!orderId) return;
+
+      var $modal = ensureFinancialAdjustmentModal();
+      $modal.find(".order-financial-adjustment-order-id").val(orderId);
+      $modal.find(".order-financial-adjustment-type").val("PAYMENT");
+      $modal.find(".order-financial-adjustment-reference").val("");
+      $modal.find(".order-financial-adjustment-purpose").val("");
+      $modal.find(".order-financial-adjustment-amount").val("");
+      $modal.find(".order-financial-adjustment-error").hide().text("");
+      $modal.find(".order-financial-adjustment-save").prop("disabled", false).text("Save");
+      $modal.addClass("is-open").attr("aria-hidden", "false");
+      setTimeout(function () {
+        $modal.find(".order-financial-adjustment-reference").trigger("focus");
+      }, 0);
+    })
+    .off("change.financialAdjustmentType", ".order-financial-adjustment-type")
+    .on("change.financialAdjustmentType", ".order-financial-adjustment-type", function () {
+      var $modal = $(this).closest(".order-financial-adjustment-overlay");
+      var $purpose = $modal.find(".order-financial-adjustment-purpose");
+      if ($(this).val() === "REFUND" && !$purpose.val()) {
+        $purpose.val("Refund");
+      }
+    })
+    .off("click.closeFinancialAdjustment", ".order-financial-adjustment-close, .order-financial-adjustment-cancel")
+    .on("click.closeFinancialAdjustment", ".order-financial-adjustment-close, .order-financial-adjustment-cancel", function () {
+      closeFinancialAdjustmentModal();
+    })
+    .off("click.saveFinancialAdjustment", ".order-financial-adjustment-save")
+    .on("click.saveFinancialAdjustment", ".order-financial-adjustment-save", function () {
+      var $save = $(this);
+      var $modal = $save.closest(".order-financial-adjustment-overlay");
+      var $error = $modal.find(".order-financial-adjustment-error");
+      var orderId = $modal.find(".order-financial-adjustment-order-id").val();
+      var type = $modal.find(".order-financial-adjustment-type").val();
+      var reference = String($modal.find(".order-financial-adjustment-reference").val() || "").trim();
+      var purpose = String($modal.find(".order-financial-adjustment-purpose").val() || "").trim();
+      var amount = String($modal.find(".order-financial-adjustment-amount").val() || "").trim();
+
+      if (!reference) {
+        $error.text("Payment reference is required.").show();
+        $modal.find(".order-financial-adjustment-reference").trigger("focus");
+        return;
+      }
+      if (!purpose) {
+        $error.text("Purpose is required.").show();
+        $modal.find(".order-financial-adjustment-purpose").trigger("focus");
+        return;
+      }
+      if (!isValidFinancialAmount(amount, false)) {
+        $error.text("Enter a valid amount greater than zero, with max 2 decimal places.").show();
+        $modal.find(".order-financial-adjustment-amount").trigger("focus").select();
+        return;
+      }
+
+      $error.hide().text("");
+      $save.prop("disabled", true).text("Saving...");
+      $.ajax({
+        url: "scripts/orders/add_order_financial_adjustment.php",
+        method: "POST",
+        dataType: "json",
+        data: {
+          order_id: orderId,
+          type: type,
+          reference: reference,
+          purpose: purpose,
+          amount: amount,
+        },
+        success: function (resp) {
+          if (!resp || !resp.ok) {
+            $error.text(resp && resp.error ? resp.error : "Financial movement save failed").show();
+            $save.prop("disabled", false).text("Save");
+            return;
+          }
+
+          closeFinancialAdjustmentModal();
+          refreshFinancialOrderDetail(orderId);
+        },
+        error: function (xhr) {
+          console.log(xhr.responseText);
+          $error.text("Financial movement save request failed").show();
+          $save.prop("disabled", false).text("Save");
+        },
+      });
+    })
+    .off("click.deleteFinancialAdjustment", ".btn-delete-financial-adjustment")
+    .on("click.deleteFinancialAdjustment", ".btn-delete-financial-adjustment", function (e) {
+      e.preventDefault();
+      e.stopPropagation();
+
+      var $btn = $(this);
+      var id = parseInt($btn.data("id"), 10) || 0;
+      var orderId = findOpenOrderIdFromElement($btn);
+      if (!id) return;
+      if (!confirm("Delete this payment/refund movement?")) return;
+
+      $btn.prop("disabled", true);
+      $.ajax({
+        url: "scripts/orders/delete_order_financial_adjustment.php",
+        method: "POST",
+        dataType: "json",
+        data: { id: id },
+        success: function (resp) {
+          if (!resp || !resp.ok) {
+            alert(resp && resp.error ? resp.error : "Financial movement delete failed");
+            $btn.prop("disabled", false);
+            return;
+          }
+
+          refreshFinancialOrderDetail(resp.order_id || orderId);
+        },
+        error: function (xhr) {
+          console.log(xhr.responseText);
+          alert("Financial movement delete request failed");
+          $btn.prop("disabled", false);
+        },
+      });
+    });
+
+  $(document)
+    .off("keydown.financialAdjustmentModal")
+    .on("keydown.financialAdjustmentModal", function (e) {
+      var $modal = $("#orderFinancialAdjustmentModal.is-open");
+      if (!$modal.length) return;
+
+      if (e.key === "Escape") {
+        e.preventDefault();
+        closeFinancialAdjustmentModal();
+      } else if (e.key === "Enter" && $(e.target).is("input, select")) {
+        e.preventDefault();
+        $modal.find(".order-financial-adjustment-save").trigger("click");
+      }
+    });
+  $(function () {
+    initializeOrderDetailCountrySelects(document);
+  });
 })();
 
 // -- Edit header button toggle --

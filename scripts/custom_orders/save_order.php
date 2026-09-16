@@ -16,6 +16,50 @@ if (!$existing) {
   customOrdersRedirect();
 }
 $orderAlreadyExported = (int) ($existing['production_order_id'] ?? 0) > 0;
+$customOrdersCanManage = ((int) ($_SESSION['permission'] ?? 0)) >= 300;
+if (!$customOrdersCanManage) {
+  $requestedStatus = strtoupper(trim((string) ($_POST['status'] ?? ($existing['status'] ?? 'LEAD'))));
+  if (!isset(customOrdersOrderStatuses()[$requestedStatus])) {
+    customOrdersFlash('danger', 'Unknown custom order status.');
+    customOrdersRedirect($orderId);
+  }
+  if (!customOrdersCanWorkerSetOrderStatus($requestedStatus)) {
+    customOrdersFlash('danger', 'This status belongs to customer service and cannot be changed here.');
+    customOrdersRedirect($orderId);
+  }
+
+  $autoAssignedOfficialNumber = '';
+  if ($requestedStatus === 'DRAFT_X' && trim((string) ($existing['official_order_number'] ?? '')) === '') {
+    $autoAssignedOfficialNumber = customOrdersAssignOfficialNumber($conn, $orderId, 'SO', $userId);
+  }
+
+  $stmt = $conn->prepare('UPDATE custom_orders SET status = ?, updated_by = ?, updated_at = NOW() WHERE id = ?');
+  if (!$stmt) {
+    throw new RuntimeException('Could not prepare custom order status update.');
+  }
+  $stmt->bind_param('sii', $requestedStatus, $userId, $orderId);
+  $stmt->execute();
+  $stmt->close();
+
+  customOrdersLog(
+    $conn,
+    $orderId,
+    'header_updated',
+    $userId,
+    [
+      'status' => $requestedStatus,
+      'changes' => customOrdersActivityCollectChanges($existing, ['status' => $requestedStatus], ['status']),
+    ],
+    'Custom order status updated'
+  );
+
+  $flashMessage = 'Custom order status saved.';
+  if ($autoAssignedOfficialNumber !== '') {
+    $flashMessage .= ' Official SO assigned: ' . $autoAssignedOfficialNumber . '.';
+  }
+  customOrdersFlash('success', $flashMessage);
+  customOrdersRedirect($orderId);
+}
 
 $posted = static function (string $key): bool {
   return array_key_exists($key, $_POST);

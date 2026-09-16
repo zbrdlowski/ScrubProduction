@@ -9,7 +9,6 @@ function manualItemDepartmentFromType(string $type): string
   $type = strtoupper(trim($type));
   switch ($type) {
     case 'G':
-    case 'M':
       return 'G';
     case 'S':
       return 'S';
@@ -17,6 +16,7 @@ function manualItemDepartmentFromType(string $type): string
       return 'F';
     case 'P':
     case 'T':
+    case 'M':
       return 'P';
     default:
       return '';
@@ -30,12 +30,26 @@ function manualItemTypeLabel(string $type): string
     'P' => 'Plastics',
     'S' => 'Seat Cover',
     'F' => 'Fitting',
-    'T' => 'Trim Kit',
-    'M' => 'Bike Mats',
+    'T' => 'Accessories',
+    'M' => 'Misc / Upsell',
   ];
 
   $type = strtoupper(trim($type));
   return $labels[$type] ?? $type;
+}
+
+function manualItemGraphicsSubcategoryLabels(): array
+{
+  return defined('GRAPHICS_SUBCAT_LABELS') && is_array(GRAPHICS_SUBCAT_LABELS)
+    ? GRAPHICS_SUBCAT_LABELS
+    : [];
+}
+
+function manualItemNormalizeGraphicsSubcategory(?string $subcat): string
+{
+  $subcat = strtoupper(trim((string) $subcat));
+  $labels = manualItemGraphicsSubcategoryLabels();
+  return isset($labels[$subcat]) ? $subcat : '';
 }
 
 function manualItemGraphicsSubcategoryFromSpecKey(string $specKey, string $department): string
@@ -65,14 +79,14 @@ function manualItemGraphicsSubcategoryFromSpecKey(string $specKey, string $depar
   return '';
 }
 
-function manualItemGraphicsSubcategoryForType(string $itemTypeCode): string
+function manualItemGraphicsSubcategoryForType(string $itemTypeCode, string $selectedSubcategory = ''): string
 {
   $itemTypeCode = strtoupper(trim($itemTypeCode));
-  if ($itemTypeCode === 'M') {
-    return 'MOTO_CARPET';
+  if ($itemTypeCode !== 'G') {
+    return '';
   }
 
-  return '';
+  return manualItemNormalizeGraphicsSubcategory($selectedSubcategory);
 }
 
 function manualItemBuilderSpecLabel(string $itemTypeCode, array $definition): string
@@ -105,14 +119,14 @@ function manualItemRenderSpecFieldInput(mysqli $conn, array $definition): string
   );
 }
 
-function manualItemFieldDefinitions(mysqli $conn, string $itemTypeCode): array
+function manualItemFieldDefinitions(mysqli $conn, string $itemTypeCode, string $selectedGraphicsSubcategory = ''): array
 {
   $department = manualItemDepartmentFromType($itemTypeCode);
   if ($department === '') {
     return [];
   }
 
-  $targetSubcategory = manualItemGraphicsSubcategoryForType($itemTypeCode);
+  $targetSubcategory = manualItemGraphicsSubcategoryForType($itemTypeCode, $selectedGraphicsSubcategory);
   $definitions = productSpecFieldDefinitions($conn, $department);
   $filtered = [];
   foreach ($definitions as $definition) {
@@ -155,15 +169,29 @@ function manualItemFieldDefinitions(mysqli $conn, string $itemTypeCode): array
 function manualItemPayloadFromPost(mysqli $conn, string $type): array
 {
   $department = manualItemDepartmentFromType($type);
-  $definitions = $department !== '' ? manualItemFieldDefinitions($conn, $type) : [];
-  $targetSubcategory = manualItemGraphicsSubcategoryForType($type);
+  $targetSubcategory = manualItemGraphicsSubcategoryForType($type, (string) ($_POST['graphics_subcategory'] ?? ''));
+  $definitions = $department !== '' ? manualItemFieldDefinitions($conn, $type, $targetSubcategory) : [];
 
   $options = [
     '_manual' => true,
+    'category_info' => trim((string) ($_POST['category_info'] ?? '')),
   ];
+
+  foreach ([
+    'category_brand' => 'category_brand',
+    'category_model' => 'category_model',
+    'category_year_range' => 'category_year_range',
+    'category_modelcode' => 'category_modelcode',
+  ] as $postKey => $optionKey) {
+    $value = trim((string) ($_POST[$postKey] ?? ''));
+    if ($value !== '') {
+      $options[$optionKey] = $value;
+    }
+  }
+
   $internal = [];
 
-  if ($targetSubcategory !== '') {
+  if ($department === 'G' && $targetSubcategory !== '') {
     $internal['_subcat'] = $targetSubcategory;
   }
 
@@ -186,6 +214,35 @@ function manualItemPayloadFromPost(mysqli $conn, string $type): array
 
     $options[$sourceKey] = $value;
   }
+
+  $legacyMap = [
+    'option_name' => 'name',
+    'option_number' => 'number',
+    'option_material' => 'base-material',
+    'option_finish' => 'graphics-finish',
+    'option_grip' => 'grip',
+    'option_tr_swingarms' => 'tr-swingarms',
+    'option_patch_style' => 'patch-style',
+    'option_waterproof_seams' => 'waterproof-seams',
+    'option_enduro_pocket' => 'enduro-pocket',
+    'option_side_brand_patches' => 'side-brand-patches',
+    'option_note' => 'note',
+    'option_printer' => 'printer',
+    'option_my_item_note' => 'my-item-note',
+  ];
+  foreach ($legacyMap as $postKey => $sourceKey) {
+    if (isset($options[$sourceKey])) {
+      continue;
+    }
+    $value = trim((string) ($_POST[$postKey] ?? ''));
+    if ($value !== '') {
+      $options[$sourceKey] = $value;
+    }
+  }
+
+  $options = array_filter($options, static function ($value) {
+    return $value !== '';
+  });
 
   return [
     'options_json' => json_encode($options, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),

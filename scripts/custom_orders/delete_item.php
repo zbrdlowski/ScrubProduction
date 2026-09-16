@@ -19,6 +19,13 @@ $stmt->execute();
 $deletedItem = $stmt->get_result()->fetch_assoc() ?: null;
 $stmt->close();
 
+if (customOrdersTableExists($conn, 'custom_order_item_assignments')) {
+  $stmt = $conn->prepare('DELETE FROM custom_order_item_assignments WHERE custom_order_item_id = ? AND custom_order_id = ?');
+  $stmt->bind_param('ii', $itemId, $orderId);
+  $stmt->execute();
+  $stmt->close();
+}
+
 $stmt = $conn->prepare('DELETE FROM custom_order_items WHERE id = ? AND custom_order_id = ?');
 $stmt->bind_param('ii', $itemId, $orderId);
 $stmt->execute();

@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 require_once dirname(__DIR__, 2) . '/includes/get_order_detail_product_spec_selects.php';
 require_once dirname(__DIR__, 2) . '/includes/orders_status_helpers.php';
+require_once dirname(__DIR__, 2) . '/includes/orders_plastics_gate_helpers.php';
 require_once dirname(__DIR__) . '/orders/department_config.php';
 
 function customOrdersFlash(string $type, string $message, array $meta = []): void
@@ -120,8 +121,25 @@ function customOrdersOrderStatuses(): array
     'IN_PROGRESS' => 'In Progress',
     'READY_TO_EXPORT' => 'Ready To Export',
     'CANCELLED' => 'Cancelled',
-    'DEAD' => 'Dead',
+    'DEAD' => 'Dead Order',
   ];
+}
+
+function customOrdersCustomerServiceOnlyStatusCodes(): array
+{
+  return ['DEPOSIT_PAID', 'CONTACT_CUSTOMER', 'CUSTOMER_CONTACTED', 'DEAD'];
+}
+
+function customOrdersWorkerEditableStatusCodes(): array
+{
+  return ['LEAD', 'DRAFT_X', 'DRAFT_AD_CHANGES', 'DRAFT_READY', 'DRAFT_READY_NOTES', 'DRAFT_SENT'];
+}
+
+function customOrdersCanWorkerSetOrderStatus(string $status): bool
+{
+  $status = strtoupper(trim($status));
+  return in_array($status, customOrdersWorkerEditableStatusCodes(), true)
+    && !in_array($status, customOrdersCustomerServiceOnlyStatusCodes(), true);
 }
 
 function customOrdersPaymentKinds(): array
@@ -472,6 +490,24 @@ function customOrdersEnsureSchema(mysqli $conn): void
     }
   }
 
+  if (!customOrdersTableExists($conn, 'custom_order_item_assignments')) {
+    $conn->query("
+      CREATE TABLE IF NOT EXISTS `custom_order_item_assignments` (
+        `id` bigint(20) NOT NULL AUTO_INCREMENT,
+        `custom_order_id` bigint(20) NOT NULL,
+        `custom_order_item_id` bigint(20) NOT NULL,
+        `employee_id` int(11) NOT NULL,
+        `assigned_by` int(11) DEFAULT NULL,
+        `assigned_at` datetime NOT NULL DEFAULT current_timestamp(),
+        PRIMARY KEY (`id`),
+        UNIQUE KEY `ux_custom_order_item_assignment_item` (`custom_order_item_id`),
+        KEY `ix_custom_order_item_assignments_order` (`custom_order_id`),
+        KEY `ix_custom_order_item_assignments_employee` (`employee_id`)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    ");
+    customOrdersTableExists($conn, 'custom_order_item_assignments', true);
+  }
+
   if (customOrdersTableExists($conn, 'order_addresses')) {
     $addressColumns = customOrdersTableColumns($conn, 'order_addresses');
     if ($addressColumns && !isset($addressColumns['state'])) {
@@ -573,6 +609,7 @@ function customOrdersActivityActionLabel(string $action): string
     'item_added' => 'Item added',
     'item_updated' => 'Item updated',
     'item_deleted' => 'Item deleted',
+    'item_taken' => 'Item taken',
     'payment_added' => 'Payment added',
     'payment_updated' => 'Payment updated',
     'payment_deleted' => 'Payment deleted',
@@ -1077,6 +1114,40 @@ function customOrdersGetOrder(mysqli $conn, int $orderId): ?array
     $order['items'][] = $row;
   }
 
+  $order['item_assignments'] = [];
+  if (!empty($order['items']) && customOrdersTableExists($conn, 'custom_order_item_assignments')) {
+    $itemIds = [];
+    foreach ($order['items'] as $itemRow) {
+      $itemId = (int) ($itemRow['id'] ?? 0);
+      if ($itemId > 0) {
+        $itemIds[] = $itemId;
+      }
+    }
+    if ($itemIds) {
+      $res = $conn->query("
+        SELECT
+          cia.*,
+          TRIM(CONCAT_WS(' ', e.firstname, e.lastname)) AS employee_name,
+          e.photo AS employee_photo
+        FROM custom_order_item_assignments cia
+        LEFT JOIN employees e ON e.id = cia.employee_id
+        WHERE cia.custom_order_id = " . (int) $orderId . "
+          AND cia.custom_order_item_id IN (" . implode(',', $itemIds) . ")
+      ");
+      if ($res) {
+        while ($row = $res->fetch_assoc()) {
+          $order['item_assignments'][(int) $row['custom_order_item_id']] = $row;
+        }
+      }
+    }
+  }
+  if (!empty($order['item_assignments'])) {
+    foreach ($order['items'] as $idx => $itemRow) {
+      $itemId = (int) ($itemRow['id'] ?? 0);
+      $order['items'][$idx]['assignment'] = $order['item_assignments'][$itemId] ?? null;
+    }
+  }
+
   $order['payments'] = [];
   $res = $conn->query('SELECT * FROM custom_order_payments WHERE custom_order_id = ' . (int) $orderId . ' ORDER BY received_at DESC, id DESC');
   while ($row = $res->fetch_assoc()) {
@@ -1480,8 +1551,8 @@ function customOrdersExportValidation(array $order): array
   if ((int) ($order['production_order_id'] ?? 0) > 0) {
     $errors[] = 'Order is already exported.';
   }
-  if ((float) ($summary['gross_total'] ?? 0) <= 0) {
-    $errors[] = 'Order total must be above zero.';
+  if ((float) ($summary['gross_total'] ?? 0) < 0) {
+    $errors[] = 'Order total cannot be below zero.';
     $fields[] = 'shipping_price';
     $fields[] = 'items';
   }
@@ -1610,9 +1681,9 @@ function customOrdersExportToProduction(mysqli $conn, int $customOrderId, int $u
 
     $stmt = $conn->prepare('
       INSERT INTO order_items
-        (order_id, line_no, sku, title, custom_label, item_type_code, qty, unit_price, options_json, internal_options_json, created_by, updated_by, updated_at, status)
+        (order_id, line_no, sku, title, custom_label, item_type_code, qty, unit_price, options_json, internal_options_json, created_by, updated_by, updated_at)
       VALUES
-        (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), ?)
+        (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
     ');
     foreach ($order['items'] as $item) {
       $lineNo = (int) $item['line_no'];
@@ -1630,14 +1701,24 @@ function customOrdersExportToProduction(mysqli $conn, int $customOrderId, int $u
       $unitPrice = (float) $item['unit_price'];
       $optionsJson = (string) ($item['options_json'] ?? '{}');
       $internalOptionsJson = (string) ($item['internal_options_json'] ?? '{}');
-      $productionItemStatus = customOrdersResolveItemStatus($conn, $item, (string) ($item['status'] ?? ''));
-      $stmt->bind_param('iissssidssiis', $productionOrderId, $lineNo, $sku, $title, $label, $typeCode, $qty, $unitPrice, $optionsJson, $internalOptionsJson, $userId, $userId, $productionItemStatus);
+      // Production workflow starts fresh. Draft/custom-order statuses belong to
+      // the sales phase and must not leak into the exported production item.
+      // Omitting status deliberately matches the unified CSV importer and uses
+      // the order_items database default before workflow gates are applied.
+      $stmt->bind_param('iissssidssii', $productionOrderId, $lineNo, $sku, $title, $label, $typeCode, $qty, $unitPrice, $optionsJson, $internalOptionsJson, $userId, $userId);
       $stmt->execute();
     }
     $stmt->close();
 
+    // Use the same initial workflow as a newly imported CSV order. If the
+    // order contains plastics, the statuses configured by Status Policies are
+    // applied to plastics and their dependent departments; recalculation then
+    // derives the overall order status (normally "Plastics in stock?").
+    $plasticsGateApplied = ordersApplyPlasticsStockGate($conn, $productionOrderId);
     sync_order_categories($conn, $productionOrderId);
-    recalculateOrderWorkflow($conn, $productionOrderId);
+    if ($plasticsGateApplied) {
+      recalculateOrderWorkflow($conn, $productionOrderId);
+    }
 
     if (customOrdersTableExists($conn, 'custom_order_photos') && customOrdersTableExists($conn, 'order_photos')) {
       $photoSelect = $conn->prepare('

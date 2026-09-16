@@ -28,6 +28,8 @@ if ($customOrdersPermission < 300) {
     'edit_note.php',
     'delete_note.php',
     'upload_photos.php',
+    'take_item.php',
+    'save_order.php',
   ];
   $customOrdersEntryScript = basename((string) ($_SERVER['SCRIPT_FILENAME'] ?? ''));
   if (!in_array($customOrdersEntryScript, $customOrdersLimitedEndpoints, true)) {

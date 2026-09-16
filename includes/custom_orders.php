@@ -7,6 +7,8 @@ require_once dirname(__DIR__) . '/scripts/custom_orders/helpers.php';
 $customOrdersPermission = (int) ($_SESSION['permission'] ?? 0);
 $customOrdersCanManage = $customOrdersPermission >= 300;
 $customOrdersCanContribute = $customOrdersPermission >= 1;
+$customOrdersCanUpdateStatus = $customOrdersCanContribute;
+$customOrderCustomerServiceOnlyStatusCodes = array_fill_keys(customOrdersCustomerServiceOnlyStatusCodes(), true);
 $customOrdersCurrentUserId = (int) ($_SESSION['user_id'] ?? 0);
 // CUSTOM ORDERS NOTE AUDIT: Sem dopln employee ID konatela alebo dalsich ludi,
 // ktori smu vidiet vymazane poznamky a kompletne pred-editacne verzie.
@@ -44,6 +46,7 @@ $customOrderStatusChoiceCodes = [
   'DRAFT_SENT',
   'CONTACT_CUSTOMER',
   'CUSTOMER_CONTACTED',
+  'DEAD',
 ];
 $customOrderStatusChoices = [];
 foreach ($customOrderStatusChoiceCodes as $customOrderStatusChoiceCode) {
@@ -56,6 +59,7 @@ $customOrderTabs = [
   'lead' => ['label' => 'Lead', 'status' => 'LEAD'],
   'open_so' => ['label' => 'Open SO'],
   'deposit_paid' => ['label' => 'Deposit Paid', 'status' => 'DEPOSIT_PAID'],
+  'dead_order' => ['label' => 'Dead Order', 'status' => 'DEAD'],
   'draft_x' => ['label' => 'Draft ✗', 'status' => 'DRAFT_X', 'color' => '#ff1f1f'],
   'draft_ad_changes' => ['label' => 'Draft Ad.changes', 'status' => 'DRAFT_AD_CHANGES', 'color' => '#d7df00'],
   'draft_ready' => ['label' => 'Draft Ready', 'statuses' => ['DRAFT_READY', 'DRAFT_READY_NOTES'], 'color' => '#d42aff'],
@@ -64,7 +68,7 @@ $customOrderTabs = [
   'customer_contacted' => ['label' => 'Customer Contacted', 'status' => 'CUSTOMER_CONTACTED'],
 ];
 $customOrderTabSets = [
-  ['all', 'lead', 'open_so', 'deposit_paid'],
+  ['all', 'lead', 'open_so', 'deposit_paid', 'dead_order'],
   ['draft_x', 'draft_ad_changes', 'draft_ready', 'draft_sent'],
   ['contact_customer', 'customer_contacted'],
 ];
@@ -367,6 +371,7 @@ try {
       COALESCE(SUM(CASE WHEN co.status = 'LEAD' THEN 1 ELSE 0 END), 0) AS lead_count,
       COALESCE(SUM(CASE WHEN TRIM(COALESCE(co.official_order_number, '')) <> '' AND co.status NOT IN ('LEAD', 'EXPORTED', 'CANCELLED', 'DEAD') AND COALESCE(co.production_order_id, 0) <= 0 THEN 1 ELSE 0 END), 0) AS open_so_count,
       COALESCE(SUM(CASE WHEN co.status = 'DEPOSIT_PAID' THEN 1 ELSE 0 END), 0) AS deposit_paid_count,
+      COALESCE(SUM(CASE WHEN co.status = 'DEAD' THEN 1 ELSE 0 END), 0) AS dead_order_count,
       COALESCE(SUM(CASE WHEN co.status = 'DRAFT_X' THEN 1 ELSE 0 END), 0) AS draft_x_count,
       COALESCE(SUM(CASE WHEN co.status = 'DRAFT_AD_CHANGES' THEN 1 ELSE 0 END), 0) AS draft_ad_changes_count,
       COALESCE(SUM(CASE WHEN co.status IN ('DRAFT_READY', 'DRAFT_READY_NOTES') THEN 1 ELSE 0 END), 0) AS draft_ready_count,
@@ -381,6 +386,7 @@ try {
     $tabCounts['lead'] = (int) ($row['lead_count'] ?? 0);
     $tabCounts['open_so'] = (int) ($row['open_so_count'] ?? 0);
     $tabCounts['deposit_paid'] = (int) ($row['deposit_paid_count'] ?? 0);
+    $tabCounts['dead_order'] = (int) ($row['dead_order_count'] ?? 0);
     $tabCounts['draft_x'] = (int) ($row['draft_x_count'] ?? 0);
     $tabCounts['draft_ad_changes'] = (int) ($row['draft_ad_changes_count'] ?? 0);
     $tabCounts['draft_ready'] = (int) ($row['draft_ready_count'] ?? 0);
@@ -630,7 +636,7 @@ function customOrderHelpMap(string $lang = 'sk'): array
     'seq_sc' => 'Nastav posledne pouzite SC cislo pre seat cover objednavky.',
     'owner' => 'Customer service clovek, ktory lead aktivne riesi a komunikuje so zakaznikom.',
     'official_prefix' => 'SO pre Scrub custom, GO pre GrenzGaenger, SC pre seat cover custom.',
-    'status' => 'Lead = novy kontakt, Deposit Paid = deposit prijaty, Draft ✗ = poziadavka pre grafikov a automaticke SO cislo, dalsie Draft statusy sleduju pripravu navrhu, Contact Customer/Customer Contacted riesia komunikaciu.',
+    'status' => 'Lead = novy kontakt, Deposit Paid = deposit prijaty, Draft ✗ = poziadavka pre grafikov a automaticke SO cislo, dalsie Draft statusy sleduju pripravu navrhu, Contact Customer/Customer Contacted riesia komunikaciu, Dead Order uzatvara nerealny alebo strateni lead.',
     'complexity_level' => 'Interna narocnost objednavky: Standard, Simple, SO-Custom varianty, Advanced alebo Complex.',
     'source_channel' => 'Odkial prisiel kontakt. Vyber konzistentny kanal zo zoznamu.',
     'social_platform' => 'Platforma, cez ktoru prebieha komunikacia.',
@@ -755,7 +761,7 @@ function customOrderHelpMap(string $lang = 'sk'): array
     'seq_sc' => 'Set the last used SC number for seat cover orders.',
     'owner' => 'Customer service person currently handling this lead and communicating with the customer.',
     'official_prefix' => 'SO for Scrub custom, GO for GrenzGaenger, SC for seat cover custom.',
-    'status' => 'Lead = new contact, Deposit Paid = deposit received, Draft ✗ = graphics request and automatic SO number, later Draft statuses track proofing, Contact Customer/Customer Contacted track communication.',
+    'status' => 'Lead = new contact, Deposit Paid = deposit received, Draft ✗ = graphics request and automatic SO number, later Draft statuses track proofing, Contact Customer/Customer Contacted track communication, Dead Order closes an inactive or unrealistic lead.',
     'complexity_level' => 'Internal order complexity: Standard, Simple, SO-Custom variants, Advanced, or Complex.',
     'source_channel' => 'Where the contact came from. Select a consistent channel from the list.',
     'social_platform' => 'Platform used for communication.',
@@ -1286,6 +1292,111 @@ if (!$customOrdersDetailRequest) {
     color: #adb5bd;
   }
 
+  .custom-help-icon {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+    margin-left: 5px;
+    border-radius: 50%;
+    border: 1px solid rgba(255, 255, 255, .35);
+    color: #9ed6ff;
+    font-size: 11px;
+    font-weight: 700;
+    line-height: 1;
+    cursor: help;
+    vertical-align: middle;
+    background: rgba(60, 141, 188, .16);
+  }
+
+  .custom-help-icon::before {
+    content: "";
+    position: absolute;
+    left: 50%;
+    bottom: calc(100% + 3px);
+    transform: translateX(-50%);
+    border: 6px solid transparent;
+    border-top-color: rgba(17, 24, 39, .96);
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity .12s ease, visibility .12s ease;
+    pointer-events: none;
+    z-index: 1080;
+  }
+
+  .custom-help-icon::after {
+    content: attr(data-help);
+    position: absolute;
+    left: 50%;
+    bottom: calc(100% + 14px);
+    transform: translateX(-50%);
+    min-width: 220px;
+    max-width: 320px;
+    padding: 8px 10px;
+    border-radius: 8px;
+    background: rgba(17, 24, 39, .96);
+    color: #f8f9fa;
+    font-size: 12px;
+    font-weight: 500;
+    line-height: 1.35;
+    text-align: left;
+    white-space: normal;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, .35);
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity .12s ease, visibility .12s ease;
+    pointer-events: none;
+    z-index: 1080;
+  }
+
+  .custom-help-icon.help-align-left::after,
+  .custom-help-icon.help-align-left::before {
+    left: 0;
+    transform: none;
+  }
+
+  .custom-help-icon.help-align-right::after,
+  .custom-help-icon.help-align-right::before {
+    left: auto;
+    right: 0;
+    transform: none;
+  }
+
+  .custom-help-icon.help-align-bottom::before {
+    top: calc(100% + 3px);
+    bottom: auto;
+    border-top-color: transparent;
+    border-bottom-color: rgba(17, 24, 39, .96);
+  }
+
+  .custom-help-icon.help-align-bottom::after {
+    top: calc(100% + 14px);
+    bottom: auto;
+  }
+
+  .custom-help-icon:hover,
+  .custom-help-icon:focus {
+    color: #fff;
+    border-color: rgba(255, 255, 255, .55);
+    background: rgba(60, 141, 188, .42);
+    outline: none;
+  }
+
+  .custom-help-icon:hover::before,
+  .custom-help-icon:hover::after,
+  .custom-help-icon:focus::before,
+  .custom-help-icon:focus::after {
+    opacity: 1;
+    visibility: visible;
+  }
+
+  .custom-help-lang-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
   .custom-order-table-row {
     cursor: pointer;
     transition: opacity .2s ease;
@@ -1309,6 +1420,24 @@ if (!$customOrdersDetailRequest) {
     border-bottom-color: transparent;
   }
 
+  .custom-order-owner-avatar {
+    width: 28px;
+    height: 28px;
+    max-width: 28px;
+    max-height: 28px;
+    border-radius: 50%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    object-fit: cover;
+    border: 1px solid rgba(23, 162, 184, .65);
+    background: rgba(23, 162, 184, .20);
+    color: #e7fbff;
+    font-size: 11px;
+    font-weight: 700;
+    line-height: 1;
+    vertical-align: middle;
+  }
   .custom-order-detail-row > td {
     padding: 0 !important;
     border-top: 0 !important;
@@ -2026,19 +2155,46 @@ if (!$customOrdersDetailRequest) {
     border-left-color: #6c757d !important;
   }
 
+  .custom-payment-add-box {
+    padding: 9px 10px 10px;
+    border: 1px solid rgba(23, 162, 184, .36);
+    border-radius: 8px;
+    background: rgba(23, 162, 184, .075);
+    box-shadow: inset 3px 0 0 rgba(23, 162, 184, .55);
+  }
+
   .custom-payment-entry-grid {
     display: grid;
     grid-template-columns: 1.05fr 1.05fr .85fr .7fr 1.05fr;
-    gap: 8px;
+    gap: 4px;
     align-items: end;
+  }
+
+  #custom-order-payments-block .custom-payment-entry-grid > div,
+  #custom-order-payments-block .custom-payment-note-row > div {
+    min-width: 0;
   }
 
   .custom-payment-note-row {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
-    gap: 8px;
+    gap: 4px;
     align-items: end;
-    margin-top: 7px;
+    margin-top: 5px;
+  }
+
+  #custom-order-payments-block .custom-payment-add-box .form-control-sm,
+  #custom-order-payments-block .custom-payment-history-box .form-control-sm {
+    margin: 0;
+  }
+
+  .custom-payment-history-box {
+    margin-top: 11px;
+    padding: 7px;
+    border: 1px solid rgba(255, 193, 7, .24);
+    border-radius: 8px;
+    background: rgba(0, 0, 0, .18);
+    box-shadow: inset 3px 0 0 rgba(255, 193, 7, .36);
   }
 
   #custom-order-payments-block .custom-payment-datetime-input::-webkit-calendar-picker-indicator {
@@ -2065,25 +2221,18 @@ if (!$customOrdersDetailRequest) {
   }
 
   .custom-payment-history .form-control-sm {
+    width: 100%;
     min-height: 28px;
     padding-top: 3px;
     padding-bottom: 3px;
   }
 
-  .custom-payment-kind-select {
-    min-width: 122px;
-  }
-
-  .custom-payment-amount-input {
-    width: 92px;
-  }
-
-  .custom-payment-currency-input {
-    width: 70px;
-  }
-
+  .custom-payment-kind-select,
+  .custom-payment-amount-input,
+  .custom-payment-currency-input,
   .custom-payment-date-input {
-    min-width: 160px;
+    width: 100%;
+    min-width: 0;
   }
 
   .custom-payment-actions {
@@ -2094,14 +2243,13 @@ if (!$customOrdersDetailRequest) {
     white-space: nowrap;
   }
   .custom-payment-history {
-    margin-top: 9px !important;
+    margin-top: 0 !important;
     margin-bottom: 0 !important;
   }
 
   .custom-payment-history td,
   .custom-payment-history th {
-    padding-top: 4px !important;
-    padding-bottom: 4px !important;
+    padding: 4px !important;
   }
 
   .custom-production-overview {
@@ -2651,9 +2799,14 @@ if (!$customOrdersDetailRequest) {
     overflow: hidden;
   }
 
+  .custom-builder-order-shell>.table-responsive {
+    overflow-y: hidden;
+  }
+
   @media (min-width: 1500px) {
     .custom-builder-order-shell>.table-responsive {
       overflow-x: hidden;
+      overflow-y: hidden;
     }
   }
 
@@ -2811,7 +2964,7 @@ if (!$customOrdersDetailRequest) {
 
   .custom-builder-order-table .g-options-bar {
     display: flex;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     align-items: stretch;
     gap: 6px;
     width: 100%;
@@ -2832,8 +2985,11 @@ if (!$customOrdersDetailRequest) {
   }
 
   .custom-builder-order-table .g-options-bar .product-spec-label select,
-  .custom-builder-order-table .g-options-bar .product-spec-label input {
+  .custom-builder-order-table .g-options-bar .product-spec-label input,
+  .custom-builder-order-table .g-options-bar .product-spec-label textarea {
     flex: 1;
+    width: 100%;
+    min-width: 0;
   }
 
   .custom-builder-order-table .product-spec-label-title {
@@ -2842,6 +2998,7 @@ if (!$customOrdersDetailRequest) {
     letter-spacing: .04em;
     color: #d7dee7;
     line-height: 1.1;
+    white-space: nowrap;
   }
 
   .custom-builder-order-table .g-opt-note-display {
@@ -2865,614 +3022,165 @@ if (!$customOrdersDetailRequest) {
     padding: .2rem .5rem;
   }
 
-  .custom-order-owner-avatar {
-    width: 28px;
-    height: 28px;
-    border-radius: 50%;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    object-fit: cover;
-    border: 1px solid rgba(23, 162, 184, .75);
-    background: rgba(23, 162, 184, .22);
-    color: #fff;
-    font-size: 10px;
-    font-weight: 700;
-    vertical-align: middle;
+  .custom-existing-items .custom-inline-item-edit-form {
+    margin-bottom: 28px !important;
   }
 
-  .custom-order-traffic-badges {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 3px;
-    white-space: nowrap;
-  }
-
-  .custom-order-traffic-badge {
-    min-width: 24px;
-    padding: 4px 5px;
-    border-radius: 5px;
-    color: #fff;
-    font-size: 11px;
-    font-weight: 700;
-    line-height: 1;
-    text-align: center;
-  }
-
-  .custom-order-traffic-badge.is-green { background: #28a745; }
-  .custom-order-traffic-badge.is-orange { background: #ffc107; color: #212529; }
-  .custom-order-traffic-badge.is-red { background: #dc3545; }
-
-  .custom-existing-items .custom-builder-order-shell {
-    margin-bottom: 18px;
-  }
-
-  .custom-existing-items .custom-builder-order-table .form-control:disabled,
-  .custom-existing-items .custom-builder-order-table .form-control[readonly] {
-    opacity: 1;
-    background: #30363c;
-    color: #f4f6f8;
-    border-color: #65717b;
-  }
-
-  .custom-existing-items .custom-builder-order-table textarea.form-control {
-    min-height: 34px;
-    resize: vertical;
-  }
-
-  .custom-existing-item-actions {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 4px;
+  .custom-existing-items .custom-inline-item-edit-form:last-child {
+    margin-bottom: 0 !important;
   }
 
   .custom-existing-item-meta-edit {
     display: grid;
-    grid-template-columns: minmax(90px, .8fr) minmax(110px, 1.2fr);
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
     gap: 4px;
   }
 
-  .custom-existing-item-meta-edit .form-control {
-    height: calc(1.5em + .35rem + 2px);
-    padding: .1rem .35rem;
-    font-size: 11px;
-  }
-
   .custom-existing-item-upsell-edit {
+    margin-top: 5px;
     display: flex;
     align-items: center;
-    gap: 7px;
-    margin-top: 6px;
-  }
-
-  .custom-existing-item-upsell-edit .form-check {
-    white-space: nowrap;
+    gap: 6px;
+    min-height: 20px;
   }
 
   .custom-category-info-trigger {
-    display: flex;
+    width: 100%;
+    display: inline-flex;
     align-items: center;
     justify-content: space-between;
     gap: 8px;
-    width: 100%;
     min-height: 31px;
-    padding: 3px 8px;
-    overflow: hidden;
     text-align: left;
   }
 
-  .custom-category-info-trigger .custom-category-info-text {
+  .custom-category-info-trigger.is-empty {
+    color: #b9c3cd;
+    border-style: dashed;
+  }
+
+  .custom-category-info-text {
+    min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
-  .custom-category-info-trigger.is-empty .custom-category-info-text {
-    color: #9ba7b2;
-  }
-
   .custom-category-picker-modal .modal-content {
-    color: #f4f6f8;
-    background: #252c33;
-    border: 1px solid #56616b;
-  }
-
-  .custom-category-picker-modal .modal-header,
-  .custom-category-picker-modal .modal-footer {
-    border-color: #495057;
+    background: #2b3239;
+    color: #f8f9fa;
+    border: 1px solid rgba(255, 255, 255, .18);
   }
 
   .custom-category-picker-steps {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 12px;
+    align-items: stretch;
+  }
+
+  .custom-category-picker-step {
+    min-width: 0;
+    padding: 10px;
+    border: 1px solid rgba(255, 255, 255, .16);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, .035);
   }
 
   .custom-category-picker-step label {
     display: flex;
     align-items: center;
     gap: 7px;
-    margin-bottom: 5px;
+    margin-bottom: 7px;
+    font-size: 12px;
+    font-weight: 700;
+    color: #d7dee7;
   }
 
   .custom-category-picker-step-number {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
     width: 20px;
     height: 20px;
     border-radius: 50%;
-    color: #fff;
-    background: #337ab7;
-    font-size: 11px;
-    font-weight: 700;
-  }
-
-  .custom-category-picker-preview {
-    min-height: 38px;
-    margin-top: 14px;
-    padding: 8px 10px;
-    border: 1px solid #495057;
-    border-radius: 4px;
-    color: #dbe8f3;
-    background: #1e252b;
-  }
-
-  @media (max-width: 767px) {
-    .custom-category-picker-steps {
-      grid-template-columns: 1fr;
-    }
-  }
-
-  .custom-kpi {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-    gap: 10px;
-    margin-bottom: 14px;
-  }
-
-  /*vrchné karty*/
-  .custom-kpi-card {
-    border: 1px solid #495057;
-    border-radius: 8px;
-    padding: 10px;
-    background: #252c33;
-  }
-
-  .custom-form-grid {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 12px;
-  }
-
-  .custom-form-grid-2 {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 12px;
-  }
-
-  .custom-form-grid-4 {
-    display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 12px;
-  }
-
-  .custom-form-full {
-    grid-column: 1 / -1;
-  }
-
-  .custom-mini-table td,
-  .custom-mini-table th {
-    padding: 6px 8px;
-    font-size: 13px;
-  }
-
-  .custom-actions {
-    display: flex;
-    gap: 8px;
-    flex-wrap: wrap;
-  }
-
-  .custom-field-invalid {
-    border-color: #dc3545 !important;
-    box-shadow: 0 0 0 .12rem rgba(220, 53, 69, .25) !important;
-
-    background: rgba(220, 53, 69, .10) !important;
-  }
-
-  label.custom-field-invalid,
-  .form-check-label.custom-field-invalid {
-    color: #ff9ea7 !important;
-  }
-
-  .custom-panel-invalid {
-    border-color: rgba(220, 53, 69, .8) !important;
-    box-shadow: inset 0 0 0 1px rgba(220, 53, 69, .25);
-  }
-
-  .custom-help-icon {
-    position: relative;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 16px;
-    height: 16px;
-    margin-left: 5px;
-    border-radius: 50%;
-    border: 1px solid rgba(255, 255, 255, .35);
-    color: #9ed6ff;
+    flex: 0 0 20px;
+    background: rgba(23, 162, 184, .25);
+    border: 1px solid rgba(23, 162, 184, .65);
+    color: #e7fbff;
     font-size: 11px;
-    font-weight: 700;
-    line-height: 1;
-    cursor: help;
-    vertical-align: middle;
-    background: rgba(60, 141, 188, .16);
+    font-weight: 800;
   }
 
-  .custom-help-icon::before {
-    content: "";
-    position: absolute;
-    left: 50%;
-    bottom: calc(100% + 3px);
-    transform: translateX(-50%);
-    border: 6px solid transparent;
-    border-top-color: rgba(17, 24, 39, .96);
-    opacity: 0;
-    visibility: hidden;
-    transition: opacity .12s ease, visibility .12s ease;
-    pointer-events: none;
-    z-index: 1080;
-  }
-
-  .custom-help-icon::after {
-    content: attr(data-help);
-    position: absolute;
-    left: 50%;
-    bottom: calc(100% + 14px);
-    transform: translateX(-50%);
-    min-width: 220px;
-    max-width: 320px;
-    padding: 8px 10px;
+  .custom-category-picker-preview {
+    margin-top: 12px;
+    padding: 9px 10px;
     border-radius: 8px;
-    background: rgba(17, 24, 39, .96);
-    color: #f8f9fa;
+    border: 1px solid rgba(23, 162, 184, .28);
+    background: rgba(23, 162, 184, .08);
+    color: #d7eef5;
     font-size: 12px;
-    font-weight: 500;
     line-height: 1.35;
-    text-align: left;
-    white-space: normal;
-    box-shadow: 0 8px 24px rgba(0, 0, 0, .35);
-    opacity: 0;
-    visibility: hidden;
-    transition: opacity .12s ease, visibility .12s ease;
-    pointer-events: none;
-    z-index: 1080;
   }
 
-  .custom-help-icon:hover,
-  .custom-help-icon:focus {
-    color: #fff;
-    border-color: rgba(255, 255, 255, .55);
-    background: rgba(60, 141, 188, .42);
-    outline: none;
-  }
-
-  .custom-help-icon:hover::before,
-  .custom-help-icon:hover::after,
-  .custom-help-icon:focus::before,
-  .custom-help-icon:focus::after {
-    opacity: 1;
-    visibility: visible;
-  }
-
-  .custom-help-icon.help-align-left::before {
-    left: 8px;
-    transform: translateX(-50%);
-  }
-
-  .custom-help-icon.help-align-left::after {
-    left: -8px;
-    right: auto;
-    transform: none;
-  }
-
-  .custom-help-icon.help-align-right::before {
-    left: auto;
-    right: 8px;
-    transform: translateX(50%);
-  }
-
-  .custom-help-icon.help-align-right::after {
-    left: auto;
-    right: -8px;
-    transform: none;
-  }
-
-  .custom-help-icon.help-align-bottom::before {
-    top: calc(100% + 3px);
-    bottom: auto;
-    border-top-color: transparent;
-    border-bottom-color: rgba(17, 24, 39, .96);
-  }
-
-  .custom-help-icon.help-align-bottom::after {
-    top: calc(100% + 14px);
-    bottom: auto;
-  }
-
-  /* Table headers live inside horizontally scrollable wrappers. Open their help
-     bubbles downward so the explanation is not clipped above the table. */
-  th .custom-help-icon::before {
-    top: calc(100% + 3px);
-    bottom: auto;
-    border-top-color: transparent;
-    border-bottom-color: rgba(17, 24, 39, .96);
-  }
-
-  th .custom-help-icon::after {
-    top: calc(100% + 14px);
-    bottom: auto;
-  }
-
-  .custom-note-edit-form {
-    margin-top: 9px;
-    padding: 9px;
-    border: 1px solid rgba(255, 193, 7, .35);
-    border-radius: 7px;
-    background: rgba(17, 24, 39, .28);
-  }
-
-  .custom-note-edit-form[hidden] {
-    display: none !important;
-  }
-
-  .custom-note-audit-history {
-    margin-top: 9px;
-    padding-top: 8px;
-    border-top: 1px dashed rgba(255, 193, 7, .26);
-    color: #c8cdd2;
-    font-size: 11px;
-  }
-
-  .custom-note-audit-history summary {
-    cursor: pointer;
-    color: #ffd75e;
-  }
-
-  .custom-note-audit-revision {
-    margin-top: 7px;
-    padding: 7px 9px;
-    border-left: 2px solid rgba(255, 193, 7, .55);
-    background: rgba(0, 0, 0, .14);
-  }
-
-  .custom-note-audit-version {
-    margin-top: 4px;
-    white-space: pre-wrap;
-    overflow-wrap: anywhere;
-  }
-
-  /* Payment history is at the bottom of its collapsible panel. Its table-header
-     tooltips must open upwards, otherwise the panel clips their lower half. */
-  #custom-order-payments-block .custom-payment-history th .custom-help-icon::before {
-    top: auto;
-    bottom: calc(100% + 3px);
-    border-top-color: rgba(17, 24, 39, .96);
-    border-bottom-color: transparent;
-  }
-
-  #custom-order-payments-block .custom-payment-history th .custom-help-icon::after {
-    top: auto;
-    bottom: calc(100% + 14px);
-  }
-
-  .custom-help-lang-btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-  }
-
-  /** design modalu. 
-      Najdôležitejšie bloky pre modal sú:
-    .custom-item-modal .modal-content
-    .custom-item-modal .modal-header
-    .custom-item-modal .modal-body
-    .custom-item-section
-    .custom-item-detail-row
-    .custom-item-summary-card
-    .custom-item-meta-pill
-    .custom-item-note-box
-    Ak budú frflať na kontrast, najrýchlejšie bude doladť hlavne tieto hodnoty:
-    background
-    border
-    color
-    prípadne box-shadow **/
-    
-  .custom-item-modal .modal-content {
-    border: 1px solid #56606b;
-    border-radius: 12px;
-    overflow: hidden;
-    background: #242a31;
-    box-shadow: 0 20px 60px rgba(0, 0, 0, .45);
-  }
-
-  .custom-item-modal .modal-header {
-    border-bottom: 1px solid rgba(255, 255, 255, .08);
-    background: linear-gradient(180deg, rgba(255, 255, 255, .03), rgba(255, 255, 255, 0));
-    align-items: flex-start;
-  }
-
-  .custom-item-modal .modal-title {
-    font-size: 20px;
-    font-weight: 700;
-    line-height: 1.2;
-  }
-
-  .custom-item-modal .modal-subtitle {
-    margin-top: 4px;
-    color: #adb5bd;
-    font-size: 12px;
-    letter-spacing: .04em;
-    text-transform: uppercase;
-  }
-
-  .custom-item-modal .modal-body {
-    padding: 18px;
-    background:
-      radial-gradient(circle at top right, rgba(60, 141, 188, .10), transparent 34%),
-      #242a31;
-  }
-
-  .custom-item-summary {
-    display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 10px;
-    margin-bottom: 16px;
-  }
-
-  .custom-item-summary-card {
-    border: 1px solid rgba(255, 255, 255, .08);
-    border-radius: 10px;
-    padding: 10px 12px;
-    background: rgba(255, 255, 255, .03);
-  }
-
-  .custom-item-summary-card-label {
-    color: #9aa4ad;
-    font-size: 11px;
-    text-transform: uppercase;
-    letter-spacing: .05em;
-    margin-bottom: 4px;
-  }
-
-  .custom-item-summary-card-value {
-    font-size: 15px;
-    font-weight: 700;
-    color: #f8f9fa;
-    word-break: break-word;
-  }
-
-  .custom-item-sections {
-    display: grid;
-    grid-template-columns: 1.2fr .8fr;
-    gap: 14px;
-  }
-
-  .custom-item-section {
-    border: 1px solid rgba(255, 255, 255, .08);
-    border-radius: 12px;
-    background: rgba(255, 255, 255, .03);
-    padding: 14px;
-  }
-
-  .custom-item-section-title {
-    color: #cfd6dc;
-    font-size: 12px;
-    font-weight: 700;
-    letter-spacing: .06em;
-    text-transform: uppercase;
-    margin-bottom: 10px;
-  }
-
-  .custom-item-detail-grid {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 10px;
-  }
-
-  .custom-item-detail-row {
-    border: 1px solid rgba(255, 255, 255, .06);
-    border-radius: 10px;
-    padding: 10px 12px;
-    background: rgba(17, 24, 39, .18);
-  }
-
-  .custom-item-detail-row.is-full {
-    grid-column: 1 / -1;
-  }
-
-  .custom-item-detail-label {
-    color: #98a3ad;
-    font-size: 11px;
-    text-transform: uppercase;
-    letter-spacing: .05em;
-    margin-bottom: 4px;
-  }
-
-  .custom-item-detail-value {
-    color: #f8f9fa;
-    font-size: 14px;
-    font-weight: 600;
-    line-height: 1.35;
-    word-break: break-word;
-  }
-
-  .custom-item-meta-list {
-    display: grid;
-    gap: 8px;
-  }
-
-  .custom-item-meta-pill {
-    border: 1px solid rgba(255, 255, 255, .08);
-    border-radius: 999px;
-    padding: 8px 12px;
-    background: rgba(17, 24, 39, .18);
-    display: flex;
-    justify-content: space-between;
-    gap: 12px;
-    font-size: 13px;
-  }
-
-  .custom-item-meta-pill strong {
-    color: #9aa4ad;
-    font-weight: 600;
-  }
-
-  .custom-item-note-box {
-    min-height: 90px;
-    border: 1px dashed rgba(255, 255, 255, .12);
-    border-radius: 10px;
-    padding: 12px;
-    background: rgba(17, 24, 39, .16);
-    color: #f8f9fa;
-    line-height: 1.45;
-    white-space: pre-line;
-  }
-
-  @media (max-width: 1200px) {
-    .custom-orders-grid {
+  @media (max-width: 900px) {
+    .custom-category-picker-steps {
       grid-template-columns: 1fr;
-    }
-
-    .custom-form-grid,
-    .custom-form-grid-2,
-    .custom-form-grid-4,
-    .custom-kpi,
-    .custom-order-subgrid {
-      grid-template-columns: 1fr;
-    }
-
-    .custom-item-summary,
-    .custom-item-sections,
-    .custom-item-detail-grid,
-    .custom-builder-picker {
-      grid-template-columns: 1fr;
-    }
-
-    .custom-builder-picker {
-      display: block;
-    }
-
-    .custom-builder-picker-label {
-      max-width: none;
-      margin-top: 10px;
     }
 
     .custom-builder-order-table .g-options-bar {
       flex-wrap: wrap;
     }
+
+    .custom-builder-order-table .g-options-bar .product-spec-label {
+      flex-basis: calc(50% - 6px) !important;
+    }
+  }
+  .custom-item-assignment-cell {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    min-width: 52px;
+  }
+
+  .custom-order-item-assignee-avatar,
+  .custom-order-item-assignee-fallback {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid rgba(23, 162, 184, .72);
+    background: rgba(23, 162, 184, .22);
+    color: #e7fbff;
+    font-size: 11px;
+    font-weight: 700;
+  }
+
+  .custom-order-item-assignee-avatar {
+    object-fit: cover;
+    background: rgba(255, 255, 255, .08);
+  }
+
+  .custom-item-take-btn {
+    white-space: nowrap;
+    text-transform: uppercase;
+    font-weight: 800;
+    letter-spacing: .02em;
+    border-color: #f0ad00 !important;
+    background: #f0ad00 !important;
+    color: #1f252b !important;
+    border-radius: 7px;
+    padding: .26rem .52rem;
+  }
+
+  .custom-item-take-btn:hover,
+  .custom-item-take-btn:focus {
+    border-color: #ffc247 !important;
+    background: #ffc247 !important;
+    color: #111820 !important;
   }
 </style>
 
@@ -3488,8 +3196,8 @@ if (!$customOrdersDetailRequest) {
     </div>
   <?php endif; ?>
 
-  <div class="d-flex justify-content-between align-items-center flex-wrap mb-3 custom-orders-page-header">
-    <div class="d-flex align-items-center custom-orders-header-title">
+  <div class="custom-orders-page-header d-flex align-items-center justify-content-between flex-wrap mb-3">
+    <div class="custom-orders-header-title d-flex align-items-center">
       <h3 class="mb-0 mr-3">Custom Orders</h3>
       <div class="btn-group btn-group-sm" role="group" aria-label="Tooltip language">
         <a href="<?= h(customOrderBuildUrl($selectedOrderId > 0 ? $selectedOrderId : null, ['help_lang' => 'sk'])) ?>"
@@ -3498,33 +3206,19 @@ if (!$customOrdersDetailRequest) {
         </a>
         <a href="<?= h(customOrderBuildUrl($selectedOrderId > 0 ? $selectedOrderId : null, ['help_lang' => 'en'])) ?>"
           class="btn <?= $customOrderHelpLang === 'en' ? 'btn-info' : 'btn-outline-light' ?>">
-          <span class="custom-help-lang-btn"><?= customOrderFlagIcon('gb', 'United Kingdom') ?><span>EN
-              Help</span></span>
+          <span class="custom-help-lang-btn"><?= customOrderFlagIcon('gb', 'United Kingdom') ?><span>EN Help</span></span>
         </a>
       </div>
     </div>
-
-    <form method="get" class="mb-0 custom-orders-header-search">
+    <form method="get" class="custom-orders-header-search mb-0">
       <input type="hidden" name="page" value="custom_orders">
+      <?php if ($customOrderHelpLang !== 'sk'): ?><input type="hidden" name="help_lang" value="<?= h($customOrderHelpLang) ?>"><?php endif; ?>
       <?php if ($tabFilter !== 'all'): ?><input type="hidden" name="tab" value="<?= h($tabFilter) ?>"><?php endif; ?>
       <?php if ($draftStatusFilter !== ''): ?><input type="hidden" name="draft_status" value="<?= h($draftStatusFilter) ?>"><?php endif; ?>
-      <?php if ($customOrderHelpLang !== ''): ?><input type="hidden" name="help_lang" value="<?= h($customOrderHelpLang) ?>"><?php endif; ?>
-      <?php if ($difficultyFilter > 0): ?><input type="hidden" name="difficulty" value="<?= (int) $difficultyFilter ?>"><?php endif; ?>
-      <?php if ($ownerFilter > 0): ?><input type="hidden" name="owner" value="<?= (int) $ownerFilter ?>"><?php endif; ?>
-      <?php if ($countryFilter !== ''): ?><input type="hidden" name="country" value="<?= h($countryFilter) ?>"><?php endif; ?>
-      <?php if ($sourceFilter !== ''): ?><input type="hidden" name="source" value="<?= h($sourceFilter) ?>"><?php endif; ?>
-      <?php if ($paymentFilter !== ''): ?><input type="hidden" name="payment" value="<?= h($paymentFilter) ?>"><?php endif; ?>
-      <?php if ($shippingFilter !== ''): ?><input type="hidden" name="shipping" value="<?= h($shippingFilter) ?>"><?php endif; ?>
-      <?php if ($itemTypeFilter !== ''): ?><input type="hidden" name="item_type" value="<?= h($itemTypeFilter) ?>"><?php endif; ?>
-      <?php if ($dateFromFilter !== ''): ?><input type="hidden" name="date_from" value="<?= h($dateFromFilter) ?>"><?php endif; ?>
-      <?php if ($dateToFilter !== ''): ?><input type="hidden" name="date_to" value="<?= h($dateToFilter) ?>"><?php endif; ?>
-      <div class="input-group input-group-sm <?= customOrderFilterActive($query) ?>">
-        <input type="text" name="q" class="form-control form-control-sm" value="<?= h($query) ?>" placeholder="Lead no., order no., email, name, company, company ID, phone, nick" aria-label="Search custom orders">
+      <div class="input-group input-group-sm">
+        <input type="text" name="q" class="form-control" value="<?= h($query) ?>" placeholder="Lead no., order no., email, name, company, company ID, phone, nick" aria-label="Search custom orders">
         <div class="input-group-append">
-          <button type="submit" class="btn btn-primary btn-sm" title="Search" aria-label="Search"><i class="fas fa-search"></i></button>
-          <?php if ($query !== ''): ?>
-            <a class="btn btn-secondary btn-sm" href="<?= h(customOrderBuildUrl(null, ['q' => null, 'custom_order_id' => null, 'edit_item_id' => null], false)) ?>" title="Clear search" aria-label="Clear search"><i class="fas fa-times"></i></a>
-          <?php endif; ?>
+          <button class="btn btn-outline-info" type="submit"><i class="fas fa-search"></i></button>
         </div>
       </div>
     </form>
@@ -3542,7 +3236,7 @@ if (!$customOrdersDetailRequest) {
         </form>
       </div>
     <?php else: ?>
-      <span class="badge badge-secondary"><i class="fas fa-eye mr-1"></i>Read-only access</span>
+      <span class="badge badge-secondary"><i class="fas fa-user-check mr-1"></i>Limited access</span>
     <?php endif; ?>
   </div>
   <?php if ($customOrdersCanManage): ?>
@@ -3819,7 +3513,7 @@ if (!$customOrdersDetailRequest) {
                 <div class="input-group-append"><button type="submit" class="btn btn-warning">Official No.</button></div>
               </div>
             </form>
-            <form method="post" action="scripts/custom_orders/export_order.php" class="mb-2">
+            <form method="post" action="scripts/custom_orders/export_order.php" class="mb-2 custom-export-production-form" data-export-order-number="<?= h((string) ($selectedOrder['official_order_number'] ?: $selectedOrder['internal_code'])) ?>" data-export-total="<?= h(number_format((float) ($selectedOrder['summary']['gross_total'] ?? 0), 2, '.', '')) ?>" data-export-currency="<?= h((string) ($selectedOrder['currency'] ?: 'EUR')) ?>">
               <input type="hidden" name="custom_order_id" value="<?= (int) $selectedOrder['id'] ?>">
               <button type="submit" class="btn btn-primary btn-sm btn-block" <?= (int) ($selectedOrder['production_order_id'] ?? 0) > 0 ? 'disabled' : '' ?>>Export To Production</button>
             </form>
@@ -4076,7 +3770,7 @@ if (!$customOrdersDetailRequest) {
                   </button>
                 </form>
               <?php elseif ($customOrdersCanManage && (int) ($selectedOrder['production_order_id'] ?? 0) <= 0): ?>
-                <form method="post" action="scripts/custom_orders/export_order.php" class="mb-0" onsubmit="return confirm('Export <?= h((string) $selectedOrder['official_order_number']) ?> to Production Orders? After export it will enter the standard production workflow.');">
+                <form method="post" action="scripts/custom_orders/export_order.php" class="mb-0 custom-export-production-form" data-export-order-number="<?= h((string) ($selectedOrder['official_order_number'] ?: $selectedOrder['internal_code'])) ?>" data-export-total="<?= h(number_format((float) ($summary['gross_total'] ?? 0), 2, '.', '')) ?>" data-export-currency="<?= h((string) ($selectedOrder['currency'] ?: 'EUR')) ?>">
                   <input type="hidden" name="custom_order_id" value="<?= (int) $selectedOrder['id'] ?>">
                   <button type="submit" class="btn btn-primary btn-sm">
                     <i class="fas fa-industry mr-1"></i>Export To Production
@@ -4110,13 +3804,21 @@ if (!$customOrdersDetailRequest) {
                 <i class="fas fa-history mr-1"></i>Activity
                 <span class="badge badge-info"><?= count((array) ($selectedOrder['activity'] ?? [])) ?></span>
               </button>
-              <select name="status" form="custom-twin-header-form-<?= (int) $selectedOrder['id'] ?>" class="form-control form-control-sm custom-status-control" <?= $customOrdersCanManage ? '' : 'disabled' ?>>
+              <select name="status" form="custom-twin-header-form-<?= (int) $selectedOrder['id'] ?>" class="form-control form-control-sm custom-status-control" <?= $customOrdersCanUpdateStatus ? '' : 'disabled' ?>>
                 <?php $currentOrderStatus = (string) ($selectedOrder['status'] ?? 'LEAD'); ?>
-                <?php foreach ($customOrderStatusChoices as $code => $label): ?><option value="<?= h($code) ?>" <?= $currentOrderStatus === $code ? 'selected' : '' ?>><?= h($label) ?></option><?php endforeach; ?>
+                <?php foreach ($customOrderStatusChoices as $code => $label): ?>
+                  <?php $statusOptionDisabled = !$customOrdersCanManage && isset($customOrderCustomerServiceOnlyStatusCodes[$code]); ?>
+                  <option value="<?= h($code) ?>" <?= $currentOrderStatus === $code ? 'selected' : '' ?> <?= $statusOptionDisabled ? 'disabled' : '' ?>><?= h($label) ?></option>
+                <?php endforeach; ?>
                 <?php if ($currentOrderStatus !== '' && !isset($customOrderStatusChoices[$currentOrderStatus])): ?>
                   <option value="<?= h($currentOrderStatus) ?>" selected><?= h(selectedText($statuses, $currentOrderStatus)) ?></option>
                 <?php endif; ?>
               </select>
+              <?php if (!$customOrdersCanManage && $customOrdersCanUpdateStatus): ?>
+                <button type="submit" form="custom-twin-header-form-<?= (int) $selectedOrder['id'] ?>" class="btn btn-outline-warning btn-sm custom-status-save-btn" title="Save status">
+                  <i class="fas fa-save mr-1"></i>Status
+                </button>
+              <?php endif; ?>
               <button type="button" class="btn btn-outline-light btn-sm btn-close-custom-order-detail" data-order-id="<?= (int) $selectedOrder['id'] ?>">
                 <i class="fas fa-times"></i>
               </button>
@@ -4243,7 +3945,7 @@ if (!$customOrdersDetailRequest) {
           <div class="panel-body custom-collapsible-body" data-custom-collapsible-body <?= $paymentsDefaultExpanded ? '' : 'hidden' ?>>
             <fieldset class="custom-field-cluster">
           <legend class="custom-field-cluster-title">Payment Details</legend>
-          <form method="post" action="scripts/custom_orders/save_payment.php" data-scroll-target="#custom-order-payments-block" data-custom-detail-refresh-form>
+          <form method="post" action="scripts/custom_orders/save_payment.php" class="custom-payment-add-box" data-scroll-target="#custom-order-payments-block" data-custom-detail-refresh-form>
             <input type="hidden" name="custom_order_id" value="<?= (int) $selectedOrder['id'] ?>">
             <div class="custom-payment-entry-grid">
               <div><label>Kind<?= customOrderHelp('payment_kind') ?></label><select name="payment_kind"
@@ -4264,7 +3966,8 @@ if (!$customOrdersDetailRequest) {
               <button type="submit" class="btn btn-outline-light btn-sm">Add Payment</button>
             </div>
           </form>
-          <table class="table table-sm table-dark table-striped custom-mini-table custom-payment-history">
+          <div class="custom-payment-history-box">
+            <table class="table table-sm table-dark table-striped custom-mini-table custom-payment-history">
             <thead>
               <tr>
                 <th>Kind<?= customOrderHelp('payment_kind') ?></th>
@@ -4319,7 +4022,8 @@ if (!$customOrdersDetailRequest) {
                 </tr>
               <?php endforeach; ?>
             </tbody>
-          </table>
+            </table>
+          </div>
             </fieldset>
           </div>
         </div>
@@ -4572,6 +4276,17 @@ if (!$customOrdersDetailRequest) {
                 $itemModalId = 'custom-item-modal-' . (int) $item['id'];
                 $itemEditFormId = 'custom-item-inline-edit-' . (int) $item['id'];
                 $itemDeleteFormId = 'custom-item-inline-delete-' . (int) $item['id'];
+                $itemAssignment = is_array($item['assignment'] ?? null) ? $item['assignment'] : null;
+                $itemAssignmentEmployeeId = (int) ($itemAssignment['employee_id'] ?? 0);
+                $itemAssignmentName = trim((string) ($itemAssignment['employee_name'] ?? ''));
+                $itemAssignmentPhoto = trim((string) ($itemAssignment['employee_photo'] ?? ''));
+                $itemAssignmentInitials = '';
+                foreach (preg_split('/\s+/', $itemAssignmentName) as $assignmentNamePart) {
+                  if ($assignmentNamePart !== '') {
+                    $itemAssignmentInitials .= mb_strtoupper(mb_substr($assignmentNamePart, 0, 1));
+                  }
+                }
+                $itemAssignmentInitials = mb_substr($itemAssignmentInitials, 0, 2);
                 ?>
                 <form method="post" action="scripts/custom_orders/save_item.php" id="<?= h($itemEditFormId) ?>" class="mb-0 custom-inline-item-edit-form" data-scroll-target="#custom-order-builder-panel">
                   <input type="hidden" name="custom_order_id" value="<?= (int) $selectedOrder['id'] ?>">
@@ -4598,9 +4313,17 @@ if (!$customOrdersDetailRequest) {
                           <th class="text-center">Delete<?= customOrderHelp('item_delete') ?></th>
                         </tr>
                         <tr class="item-info-row item-type-<?= h($itemTypeCode) ?>">
-                          <td class="text-center" style="width:56px;">
-                            <span class="custom-builder-assigned-placeholder" title="Custom order owner">
-                              <?= h($selectedOrder['owner_name'] ? strtoupper(substr((string) $selectedOrder['owner_name'], 0, 1)) : '-') ?>
+                          <td class="text-center" style="width:74px;">
+                            <span class="custom-item-assignment-cell">
+                              <?php if ($itemAssignmentEmployeeId > 0): ?>
+                                <?php if ($itemAssignmentPhoto !== ''): ?>
+                                  <img src="images/<?= h($itemAssignmentPhoto) ?>" class="custom-order-item-assignee-avatar" alt="<?= h($itemAssignmentName ?: 'Assigned') ?>" title="<?= h($itemAssignmentName ?: 'Assigned') ?>">
+                                <?php else: ?>
+                                  <span class="custom-order-item-assignee-fallback" title="<?= h($itemAssignmentName ?: 'Assigned') ?>"><?= h($itemAssignmentInitials !== '' ? $itemAssignmentInitials : '?') ?></span>
+                                <?php endif; ?>
+                              <?php else: ?>
+                                <button type="button" class="btn btn-xs btn-outline-info custom-item-take-btn" data-action="scripts/custom_orders/take_item.php" data-custom-order-id="<?= (int) $selectedOrder['id'] ?>" data-custom-item-id="<?= (int) $item['id'] ?>">Take</button>
+                              <?php endif; ?>
                             </span>
                           </td>
                           <td class="text-center" style="width:46px;"><span class="custom-builder-type-badge"><?= h($itemTypeCode) ?></span></td>
@@ -5129,15 +4852,32 @@ if (!$customOrdersDetailRequest) {
     var customItemWorkflowStatusEnabled = <?= isset($selectedOrder) && (int) ($selectedOrder['production_order_id'] ?? 0) > 0 ? 'true' : 'false' ?>;
     var customOrdersHelpLang = <?= json_encode($customOrderHelpLang === 'en' ? 'en' : 'sk', JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
 
+    function confirmCustomOrderProductionExport(form) {
+      var orderNumber = String(form.getAttribute('data-export-order-number') || 'this custom order').trim();
+      var currency = String(form.getAttribute('data-export-currency') || '').trim();
+      var total = parseFloat(String(form.getAttribute('data-export-total') || '0').replace(',', '.'));
+      if (!Number.isFinite(total)) total = 0;
+      var formattedTotal = total.toFixed(2) + (currency ? ' ' + currency : '');
+
+      if (Math.abs(total) < 0.005) {
+        return window.confirm('Warning: you are about to export ' + orderNumber + ' to Production with zero total value (' + formattedTotal + ').\n\nOK = export anyway\nCancel = go back and fill in the price');
+      }
+
+      return window.confirm(customOrdersHelpLang === 'en'
+        ? 'Export ' + orderNumber + ' to Production Orders? After export it will enter the standard production workflow.'
+        : 'Exportovať ' + orderNumber + ' do Production Orders? Po exporte pôjde do štandardného production workflow.');
+    }
     function applyCustomOrdersAccess(root) {
       if (!root || customOrdersCanManage) return;
 
       root.querySelectorAll('form[action^="scripts/custom_orders/"]').forEach(function (form) {
         var action = String(form.getAttribute('action') || '').toLowerCase();
-        if (action.endsWith('/save_note.php') || action.endsWith('/edit_note.php') || action.endsWith('/delete_note.php')) return;
+        if (action.endsWith('/save_note.php') || action.endsWith('/edit_note.php') || action.endsWith('/delete_note.php') || action.endsWith('/take_item.php')) return;
 
         form.classList.add('custom-orders-readonly-form');
         form.querySelectorAll('input, select, textarea, button').forEach(function (control) {
+          if (action.endsWith('/save_order.php') && String(control.getAttribute('name') || '') === 'custom_order_id') return;
+          if (control.classList.contains('custom-item-take-btn')) return;
           var modalTarget = String(control.getAttribute('data-target') || '');
           if (control.matches('[data-toggle="modal"]') && modalTarget.indexOf('#custom-item-modal-') === 0) return;
           control.disabled = true;
@@ -5145,6 +4885,10 @@ if (!$customOrdersDetailRequest) {
       });
 
       root.querySelectorAll('[form^="custom-twin-header-form-"]').forEach(function (control) {
+        if (control.classList.contains('custom-status-control') || control.classList.contains('custom-status-save-btn')) {
+          control.disabled = false;
+          return;
+        }
         control.disabled = true;
       });
     }
@@ -6511,8 +6255,57 @@ if (!$customOrdersDetailRequest) {
         if (form.classList.contains('custom-inline-item-edit-form')) return;
         if (form.dataset.customOrdersBound === '1') return;
         form.dataset.customOrdersBound = '1';
-        form.addEventListener('submit', function () {
+        form.addEventListener('submit', function (event) {
+          if (form.classList.contains('custom-export-production-form') && !confirmCustomOrderProductionExport(form)) {
+            event.preventDefault();
+            return;
+          }
           rememberCustomOrdersScroll(form);
+        });
+      });
+
+      root.querySelectorAll('.custom-item-take-btn').forEach(function (button) {
+        if (button.dataset.takeItemBound === '1') return;
+        button.dataset.takeItemBound = '1';
+        button.addEventListener('click', function (event) {
+          event.preventDefault();
+          var originalText = button.textContent || 'Take';
+          button.disabled = true;
+          button.textContent = 'Taking…';
+          var formData = new FormData();
+          formData.append('custom_order_id', button.getAttribute('data-custom-order-id') || '0');
+          formData.append('custom_item_id', button.getAttribute('data-custom-item-id') || '0');
+          fetch(button.getAttribute('data-action') || 'scripts/custom_orders/take_item.php', {
+            method: 'POST',
+            headers: { 'X-Requested-With': 'XMLHttpRequest' },
+            body: formData
+          })
+            .then(function (response) {
+              return response.text().then(function (rawBody) {
+                var payload;
+                try {
+                  payload = JSON.parse(rawBody);
+                } catch (parseError) {
+                  throw new Error(String(rawBody || 'Invalid server response').trim().substring(0, 400));
+                }
+                if (!response.ok || !payload.ok) throw new Error(payload.message || 'Item could not be taken.');
+                return payload;
+              });
+            })
+            .then(function () {
+              var orderId = parseInt(button.getAttribute('data-custom-order-id') || '0', 10);
+              var detailWrap = button.closest('.custom-order-detail-wrap');
+              if (detailWrap && orderId > 0) {
+                detailWrap.style.minHeight = detailWrap.offsetHeight + 'px';
+                detailWrap.dataset.loaded = '0';
+                openCustomOrderDetail(orderId);
+              }
+            })
+            .catch(function (error) {
+              button.disabled = false;
+              button.textContent = originalText;
+              alert(error && error.message ? error.message : String(error));
+            });
         });
       });
 

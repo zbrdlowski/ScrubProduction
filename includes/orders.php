@@ -350,6 +350,15 @@ $fWorker = isset($_GET['worker']) ? (int) $_GET['worker'] : 0;
 $fPrinter = isset($_GET['print_printer']) ? trim((string) $_GET['print_printer']) : '';
 $fPrintMat = isset($_GET['print_material']) ? trim((string) $_GET['print_material']) : '';
 $fPrintFin = isset($_GET['print_finish']) ? trim((string) $_GET['print_finish']) : '';
+$fItemFeature = isset($_GET['item_feature']) ? strtolower(trim((string) $_GET['item_feature'])) : '';
+$itemFeatureOptions = [
+  'grip' => 'Grip selected',
+  'printed_ribs' => 'Printed Ribs',
+  'patch' => 'Patch',
+];
+if ($fItemFeature !== '' && !isset($itemFeatureOptions[$fItemFeature])) {
+  $fItemFeature = '';
+}
 // ── koniec print settings filtrov ─────────────────────────────────────────
 // ── koniec nových filtrov ─────────────────────────────────────────────────
 
@@ -865,6 +874,71 @@ if ($fPrintFin !== '') {
   $types .= 'ss';
   $params[] = $fPrintFin;
   $params[] = $fPrintFin;
+}
+
+// Item option filters: order matches when at least one product line has the selected feature.
+$itemFeatureJsonValueSql = static function (string $columnExpr, string $jsonPath): string {
+  return "TRIM(LOWER(COALESCE(CASE WHEN JSON_VALID($columnExpr) THEN JSON_UNQUOTE(JSON_EXTRACT($columnExpr, '$jsonPath')) ELSE '' END, '')))";
+};
+$itemFeaturePositiveSql = static function (string $valueSql, array $excludeContains = []): string {
+  $sql = "($valueSql NOT IN ('', 'null', 'no', 'nie', 'nein', 'non', 'false', '0', 'n/a', '-', 'x', 'select', 'select...')";
+  foreach ($excludeContains as $needle) {
+    $needle = str_replace("'", "''", strtolower((string) $needle));
+    $sql .= " AND $valueSql NOT LIKE '%$needle%'";
+  }
+  return $sql . ')';
+};
+
+if ($fItemFeature === 'grip') {
+  $gripInternalSql = $itemFeatureJsonValueSql('oif.internal_options_json', '$._print_grip');
+  $gripSourceSql = $itemFeatureJsonValueSql('oif.options_json', '$."grip"');
+  $gripConditionSql = $itemFeaturePositiveSql($gripInternalSql) . ' OR ' . $itemFeaturePositiveSql($gripSourceSql);
+  $where[] = "EXISTS (
+    SELECT 1 FROM order_items oif
+    WHERE oif.order_id = o.id
+      AND oif.deleted_at IS NULL
+      AND UPPER(TRIM(COALESCE(oif.item_type_code, ''))) = 'G'
+      AND ($gripConditionSql)
+  )";
+} elseif ($fItemFeature === 'printed_ribs') {
+  $where[] = "EXISTS (
+    SELECT 1 FROM order_items oif
+    WHERE oif.order_id = o.id
+      AND oif.deleted_at IS NULL
+      AND UPPER(TRIM(COALESCE(oif.item_type_code, ''))) = 'S'
+      AND (
+        UPPER(TRIM(COALESCE(oif.custom_label, ''))) LIKE 'S_RIDGE%'
+        OR LOWER(COALESCE(oif.custom_label, '')) LIKE '%ridge%'
+        OR LOWER(COALESCE(oif.title, '')) LIKE '%printed ribs%'
+        OR LOWER(COALESCE(oif.title, '')) LIKE '%printed rib%'
+        OR LOWER(COALESCE(oif.title, '')) LIKE '%gripper ribs%'
+        OR LOWER(COALESCE(oif.title, '')) LIKE '%ribs%'
+        OR LOWER(COALESCE(oif.options_json, '')) LIKE '%printed ribs%'
+        OR LOWER(COALESCE(oif.options_json, '')) LIKE '%gripper ribs%'
+      )
+  )";
+} elseif ($fItemFeature === 'patch') {
+  $patchAutoSql = $itemFeatureJsonValueSql('oif.options_json', '$._auto_generated');
+  $patchSourceSql = $itemFeatureJsonValueSql('oif.options_json', '$."patch-style"');
+  $patchInternalSql = $itemFeatureJsonValueSql('oif.internal_options_json', '$._seat_patch_applied');
+  $patchValueConditionSql = $itemFeaturePositiveSql($patchSourceSql, ['no patch', 'kein patch']) . ' OR ' . $itemFeaturePositiveSql($patchInternalSql, ['no patch', 'kein patch']);
+  $where[] = "EXISTS (
+    SELECT 1 FROM order_items oif
+    WHERE oif.order_id = o.id
+      AND oif.deleted_at IS NULL
+      AND (
+        $patchAutoSql = 'seat_patch_auto_graphics'
+        OR (
+          UPPER(TRIM(COALESCE(oif.item_type_code, ''))) = 'S'
+          AND ($patchValueConditionSql)
+        )
+        OR (
+          LOWER(COALESCE(oif.title, '')) LIKE '%patch%'
+          AND LOWER(COALESCE(oif.title, '')) NOT LIKE '%no patch%'
+          AND LOWER(COALESCE(oif.title, '')) NOT LIKE '%kein patch%'
+        )
+      )
+  )";
 }
 
 $whereSql = $where ? ('WHERE ' . implode(' AND ', $where)) : '';
@@ -1880,7 +1954,7 @@ $deptOptions = [
   function qtabIsActive(array $tabParams): bool
   {
     global $fExcludeStatuses;
-    $filterKeys = ['status', 'item_status', 'item_department', 'traffic_department', 'traffic_state', 'exclude_status', 'source', 'country', 'payment', 'shipping', 'priority', 'date_from', 'date_to', 'worker', 'dept', 'cat', 'type', 'q', 'print_printer', 'print_material', 'print_finish'];
+    $filterKeys = ['status', 'item_status', 'item_department', 'traffic_department', 'traffic_state', 'exclude_status', 'source', 'country', 'payment', 'shipping', 'priority', 'date_from', 'date_to', 'worker', 'dept', 'cat', 'type', 'q', 'print_printer', 'print_material', 'print_finish', 'item_feature'];
     foreach ($tabParams as $k => $v) {
       $actualValue = $k === 'exclude_status' ? $fExcludeStatuses : ($_GET[$k] ?? '');
       if ((string)$actualValue !== (string)$v)
@@ -1898,7 +1972,7 @@ $deptOptions = [
   function qtabUrl(array $tabParams): string
   {
     $current = $_GET;
-    foreach (['status', 'item_status', 'item_department', 'traffic_department', 'traffic_state', 'exclude_status', 'source', 'country', 'payment', 'shipping', 'priority', 'date_from', 'date_to', 'worker', 'dept', 'cat', 'type', 'q', 'print_printer', 'print_material', 'print_finish'] as $k) {
+    foreach (['status', 'item_status', 'item_department', 'traffic_department', 'traffic_state', 'exclude_status', 'source', 'country', 'payment', 'shipping', 'priority', 'date_from', 'date_to', 'worker', 'dept', 'cat', 'type', 'q', 'print_printer', 'print_material', 'print_finish', 'item_feature'] as $k) {
       unset($current[$k]);
     }
     $qs = http_build_query(array_merge($current, $tabParams));
@@ -2051,6 +2125,8 @@ $deptOptions = [
       $activeFilterBadges[] = ['label' => '🧱 Material', 'display' => $fPrintMat];
     if ($fPrintFin !== '')
       $activeFilterBadges[] = ['label' => '✨ Finish', 'display' => $fPrintFin];
+    if ($fItemFeature !== '')
+      $activeFilterBadges[] = ['label' => 'Item option', 'display' => ($itemFeatureOptions[$fItemFeature] ?? $fItemFeature)];
 
     // Pomocná funkcia — CSS trieda pre aktívne pole
     // Vracia 'filter-active' ak hodnota nie je prázdna, inak ''
@@ -2281,6 +2357,7 @@ $deptOptions = [
       && $fPrinter === ''
       && $fPrintMat === ''
       && $fPrintFin === ''
+      && $fItemFeature === ''
     );
 
     $collapseShow = ($hasActiveFilters && !$filterIsOnlyFromTab && !$filterIsOnlyQuickSearch) ? 'show' : '';
@@ -2503,11 +2580,24 @@ $deptOptions = [
             </div>
           </div><!-- /filter-grid row 2 -->
 
-          <?php if (!empty($printPrinterOptions) || !empty($printMaterialOptions) || !empty($printFinishOptions)): ?>
+          <?php if (!empty($itemFeatureOptions) || !empty($printPrinterOptions) || !empty($printMaterialOptions) || !empty($printFinishOptions)): ?>
             <hr class="filter-row-divider">
 
-            <!-- ── ROW 3: Print settings filters ──────────────────────────────── -->
-            <div class="filter-grid" style="grid-template-columns: repeat(3, 1fr); gap: 10px;">
+            <!-- ── ROW 3: Item option + print settings filters ─────────────────── -->
+            <div class="filter-grid" style="grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px;">
+
+              <!-- Item option -->
+              <div class="form-group <?= !empty($fItemFeature) ? 'filter-active' : '' ?>">
+                <label class="small mb-1">Item option</label>
+                <select class="form-control form-control-sm" name="item_feature">
+                  <option value="">— All —</option>
+                  <?php foreach ($itemFeatureOptions as $featureValue => $featureLabel): ?>
+                    <option value="<?= htmlspecialchars($featureValue) ?>" <?= ($fItemFeature === $featureValue ? 'selected' : '') ?>>
+                      <?= htmlspecialchars($featureLabel) ?>
+                    </option>
+                  <?php endforeach; ?>
+                </select>
+              </div>
 
               <!-- Printer -->
               <div class="form-group <?= !empty($fPrinter) ? 'filter-active' : '' ?>">
@@ -3751,6 +3841,8 @@ $deptOptions = [
     });
   }
 
+  window.reloadOrderDetail = reloadOrderDetail;
+
   function applyFollowupTypeState($panel) {
     const type = String($panel.find('.followup-type-select').val() || 'REPEAT').toUpperCase();
     const $checkbox = $panel.find('.followup-do-not-invoice');
@@ -3958,11 +4050,273 @@ $deptOptions = [
     });
   });
 
+  function manualCategoryPickerLoad(level, brand, model) {
+    let url = 'scripts/custom_orders/category_info_options.php?level=' + encodeURIComponent(level);
+    if (brand) url += '&brand=' + encodeURIComponent(brand);
+    if (model) url += '&model=' + encodeURIComponent(model);
+
+    return $.ajax({
+      url: url,
+      method: 'GET',
+      dataType: 'json',
+      headers: { 'X-Requested-With': 'XMLHttpRequest' }
+    }).then(function (payload) {
+      if (!payload || !payload.ok) {
+        throw new Error(payload && payload.error ? payload.error : 'Category options could not be loaded.');
+      }
+      return payload.values || [];
+    });
+  }
+
+  function manualCategoryPickerSetWaiting($select, text) {
+    $select.empty().append($('<option>').val('').text(text)).prop('disabled', true);
+  }
+
+  function manualCategoryPickerSetOptions($select, values, placeholder, selectedValue, selectedModelCode) {
+    $select.empty().append($('<option>').val('').text(placeholder));
+    let selectedFound = false;
+
+    (values || []).forEach(function (entry) {
+      const isStructured = entry && typeof entry === 'object';
+      const value = isStructured ? String(entry.value || '') : String(entry || '');
+      const modelCode = isStructured ? String(entry.modelcode || '').trim() : '';
+      const $option = $('<option>')
+        .val(value)
+        .text(modelCode ? (value + ' | ' + modelCode) : value)
+        .attr('data-modelcode', modelCode);
+
+      const valueMatches = selectedValue && value === String(selectedValue);
+      const codeMatches = !selectedModelCode || modelCode === String(selectedModelCode);
+      if (!selectedFound && valueMatches && codeMatches) {
+        $option.prop('selected', true);
+        selectedFound = true;
+      }
+      $select.append($option);
+    });
+
+    $select.prop('disabled', false);
+    if (!selectedFound) $select.val('');
+    return selectedFound;
+  }
+
+  function manualCategoryPickerSelectedModelCode($modal) {
+    const $year = $modal.find('[data-category-year]').first();
+    const option = $year.find('option:selected').get(0);
+    return option ? String($(option).attr('data-modelcode') || '').trim() : '';
+  }
+
+  function manualCategoryPickerUpdatePreview($modal) {
+    const brand = String($modal.find('[data-category-brand]').val() || '');
+    const model = String($modal.find('[data-category-model]').val() || '');
+    const year = String($modal.find('[data-category-year]').val() || '');
+    const modelCode = manualCategoryPickerSelectedModelCode($modal);
+    const complete = !!(brand && model && year && modelCode);
+
+    $modal.find('[data-category-preview]').text(
+      complete ? [brand, model, year, modelCode].join(' | ') : 'Select Brand, Model and Year range to load Model Code.'
+    );
+    $modal.find('[data-category-apply]').prop('disabled', !complete);
+  }
+
+  function manualCategoryPickerShowError($modal, error) {
+    $modal.find('[data-category-error]')
+      .text(error && error.message ? error.message : String(error || 'Category picker error.'))
+      .prop('hidden', false);
+  }
+
+  function manualCategoryPickerClearError($modal) {
+    $modal.find('[data-category-error]').text('').prop('hidden', true);
+  }
+
+  function manualCategoryPickerValue($form, name) {
+    return $.trim($form.find('input[name="' + name + '"]').val() || '');
+  }
+
+  function manualCategoryPickerSelectedState($form) {
+    const state = {
+      brand: manualCategoryPickerValue($form, 'category_brand'),
+      model: manualCategoryPickerValue($form, 'category_model'),
+      year: manualCategoryPickerValue($form, 'category_year_range'),
+      modelcode: manualCategoryPickerValue($form, 'category_modelcode')
+    };
+
+    const legacyParts = manualCategoryPickerValue($form, 'category_info').split(/\s*\|\s*/).filter(function (value) { return value !== ''; });
+    if (legacyParts.length >= 3) {
+      if (!state.brand) state.brand = legacyParts[0];
+      if (!state.model) state.model = legacyParts[1];
+      if (!state.year) state.year = legacyParts[2];
+      if (!state.modelcode && legacyParts.length >= 4) state.modelcode = legacyParts[3];
+    }
+    return state;
+  }
+
+  function manualCategoryPickerHide($modal) {
+    if ($.fn && $.fn.modal) {
+      $modal.modal('hide');
+      return;
+    }
+    $modal.removeClass('show').hide().attr('aria-hidden', 'true');
+  }
+
+  function manualCategoryPickerOpen($form) {
+    const $card = $form.closest('.order-detail-card');
+    const $modal = $card.find('[data-category-picker-modal]').first();
+    if (!$modal.length) return;
+
+    const $brand = $modal.find('[data-category-brand]').first();
+    const $model = $modal.find('[data-category-model]').first();
+    const $year = $modal.find('[data-category-year]').first();
+    const $apply = $modal.find('[data-category-apply]').first();
+    const state = manualCategoryPickerSelectedState($form);
+    const serial = Number($modal.data('requestSerial') || 0) + 1;
+
+    $modal.data('targetForm', $form);
+    $modal.data('requestSerial', serial);
+    manualCategoryPickerClearError($modal);
+    $apply.prop('disabled', true);
+    manualCategoryPickerSetWaiting($brand, 'Loading brands...');
+    manualCategoryPickerSetWaiting($model, 'Select brand first');
+    manualCategoryPickerSetWaiting($year, 'Select model first');
+    manualCategoryPickerUpdatePreview($modal);
+
+    if ($.fn && $.fn.modal) {
+      $modal.modal('show');
+    } else {
+      $modal.addClass('show').show().attr('aria-hidden', 'false');
+    }
+
+    manualCategoryPickerLoad('brands').then(function (brands) {
+      if (serial !== Number($modal.data('requestSerial') || 0)) return;
+      const hasBrand = manualCategoryPickerSetOptions($brand, brands, 'Select brand...', state.brand);
+      if (!hasBrand) {
+        manualCategoryPickerUpdatePreview($modal);
+        return;
+      }
+      manualCategoryPickerSetWaiting($model, 'Loading models...');
+      return manualCategoryPickerLoad('models', state.brand).then(function (models) {
+        if (serial !== Number($modal.data('requestSerial') || 0)) return;
+        const hasModel = manualCategoryPickerSetOptions($model, models, 'Select model...', state.model);
+        if (!hasModel) {
+          manualCategoryPickerUpdatePreview($modal);
+          return;
+        }
+        manualCategoryPickerSetWaiting($year, 'Loading year ranges...');
+        return manualCategoryPickerLoad('years', state.brand, state.model).then(function (years) {
+          if (serial !== Number($modal.data('requestSerial') || 0)) return;
+          manualCategoryPickerSetOptions($year, years, 'Select year range...', state.year, state.modelcode);
+          manualCategoryPickerUpdatePreview($modal);
+        });
+      });
+    }).catch(function (error) {
+      manualCategoryPickerShowError($modal, error);
+    });
+  }
+
+  $(document).on('click', '.manual-add-item-form .custom-category-info-trigger', function (e) {
+    e.preventDefault();
+    manualCategoryPickerOpen($(this).closest('.manual-add-item-form'));
+  });
+
+  $(document).on('click', '[data-category-picker-modal] [data-dismiss="modal"]', function (e) {
+    e.preventDefault();
+    manualCategoryPickerHide($(this).closest('[data-category-picker-modal]'));
+  });
+
+  $(document).on('change', '[data-category-picker-modal] [data-category-brand]', function () {
+    const $modal = $(this).closest('[data-category-picker-modal]');
+    const $brand = $modal.find('[data-category-brand]').first();
+    const $model = $modal.find('[data-category-model]').first();
+    const $year = $modal.find('[data-category-year]').first();
+    const serial = Number($modal.data('requestSerial') || 0) + 1;
+
+    $modal.data('requestSerial', serial);
+    manualCategoryPickerClearError($modal);
+    manualCategoryPickerSetWaiting($model, $brand.val() ? 'Loading models...' : 'Select brand first');
+    manualCategoryPickerSetWaiting($year, 'Select model first');
+    manualCategoryPickerUpdatePreview($modal);
+    if (!$brand.val()) return;
+
+    manualCategoryPickerLoad('models', $brand.val()).then(function (models) {
+      if (serial !== Number($modal.data('requestSerial') || 0)) return;
+      manualCategoryPickerSetOptions($model, models, 'Select model...', '');
+      manualCategoryPickerUpdatePreview($modal);
+    }).catch(function (error) {
+      manualCategoryPickerShowError($modal, error);
+    });
+  });
+
+  $(document).on('change', '[data-category-picker-modal] [data-category-model]', function () {
+    const $modal = $(this).closest('[data-category-picker-modal]');
+    const $brand = $modal.find('[data-category-brand]').first();
+    const $model = $modal.find('[data-category-model]').first();
+    const $year = $modal.find('[data-category-year]').first();
+    const serial = Number($modal.data('requestSerial') || 0) + 1;
+
+    $modal.data('requestSerial', serial);
+    manualCategoryPickerClearError($modal);
+    manualCategoryPickerSetWaiting($year, $model.val() ? 'Loading year ranges...' : 'Select model first');
+    manualCategoryPickerUpdatePreview($modal);
+    if (!$brand.val() || !$model.val()) return;
+
+    manualCategoryPickerLoad('years', $brand.val(), $model.val()).then(function (years) {
+      if (serial !== Number($modal.data('requestSerial') || 0)) return;
+      manualCategoryPickerSetOptions($year, years, 'Select year range...', '');
+      manualCategoryPickerUpdatePreview($modal);
+    }).catch(function (error) {
+      manualCategoryPickerShowError($modal, error);
+    });
+  });
+
+  $(document).on('change', '[data-category-picker-modal] [data-category-year]', function () {
+    manualCategoryPickerUpdatePreview($(this).closest('[data-category-picker-modal]'));
+  });
+
+  $(document).on('click', '[data-category-picker-modal] [data-category-apply]', function () {
+    const $modal = $(this).closest('[data-category-picker-modal]');
+    const $form = $modal.data('targetForm');
+    if (!$form || !$form.length || $(this).prop('disabled')) return;
+
+    const selection = [
+      String($modal.find('[data-category-brand]').val() || ''),
+      String($modal.find('[data-category-model]').val() || ''),
+      String($modal.find('[data-category-year]').val() || ''),
+      manualCategoryPickerSelectedModelCode($modal)
+    ];
+    const values = {
+      category_info: selection.join(' | '),
+      category_brand: selection[0],
+      category_model: selection[1],
+      category_year_range: selection[2],
+      category_modelcode: selection[3]
+    };
+
+    Object.keys(values).forEach(function (name) {
+      $form.find('input[name="' + name + '"]').val(values[name]);
+    });
+    const $trigger = $form.find('.custom-category-info-trigger').first();
+    $trigger.removeClass('is-empty').find('.custom-category-info-text').text(values.category_info);
+    manualCategoryPickerHide($modal);
+  });
+
+  $(document).on('click', '[data-category-picker-modal] [data-category-clear]', function () {
+    const $modal = $(this).closest('[data-category-picker-modal]');
+    const $form = $modal.data('targetForm');
+    if (!$form || !$form.length) return;
+
+    ['category_info', 'category_brand', 'category_model', 'category_year_range', 'category_modelcode'].forEach(function (name) {
+      $form.find('input[name="' + name + '"]').val('');
+    });
+    $form.find('.custom-category-info-trigger')
+      .addClass('is-empty')
+      .find('.custom-category-info-text')
+      .text('Select Brand / Model / Year / Model Code');
+    manualCategoryPickerHide($modal);
+  });
   function applyManualItemTypeTheme($box, type) {
     const themeClasses = 'manual-item-type-neutral manual-item-type-G manual-item-type-P manual-item-type-T manual-item-type-M manual-item-type-S manual-item-type-F';
     $box.removeClass(themeClasses);
 
-    const normalizedType = String(type || '').trim();
+    const normalizedType = String(type || '').trim().toUpperCase();
     if (!normalizedType) {
       $box.addClass('manual-item-type-neutral');
       return;
@@ -3971,40 +4325,143 @@ $deptOptions = [
     $box.addClass('manual-item-type-' + normalizedType);
   }
 
-  $(document).on('change', '.manual-item-type', function () {
-    const $box = $(this).closest('.manual-item-box');
-    const type = String($(this).val() || '').trim();
-    const $target = $box.find('.manual-item-generated-fields');
+  function mapManualItemTypeToDepartment(typeCode) {
+    const code = String(typeCode || '').trim().toUpperCase();
+    if (code === 'S') return 'S';
+    if (code === 'F') return 'F';
+    if (code === 'P' || code === 'T' || code === 'M') return 'P';
+    if (code === 'G') return 'G';
+    return '';
+  }
+
+  function getManualBuilderStatusMap($form) {
+    const cached = $form.data('manualStatusMap');
+    if (cached) return cached;
+
+    let parsed = {};
+    const raw = $.trim($form.find('.manual-builder-status-map').first().text() || '');
+    if (raw) {
+      try {
+        parsed = JSON.parse(raw) || {};
+      } catch (err) {
+        parsed = {};
+      }
+    }
+    $form.data('manualStatusMap', parsed);
+    return parsed;
+  }
+
+  function syncManualItemStatusOptions($form, typeCode, subcategory) {
+    const $select = $form.find('.manual-item-status-select').first();
+    if (!$select.length) return;
+
+    const map = getManualBuilderStatusMap($form);
+    const type = String(typeCode || '').trim().toUpperCase();
+    const subcat = type === 'G' ? String(subcategory || '').trim().toUpperCase() : '';
+    const options = map[type + '|' + subcat] || map[type + '|'] || {};
+    const previous = String($select.val() || '');
+
+    $select.empty();
+    Object.keys(options).forEach(function (statusCode) {
+      const item = options[statusCode] || {};
+      $('<option>')
+        .val(statusCode)
+        .text(item.label || statusCode)
+        .attr('data-color', item.color || '')
+        .appendTo($select);
+    });
+
+    if (previous && options[previous]) {
+      $select.val(previous);
+    }
+    if (!$select.children().length) {
+      $('<option>').val('').text('No status').appendTo($select);
+    }
+  }
+
+  function applyManualFittingDefaults($form, typeCode) {
+    if (String(typeCode || '').trim().toUpperCase() !== 'F') return;
+
+    const $title = $form.find('.manual-item-title').first();
+    const $price = $form.find('.manual-item-unit-price').first();
+    if ($title.length && !$.trim($title.val() || '')) {
+      $title.val('Fitting');
+    }
+    if ($price.length) {
+      const numericPrice = parseFloat(String($price.val() || '').replace(',', '.'));
+      if (!isFinite(numericPrice) || numericPrice <= 0) {
+        $price.val('39.90');
+      }
+    }
+  }
+
+  function syncManualItemBuilder($form) {
+    const $box = $form.find('.manual-item-box').first();
+    const type = String($form.find('.manual-item-type').val() || '').trim().toUpperCase();
+    const department = mapManualItemTypeToDepartment(type);
+    const $body = $form.find('[data-builder-body]').first();
+    const $subcategoryWrap = $form.find('[data-graphics-subcategory-wrap]').first();
+    const $subcategorySelect = $form.find('.manual-graphics-subcategory-select').first();
+    let subcategory = '';
 
     applyManualItemTypeTheme($box, type);
-    $target.html('');
-    if (!type) {
+    $form.find('[data-builder-row]').removeClass('item-type-G item-type-P item-type-S item-type-F item-type-T item-type-M');
+
+    if (!type || !department) {
+      $body.prop('hidden', true);
+      $subcategoryWrap.prop('hidden', true);
+      $form.find('.manual-item-spec-group').prop('hidden', true);
+      $form.find('[data-builder-type-badge]').text('?');
+      syncManualItemStatusOptions($form, '', '');
       return;
     }
 
-    $target.html('<div class="small text-muted"><span class="spinner-border spinner-border-sm"></span> Loading fields...</div>');
+    if (type === 'G') {
+      $subcategoryWrap.prop('hidden', false);
+      subcategory = String($subcategorySelect.val() || '').trim();
+    } else {
+      $subcategoryWrap.prop('hidden', true);
+      if ($subcategorySelect.length) $subcategorySelect.val('');
+    }
 
-    $.post('scripts/orders/get_manual_item_builder.php', {
-      item_type_code: type
-    }, function (res) {
-      if (!res || !res.ok) {
-        $target.html('<div class="small text-danger">Could not load fields.</div>');
-        return;
-      }
+    $body.prop('hidden', false);
+    $form.find('[data-builder-type-badge]').text(type);
+    $form.find('[data-builder-row]').addClass('item-type-' + type);
 
-      $target.html(String(res.html || ''));
-    }, 'json').fail(function () {
-      $target.html('<div class="small text-danger">Could not load fields.</div>');
+    $form.find('.manual-item-spec-group').each(function () {
+      const $row = $(this);
+      const rowDepartment = String($row.data('department') || '');
+      const rowSubcategory = String($row.data('subcategory') || '');
+      const visible = rowDepartment === department && (department !== 'G' || rowSubcategory === subcategory);
+      $row.prop('hidden', !visible);
     });
+
+    applyManualFittingDefaults($form, type);
+    syncManualItemStatusOptions($form, type, subcategory);
+  }
+
+  $(document).on('change', '.manual-add-item-form .manual-item-type, .manual-add-item-form .manual-graphics-subcategory-select', function () {
+    syncManualItemBuilder($(this).closest('.manual-add-item-form'));
   });
 
-  $(document).on('click', '.btn-add-manual-item', function () {
-    const $box = $(this).closest('.manual-item-box');
-    const orderId = $(this).data('order-id');
-    const $btn = $(this);
+  $(document).on('input', '.manual-add-item-form .manual-item-sku, .manual-add-item-form .manual-item-custom-label', function () {
+    syncManualItemBuilder($(this).closest('.manual-add-item-form'));
+  });
 
-    const title = $box.find('.manual-item-title').val().trim();
-    const type = $box.find('.manual-item-type').val();
+  $(document).on('submit', '.manual-add-item-form', function (e) {
+    e.preventDefault();
+    $(this).find('.btn-add-manual-item').first().trigger('click');
+  });
+
+  $(document).on('click', '.btn-add-manual-item', function (e) {
+    e.preventDefault();
+
+    const $btn = $(this);
+    const $form = $btn.closest('.manual-add-item-form');
+    const orderId = $btn.data('order-id') || $form.data('order-id') || $form.find('input[name="order_id"]').val();
+    const title = $.trim($form.find('.manual-item-title').val() || '');
+    const type = $.trim($form.find('.manual-item-type').val() || '');
+
     if (!type) {
       alert('Please select item type');
       return;
@@ -4013,39 +4470,42 @@ $deptOptions = [
       alert('Item title is required');
       return;
     }
-    const qty = $box.find('.manual-item-qty').val();
-    const sku = $box.find('.manual-item-sku').val().trim();
-    const reason = $box.find('.manual-item-reason').val().trim();
-    const payload = {
-      order_id: orderId,
-      title: title,
-      item_type_code: type,
-      qty: qty,
-      sku: sku,
-      reason: reason
-    };
 
-    $box.find('.manual-item-generated-fields :input[name]').each(function () {
-      payload[$(this).attr('name')] = $(this).val();
+    const payload = { order_id: orderId };
+    $form.find('input[name], select[name], textarea[name]').each(function () {
+      const $input = $(this);
+      const name = $input.attr('name');
+      if (!name) return;
+
+      const isSpecField = $input.closest('.manual-item-spec-group').length > 0;
+      if (isSpecField && $input.closest('.manual-item-spec-group').prop('hidden')) return;
+
+      const inputType = String($input.attr('type') || '').toLowerCase();
+      if (inputType === 'checkbox') {
+        payload[name] = $input.prop('checked') ? ($input.val() || '1') : '';
+      } else {
+        payload[name] = $input.val();
+      }
     });
 
-    $btn.prop('disabled', true).text('Adding...');
+    $btn.prop('disabled', true).text('Saving...');
 
     $.post('scripts/orders/add_order_item.php', payload, function (res) {
       if (!res || !res.ok) {
         alert(res && res.error ? res.error : 'Add item failed');
-        $btn.prop('disabled', false).text('Add item');
+        $btn.prop('disabled', false).text('Save');
         return;
       }
 
       window.location.hash = 'order-' + orderId;
-      location.reload();
+      reloadOrderDetail(orderId);
 
     }, 'json').fail(function () {
       alert('Add item request failed');
-      $btn.prop('disabled', false).text('Add item');
+      $btn.prop('disabled', false).text('Save');
     });
   });
+
   $(document).on('click', '.btn-delete-order-item', function () {
     const itemId = $(this).data('item-id');
     const orderId = $(this).data('order-id');
