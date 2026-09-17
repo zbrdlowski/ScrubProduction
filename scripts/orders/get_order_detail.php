@@ -217,7 +217,11 @@ function productSpecValueFromKeys(array $data, array $keys): string
         continue;
       }
 
-      return trim((string) $value);
+      $value = trim((string) $value);
+      if ($value !== '') {
+        return $value;
+      }
+      continue;
     }
 
     $value = $data[$key];
@@ -225,7 +229,10 @@ function productSpecValueFromKeys(array $data, array $keys): string
       continue;
     }
 
-    return trim((string) $value);
+    $value = trim((string) $value);
+    if ($value !== '') {
+      return $value;
+    }
   }
 
   return '';
@@ -270,12 +277,12 @@ function productSpecFieldMeta(array $definition): array
   switch ($specKey) {
     case 'graphics_material':
       $meta['internal_key'] = '_print_material';
-      $meta['source_keys'] = ['base-material', 'base_material'];
+      $meta['source_keys'] = ['base-material', 'base_material', 'material', 'graphics-material', 'graphics_material'];
       $meta['control_class'] = 'item-print-material item-product-spec-field';
       break;
     case 'graphics_finish':
       $meta['internal_key'] = '_print_finish';
-      $meta['source_keys'] = ['graphics-finish', 'graphics_finish'];
+      $meta['source_keys'] = ['graphics-finish', 'graphics_finish', 'finish'];
       $meta['control_class'] = 'item-print-finish item-product-spec-field';
       break;
     case 'graphics_grip':
@@ -351,10 +358,13 @@ function productSpecFieldCurrentValue(array $meta, array $extOptArr, array $inte
   if ($internalKey !== '' && array_key_exists($internalKey, $internalOptArr)) {
     $internalValue = $internalOptArr[$internalKey];
     if (!is_array($internalValue) && !is_object($internalValue) && $internalValue !== null) {
-      return trim((string) $internalValue);
+      $internalValue = trim((string) $internalValue);
+      if ($internalValue !== '') {
+        return $internalValue;
+      }
+    } else {
+      return '';
     }
-
-    return '';
   }
 
   if ((string) ($meta['spec_key'] ?? '') === 'graphics_note') {
@@ -575,6 +585,106 @@ function jsonDecodeAssocSafe(string $json): array
 
   $data = json_decode($json, true, 512, JSON_INVALID_UTF8_SUBSTITUTE);
   return is_array($data) ? $data : [];
+}
+
+function orderDetailCustomItemFallbackKey(int $lineNo, string $itemTypeCode = ''): string
+{
+  return $lineNo . '|' . strtoupper(trim($itemTypeCode));
+}
+
+function orderDetailLoadCustomItemOptionFallbacks(mysqli $conn, array $sourceMeta): array
+{
+  $customOrderId = (int) ($sourceMeta['custom_order_id'] ?? 0);
+  if ($customOrderId <= 0) {
+    return [];
+  }
+
+  $stmt = $conn->prepare('
+    SELECT line_no, item_type_code, options_json, internal_options_json
+    FROM custom_order_items
+    WHERE custom_order_id = ?
+    ORDER BY COALESCE(line_no, 999999), id
+  ');
+  if (!$stmt) {
+    return [];
+  }
+
+  $stmt->bind_param('i', $customOrderId);
+  $stmt->execute();
+  $res = $stmt->get_result();
+  $fallbacks = [];
+  while ($row = $res->fetch_assoc()) {
+    $lineNo = (int) ($row['line_no'] ?? 0);
+    if ($lineNo <= 0) {
+      continue;
+    }
+
+    $fallback = [
+      'options' => jsonDecodeAssocSafe((string) ($row['options_json'] ?? '{}')),
+      'internal' => jsonDecodeAssocSafe((string) ($row['internal_options_json'] ?? '{}')),
+    ];
+    $fallbacks[orderDetailCustomItemFallbackKey($lineNo, (string) ($row['item_type_code'] ?? ''))] = $fallback;
+    $fallbacks[orderDetailCustomItemFallbackKey($lineNo)] = $fallback;
+  }
+  $stmt->close();
+
+  return $fallbacks;
+}
+
+function orderDetailCustomItemFallbackForItem(array $fallbacks, array $item): array
+{
+  $lineNo = (int) ($item['line_no'] ?? 0);
+  if ($lineNo <= 0) {
+    return [];
+  }
+
+  $typedKey = orderDetailCustomItemFallbackKey($lineNo, (string) ($item['item_type_code'] ?? ''));
+  if (isset($fallbacks[$typedKey]) && is_array($fallbacks[$typedKey])) {
+    return $fallbacks[$typedKey];
+  }
+
+  $lineKey = orderDetailCustomItemFallbackKey($lineNo);
+  return isset($fallbacks[$lineKey]) && is_array($fallbacks[$lineKey]) ? $fallbacks[$lineKey] : [];
+}
+
+function orderDetailMergeCustomPrintFallbackOptions(array $extOptArr, array $internalOptArr, array $fallback): array
+{
+  $fallbackOptions = is_array($fallback['options'] ?? null) ? $fallback['options'] : [];
+  $fallbackInternal = is_array($fallback['internal'] ?? null) ? $fallback['internal'] : [];
+
+  $material = productSpecValueFromKeys($internalOptArr, ['_print_material']);
+  if ($material === '') {
+    $material = productSpecValueFromKeys($extOptArr, ['base-material', 'base_material', 'material', 'graphics-material', 'graphics_material']);
+  }
+  if ($material === '') {
+    $material = productSpecValueFromKeys($fallbackInternal, ['_print_material']);
+  }
+  if ($material === '') {
+    $material = productSpecValueFromKeys($fallbackOptions, ['base-material', 'base_material', 'material', 'graphics-material', 'graphics_material']);
+  }
+  if ($material !== '') {
+    $extOptArr['base-material'] = $material;
+    $extOptArr['base_material'] = $material;
+    $extOptArr['material'] = $material;
+  }
+
+  $finish = productSpecValueFromKeys($internalOptArr, ['_print_finish']);
+  if ($finish === '') {
+    $finish = productSpecValueFromKeys($extOptArr, ['graphics-finish', 'graphics_finish', 'finish']);
+  }
+  if ($finish === '') {
+    $finish = productSpecValueFromKeys($fallbackInternal, ['_print_finish']);
+  }
+  if ($finish === '') {
+    $finish = productSpecValueFromKeys($fallbackOptions, ['graphics-finish', 'graphics_finish', 'finish']);
+  }
+  if ($finish !== '') {
+    $extOptArr['graphics-finish'] = $finish;
+    $extOptArr['graphics_finish'] = $finish;
+    $extOptArr['finish'] = $finish;
+  }
+
+  return $extOptArr;
 }
 
 if (!isset($_SESSION['permission'])) {
@@ -872,8 +982,14 @@ function item_type_category_badge(array $item, array $order, array $addr, string
   $opts = jsonDecodeAssocSafe((string) ($item['options_json'] ?? '{}'));
   $intOpts = jsonDecodeAssocSafe((string) ($item['internal_options_json'] ?? '{}'));
 
-  $basematerial = (string) ($intOpts['_print_material'] ?? $opts['base-material'] ?? '');
-  $finish = (string) ($intOpts['_print_finish'] ?? $opts['graphics-finish'] ?? '');
+  $basematerial = productSpecValueFromKeys($intOpts, ['_print_material']);
+  if ($basematerial === '') {
+    $basematerial = productSpecValueFromKeys($opts, ['base-material', 'base_material', 'material', 'graphics-material', 'graphics_material']);
+  }
+  $finish = productSpecValueFromKeys($intOpts, ['_print_finish']);
+  if ($finish === '') {
+    $finish = productSpecValueFromKeys($opts, ['graphics-finish', 'graphics_finish', 'finish']);
+  }
   $printer = (string) ($intOpts['_printer'] ?? '');
   $itemTitle = trim((string) ($item['custom_label'] ?? $item['title'] ?? ''));
 
@@ -1187,6 +1303,7 @@ while ($it = $r->fetch_assoc()) {
   $items[] = $it;
 }
 $stmt->close();
+$customItemOptionFallbacks = orderDetailLoadCustomItemOptionFallbacks($conn, $sourceMeta);
 
 // Doplní avatar človeka, ktorý prevzal objednávku cez TAKE.
 // TAKE zapisuje department-level assignment do order_assignments,
@@ -1751,6 +1868,53 @@ function optionValue(array $data, array $keys): string
     }
   }
   return '';
+}
+
+function orderDetailCategoryFieldsFromOptions(array $data): array
+{
+  $categoryInfo = optionValue($data, ['category_info', 'Category Info', 'category-info', 'category info', 'category', 'Category']);
+  $brand = optionValue($data, ['category_brand', 'brand', 'Brand', 'bike-brand', 'manufacturer', 'Manufacturer']);
+  $model = optionValue($data, ['category_model', 'model', 'Model', 'bike-model', 'Bike', 'bike']);
+  $year = optionValue($data, ['category_year_range', 'year', 'Year', 'bike-year', 'model-year', 'Year Range']);
+  $modelCode = optionValue($data, ['category_modelcode', 'modelcode', 'design_code', 'design-code', 'category_code', 'model_code', 'sku-code']);
+
+  if ($categoryInfo !== '') {
+    $parts = array_values(array_filter(array_map('trim', explode('|', $categoryInfo)), static function (string $value): bool {
+      return $value !== '';
+    }));
+    if ($brand === '' && isset($parts[0])) {
+      $brand = $parts[0];
+    }
+    if ($model === '' && isset($parts[1])) {
+      $model = $parts[1];
+    }
+    if ($year === '' && isset($parts[2])) {
+      $year = $parts[2];
+    }
+    if ($modelCode === '' && isset($parts[3])) {
+      $modelCode = $parts[3];
+    }
+  }
+
+  if ($categoryInfo === '') {
+    $parts = array_values(array_filter([$brand, $model, $year], static function (string $value): bool {
+      return $value !== '';
+    }));
+    if ($parts) {
+      $categoryInfo = implode(' | ', $parts);
+      if ($modelCode !== '') {
+        $categoryInfo .= ' | ' . $modelCode;
+      }
+    }
+  }
+
+  return [
+    'category_info' => $categoryInfo,
+    'category_brand' => $brand,
+    'category_model' => $model,
+    'category_year_range' => $year,
+    'category_modelcode' => $modelCode,
+  ];
 }
 
 function ebayItemNumberForItem(array $item): string
@@ -2474,6 +2638,24 @@ ob_start();
   .custom-category-info-trigger.is-empty {
     color: #b9c3cd;
     border-style: dashed;
+  }
+
+  .order-item-category-info-form {
+    width: 150px;
+    margin: 0 auto;
+  }
+
+  .order-item-category-info-form .custom-category-info-trigger {
+    min-height: 28px;
+    padding: .18rem .4rem;
+    white-space: normal;
+    line-height: 1.15;
+  }
+
+  .order-item-category-info-form .custom-category-info-trigger:not(.is-empty) {
+    width: auto;
+    min-width: 28px;
+    justify-content: center;
   }
 
   .custom-category-info-text {
@@ -3435,8 +3617,8 @@ ob_start();
     margin-top: 10px;
   }
 
-  .order-header-operations-card {
-    padding: 10px 12px;
+          .order-header-operations-card {
+            padding: 10px 12px;
   }
 
   .order-header-operations-title {
@@ -3446,6 +3628,23 @@ ob_start();
     font-weight: 700;
     letter-spacing: .05em;
     text-transform: uppercase;
+  }
+
+  .order-header-copy-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+  }
+
+  .order-header-copy-value {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .order-header-copy-empty {
+    color: rgba(255, 255, 255, .48);
+    font-size: 12px;
   }
 
   .order-photos-span-col {
@@ -4066,51 +4265,85 @@ ob_start();
 
           </div>
 
-          <?php if ((int) ($_SESSION['permission'] ?? 0) >= 300): ?>
-            <div class="order-header-summary order-header-operations">
-              <div class="order-header-operations-card">
-                <div class="order-header-operations-title">Invoices</div>
-                <?php
-                $invStmt = $conn->prepare("SELECT id, invoice_number FROM order_invoices WHERE order_id = ? AND deleted_at IS NULL ORDER BY id DESC");
+          <?php $orderOperationsCanEdit = (int) ($_SESSION['permission'] ?? 0) >= 300; ?>
+          <div class="order-header-summary order-header-operations">
+            <div class="order-header-operations-card">
+              <div class="order-header-operations-title">Invoices</div>
+              <?php
+              $invoiceRows = [];
+              $invStmt = $conn->prepare("SELECT id, invoice_number FROM order_invoices WHERE order_id = ? AND deleted_at IS NULL ORDER BY id DESC");
+              if ($invStmt) {
                 $invStmt->bind_param('i', $orderId);
                 $invStmt->execute();
                 $invRes = $invStmt->get_result();
-                ?>
-                <?php while ($inv = $invRes->fetch_assoc()): ?>
-                  <div class="small mb-1 d-flex align-items-center"><b><?php echo h($inv['invoice_number']); ?></b><button class="btn btn-xs btn-outline-danger ml-2 py-0 px-2 btn-delete-invoice" data-id="<?php echo (int) $inv['id']; ?>" data-order-id="<?php echo (int) $orderId; ?>">×</button></div>
-                <?php endwhile; ?>
-                <?php $invStmt->close(); ?>
+                while ($inv = $invRes->fetch_assoc()) {
+                  $invoiceRows[] = $inv;
+                }
+                $invStmt->close();
+              }
+              ?>
+              <?php if ($invoiceRows): ?>
+                <?php foreach ($invoiceRows as $inv): ?>
+                  <?php $invoiceNumber = trim((string) ($inv['invoice_number'] ?? '')); ?>
+                  <div class="small mb-1 order-header-copy-row">
+                    <b class="order-header-copy-value"><?php echo h($invoiceNumber); ?></b>
+                    <button type="button" class="btn btn-xs btn-copy-inline" data-copy="<?php echo h($invoiceNumber); ?>" title="Copy invoice number">📋</button>
+                    <?php if ($orderOperationsCanEdit): ?>
+                      <button type="button" class="btn btn-xs btn-outline-danger ml-1 py-0 px-2 btn-delete-invoice" data-id="<?php echo (int) $inv['id']; ?>" data-order-id="<?php echo (int) $orderId; ?>">×</button>
+                    <?php endif; ?>
+                  </div>
+                <?php endforeach; ?>
+              <?php else: ?>
+                <div class="order-header-copy-empty">No invoice yet.</div>
+              <?php endif; ?>
+              <?php if ($orderOperationsCanEdit): ?>
                 <div class="form-row mt-2 invoice-add-row">
                   <div class="col-md-8"><input class="form-control form-control-sm invoice-number" placeholder="Invoice number"></div>
-                  <div class="col-md-4"><button class="btn btn-sm btn-info btn-block btn-add-invoice" data-order-id="<?php echo (int) $orderId; ?>">Add Invoice</button></div>
+                  <div class="col-md-4"><button type="button" class="btn btn-sm btn-info btn-block btn-add-invoice" data-order-id="<?php echo (int) $orderId; ?>">Add Invoice</button></div>
                 </div>
-              </div>
+              <?php endif; ?>
+            </div>
 
-              <div class="order-header-operations-card">
-                <div class="order-header-operations-title">Tracking</div>
-                <?php
-                $trackingStmt = $conn->prepare("SELECT id, tracking_number, carrier, created_at FROM order_tracking_numbers WHERE order_id = ? AND deleted_at IS NULL ORDER BY id DESC");
+            <div class="order-header-operations-card">
+              <div class="order-header-operations-title">Tracking</div>
+              <?php
+              $trackingRows = [];
+              $trackingStmt = $conn->prepare("SELECT id, tracking_number, carrier, created_at FROM order_tracking_numbers WHERE order_id = ? AND deleted_at IS NULL ORDER BY id DESC");
+              if ($trackingStmt) {
                 $trackingStmt->bind_param('i', $orderId);
                 $trackingStmt->execute();
                 $trackingRes = $trackingStmt->get_result();
-                ?>
-                <?php while ($t = $trackingRes->fetch_assoc()): ?>
-                  <div class="small mb-1 d-flex align-items-center">
-                    <b><?php echo h($t['tracking_number']); ?></b>
+                while ($t = $trackingRes->fetch_assoc()) {
+                  $trackingRows[] = $t;
+                }
+                $trackingStmt->close();
+              }
+              ?>
+              <?php if ($trackingRows): ?>
+                <?php foreach ($trackingRows as $t): ?>
+                  <?php $trackingNumber = trim((string) ($t['tracking_number'] ?? '')); ?>
+                  <div class="small mb-1 order-header-copy-row">
+                    <b class="order-header-copy-value"><?php echo h($trackingNumber); ?></b>
+                    <button type="button" class="btn btn-xs btn-copy-inline" data-copy="<?php echo h($trackingNumber); ?>" title="Copy tracking number">📋</button>
                     <?php if (!empty($t['carrier'])): ?><span class="text-muted ml-1">(<?php echo h($t['carrier']); ?>)</span><?php endif; ?>
                     <?php if (!empty($t['created_at'])): ?><span class="text-muted ml-2">| Shipped: <?php echo h(date('d.m.Y H:i', strtotime((string) $t['created_at']))); ?></span><?php endif; ?>
-                    <button class="btn btn-xs btn-outline-danger ml-2 py-0 px-2 btn-delete-tracking" data-id="<?php echo (int) $t['id']; ?>" data-order-id="<?php echo (int) $orderId; ?>">×</button>
+                    <?php if ($orderOperationsCanEdit): ?>
+                      <button type="button" class="btn btn-xs btn-outline-danger ml-1 py-0 px-2 btn-delete-tracking" data-id="<?php echo (int) $t['id']; ?>" data-order-id="<?php echo (int) $orderId; ?>">×</button>
+                    <?php endif; ?>
                   </div>
-                <?php endwhile; ?>
-                <?php $trackingStmt->close(); ?>
+                <?php endforeach; ?>
+              <?php else: ?>
+                <div class="order-header-copy-empty">No tracking yet.</div>
+              <?php endif; ?>
+              <?php if ($orderOperationsCanEdit): ?>
                 <div class="form-row tracking-add-row mt-2">
                   <input class="form-control form-control-sm tracking-number" placeholder="Tracking number">
                   <input class="form-control form-control-sm tracking-carrier" placeholder="Carrier">
                   <button type="button" class="btn btn-sm btn-info btn-add-tracking" data-order-id="<?php echo (int) $orderId; ?>">Add Tracking</button>
                 </div>
-              </div>
+              <?php endif; ?>
             </div>
-          <?php endif; ?>
+          </div>
         </div>
 
         <div class="col-lg-4 mt-3 mt-lg-0 d-flex">
@@ -4869,10 +5102,23 @@ ob_start();
                   $internalOptArr = [];
                 // Also read base-material / graphics-finish from options_json
                 $extOptArr = jsonDecodeAssocSafe((string) ($it['options_json'] ?? '{}'));
+                $customItemFallback = orderDetailCustomItemFallbackForItem($customItemOptionFallbacks, $it);
+                if ($customItemFallback) {
+                  $extOptArr = orderDetailMergeCustomPrintFallbackOptions($extOptArr, $internalOptArr, $customItemFallback);
+                }
+                $orderSourceCodeUpper = strtoupper(trim((string) ($order['source_code'] ?? '')));
+                $canSetMissingCategoryInfo = in_array($orderSourceCodeUpper, ['CUSTOM', 'EBAY', 'MX_LOCKER', 'MXLOCKER'], true)
+                  || strpos($orderSourceCodeUpper, 'EBAY') !== false;
 
                 $printPrinter = (string) ($internalOptArr['_printer'] ?? '');
-                $printMaterial = (string) ($internalOptArr['_print_material'] ?? ($extOptArr['base-material'] ?? ''));
-                $printFinish = (string) ($internalOptArr['_print_finish'] ?? ($extOptArr['graphics-finish'] ?? ''));
+                $printMaterial = productSpecValueFromKeys($internalOptArr, ['_print_material']);
+                if ($printMaterial === '') {
+                  $printMaterial = productSpecValueFromKeys($extOptArr, ['base-material', 'base_material', 'material', 'graphics-material', 'graphics_material']);
+                }
+                $printFinish = productSpecValueFromKeys($internalOptArr, ['_print_finish']);
+                if ($printFinish === '') {
+                  $printFinish = productSpecValueFromKeys($extOptArr, ['graphics-finish', 'graphics_finish', 'finish']);
+                }
                 $printGrip = (string) ($internalOptArr['_print_grip'] ?? ($extOptArr['grip'] ?? ''));
                 $printTrSwingarms = (string) ($internalOptArr['_print_tr_swingarms'] ?? ($extOptArr['tr-swingarms'] ?? $extOptArr['tr_swingarms'] ?? ''));
                 $isGraphicsItem = (strtoupper(trim((string) ($it['item_type_code'] ?? ''))) === 'G');
@@ -4973,10 +5219,17 @@ ob_start();
                 $gCategoryMain = '';
                 $gCategoryBrand = '';
                 $gCategoryModelYear = '';
-                $gCategoryCode = ''; {
+                $gCategoryCode = '';
+                $gCategoryEditBrand = trim((string) optionValue($extOptArr, ['category_brand', 'brand', 'Brand', 'bike-brand', 'manufacturer', 'Manufacturer']));
+                $gCategoryEditModel = trim((string) optionValue($extOptArr, ['category_model', 'model', 'Model', 'bike-model', 'Bike', 'bike']));
+                $gCategoryEditYear = trim((string) optionValue($extOptArr, ['category_year_range', 'year', 'Year', 'bike-year', 'model-year', 'Year Range']));
+                $gCategoryEditCode = trim((string) optionValue($extOptArr, ['category_modelcode', 'modelcode', 'design_code', 'design-code', 'category_code', 'model_code', 'sku-code']));
+                $gCategoryEditInfo = ''; {
                   // Hľadáme category v rôznych kľúčoch options_json — Shoptet používa rôzne konvencie
                   $catCandidates = [
                     'Category Info',
+                    'category_info',
+                    'category-info',
                     'category info',
                     'category',
                     'Category',
@@ -5011,13 +5264,32 @@ ob_start();
 
                   // Ak stále nič, skúsime poskladať z brand + model + year
                   if ($gCategoryRaw === '' || strpos($gCategoryRaw, '|') === false) {
-                    $brandVal = trim((string) optionValue($extOptArr, ['brand', 'Brand', 'bike-brand', 'manufacturer', 'Manufacturer']));
-                    $modelVal = trim((string) optionValue($extOptArr, ['model', 'Model', 'bike-model', 'Bike', 'bike']));
-                    $yearVal = trim((string) optionValue($extOptArr, ['year', 'Year', 'bike-year', 'model-year', 'Year Range']));
-                    $codeVal = trim((string) optionValue($extOptArr, ['design_code', 'design-code', 'category_code', 'model_code', 'sku-code']));
+                    $brandVal = $gCategoryEditBrand;
+                    $modelVal = $gCategoryEditModel;
+                    $yearVal = $gCategoryEditYear;
+                    $codeVal = $gCategoryEditCode;
                     $parts = array_filter([$brandVal, $modelVal, $yearVal]);
                     if ($parts) {
                       $gCategoryRaw = implode(' | ', $parts) . ($codeVal !== '' ? ' | ' . $codeVal : '');
+                    }
+                  }
+
+                  $gCategoryEditInfo = $gCategoryRaw;
+                  if ($gCategoryRaw !== '') {
+                    $editParts = array_values(array_filter(array_map('trim', explode('|', $gCategoryRaw)), function ($p) {
+                      return $p !== '';
+                    }));
+                    if ($gCategoryEditBrand === '' && isset($editParts[0])) {
+                      $gCategoryEditBrand = $editParts[0];
+                    }
+                    if ($gCategoryEditModel === '' && isset($editParts[1])) {
+                      $gCategoryEditModel = $editParts[1];
+                    }
+                    if ($gCategoryEditYear === '' && isset($editParts[2])) {
+                      $gCategoryEditYear = $editParts[2];
+                    }
+                    if ($gCategoryEditCode === '' && isset($editParts[3])) {
+                      $gCategoryEditCode = $editParts[3];
                     }
                   }
 
@@ -5056,22 +5328,39 @@ ob_start();
                 // Pre všetky typy položiek: zobraz dáta ak existujú, inak prázdnu bunku.
                 ?>
                 <td class="text-center g-cat-td" style="min-width:120px;max-width:50px; white-space:nowrap;">
-                  <?php if ($gCategoryBrand !== '' || $gCategoryModelYear !== '' || $gCategoryCode !== ''): ?>
-                    <div class="g-cat-info">
-                      <?php if ($gCategoryBrand !== ''): ?>
-                        <span class="g-cat-main"><?= h($gCategoryBrand) ?></span>
-                      <?php endif; ?>
-                      <?php if ($gCategoryModelYear !== ''): ?>
-                        <span class="g-cat-main"><?= h($gCategoryModelYear) ?></span>
-                      <?php endif; ?>
-                      <?php if ($gCategoryCode !== ''): ?>
-                        <span class="g-cat-code"><a href="#"
-                            title="Model kód: <?= h($gCategoryCode) ?>"><?= h($gCategoryCode) ?></a></span>
-                      <?php endif; ?>
-                    </div>
-                  <?php else: ?>
-                    <span class="text-muted" style="font-size:11px;">—</span>
-                  <?php endif; ?>
+                  <?php $hasCategoryDisplay = ($gCategoryBrand !== '' || $gCategoryModelYear !== '' || $gCategoryCode !== ''); ?>
+                  <form class="order-item-category-info-form mb-0" data-order-id="<?= (int) $orderId ?>" data-item-id="<?= (int) $it['id'] ?>">
+                    <input type="hidden" name="order_id" value="<?= (int) $orderId ?>">
+                    <input type="hidden" name="item_id" value="<?= (int) $it['id'] ?>">
+                    <input type="hidden" name="category_info" value="<?= h($gCategoryEditInfo) ?>">
+                    <input type="hidden" name="category_brand" value="<?= h($gCategoryEditBrand) ?>">
+                    <input type="hidden" name="category_model" value="<?= h($gCategoryEditModel) ?>">
+                    <input type="hidden" name="category_year_range" value="<?= h($gCategoryEditYear) ?>">
+                    <input type="hidden" name="category_modelcode" value="<?= h($gCategoryEditCode) ?>">
+                    <?php if ($hasCategoryDisplay): ?>
+                      <div class="g-cat-info">
+                        <?php if ($gCategoryBrand !== ''): ?>
+                          <span class="g-cat-main"><?= h($gCategoryBrand) ?></span>
+                        <?php endif; ?>
+                        <?php if ($gCategoryModelYear !== ''): ?>
+                          <span class="g-cat-main"><?= h($gCategoryModelYear) ?></span>
+                        <?php endif; ?>
+                        <?php if ($gCategoryCode !== ''): ?>
+                          <span class="g-cat-code"><a href="#"
+                              title="Model kód: <?= h($gCategoryCode) ?>"><?= h($gCategoryCode) ?></a></span>
+                        <?php endif; ?>
+                      </div>
+                      <button type="button" class="btn btn-xs btn-outline-info custom-category-info-trigger order-item-category-info-trigger mt-1" title="Change Brand, Model, Year range and Model Code">
+                        <i class="fas fa-pencil-alt" aria-hidden="true"></i>
+                      </button>
+                    <?php else: ?>
+                      <button type="button" class="btn btn-xs btn-outline-info custom-category-info-trigger order-item-category-info-trigger is-empty" title="Select Brand, Model, Year range and Model Code">
+                        <span class="custom-category-info-text">Set Category</span>
+                        <i class="fas fa-chevron-right ml-1" aria-hidden="true"></i>
+                      </button>
+                    <?php endif; ?>
+                    <span class="small text-muted d-block mt-1 order-item-category-save-state" hidden></span>
+                  </form>
                 </td>
 
                 <td style="display:none;"></td>
@@ -5346,6 +5635,21 @@ ob_start();
             }
           }
           $manualBuilderDepartments = ['G' => 'G', 'P' => 'P', 'S' => 'S', 'F' => 'F'];
+          $manualCategoryDefaults = [
+            'category_info' => '',
+            'category_brand' => '',
+            'category_model' => '',
+            'category_year_range' => '',
+            'category_modelcode' => '',
+          ];
+          foreach ($items as $manualCategorySourceItem) {
+            $candidateCategory = orderDetailCategoryFieldsFromOptions(jsonDecodeAssocSafe((string) ($manualCategorySourceItem['options_json'] ?? '{}')));
+            if (trim((string) ($candidateCategory['category_info'] ?? '')) !== '') {
+              $manualCategoryDefaults = $candidateCategory;
+              break;
+            }
+          }
+          $manualCategoryDefaultInfo = trim((string) ($manualCategoryDefaults['category_info'] ?? ''));
           ?>
           <form class="manual-add-item-form mb-3" data-order-id="<?php echo (int) $orderId; ?>">
             <input type="hidden" name="order_id" value="<?php echo (int) $orderId; ?>">
@@ -5410,13 +5714,13 @@ ob_start();
                           <input type="number" step="0.01" name="unit_price" class="form-control form-control-sm manual-item-unit-price" value="0">
                         </td>
                         <td style="min-width:220px;">
-                          <input type="hidden" name="category_info" value="">
-                          <input type="hidden" name="category_brand" value="">
-                          <input type="hidden" name="category_model" value="">
-                          <input type="hidden" name="category_year_range" value="">
-                          <input type="hidden" name="category_modelcode" value="">
-                          <button type="button" class="btn btn-sm btn-outline-info custom-category-info-trigger manual-item-category-info is-empty" title="Select Brand, Model, Year range and Model Code">
-                            <span class="custom-category-info-text">Select Brand / Model / Year / Model Code</span>
+                          <input type="hidden" name="category_info" value="<?= h($manualCategoryDefaultInfo) ?>">
+                          <input type="hidden" name="category_brand" value="<?= h($manualCategoryDefaults['category_brand'] ?? '') ?>">
+                          <input type="hidden" name="category_model" value="<?= h($manualCategoryDefaults['category_model'] ?? '') ?>">
+                          <input type="hidden" name="category_year_range" value="<?= h($manualCategoryDefaults['category_year_range'] ?? '') ?>">
+                          <input type="hidden" name="category_modelcode" value="<?= h($manualCategoryDefaults['category_modelcode'] ?? '') ?>">
+                          <button type="button" class="btn btn-sm btn-outline-info custom-category-info-trigger manual-item-category-info<?= $manualCategoryDefaultInfo === '' ? ' is-empty' : '' ?>" title="Select Brand, Model, Year range and Model Code">
+                            <span class="custom-category-info-text"><?= h($manualCategoryDefaultInfo !== '' ? $manualCategoryDefaultInfo : 'Select Brand / Model / Year / Model Code') ?></span>
                             <i class="fas fa-chevron-right" aria-hidden="true"></i>
                           </button>
                         </td>

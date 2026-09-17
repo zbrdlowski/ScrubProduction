@@ -3,7 +3,6 @@ declare(strict_types=1);
 
 require_once dirname(__DIR__, 2) . '/includes/get_order_detail_product_spec_selects.php';
 require_once dirname(__DIR__, 2) . '/includes/orders_status_helpers.php';
-require_once dirname(__DIR__, 2) . '/includes/orders_plastics_gate_helpers.php';
 require_once dirname(__DIR__) . '/orders/department_config.php';
 
 function customOrdersFlash(string $type, string $message, array $meta = []): void
@@ -692,6 +691,11 @@ function customOrdersActivityFieldLabels(): array
     'is_upsell' => 'Upsell',
     'upsell_source' => 'Upsell source',
     'status' => 'Action status',
+    'category_info' => 'Category Info',
+    'category_brand' => 'Category brand',
+    'category_model' => 'Category model',
+    'category_year_range' => 'Category year',
+    'category_modelcode' => 'Model code',
   ];
 }
 
@@ -796,6 +800,9 @@ function customOrdersActivityDetail(array $activity): string
     }
     if (isset($payload['unit_price'])) {
       $parts[] = 'Price: ' . number_format((float) $payload['unit_price'], 2, '.', '');
+    }
+    if (!empty($payload['category_info'])) {
+      $parts[] = 'Category: ' . trim((string) $payload['category_info']);
     }
     if ($parts) {
       return implode(' | ', $parts);
@@ -1085,6 +1092,208 @@ function customOrdersItemPayloadFromPost(mysqli $conn, string $type = 'G'): arra
     'options_json' => json_encode($options, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
     'internal_options_json' => json_encode($internal, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
   ];
+}
+
+function customOrdersFirstFilledOptionValue(array $options, array $keys): string
+{
+  $normalized = [];
+  foreach ($options as $rawKey => $rawValue) {
+    if (is_array($rawValue) || is_object($rawValue) || $rawValue === null) {
+      continue;
+    }
+
+    $normalizedKey = strtolower(trim((string) $rawKey));
+    $normalizedKey = preg_replace('/[^a-z0-9]+/', '-', $normalizedKey) ?? $normalizedKey;
+    $normalizedKey = trim($normalizedKey, '-');
+    if ($normalizedKey !== '') {
+      $normalized[$normalizedKey] = trim((string) $rawValue);
+    }
+  }
+
+  foreach ($keys as $key) {
+    if (array_key_exists($key, $options)) {
+      $value = $options[$key];
+      if (!is_array($value) && !is_object($value) && $value !== null && trim((string) $value) !== '') {
+        return trim((string) $value);
+      }
+    }
+
+    $normalizedKey = strtolower(trim((string) $key));
+    $normalizedKey = preg_replace('/[^a-z0-9]+/', '-', $normalizedKey) ?? $normalizedKey;
+    $normalizedKey = trim($normalizedKey, '-');
+    if ($normalizedKey !== '' && !empty($normalized[$normalizedKey])) {
+      return $normalized[$normalizedKey];
+    }
+  }
+
+  return '';
+}
+
+function customOrdersCategoryFieldsFromOptions(array $options): array
+{
+  $categoryInfo = customOrdersFirstFilledOptionValue($options, ['category_info', 'Category Info', 'category-info', 'category info', 'category', 'Category']);
+  $brand = customOrdersFirstFilledOptionValue($options, ['category_brand', 'brand', 'Brand', 'bike-brand', 'manufacturer', 'Manufacturer']);
+  $model = customOrdersFirstFilledOptionValue($options, ['category_model', 'model', 'Model', 'bike-model', 'Bike', 'bike']);
+  $year = customOrdersFirstFilledOptionValue($options, ['category_year_range', 'year', 'Year', 'bike-year', 'model-year', 'Year Range']);
+  $modelCode = customOrdersFirstFilledOptionValue($options, ['category_modelcode', 'modelcode', 'model_code', 'design_code', 'design-code', 'category_code', 'sku-code']);
+
+  if ($categoryInfo !== '') {
+    $parts = array_values(array_filter(array_map('trim', explode('|', $categoryInfo)), static function (string $value): bool {
+      return $value !== '';
+    }));
+    if ($brand === '' && isset($parts[0])) {
+      $brand = $parts[0];
+    }
+    if ($model === '' && isset($parts[1])) {
+      $model = $parts[1];
+    }
+    if ($year === '' && isset($parts[2])) {
+      $year = $parts[2];
+    }
+    if ($modelCode === '' && isset($parts[3])) {
+      $modelCode = $parts[3];
+    }
+  }
+
+  if ($categoryInfo === '') {
+    $parts = array_values(array_filter([$brand, $model, $year], static function (string $value): bool {
+      return $value !== '';
+    }));
+    if ($parts) {
+      $categoryInfo = implode(' | ', $parts);
+      if ($modelCode !== '') {
+        $categoryInfo .= ' | ' . $modelCode;
+      }
+    }
+  }
+
+  return [
+    'category_info' => $categoryInfo,
+    'category_brand' => $brand,
+    'category_model' => $model,
+    'category_year_range' => $year,
+    'category_modelcode' => $modelCode,
+  ];
+}
+
+function customOrdersCategoryFieldsFromJson(string $optionsJson): array
+{
+  $options = json_decode(trim($optionsJson) !== '' ? $optionsJson : '{}', true);
+  return customOrdersCategoryFieldsFromOptions(is_array($options) ? $options : []);
+}
+
+function customOrdersOptionsWithProductionCategoryAliases(string $optionsJson): string
+{
+  $options = json_decode(trim($optionsJson) !== '' ? $optionsJson : '{}', true);
+  if (!is_array($options)) {
+    $options = [];
+  }
+
+  $categoryFields = customOrdersCategoryFieldsFromOptions($options);
+  $categoryInfo = $categoryFields['category_info'];
+  $brand = $categoryFields['category_brand'];
+  $model = $categoryFields['category_model'];
+  $year = $categoryFields['category_year_range'];
+  $modelCode = $categoryFields['category_modelcode'];
+
+  if ($categoryInfo !== '') {
+    $options['category_info'] = $categoryInfo;
+    $options['Category Info'] = $categoryInfo;
+  }
+  if ($brand !== '') {
+    $options['category_brand'] = $brand;
+    $options['brand'] = $brand;
+  }
+  if ($model !== '') {
+    $options['category_model'] = $model;
+    $options['model'] = $model;
+  }
+  if ($year !== '') {
+    $options['category_year_range'] = $year;
+    $options['year'] = $year;
+  }
+  if ($modelCode !== '') {
+    $options['category_modelcode'] = $modelCode;
+    $options['modelcode'] = $modelCode;
+    $options['model_code'] = $modelCode;
+    $options['design_code'] = $modelCode;
+  }
+
+  $material = customOrdersFirstFilledOptionValue($options, [
+    'base-material',
+    'base_material',
+    'material',
+    'graphics-material',
+    'graphics_material',
+    'Material',
+  ]);
+  $finish = customOrdersFirstFilledOptionValue($options, [
+    'graphics-finish',
+    'graphics_finish',
+    'finish',
+    'graphics-finish-type',
+    'Finish',
+  ]);
+
+  if ($material !== '') {
+    $options['base-material'] = $material;
+    $options['base_material'] = $material;
+    $options['material'] = $material;
+  }
+  if ($finish !== '') {
+    $options['graphics-finish'] = $finish;
+    $options['graphics_finish'] = $finish;
+    $options['finish'] = $finish;
+  }
+
+  $encoded = json_encode($options, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE);
+  return $encoded !== false ? $encoded : '{}';
+}
+
+function customOrdersInternalOptionsWithProductionPrintAliases(string $internalOptionsJson, string $optionsJson): string
+{
+  $internal = json_decode(trim($internalOptionsJson) !== '' ? $internalOptionsJson : '{}', true);
+  if (!is_array($internal)) {
+    $internal = [];
+  }
+
+  $options = json_decode(trim($optionsJson) !== '' ? $optionsJson : '{}', true);
+  if (!is_array($options)) {
+    $options = [];
+  }
+
+  $material = customOrdersFirstFilledOptionValue($internal, ['_print_material']);
+  if ($material === '') {
+    $material = customOrdersFirstFilledOptionValue($options, [
+      'base-material',
+      'base_material',
+      'material',
+      'graphics-material',
+      'graphics_material',
+      'Material',
+    ]);
+  }
+
+  $finish = customOrdersFirstFilledOptionValue($internal, ['_print_finish']);
+  if ($finish === '') {
+    $finish = customOrdersFirstFilledOptionValue($options, [
+      'graphics-finish',
+      'graphics_finish',
+      'finish',
+      'graphics-finish-type',
+      'Finish',
+    ]);
+  }
+
+  if ($material !== '') {
+    $internal['_print_material'] = $material;
+  }
+  if ($finish !== '') {
+    $internal['_print_finish'] = $finish;
+  }
+
+  $encoded = json_encode($internal, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE);
+  return $encoded !== false ? $encoded : '{}';
 }
 
 function customOrdersGetOrder(mysqli $conn, int $orderId): ?array
@@ -1681,9 +1890,9 @@ function customOrdersExportToProduction(mysqli $conn, int $customOrderId, int $u
 
     $stmt = $conn->prepare('
       INSERT INTO order_items
-        (order_id, line_no, sku, title, custom_label, item_type_code, qty, unit_price, options_json, internal_options_json, created_by, updated_by, updated_at)
+        (order_id, line_no, sku, title, custom_label, item_type_code, qty, unit_price, options_json, internal_options_json, created_by, updated_by, updated_at, status)
       VALUES
-        (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
+        (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), ?)
     ');
     foreach ($order['items'] as $item) {
       $lineNo = (int) $item['line_no'];
@@ -1699,26 +1908,16 @@ function customOrdersExportToProduction(mysqli $conn, int $customOrderId, int $u
       }
       $qty = (int) $item['qty'];
       $unitPrice = (float) $item['unit_price'];
-      $optionsJson = (string) ($item['options_json'] ?? '{}');
-      $internalOptionsJson = (string) ($item['internal_options_json'] ?? '{}');
-      // Production workflow starts fresh. Draft/custom-order statuses belong to
-      // the sales phase and must not leak into the exported production item.
-      // Omitting status deliberately matches the unified CSV importer and uses
-      // the order_items database default before workflow gates are applied.
-      $stmt->bind_param('iissssidssii', $productionOrderId, $lineNo, $sku, $title, $label, $typeCode, $qty, $unitPrice, $optionsJson, $internalOptionsJson, $userId, $userId);
+      $optionsJson = customOrdersOptionsWithProductionCategoryAliases((string) ($item['options_json'] ?? '{}'));
+      $internalOptionsJson = customOrdersInternalOptionsWithProductionPrintAliases((string) ($item['internal_options_json'] ?? '{}'), $optionsJson);
+      $productionItemStatus = customOrdersResolveItemStatus($conn, $item, (string) ($item['status'] ?? ''));
+      $stmt->bind_param('iissssidssiis', $productionOrderId, $lineNo, $sku, $title, $label, $typeCode, $qty, $unitPrice, $optionsJson, $internalOptionsJson, $userId, $userId, $productionItemStatus);
       $stmt->execute();
     }
     $stmt->close();
 
-    // Use the same initial workflow as a newly imported CSV order. If the
-    // order contains plastics, the statuses configured by Status Policies are
-    // applied to plastics and their dependent departments; recalculation then
-    // derives the overall order status (normally "Plastics in stock?").
-    $plasticsGateApplied = ordersApplyPlasticsStockGate($conn, $productionOrderId);
     sync_order_categories($conn, $productionOrderId);
-    if ($plasticsGateApplied) {
-      recalculateOrderWorkflow($conn, $productionOrderId);
-    }
+    recalculateOrderWorkflow($conn, $productionOrderId);
 
     if (customOrdersTableExists($conn, 'custom_order_photos') && customOrdersTableExists($conn, 'order_photos')) {
       $photoSelect = $conn->prepare('

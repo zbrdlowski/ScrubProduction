@@ -59,6 +59,7 @@ if (isset($conn) && $conn instanceof mysqli) {
           <a href="?page=status_dashboard" class="dropdown-item">Order Status Dashboard</a>
           <a href="?page=plastics_dashboard" class="dropdown-item">Warehouse Dashboard</a>
           <a href="?page=orders_dashboard" class="dropdown-item">Orders Dashboard</a>
+          <a href="?page=year_to_year_statistics" class="dropdown-item">Year to Year Statistics</a>
           <a href="tv.php" class="dropdown-item">TV Dashboard</a>
         </div>
       </li>

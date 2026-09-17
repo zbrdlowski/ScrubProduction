@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/conn.php';
 require_once dirname(__DIR__) . '/scripts/custom_orders/helpers.php';
+require_once __DIR__ . '/orders_workflow_helpers.php';
 
 $customOrdersPermission = (int) ($_SESSION['permission'] ?? 0);
 $customOrdersCanManage = $customOrdersPermission >= 300;
@@ -167,6 +168,7 @@ $selectedOrder = null;
 $editItem = null;
 $relatedOrders = [];
 $moduleLoadError = null;
+$customOrdersProductionDepartmentStatusMap = [];
 
 $where = [];
 $sequences = ['SO' => 0, 'GO' => 0, 'SC' => 0];
@@ -234,6 +236,10 @@ try {
     $filterWhere[] = "DATE(co.updated_at) <= '{$safeDateTo}'";
   }
 
+  $customOrdersOpenSoWhere = "TRIM(COALESCE(co.official_order_number, '')) <> ''
+    AND UPPER(TRIM(COALESCE(co.status, ''))) NOT IN ('LEAD', 'EXPORTED')
+    AND (co.production_order_id IS NULL OR co.production_order_id <= 0)";
+
   $where = $filterWhere;
   if ($draftStatusFilter !== '') {
     $tabFilter = 'all';
@@ -250,7 +256,7 @@ try {
         AND (draft_item.status = '{$safeDraftStatus}'{$legacyDraftClause})
     ) AND co.production_order_id IS NULL";
   } elseif ($tabFilter === 'open_so') {
-    $where[] = "TRIM(COALESCE(co.official_order_number, '')) <> '' AND co.status NOT IN ('LEAD', 'EXPORTED', 'CANCELLED', 'DEAD') AND COALESCE(co.production_order_id, 0) <= 0";
+    $where[] = $customOrdersOpenSoWhere;
   } else {
     $activeTabMeta = $customOrderTabs[$tabFilter] ?? [];
     $tabStatuses = [];
@@ -311,13 +317,71 @@ try {
   if ($where) {
     $sql .= ' WHERE ' . implode(' AND ', $where);
   }
-  $sql .= ' ORDER BY co.created_at ASC, co.id ASC LIMIT 300';
+  $sql .= ' ORDER BY co.updated_at DESC, co.id DESC LIMIT 300';
   $res = $conn->query($sql);
   if (!$res) {
     throw new RuntimeException('Custom orders list query failed: ' . $conn->error);
   }
   while ($row = $res->fetch_assoc()) {
     $listRows[] = $row;
+  }
+
+  $customOrdersProductionOrderIds = [];
+  foreach ($listRows as $customOrdersListRow) {
+    $customOrdersProductionOrderId = (int) ($customOrdersListRow['production_order_id'] ?? 0);
+    if ($customOrdersProductionOrderId > 0) {
+      $customOrdersProductionOrderIds[$customOrdersProductionOrderId] = $customOrdersProductionOrderId;
+    }
+  }
+
+  if ($customOrdersProductionOrderIds) {
+    $customOrdersProductionOrderIds = array_values($customOrdersProductionOrderIds);
+    $customOrdersProductionPlaceholders = implode(',', array_fill(0, count($customOrdersProductionOrderIds), '?'));
+    $customOrdersProductionTypes = str_repeat('i', count($customOrdersProductionOrderIds));
+    $stmtCustomOrdersDeptStatuses = $conn->prepare("
+      SELECT order_id, item_type_code, status, options_json, internal_options_json
+      FROM order_items
+      WHERE deleted_at IS NULL
+        AND order_id IN ($customOrdersProductionPlaceholders)
+        AND item_type_code IS NOT NULL
+        AND item_type_code <> ''
+      ORDER BY order_id ASC, id ASC
+    ");
+
+    if ($stmtCustomOrdersDeptStatuses) {
+      $stmtCustomOrdersDeptStatuses->bind_param($customOrdersProductionTypes, ...$customOrdersProductionOrderIds);
+      $stmtCustomOrdersDeptStatuses->execute();
+      $resCustomOrdersDeptStatuses = $stmtCustomOrdersDeptStatuses->get_result();
+
+      $customOrdersGroupsByProductionOrder = [];
+      while ($customOrdersDeptRow = $resCustomOrdersDeptStatuses->fetch_assoc()) {
+        $customOrdersProductionOrderId = (int) ($customOrdersDeptRow['order_id'] ?? 0);
+        $customOrdersItemType = ordersNormalizeDepartmentCode((string) ($customOrdersDeptRow['item_type_code'] ?? ''));
+
+        if ($customOrdersProductionOrderId <= 0 || $customOrdersItemType === '') {
+          continue;
+        }
+
+        if (!isset($customOrdersGroupsByProductionOrder[$customOrdersProductionOrderId])) {
+          $customOrdersGroupsByProductionOrder[$customOrdersProductionOrderId] = [];
+        }
+        if (!isset($customOrdersGroupsByProductionOrder[$customOrdersProductionOrderId][$customOrdersItemType])) {
+          $customOrdersGroupsByProductionOrder[$customOrdersProductionOrderId][$customOrdersItemType] = [];
+        }
+
+        $customOrdersGroupsByProductionOrder[$customOrdersProductionOrderId][$customOrdersItemType][] = [
+          'status' => strtoupper((string) ($customOrdersDeptRow['status'] ?? 'NEW')),
+          'options_json' => $customOrdersDeptRow['options_json'] ?? null,
+          'internal_options_json' => $customOrdersDeptRow['internal_options_json'] ?? null,
+        ];
+      }
+
+      $stmtCustomOrdersDeptStatuses->close();
+
+      foreach ($customOrdersGroupsByProductionOrder as $customOrdersProductionOrderId => $customOrdersDepartmentGroups) {
+        $customOrdersProductionDepartmentStatusMap[$customOrdersProductionOrderId] = ordersResolveDepartmentStatusesFromGroups($conn, $customOrdersDepartmentGroups);
+      }
+    }
   }
 
   $selectedOrder = $selectedOrderId > 0 ? customOrdersGetOrder($conn, $selectedOrderId) : null;
@@ -369,7 +433,7 @@ try {
     SELECT
       COUNT(*) AS all_count,
       COALESCE(SUM(CASE WHEN co.status = 'LEAD' THEN 1 ELSE 0 END), 0) AS lead_count,
-      COALESCE(SUM(CASE WHEN TRIM(COALESCE(co.official_order_number, '')) <> '' AND co.status NOT IN ('LEAD', 'EXPORTED', 'CANCELLED', 'DEAD') AND COALESCE(co.production_order_id, 0) <= 0 THEN 1 ELSE 0 END), 0) AS open_so_count,
+      COALESCE(SUM(CASE WHEN {$customOrdersOpenSoWhere} THEN 1 ELSE 0 END), 0) AS open_so_count,
       COALESCE(SUM(CASE WHEN co.status = 'DEPOSIT_PAID' THEN 1 ELSE 0 END), 0) AS deposit_paid_count,
       COALESCE(SUM(CASE WHEN co.status = 'DEAD' THEN 1 ELSE 0 END), 0) AS dead_order_count,
       COALESCE(SUM(CASE WHEN co.status = 'DRAFT_X' THEN 1 ELSE 0 END), 0) AS draft_x_count,
@@ -1268,8 +1332,9 @@ if (!$customOrdersDetailRequest) {
   }
 
   .custom-orders-list-table-wrap {
-    overflow-x: auto;
-    overflow-y: hidden;
+    overflow-x: visible;
+    overflow-y: visible;
+    max-height: none;
   }
 
   .custom-order-list-row {
@@ -1397,6 +1462,58 @@ if (!$customOrdersDetailRequest) {
     align-items: center;
     gap: 6px;
   }
+
+  :root {
+    --custom-orders-sticky-top: 50px;
+    --custom-orders-header-h: 58px;
+    --custom-orders-tabs-h: 42px;
+    --custom-orders-filter-toolbar-h: 42px;
+    --custom-orders-table-head-top: calc(var(--custom-orders-sticky-top) + var(--custom-orders-header-h) + var(--custom-orders-tabs-h) + var(--custom-orders-filter-toolbar-h));
+  }
+
+  .custom-orders-page-header,
+  .custom-status-tabs,
+  .custom-orders-filter-toolbar,
+  #customOrdersFilterCollapse,
+  .custom-orders-list-table-wrap {
+    overflow-anchor: none;
+  }
+
+  .custom-orders-page-header {
+    position: sticky;
+    top: var(--custom-orders-sticky-top);
+    z-index: 1001;
+    padding-top: 8px;
+    padding-bottom: 8px;
+    background: #343a40;
+    box-shadow: 0 1px 0 rgba(255, 255, 255, .07);
+  }
+
+  .custom-status-tabs {
+    position: sticky;
+    top: calc(var(--custom-orders-sticky-top) + var(--custom-orders-header-h));
+    z-index: 1000;
+    padding: 8px 0;
+    margin-bottom: 0;
+    background: #343a40;
+    box-shadow: 0 1px 0 rgba(255, 255, 255, .07);
+  }
+
+  .custom-orders-filter-toolbar {
+    position: sticky;
+    top: calc(var(--custom-orders-sticky-top) + var(--custom-orders-header-h) + var(--custom-orders-tabs-h));
+    z-index: 999;
+  }
+
+  #customOrdersTable > thead > tr > th {
+    position: sticky;
+    top: var(--custom-orders-table-head-top);
+    z-index: 897;
+    background: #343a40;
+    color: #fff;
+    box-shadow: 0 1px 0 rgba(255, 255, 255, .12);
+  }
+
   .custom-order-table-row {
     cursor: pointer;
     transition: opacity .2s ease;
@@ -1418,6 +1535,37 @@ if (!$customOrdersDetailRequest) {
   .custom-order-table-row.order-row-open td {
     background: rgba(60, 141, 188, .18);
     border-bottom-color: transparent;
+  }
+
+  .custom-order-day-separator-row > td {
+    padding: 7px 0 6px !important;
+    border-top: 0 !important;
+    border-bottom: 0 !important;
+    background: #171b20 !important;
+  }
+
+  .custom-order-day-separator {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    color: #9ed6ff;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: .05em;
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+
+  .custom-order-day-separator::before,
+  .custom-order-day-separator::after {
+    content: "";
+    flex: 1 1 auto;
+    height: 1px;
+    background: linear-gradient(90deg, rgba(63, 158, 255, .12), rgba(63, 158, 255, .72));
+  }
+
+  .custom-order-day-separator::after {
+    background: linear-gradient(90deg, rgba(63, 158, 255, .72), rgba(63, 158, 255, .12));
   }
 
   .custom-order-owner-avatar {
@@ -1616,6 +1764,11 @@ if (!$customOrdersDetailRequest) {
   }
 
   @media (max-width: 767.98px) {
+    .custom-orders-list-table-wrap {
+      overflow-x: auto;
+      overflow-y: visible;
+    }
+
     .custom-orders-filter-toolbar {
       align-items: stretch;
       flex-direction: column;
@@ -3574,7 +3727,7 @@ if (!$customOrdersDetailRequest) {
           <div class="panel-body">
             <div class="d-flex justify-content-between align-items-center mb-3">
               <div class="custom-order-section-title mb-0">Orders List</div>
-              <div class="text-muted small">Showing up to 300 matching rows, oldest first</div>
+              <div class="text-muted small">Showing up to 300 matching rows, newest updates first</div>
             </div>
             <div class="table-responsive custom-orders-list-table-wrap">
               <table id="customOrdersTable" class="table table-sm table-dark table-striped custom-mini-table mb-0">
@@ -3594,8 +3747,21 @@ if (!$customOrdersDetailRequest) {
                   </tr>
                 </thead>
                 <tbody>
+                  <?php $customOrdersPreviousListDay = ''; ?>
                   <?php foreach ($listRows as $row): ?>
-                    <?php $rowUrl = customOrderBuildUrl((int) $row['id'], ['edit_item_id' => null]); ?>
+                    <?php
+                    $rowUrl = customOrderBuildUrl((int) $row['id'], ['edit_item_id' => null]);
+                    $rowUpdatedAt = (string) ($row['updated_at'] ?? '');
+                    $rowDayTime = $rowUpdatedAt !== '' ? strtotime($rowUpdatedAt) : false;
+                    $rowDayKey = $rowDayTime !== false ? date('Y-m-d', $rowDayTime) : 'unknown';
+                    $rowDayLabel = $rowDayTime !== false ? date('d.m.Y', $rowDayTime) : 'Unknown date';
+                    ?>
+                    <?php if ($rowDayKey !== $customOrdersPreviousListDay): ?>
+                      <?php $customOrdersPreviousListDay = $rowDayKey; ?>
+                      <tr class="custom-order-day-separator-row">
+                        <td colspan="11"><div class="custom-order-day-separator"><span><?= h($rowDayLabel) ?></span></div></td>
+                      </tr>
+                    <?php endif; ?>
                     <tr class="custom-order-table-row" data-order-id="<?= (int) $row['id'] ?>" data-href="<?= h($rowUrl) ?>">
                       <td>
                         <div><strong><?= h($row['official_order_number'] ?: $row['internal_code']) ?></strong></div>
@@ -3621,12 +3787,14 @@ if (!$customOrdersDetailRequest) {
                       <td><span class="custom-complexity-pill" title="<?= h(customOrderComplexityLabel($rowComplexityLevel, $customOrderComplexityOptions)) ?>"><?= h(customOrderComplexityLabel($rowComplexityLevel, $customOrderComplexityOptions)) ?></span></td>
                       <td class="text-center">
                         <?php
+                        $rowProductionOrderId = (int) ($row['production_order_id'] ?? 0);
+                        $rowTrafficDepartmentStatuses = $customOrdersProductionDepartmentStatusMap[$rowProductionOrderId] ?? [];
                         $rowTrafficSummary = json_decode((string) ($row['production_traffic_summary_json'] ?? ''), true);
                         if (!is_array($rowTrafficSummary)) {
                           $rowTrafficSummary = [];
                         }
                         $rowTrafficMissingTypes = [];
-                        if ((int) ($row['production_order_id'] ?? 0) > 0) {
+                        if ($rowProductionOrderId > 0) {
                           $rowTrafficTypes = str_split(str_replace([',', ' '], '', strtoupper((string) ($row['item_types'] ?? ''))));
                           foreach ($rowTrafficTypes as $rowTrafficType) {
                             if (in_array($rowTrafficType, ['G', 'F', 'P', 'S'], true) && !array_key_exists($rowTrafficType, $rowTrafficSummary)) {
@@ -3634,23 +3802,66 @@ if (!$customOrdersDetailRequest) {
                               $rowTrafficMissingTypes[$rowTrafficType] = true;
                             }
                           }
+                          foreach (array_keys($rowTrafficDepartmentStatuses) as $rowTrafficType) {
+                            if (in_array($rowTrafficType, ['G', 'F', 'P', 'S'], true) && !array_key_exists($rowTrafficType, $rowTrafficSummary)) {
+                              $rowTrafficSummary[$rowTrafficType] = strtoupper(trim((string) ($row['production_traffic_light'] ?? 'RED'))) ?: 'RED';
+                            }
+                          }
                         }
                         ?>
                         <?php if ($rowTrafficSummary): ?>
-                          <span class="custom-order-traffic-badges">
+                          <span class="custom-order-traffic-badges d-inline-flex justify-content-center flex-wrap" style="gap:4px;">
                             <?php foreach (['G', 'F', 'P', 'S'] as $rowTrafficType): ?>
                               <?php if (!array_key_exists($rowTrafficType, $rowTrafficSummary)) continue; ?>
                               <?php
-                              $rowTrafficState = strtoupper((string) $rowTrafficSummary[$rowTrafficType]);
-                              $rowTrafficClass = $rowTrafficState === 'GREEN' ? 'is-green' : ($rowTrafficState === 'ORANGE' ? 'is-orange' : 'is-red');
-                              $rowTrafficTitle = $rowTrafficType . ' - ' . $rowTrafficState;
+                              $rowTrafficRawState = $rowTrafficSummary[$rowTrafficType];
+                              if (is_array($rowTrafficRawState)) {
+                                $rowTrafficState = strtoupper(trim((string) (
+                                  $rowTrafficRawState['traffic_light']
+                                  ?? $rowTrafficRawState['light']
+                                  ?? $rowTrafficRawState['state']
+                                  ?? $rowTrafficRawState['color']
+                                  ?? ''
+                                )));
+                              } else {
+                                $rowTrafficState = strtoupper(trim((string) $rowTrafficRawState));
+                              }
+                              if (!in_array($rowTrafficState, ['GREEN', 'ORANGE', 'RED'], true)) {
+                                $rowTrafficState = strtoupper(trim((string) ($row['production_traffic_light'] ?? 'RED')));
+                              }
+                              if (!in_array($rowTrafficState, ['GREEN', 'ORANGE', 'RED'], true)) {
+                                $rowTrafficState = 'RED';
+                              }
+
+                              $rowTrafficDepartmentStatus = strtoupper(trim((string) ($rowTrafficDepartmentStatuses[$rowTrafficType] ?? '')));
+                              $rowTrafficLabel = $rowTrafficDepartmentStatus !== ''
+                                ? ordersGetStatusLabel($conn, 'item', $rowTrafficDepartmentStatus, $rowTrafficType)
+                                : ucfirst(strtolower($rowTrafficState));
+                              $rowTrafficColor = $rowTrafficDepartmentStatus !== ''
+                                ? ordersGetStatusColor($conn, 'item', $rowTrafficDepartmentStatus, $rowTrafficType)
+                                : null;
+
+                              $rowTrafficBadgeStyle = 'font-size:1rem;padding:.5em .7em;min-width:2rem;cursor:help;';
+                              if ($rowTrafficColor) {
+                                $rowTrafficSafeColor = h($rowTrafficColor);
+                                $rowTrafficBadgeStyle .= 'background-color:' . $rowTrafficSafeColor . ';border-color:' . $rowTrafficSafeColor . ';color:' . ordersContrastColor($rowTrafficColor) . ';';
+                              } elseif ($rowTrafficState === 'GREEN') {
+                                $rowTrafficBadgeStyle .= 'background-color:#28a745;border-color:#28a745;color:#fff;';
+                              } elseif ($rowTrafficState === 'ORANGE') {
+                                $rowTrafficBadgeStyle .= 'background-color:#ffc107;border-color:#ffc107;color:#212529;';
+                              } else {
+                                $rowTrafficBadgeStyle .= 'background-color:#dc3545;border-color:#dc3545;color:#fff;';
+                              }
+
+                              $rowTrafficTitle = $rowTrafficType . ' - ' . $rowTrafficLabel;
+                              if ($rowTrafficDepartmentStatus !== '' && $rowTrafficState !== '') {
+                                $rowTrafficTitle .= ' (' . ucfirst(strtolower($rowTrafficState)) . ')';
+                              }
                               if (isset($rowTrafficMissingTypes[$rowTrafficType])) {
                                 $rowTrafficTitle .= ' | Item exists in Custom Order but is not synchronized to Production Order';
-                              } elseif (trim((string) ($row['production_traffic_blocker'] ?? '')) !== '') {
-                                $rowTrafficTitle .= ' | ' . trim((string) $row['production_traffic_blocker']);
                               }
                               ?>
-                              <span class="custom-order-traffic-badge <?= h($rowTrafficClass) ?>" title="<?= h($rowTrafficTitle) ?>"><?= h($rowTrafficType) ?></span>
+                              <span class="badge mr-1 custom-order-traffic-badge" style="<?= $rowTrafficBadgeStyle ?>" title="<?= h($rowTrafficTitle) ?>" aria-label="<?= h($rowTrafficTitle) ?>"><?= h($rowTrafficType) ?></span>
                             <?php endforeach; ?>
                           </span>
                         <?php else: ?>
@@ -4034,6 +4245,24 @@ if (!$customOrdersDetailRequest) {
             <?php $itemWorkflowStatusEnabled = (int) ($selectedOrder['production_order_id'] ?? 0) > 0; ?>
             <?php $editOptions = $editItem ? (json_decode((string) $editItem['options_json'], true) ?: []) : []; ?>
             <?php $editInternalOptions = $editItem ? (json_decode((string) ($editItem['internal_options_json'] ?? ''), true) ?: []) : []; ?>
+            <?php
+            $builderCategoryFields = $editItem ? customOrdersCategoryFieldsFromOptions($editOptions) : [
+              'category_info' => '',
+              'category_brand' => '',
+              'category_model' => '',
+              'category_year_range' => '',
+              'category_modelcode' => '',
+            ];
+            if (!$editItem) {
+              foreach ((array) ($selectedOrder['items'] ?? []) as $builderSourceItem) {
+                $candidateCategoryFields = customOrdersCategoryFieldsFromJson((string) ($builderSourceItem['options_json'] ?? '{}'));
+                if (trim((string) ($candidateCategoryFields['category_info'] ?? '')) !== '') {
+                  $builderCategoryFields = $candidateCategoryFields;
+                  break;
+                }
+              }
+            }
+            ?>
             <?php $currentBuilderType = $editItem ? strtoupper((string) ($editItem['item_type_code'] ?? '')) : $builderType; ?>
             <?php $currentBuilderDepartment = customOrdersItemTypeToDepartment($currentBuilderType); ?>
             <?php $currentBuilderSubcategory = $currentBuilderDepartment === 'G' ? customOrdersGraphicsSubcategoryFromItemData((string) ($editInternalOptions['_subcat'] ?? ''), (string) ($editItem['custom_label'] ?? ''), (string) ($editItem['sku'] ?? '')) : ''; ?>
@@ -4118,12 +4347,12 @@ if (!$customOrdersDetailRequest) {
                             <input type="number" step="0.01" name="unit_price" class="form-control form-control-sm" value="<?= h($builderUnitPriceValue) ?>">
                           </td>
                           <td style="min-width:220px;">
-                            <?php $builderCategoryInfo = trim((string) ($editOptions['category_info'] ?? '')); ?>
+                            <?php $builderCategoryInfo = trim((string) ($builderCategoryFields['category_info'] ?? '')); ?>
                             <input type="hidden" name="category_info" value="<?= h($builderCategoryInfo) ?>">
-                            <input type="hidden" name="category_brand" value="<?= h($editOptions['category_brand'] ?? '') ?>">
-                            <input type="hidden" name="category_model" value="<?= h($editOptions['category_model'] ?? '') ?>">
-                            <input type="hidden" name="category_year_range" value="<?= h($editOptions['category_year_range'] ?? '') ?>">
-                            <input type="hidden" name="category_modelcode" value="<?= h($editOptions['category_modelcode'] ?? '') ?>">
+                            <input type="hidden" name="category_brand" value="<?= h($builderCategoryFields['category_brand'] ?? '') ?>">
+                            <input type="hidden" name="category_model" value="<?= h($builderCategoryFields['category_model'] ?? '') ?>">
+                            <input type="hidden" name="category_year_range" value="<?= h($builderCategoryFields['category_year_range'] ?? '') ?>">
+                            <input type="hidden" name="category_modelcode" value="<?= h($builderCategoryFields['category_modelcode'] ?? '') ?>">
                             <button type="button" class="btn btn-sm btn-outline-info custom-category-info-trigger<?= $builderCategoryInfo === '' ? ' is-empty' : '' ?>" title="Select or change Brand, Model, Year range and Model Code">
                               <span class="custom-category-info-text"><?= h($builderCategoryInfo !== '' ? $builderCategoryInfo : 'Select Brand / Model / Year / Model Code') ?></span>
                               <i class="fas fa-chevron-right" aria-hidden="true"></i>
@@ -4267,7 +4496,8 @@ if (!$customOrdersDetailRequest) {
                     $itemMainDefinitions[] = $itemDefinition;
                   }
                 }
-                $itemCategoryInfo = trim((string) ($itemOptions['category_info'] ?? ''));
+                $itemCategoryFields = customOrdersCategoryFieldsFromOptions($itemOptions);
+                $itemCategoryInfo = trim((string) ($itemCategoryFields['category_info'] ?? ''));
                 $itemStatusDefinitions = customOrdersItemStatusDefinitions($conn, $item, true);
                 $itemCurrentStatus = customOrdersResolveItemStatus($conn, $item, (string) ($item['status'] ?? ''));
                 if (!isset($itemStatusDefinitions[$itemCurrentStatus])) {
@@ -4338,10 +4568,10 @@ if (!$customOrdersDetailRequest) {
                           <td style="width:92px;"><input type="number" step="0.01" name="unit_price" class="form-control form-control-sm" value="<?= number_format((float) $item['unit_price'], 2, '.', '') ?>"></td>
                           <td style="min-width:220px;">
                             <input type="hidden" name="category_info" value="<?= h($itemCategoryInfo) ?>">
-                            <input type="hidden" name="category_brand" value="<?= h($itemOptions['category_brand'] ?? '') ?>">
-                            <input type="hidden" name="category_model" value="<?= h($itemOptions['category_model'] ?? '') ?>">
-                            <input type="hidden" name="category_year_range" value="<?= h($itemOptions['category_year_range'] ?? '') ?>">
-                            <input type="hidden" name="category_modelcode" value="<?= h($itemOptions['category_modelcode'] ?? '') ?>">
+                            <input type="hidden" name="category_brand" value="<?= h($itemCategoryFields['category_brand'] ?? '') ?>">
+                            <input type="hidden" name="category_model" value="<?= h($itemCategoryFields['category_model'] ?? '') ?>">
+                            <input type="hidden" name="category_year_range" value="<?= h($itemCategoryFields['category_year_range'] ?? '') ?>">
+                            <input type="hidden" name="category_modelcode" value="<?= h($itemCategoryFields['category_modelcode'] ?? '') ?>">
                             <button type="button" class="btn btn-sm btn-outline-info custom-category-info-trigger<?= $itemCategoryInfo === '' ? ' is-empty' : '' ?>" title="Select or change Brand, Model, Year range and Model Code">
                               <span class="custom-category-info-text"><?= h($itemCategoryInfo !== '' ? $itemCategoryInfo : 'Select Brand / Model / Year / Model Code') ?></span>
                               <i class="fas fa-chevron-right" aria-hidden="true"></i>
@@ -4405,7 +4635,7 @@ if (!$customOrdersDetailRequest) {
 
             <?php foreach ($selectedOrder['items'] as $item): ?>
               <?php $itemOptions = json_decode((string) ($item['options_json'] ?? ''), true) ?: []; ?>
-              <?php $itemCategoryInfo = trim((string) ($itemOptions['category_info'] ?? '')); ?>
+              <?php $itemCategoryInfo = trim((string) (customOrdersCategoryFieldsFromOptions($itemOptions)['category_info'] ?? '')); ?>
               <?php $itemOptionGroups = customOrderItemOptionGroups(
                 $conn,
                 (string) ($item['item_type_code'] ?? ''),
@@ -5153,6 +5383,64 @@ if (!$customOrdersDetailRequest) {
     restoreCustomOrdersScroll();
     window.addEventListener('DOMContentLoaded', restoreCustomOrdersScroll);
     window.addEventListener('load', restoreCustomOrdersScroll);
+
+    function customOrdersElementHeight(selector, fallback) {
+      var element = document.querySelector(selector);
+      if (!element) return fallback;
+      var rect = element.getBoundingClientRect();
+      return Math.ceil(rect.height || fallback);
+    }
+
+    function updateCustomOrdersStickyOffsets() {
+      var baseTop = 50;
+      var headerH = customOrdersElementHeight('.custom-orders-page-header', 58);
+      var tabsH = customOrdersElementHeight('.custom-status-tabs', 42);
+      var toolbarH = customOrdersElementHeight('.custom-orders-filter-toolbar', 42);
+
+      document.documentElement.style.setProperty('--custom-orders-header-h', headerH + 'px');
+      document.documentElement.style.setProperty('--custom-orders-tabs-h', tabsH + 'px');
+      document.documentElement.style.setProperty('--custom-orders-filter-toolbar-h', toolbarH + 'px');
+      document.documentElement.style.setProperty('--custom-orders-table-head-top', (baseTop + headerH + tabsH + toolbarH) + 'px');
+    }
+
+    function forceCustomOrdersTheadReflow() {
+      var ths = document.querySelectorAll('#customOrdersTable > thead > tr > th');
+      if (!ths.length) return;
+      ths.forEach(function (th) { th.style.position = 'static'; });
+      void document.body.offsetHeight;
+      ths.forEach(function (th) { th.style.position = 'sticky'; });
+    }
+
+    function refreshCustomOrdersStickySoon() {
+      updateCustomOrdersStickyOffsets();
+      forceCustomOrdersTheadReflow();
+      [50, 180, 360].forEach(function (delay) {
+        window.setTimeout(function () {
+          updateCustomOrdersStickyOffsets();
+          forceCustomOrdersTheadReflow();
+        }, delay);
+      });
+    }
+
+    if (typeof ResizeObserver !== 'undefined') {
+      var customOrdersStickyResizeObserver = new ResizeObserver(function () {
+        updateCustomOrdersStickyOffsets();
+        forceCustomOrdersTheadReflow();
+      });
+      ['.custom-orders-page-header', '.custom-status-tabs', '.custom-orders-filter-toolbar'].forEach(function (selector) {
+        var element = document.querySelector(selector);
+        if (element) customOrdersStickyResizeObserver.observe(element);
+      });
+    }
+
+    refreshCustomOrdersStickySoon();
+    window.addEventListener('DOMContentLoaded', refreshCustomOrdersStickySoon);
+    window.addEventListener('load', refreshCustomOrdersStickySoon);
+    window.addEventListener('resize', refreshCustomOrdersStickySoon);
+    window.addEventListener('scroll', updateCustomOrdersStickyOffsets, { passive: true });
+    if (window.jQuery) {
+      window.jQuery('#customOrdersFilterCollapse').on('shown.bs.collapse hidden.bs.collapse', refreshCustomOrdersStickySoon);
+    }
 
     function mapTypeToDepartment(typeCode) {
       var code = String(typeCode || '').toUpperCase();

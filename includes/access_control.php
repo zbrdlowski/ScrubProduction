@@ -15,6 +15,10 @@ return [
             'min_permission' => 100,
         ],
 
+        'year_to_year_statistics' => [
+            'min_permission' => 100,
+        ],
+
         'historical_movements' => [
             'min_permission' => 200,
         ],

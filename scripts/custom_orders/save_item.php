@@ -119,6 +119,12 @@ if ($itemId > 0) {
     'status' => $itemStatus,
   ];
   $itemChanges = customOrdersActivityCollectChanges((array) $existingItem, $itemAfter, array_keys($itemAfter));
+  $oldCategoryFields = customOrdersCategoryFieldsFromJson((string) ($existingItem['options_json'] ?? '{}'));
+  $newCategoryFields = customOrdersCategoryFieldsFromJson((string) ($payload['options_json'] ?? '{}'));
+  $categoryChanges = customOrdersActivityCollectChanges($oldCategoryFields, $newCategoryFields, ['category_info']);
+  if ($categoryChanges) {
+    $itemChanges = array_merge($itemChanges, $categoryChanges);
+  }
   customOrdersLog(
     $conn,
     $orderId,
@@ -131,6 +137,7 @@ if ($itemId > 0) {
       'qty' => $qty,
       'unit_price' => $unitPrice,
       'changes' => $itemChanges,
+      'category_info' => $newCategoryFields['category_info'] ?? '',
     ],
     $itemChanges ? ('Updated item fields: ' . count($itemChanges)) : 'Custom item updated'
   );
@@ -148,6 +155,7 @@ $stmt->bind_param('iissssidissssii', $orderId, $lineNo, $type, $sku, $title, $cu
 $stmt->execute();
 $newItemId = (int) $stmt->insert_id;
 $stmt->close();
+$newCategoryFields = customOrdersCategoryFieldsFromJson((string) ($payload['options_json'] ?? '{}'));
 
 customOrdersLog(
   $conn,
@@ -161,6 +169,7 @@ customOrdersLog(
     'qty' => $qty,
     'unit_price' => $unitPrice,
     'status' => $itemStatus,
+    'category_info' => $newCategoryFields['category_info'] ?? '',
   ],
   'Custom item added'
 );

@@ -303,6 +303,7 @@ function isMenuOpen($pages = [])
             <!-- 📊 DASHBOARDS & REPORTS -->
             <li class="nav-item <?= isMenuOpen([
               'plastics_dashboard',
+              'year_to_year_statistics',
               'stock_movements',
               'historical_movements',
               'inventory_report',
@@ -317,6 +318,13 @@ function isMenuOpen($pages = [])
                   <a href="?page=plastics_dashboard" class="nav-link <?= isActive('plastics_dashboard') ?>">
                     <i class="fa fa-calculator nav-icon"></i>
                     <p>Dashboard</p>
+                  </a>
+                </li>
+
+                <li class="nav-item">
+                  <a href="?page=year_to_year_statistics" class="nav-link <?= isActive('year_to_year_statistics') ?>">
+                    <i class="fas fa-chart-line nav-icon"></i>
+                    <p>Year to Year Statistics</p>
                   </a>
                 </li>
 

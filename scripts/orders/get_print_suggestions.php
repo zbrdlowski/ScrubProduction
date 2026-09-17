@@ -60,55 +60,55 @@ while ($row = $res->fetch_assoc()) {
 }
 $stmt->close();
 
-// Pre návrhy materiálu a finišu dotiahne aj base-material / graphics-finish z options_json
+// Pre návrhy materiálu a finišu dotiahne aj production aliasy a staršie custom-order kľúče z options_json
 if ($key === 'material') {
-  $extKey = 'base-material';
-  $stmt2 = $conn->prepare("
-    SELECT DISTINCT JSON_UNQUOTE(JSON_EXTRACT(options_json, ?)) AS val
-    FROM order_items
-    WHERE deleted_at IS NULL
-      AND item_type_code = 'G'
-      AND JSON_UNQUOTE(JSON_EXTRACT(options_json, ?)) IS NOT NULL
-      AND JSON_UNQUOTE(JSON_EXTRACT(options_json, ?)) != ''
-      AND JSON_UNQUOTE(JSON_EXTRACT(options_json, ?)) LIKE ?
-    LIMIT 20
-  ");
-  $extPath = '$."' . $extKey . '"';
-  $stmt2->bind_param('sssss', $extPath, $extPath, $extPath, $extPath, $qLike);
-  $stmt2->execute();
-  $res2 = $stmt2->get_result();
-  while ($row = $res2->fetch_assoc()) {
-    $val = trim((string)($row['val'] ?? ''));
-    if ($val !== '' && !in_array($val, $items, true)) {
-      $items[] = $val;
+  foreach (['$."base-material"', '$.base_material', '$.material'] as $extPath) {
+    $stmt2 = $conn->prepare("
+      SELECT DISTINCT JSON_UNQUOTE(JSON_EXTRACT(options_json, ?)) AS val
+      FROM order_items
+      WHERE deleted_at IS NULL
+        AND item_type_code = 'G'
+        AND JSON_UNQUOTE(JSON_EXTRACT(options_json, ?)) IS NOT NULL
+        AND JSON_UNQUOTE(JSON_EXTRACT(options_json, ?)) != ''
+        AND JSON_UNQUOTE(JSON_EXTRACT(options_json, ?)) LIKE ?
+      LIMIT 20
+    ");
+    $stmt2->bind_param('sssss', $extPath, $extPath, $extPath, $extPath, $qLike);
+    $stmt2->execute();
+    $res2 = $stmt2->get_result();
+    while ($row = $res2->fetch_assoc()) {
+      $val = trim((string)($row['val'] ?? ''));
+      if ($val !== '' && !in_array($val, $items, true)) {
+        $items[] = $val;
+      }
     }
+    $stmt2->close();
   }
-  $stmt2->close();
 }
 
 if ($key === 'finish') {
-  $extKey = 'graphics-finish';
-  $stmt3 = $conn->prepare("
-    SELECT DISTINCT JSON_UNQUOTE(JSON_EXTRACT(options_json, ?)) AS val
-    FROM order_items
-    WHERE deleted_at IS NULL
-      AND item_type_code = 'G'
-      AND JSON_UNQUOTE(JSON_EXTRACT(options_json, ?)) IS NOT NULL
-      AND JSON_UNQUOTE(JSON_EXTRACT(options_json, ?)) != ''
-      AND JSON_UNQUOTE(JSON_EXTRACT(options_json, ?)) LIKE ?
-    LIMIT 20
-  ");
-  $extPath = '$."' . $extKey . '"';
-  $stmt3->bind_param('sssss', $extPath, $extPath, $extPath, $extPath, $qLike);
-  $stmt3->execute();
-  $res3 = $stmt3->get_result();
-  while ($row = $res3->fetch_assoc()) {
-    $val = trim((string)($row['val'] ?? ''));
-    if ($val !== '' && !in_array($val, $items, true)) {
-      $items[] = $val;
+  foreach (['$."graphics-finish"', '$.graphics_finish', '$.finish'] as $extPath) {
+    $stmt3 = $conn->prepare("
+      SELECT DISTINCT JSON_UNQUOTE(JSON_EXTRACT(options_json, ?)) AS val
+      FROM order_items
+      WHERE deleted_at IS NULL
+        AND item_type_code = 'G'
+        AND JSON_UNQUOTE(JSON_EXTRACT(options_json, ?)) IS NOT NULL
+        AND JSON_UNQUOTE(JSON_EXTRACT(options_json, ?)) != ''
+        AND JSON_UNQUOTE(JSON_EXTRACT(options_json, ?)) LIKE ?
+      LIMIT 20
+    ");
+    $stmt3->bind_param('sssss', $extPath, $extPath, $extPath, $extPath, $qLike);
+    $stmt3->execute();
+    $res3 = $stmt3->get_result();
+    while ($row = $res3->fetch_assoc()) {
+      $val = trim((string)($row['val'] ?? ''));
+      if ($val !== '' && !in_array($val, $items, true)) {
+        $items[] = $val;
+      }
     }
+    $stmt3->close();
   }
-  $stmt3->close();
 }
 
 sort($items);

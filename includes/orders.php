@@ -317,6 +317,20 @@ function ordersFormatDetailStatusDate(?string $dateRaw): string
   }
 }
 
+function ordersFormatDateValue(?string $dateRaw, string $format): string
+{
+  $dateRaw = trim((string) $dateRaw);
+  if ($dateRaw === '') {
+    return '';
+  }
+
+  try {
+    return (new DateTime($dateRaw))->format($format);
+  } catch (Throwable $e) {
+    return $dateRaw;
+  }
+}
+
 $dpt = (int) ($_SESSION['dpt'] ?? 0);
 $allAccess = in_array($dpt, [1, 3, 4, 5, 7], true);
 
@@ -394,11 +408,19 @@ if ($psRes) {
   }
   $psRes->free();
 }
-// Also pull base-material / graphics-finish from options_json
+// Also pull production aliases and older custom-order keys from options_json
 $psRes2 = $conn->query("
   SELECT DISTINCT
-    JSON_UNQUOTE(JSON_EXTRACT(options_json, '$.\"base-material\"'))     AS material,
-    JSON_UNQUOTE(JSON_EXTRACT(options_json, '$.\"graphics-finish\"'))   AS finish
+    COALESCE(
+      NULLIF(JSON_UNQUOTE(JSON_EXTRACT(options_json, '$.\"base-material\"')), ''),
+      NULLIF(JSON_UNQUOTE(JSON_EXTRACT(options_json, '$.base_material')), ''),
+      NULLIF(JSON_UNQUOTE(JSON_EXTRACT(options_json, '$.material')), '')
+    ) AS material,
+    COALESCE(
+      NULLIF(JSON_UNQUOTE(JSON_EXTRACT(options_json, '$.\"graphics-finish\"')), ''),
+      NULLIF(JSON_UNQUOTE(JSON_EXTRACT(options_json, '$.graphics_finish')), ''),
+      NULLIF(JSON_UNQUOTE(JSON_EXTRACT(options_json, '$.finish')), '')
+    ) AS finish
   FROM order_items
   WHERE deleted_at IS NULL AND item_type_code = 'G'
     AND options_json IS NOT NULL AND options_json != ''
@@ -575,6 +597,7 @@ $rolePrimaryUI = $uiDeptCode ? ('PRIMARY_' . $uiDeptCode) : null;
 $meUserId = (int) ($_SESSION['user_id'] ?? 0);
 $perm = (int) ($_SESSION['permission'] ?? 0);
 $isSuperAdmin = $perm >= 900;
+$ordersTableColumnCount = $isSuperAdmin ? 12 : 11;
 
 $aclCats = [];
 $aclTypes = [];
@@ -855,9 +878,13 @@ if ($fPrintMat !== '') {
       AND (
         JSON_UNQUOTE(JSON_EXTRACT(oipm.internal_options_json, '$._print_material')) LIKE CONCAT('%', ?, '%')
         OR JSON_UNQUOTE(JSON_EXTRACT(oipm.options_json, '$.\x22base-material\x22')) LIKE CONCAT('%', ?, '%')
+        OR JSON_UNQUOTE(JSON_EXTRACT(oipm.options_json, '$.base_material')) LIKE CONCAT('%', ?, '%')
+        OR JSON_UNQUOTE(JSON_EXTRACT(oipm.options_json, '$.material')) LIKE CONCAT('%', ?, '%')
       )
   )";
-  $types .= 'ss';
+  $types .= 'ssss';
+  $params[] = $fPrintMat;
+  $params[] = $fPrintMat;
   $params[] = $fPrintMat;
   $params[] = $fPrintMat;
 }
@@ -870,9 +897,13 @@ if ($fPrintFin !== '') {
       AND (
         JSON_UNQUOTE(JSON_EXTRACT(oipf.internal_options_json, '$._print_finish')) LIKE CONCAT('%', ?, '%')
         OR JSON_UNQUOTE(JSON_EXTRACT(oipf.options_json, '$.\x22graphics-finish\x22')) LIKE CONCAT('%', ?, '%')
+        OR JSON_UNQUOTE(JSON_EXTRACT(oipf.options_json, '$.graphics_finish')) LIKE CONCAT('%', ?, '%')
+        OR JSON_UNQUOTE(JSON_EXTRACT(oipf.options_json, '$.finish')) LIKE CONCAT('%', ?, '%')
       )
   )";
-  $types .= 'ss';
+  $types .= 'ssss';
+  $params[] = $fPrintFin;
+  $params[] = $fPrintFin;
   $params[] = $fPrintFin;
   $params[] = $fPrintFin;
 }
@@ -1086,10 +1117,12 @@ ORDER BY
   END ASC,
 
   CASE
-    WHEN o.priority > 0 THEN o.priority_date
-    ELSE COALESCE(o.production_started_at, o.order_date)
+    WHEN o.priority > 0 AND o.priority_date IS NOT NULL THEN o.priority_date
+    WHEN o.priority > 0 THEN COALESCE(o.production_started_at, o.order_date)
+    ELSE NULL
   END ASC,
 
+  COALESCE(o.imported_at, '9999-12-31 23:59:59') ASC,
   COALESCE(o.production_started_at, o.order_date) ASC,
   o.order_date ASC,
   o.id ASC
@@ -1364,6 +1397,37 @@ $deptOptions = [
     box-shadow: inset 4px 0 0 #3f9eff, 0 3px 0 rgba(63, 158, 255, 0.22);
   }
 
+  .orders-import-day-separator-row>td {
+    padding: 7px 0 6px !important;
+    border-top: 0 !important;
+    border-bottom: 0 !important;
+    background: #171b20 !important;
+  }
+
+  .orders-import-day-separator {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    color: #9ed6ff;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: .05em;
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+
+  .orders-import-day-separator::before,
+  .orders-import-day-separator::after {
+    content: "";
+    flex: 1 1 auto;
+    height: 1px;
+    background: linear-gradient(90deg, rgba(63, 158, 255, .12), rgba(63, 158, 255, .72));
+  }
+
+  .orders-import-day-separator::after {
+    background: linear-gradient(90deg, rgba(63, 158, 255, .72), rgba(63, 158, 255, .12));
+  }
+
   .btn-copy-inline {
     background: transparent;
     border: none;
@@ -1374,6 +1438,11 @@ $deptOptions = [
 
   .btn-copy-inline:hover {
     color: #17a2b8;
+  }
+
+  .btn-copy-inline.copy-success {
+    color: #5ee28a !important;
+    text-shadow: 0 0 8px rgba(94, 226, 138, .55);
   }
 
   .btn-delete-tracking:hover {
@@ -2691,6 +2760,7 @@ $deptOptions = [
       <table id="ordersTable" class="table table-bordered table-hover table-sm">
         <thead>
           <tr style="background:#343a40;color:#fff;">
+            <th class="text-center" width="5%">Import</th>
             <th class="text-center" width="5%">Date</th>
             <th class="text-center" width="5%">Source</th>
             <th class="text-center" width="11%">Order #</th>
@@ -2707,6 +2777,7 @@ $deptOptions = [
           </tr>
         </thead>
         <tbody>
+          <?php $ordersPreviousImportDay = ''; ?>
           <?php foreach ($orderRows as $row): ?>
             <?php
             $orderId = (int) $row['id'];
@@ -2748,6 +2819,12 @@ $deptOptions = [
             }
 
             $rowClass = implode(' ', $rowClasses);
+            $importedAtRaw = trim((string) ($row['imported_at'] ?? ''));
+            $importSortRaw = $importedAtRaw !== '' ? $importedAtRaw : '9999-12-31 23:59:59';
+            $importDayKey = $importedAtRaw !== '' ? ordersFormatDateValue($importedAtRaw, 'Y-m-d') : 'no-import-date';
+            $importDayLabel = $importedAtRaw !== '' ? ordersFormatDateValue($importedAtRaw, 'd.m.Y') : 'No import date';
+            $importDateShort = $importedAtRaw !== '' ? ordersFormatDateValue($importedAtRaw, 'd.m.y') : '';
+            $importDateTitle = $importedAtRaw !== '' ? ordersFormatDateValue($importedAtRaw, 'd.m.Y H:i:s') : '';
 
             $typesStr = normalizeTypesOrder((string) ($row['manual_types_override'] ?: ($row['item_types'] ?? '')));
             $hasManualTypes = trim((string) ($row['manual_types_override'] ?? '')) !== '';
@@ -2763,18 +2840,54 @@ $deptOptions = [
             $productionQueueDate = !empty($row['production_started_at'])
               ? (string) $row['production_started_at']
               : (string) ($row['order_date'] ?? '');
+            $priorityDateBucket = $priorityValue > 0
+              ? (!empty($row['priority_date']) ? 0 : 1)
+              : 2;
+            $prioritySubSort = '';
+            if ($priorityValue > 0) {
+              $prioritySubSort = !empty($row['priority_date'])
+                ? (string) $row['priority_date']
+                : ($productionQueueDate !== '' ? $productionQueueDate : '9999-12-31');
+            }
             $externalOrderDisplay = ordersExternalOrderDisplay(
               (string) ($row['external_order_id'] ?? ''),
               (string) ($row['source_meta'] ?? '')
             );
+            $showExternalOrderId = strtoupper(trim((string) ($row['source_code'] ?? ''))) !== 'CUSTOM'
+              && !empty($row['external_order_id'])
+              && $row['external_order_id'] !== $row['order_number']
+              && !$isFollowupRow;
             ?>
+            <?php if ($importDayKey !== $ordersPreviousImportDay): ?>
+              <?php $ordersPreviousImportDay = $importDayKey; ?>
+              <tr class="orders-import-day-separator-row">
+                <td colspan="<?= (int) $ordersTableColumnCount ?>">
+                  <div class="orders-import-day-separator"><span><?= htmlspecialchars($importDayLabel) ?></span></div>
+                </td>
+              </tr>
+            <?php endif; ?>
             <tr class="<?= $rowClass ?> order-row" data-order-id="<?= $orderId ?>"
               data-split-parent-id="<?= $isSplitChildRow ? (int) ($rowFollowup['parent_order_id'] ?? 0) : 0 ?>"
-              data-priority-sort="<?= ($priorityValue >= 20 ? 0 : ($priorityValue >= 10 ? 1 : 2)) ?>" data-date-sort="<?= htmlspecialchars((string) (
+              data-import-sort="<?= htmlspecialchars($importSortRaw, ENT_QUOTES, 'UTF-8') ?>"
+              data-import-day="<?= htmlspecialchars($importDayKey, ENT_QUOTES, 'UTF-8') ?>"
+              data-import-day-label="<?= htmlspecialchars($importDayLabel, ENT_QUOTES, 'UTF-8') ?>"
+              data-priority-sort="<?= ($priorityValue >= 20 ? 0 : ($priorityValue >= 10 ? 1 : 2)) ?>"
+              data-priority-date-bucket="<?= (int) $priorityDateBucket ?>"
+              data-priority-date-sort="<?= htmlspecialchars($prioritySubSort, ENT_QUOTES, 'UTF-8') ?>"
+              data-date-sort="<?= htmlspecialchars((string) (
                               ($priorityValue > 0 && !empty($row['priority_date']))
                               ? $row['priority_date']
                               : ($productionQueueDate !== '' ? $productionQueueDate : '9999-12-31')
                             )) ?>">
+              <td class="text-center text-nowrap">
+                <?php if ($importDateShort !== ''): ?>
+                  <span title="<?= htmlspecialchars('Imported: ' . $importDateTitle, ENT_QUOTES, 'UTF-8') ?>">
+                    <?= htmlspecialchars($importDateShort) ?>
+                  </span>
+                <?php else: ?>
+                  —
+                <?php endif; ?>
+              </td>
               <td class="text-center">
                 <?php
                 $dateRaw = $productionQueueDate;
@@ -2796,7 +2909,7 @@ $deptOptions = [
                 <div><?php if ($isSplitChildRow): ?><span class="order-split-arrow">↳</span><?php endif; ?><b><?= htmlspecialchars((string) ($row['order_number'] ?? $row['external_order_id'] ?? '')) ?></b>
                 </div>
 
-                <?php if (!empty($row['external_order_id']) && $row['external_order_id'] !== $row['order_number'] && !$isFollowupRow): ?>
+                <?php if ($showExternalOrderId): ?>
                   <small class="text-muted"><?= htmlspecialchars($externalOrderDisplay) ?></small>
 
                 <?php endif; ?>
@@ -3054,7 +3167,7 @@ $deptOptions = [
 
             <!-- Detail row (hidden, will be filled via AJAX) -->
             <tr class="order-detail-row">
-              <td colspan="11">
+              <td colspan="<?= (int) $ordersTableColumnCount ?>">
 
               <div id="detail-<?= $orderId ?>" class="detail-wrap"></div>
               </td>
@@ -3478,7 +3591,12 @@ $deptOptions = [
 
     let warnings = [];
 
-    if (!data['Category Info']) warnings.push('Missing category / bike info');
+    const hasCategoryInfo = data['Category Info'] || data.category_info || data.category || (
+      (data.category_brand || data.brand) &&
+      (data.category_model || data.model) &&
+      (data.category_year_range || data.year)
+    );
+    if (!hasCategoryInfo) warnings.push('Missing category / bike info');
     if (!data['name']) warnings.push('Missing rider name');
     if (!data['number']) warnings.push('Missing number');
     if (!data['file']) warnings.push('Missing uploaded file / logo');
@@ -3825,6 +3943,65 @@ $deptOptions = [
       } else {
         $row.find('.btn-save-item').trigger('click');
       }
+    });
+
+  function orderDetailCopyText(text) {
+    text = String(text || '');
+    if (!text) {
+      return $.Deferred().reject().promise();
+    }
+
+    if (navigator.clipboard && window.isSecureContext) {
+      return navigator.clipboard.writeText(text);
+    }
+
+    const textarea = document.createElement('textarea');
+    textarea.value = text;
+    textarea.setAttribute('readonly', 'readonly');
+    textarea.style.position = 'fixed';
+    textarea.style.top = '-1000px';
+    textarea.style.left = '-1000px';
+    document.body.appendChild(textarea);
+    textarea.select();
+
+    try {
+      const ok = document.execCommand('copy');
+      document.body.removeChild(textarea);
+      return ok ? $.Deferred().resolve().promise() : $.Deferred().reject().promise();
+    } catch (err) {
+      document.body.removeChild(textarea);
+      return $.Deferred().reject(err).promise();
+    }
+  }
+
+  $(document)
+    .off('click.orderDetailCopyInline')
+    .on('click.orderDetailCopyInline', '.btn-copy-inline[data-copy]', function (e) {
+      e.preventDefault();
+      e.stopPropagation();
+
+      const $btn = $(this);
+      const text = String($btn.attr('data-copy') || '');
+      if (!text) return;
+
+      Promise.resolve(orderDetailCopyText(text)).then(function () {
+        if (navigator.vibrate) {
+          navigator.vibrate(18);
+        }
+        $btn.addClass('copy-success');
+        const oldTitle = $btn.attr('title') || '';
+        $btn.attr('title', 'Copied');
+        setTimeout(function () {
+          $btn.removeClass('copy-success');
+          if (oldTitle) {
+            $btn.attr('title', oldTitle);
+          } else {
+            $btn.removeAttr('title');
+          }
+        }, 900);
+      }).catch(function () {
+        alert('Copy failed');
+      });
     });
 
 
@@ -4216,6 +4393,55 @@ $deptOptions = [
     $modal.removeClass('show').hide().attr('aria-hidden', 'true');
   }
 
+  function saveOrderItemCategoryInfo($form) {
+    const itemId = parseInt($form.find('input[name="item_id"]').val() || $form.data('item-id') || '0', 10);
+    const orderId = parseInt($form.find('input[name="order_id"]').val() || $form.data('order-id') || '0', 10);
+    const $trigger = $form.find('.custom-category-info-trigger').first();
+    const $state = $form.find('.order-item-category-save-state').first();
+
+    if (!itemId) {
+      alert('Item ID missing');
+      return;
+    }
+
+    $trigger.prop('disabled', true);
+    if ($state.length) {
+      $state.prop('hidden', false).removeClass('text-danger text-success').addClass('text-muted').text('Saving...');
+    }
+
+    $.post('scripts/orders/update_item_category_info.php', {
+      item_id: itemId,
+      category_info: manualCategoryPickerValue($form, 'category_info'),
+      category_brand: manualCategoryPickerValue($form, 'category_brand'),
+      category_model: manualCategoryPickerValue($form, 'category_model'),
+      category_year_range: manualCategoryPickerValue($form, 'category_year_range'),
+      category_modelcode: manualCategoryPickerValue($form, 'category_modelcode')
+    }, function (res) {
+      if (!res || !res.ok) {
+        $trigger.prop('disabled', false);
+        if ($state.length) {
+          $state.removeClass('text-muted text-success').addClass('text-danger').text(res && res.error ? res.error : 'Save failed');
+        } else {
+          alert(res && res.error ? res.error : 'Save failed');
+        }
+        return;
+      }
+
+      if (orderId) {
+        reloadOrderDetail(orderId);
+      } else {
+        location.reload();
+      }
+    }, 'json').fail(function () {
+      $trigger.prop('disabled', false);
+      if ($state.length) {
+        $state.removeClass('text-muted text-success').addClass('text-danger').text('Save request failed');
+      } else {
+        alert('Save request failed');
+      }
+    });
+  }
+
   function manualCategoryPickerOpen($form) {
     const $card = $form.closest('.order-detail-card');
     const $modal = $card.find('[data-category-picker-modal]').first();
@@ -4273,6 +4499,11 @@ $deptOptions = [
   $(document).on('click', '.manual-add-item-form .custom-category-info-trigger', function (e) {
     e.preventDefault();
     manualCategoryPickerOpen($(this).closest('.manual-add-item-form'));
+  });
+
+  $(document).on('click', '.order-item-category-info-form .custom-category-info-trigger', function (e) {
+    e.preventDefault();
+    manualCategoryPickerOpen($(this).closest('.order-item-category-info-form'));
   });
 
   $(document).on('click', '[data-category-picker-modal] [data-dismiss="modal"]', function (e) {
@@ -4354,6 +4585,9 @@ $deptOptions = [
     const $trigger = $form.find('.custom-category-info-trigger').first();
     $trigger.removeClass('is-empty').find('.custom-category-info-text').text(values.category_info);
     manualCategoryPickerHide($modal);
+    if ($form.hasClass('order-item-category-info-form')) {
+      saveOrderItemCategoryInfo($form);
+    }
   });
 
   $(document).on('click', '[data-category-picker-modal] [data-category-clear]', function () {
@@ -4369,6 +4603,9 @@ $deptOptions = [
       .find('.custom-category-info-text')
       .text('Select Brand / Model / Year / Model Code');
     manualCategoryPickerHide($modal);
+    if ($form.hasClass('order-item-category-info-form')) {
+      saveOrderItemCategoryInfo($form);
+    }
   });
   function applyManualItemTypeTheme($box, type) {
     const themeClasses = 'manual-item-type-neutral manual-item-type-G manual-item-type-P manual-item-type-T manual-item-type-M manual-item-type-S manual-item-type-F';
@@ -5054,17 +5291,27 @@ $deptOptions = [
   $(window).on('resize scroll', updateOrdersStickyOffsets);
 
   $(window).on('resize', updateOrdersStickyOffsets);
-  function sortOrdersByPriorityAndDate() {
+  const ordersTableColumnCount = <?= (int) $ordersTableColumnCount ?>;
+
+  function sortOrdersByImportDate() {
     const $tbody = $('#ordersTable tbody');
+
+    $tbody.find('tr.orders-import-day-separator-row').remove();
 
     const pairs = [];
 
     $tbody.find('tr.order-row').each(function () {
       const $orderRow = $(this);
       const $detailRow = $orderRow.next('.order-detail-row');
+      const priorityDateBucket = parseInt($orderRow.data('priority-date-bucket'), 10);
 
       pairs.push({
+        importDate: String($orderRow.data('import-sort') || '9999-12-31 23:59:59'),
+        importDay: String($orderRow.data('import-day') || 'no-import-date'),
+        importDayLabel: String($orderRow.data('import-day-label') || 'No import date'),
         priority: parseInt($orderRow.data('priority-sort'), 10),
+        priorityDateBucket: isNaN(priorityDateBucket) ? 2 : priorityDateBucket,
+        priorityDate: String($orderRow.data('priority-date-sort') || ''),
         date: String($orderRow.data('date-sort') || '9999-12-31'),
         id: parseInt($orderRow.data('order-id'), 10),
         splitParentId: parseInt($orderRow.data('split-parent-id'), 10) || 0,
@@ -5075,6 +5322,11 @@ $deptOptions = [
 
     pairs.sort(function (a, b) {
       if (a.priority !== b.priority) return a.priority - b.priority;
+      if (a.priorityDateBucket !== b.priorityDateBucket) return a.priorityDateBucket - b.priorityDateBucket;
+      if (a.priorityDateBucket < 2) {
+        if (a.priorityDate !== b.priorityDate) return a.priorityDate.localeCompare(b.priorityDate);
+      }
+      if (a.importDate !== b.importDate) return a.importDate.localeCompare(b.importDate);
       if (a.date !== b.date) return a.date.localeCompare(b.date);
       return a.id - b.id;
     });
@@ -5108,14 +5360,26 @@ $deptOptions = [
       }
     });
 
+    let previousImportDay = '';
     grouped.forEach(function (p) {
+      if (p.importDay !== previousImportDay) {
+        previousImportDay = p.importDay;
+        const $separator = $('<tr/>', { class: 'orders-import-day-separator-row' }).append(
+          $('<td/>', { colspan: ordersTableColumnCount }).append(
+            $('<div/>', { class: 'orders-import-day-separator' }).append(
+              $('<span/>').text(p.importDayLabel || 'No import date')
+            )
+          )
+        );
+        $tbody.append($separator);
+      }
       $tbody.append(p.orderRow);
       $tbody.append(p.detailRow);
     });
   }
 
   $(document).ready(function () {
-    sortOrdersByPriorityAndDate();
+    sortOrdersByImportDate();
   });
 </script>
 <?php $orderDetailActionsVersion = @filemtime(__DIR__ . '/../scripts/orders/order_detail_actions.js') ?: time(); ?>
