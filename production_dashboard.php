@@ -75,7 +75,7 @@ if (!isset($conn) || !$conn instanceof mysqli) {
 }
 
 $conn->set_charset('utf8mb4');
-const DASHBOARD_EXCLUDE_QUERY = 'CANCELLED,PENDING,SHIPPED';
+const DASHBOARD_EXCLUDE_QUERY = 'CANCELLED,PENDING,SHIPPED,DELIVERED';
 
 $dashboardDepartments = [
   'G' => ['key' => 'G', 'label' => 'Graphic kits', 'legendLabel' => 'Graphics kit', 'type' => 'G', 'filter' => 'G', 'color' => '#17e01f', 'dark' => '#0b8f3a', 'colorClass' => 'green'],
@@ -181,7 +181,7 @@ function dashboard_table_exists(mysqli $conn, string $tableName): bool
 }
 function dashboard_active_order_where(): string
 {
-  return "COALESCE(UPPER(o.status), '') NOT IN ('PENDING', 'CANCELLED', 'SHIPPED')";
+  return "COALESCE(UPPER(o.status), '') NOT IN ('PENDING', 'CANCELLED', 'SHIPPED', 'DELIVERED')";
 }
 function dashboard_normalize_department(?string $department): string
 {

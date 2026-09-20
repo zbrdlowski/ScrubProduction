@@ -16,6 +16,8 @@
  * ------------------------------------------------------------------
  */
 (function () {
+    if (window.productChartCanEdit !== true) return;
+
     const AJAX_URL = 'scripts/scrub_model_manage_ajax.php';
 
     let compatRowSeq = 0;

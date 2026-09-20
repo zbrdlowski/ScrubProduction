@@ -5,6 +5,7 @@ session_start();
 header('Content-Type: text/html; charset=utf-8');
 
 require_once dirname(__DIR__, 2) . '/includes/conn.php';
+require_once dirname(__DIR__, 2) . '/includes/orders_multishipping_helpers.php';
 require_once __DIR__ . '/activity_helper.php';
 
 if (!isset($_SESSION['permission'])) {
@@ -16,6 +17,14 @@ if (!isset($_SESSION['permission'])) {
 if (!isset($_FILES['file']) || !is_array($_FILES['file'])) {
   http_response_code(400);
   echo '<div class="alert alert-danger mb-0">No file uploaded.</div>';
+  exit;
+}
+
+try {
+  ordersMultishippingEnsureSchema($conn);
+} catch (Throwable $e) {
+  http_response_code(500);
+  echo '<div class="alert alert-danger mb-0">' . htmlspecialchars($e->getMessage(), ENT_QUOTES, 'UTF-8') . '</div>';
   exit;
 }
 
@@ -1118,6 +1127,7 @@ for ($rowNo = 2; $rowNo <= $highestRow; $rowNo++) {
 
   $result = 'error';
   $message = '';
+  $rowTransaction = false;
 
   try {
     if ($orderKey === '') {
@@ -1156,50 +1166,101 @@ for ($rowNo = 2; $rowNo <= $highestRow; $rowNo++) {
       continue;
     }
 
-    $trackingInserted = false;
-    if (!trackingAlreadyExists($conn, $orderId, $trackingNumber)) {
-      $trackingId = insertTracking($conn, $orderId, $trackingNumber, $carrier, $userId, $shippingDate);
-      logTrackingImported($conn, $orderId, $userId, $trackingId, $trackingNumber, $carrier);
-      $trackingInserted = true;
+    $group = ordersMultishippingGroupForOrder($conn, $orderId);
+    $groupId = (int) ($group['id'] ?? 0);
+    $targetOrders = $groupId > 0 ? ordersMultishippingMembers($conn, $groupId) : [$order];
+    $targetIds = array_values(array_unique(array_map(static fn($row) => (int) ($row['order_id'] ?? $row['id'] ?? 0), $targetOrders)));
+    sort($targetIds, SORT_NUMERIC);
+
+    $conn->begin_transaction();
+    $rowTransaction = true;
+
+    $placeholders = implode(',', array_fill(0, count($targetIds), '?'));
+    $types = str_repeat('i', count($targetIds));
+    $lockStmt = $conn->prepare("SELECT id, order_number, external_order_id, status
+      FROM orders WHERE id IN ($placeholders) ORDER BY id FOR UPDATE");
+    $lockStmt->bind_param($types, ...$targetIds);
+    $lockStmt->execute();
+    $lockedOrders = [];
+    $lockRes = $lockStmt->get_result();
+    while ($locked = $lockRes->fetch_assoc()) {
+      $lockedOrders[(int) $locked['id']] = $locked;
+    }
+    $lockStmt->close();
+    if (count($lockedOrders) !== count($targetIds)) {
+      throw new RuntimeException('One or more multishipping orders no longer exist.');
     }
 
-    updateOrderShipmentData($conn, $orderId, $trackingNumber, $shippingDate);
+    $insertedCount = 0;
+    $localEbayRows = [];
+    $localEbaySkipped = [];
+    foreach ($targetIds as $targetOrderId) {
+      $targetOrder = $lockedOrders[$targetOrderId];
+      $targetOldStatus = strtoupper(trim((string) ($targetOrder['status'] ?? '')));
+      if ($targetOldStatus === 'CANCELLED') {
+        $cancelledLabel = (string) (($targetOrder['order_number'] ?? '') ?: ($targetOrder['external_order_id'] ?? $targetOrderId));
+        throw new RuntimeException('Multishipping member ' . $cancelledLabel . ' is CANCELLED. Nothing was imported.');
+      }
 
-    if ($oldStatus !== 'SHIPPED') {
-      setOrderStatusShipped($conn, $orderId, $oldStatus !== '' ? $oldStatus : 'UNKNOWN', $userId, $shippingDate);
-      $message = $trackingInserted
-        ? 'Tracking imported and status changed to SHIPPED.'
-        : 'Tracking already existed, shipment data updated and status changed to SHIPPED.';
-    } else {
-      $message = $trackingInserted
-        ? 'Tracking imported. Order was already SHIPPED.'
-        : 'Tracking already existed. Order was already SHIPPED.';
+      if (!trackingAlreadyExists($conn, $targetOrderId, $trackingNumber)) {
+        $trackingId = insertTracking($conn, $targetOrderId, $trackingNumber, $carrier, $userId, $shippingDate);
+        logTrackingImported($conn, $targetOrderId, $userId, $trackingId, $trackingNumber, $carrier);
+        $insertedCount++;
+      }
+      updateOrderShipmentData($conn, $targetOrderId, $trackingNumber, $shippingDate);
+      if ($targetOldStatus !== 'SHIPPED') {
+        setOrderStatusShipped($conn, $targetOrderId, $targetOldStatus !== '' ? $targetOldStatus : 'UNKNOWN', $userId, $shippingDate);
+      }
+
+      if ($groupId > 0) {
+        log_order_activity($conn, $targetOrderId, $userId, 'multishipping_shipped', 'multishipping', $groupId, [
+          'master_order_id' => $orderId,
+          'tracking_number' => $trackingNumber,
+        ], 'Shipped in multishipping group');
+      }
+
+      $ebaySourceMeta = getOrderEbaySourceMeta($conn, $targetOrderId);
+      if ($ebaySourceMeta['source_code'] === 'EBAY') {
+        $ebayItemNumber = getOrderEbayItemNumber($conn, $targetOrderId);
+        $ebayTransactionId = $ebaySourceMeta['transaction_id'];
+        $targetLabel = (string) (($targetOrder['order_number'] ?? '') ?: ($targetOrder['external_order_id'] ?? $orderKey));
+        if ($ebayTransactionId !== '' && $ebayItemNumber !== '') {
+          $localEbayRows[] = [
+            'order_number' => $targetLabel,
+            'item_number' => $ebayItemNumber,
+            'transaction_id' => $ebayTransactionId,
+            'carrier' => $EBAY_CARRIER_LABEL,
+            'tracking_number' => $trackingNumber,
+          ];
+        } else {
+          $localEbaySkipped[] = [
+            'order_number' => $targetLabel,
+            'reason' => $ebayTransactionId === '' ? 'Missing Transaction ID' : 'Missing Item Number',
+          ];
+        }
+      }
     }
+
+    ordersMultishippingReleaseExportLocks($conn, $targetIds, $userId);
+    if ($groupId > 0) {
+      ordersMultishippingMarkShipped($conn, $groupId, $trackingNumber, $shippingDate);
+    }
+    $conn->commit();
+    $rowTransaction = false;
+    $ebayExportRows = array_merge($ebayExportRows, $localEbayRows);
+    $ebaySkippedRows = array_merge($ebaySkippedRows, $localEbaySkipped);
 
     $result = 'success';
     $successCount++;
-
-    $ebaySourceMeta = getOrderEbaySourceMeta($conn, $orderId);
-    if ($ebaySourceMeta['source_code'] === 'EBAY') {
-      $ebayItemNumber = getOrderEbayItemNumber($conn, $orderId);
-      $ebayTransactionId = $ebaySourceMeta['transaction_id'];
-
-      if ($ebayTransactionId !== '' && $ebayItemNumber !== '') {
-        $ebayExportRows[] = [
-          'order_number' => (string) ($order['order_number'] ?? $orderKey),
-          'item_number' => $ebayItemNumber,
-          'transaction_id' => $ebayTransactionId,
-          'carrier' => $EBAY_CARRIER_LABEL,
-          'tracking_number' => $trackingNumber,
-        ];
-      } else {
-        $ebaySkippedRows[] = [
-          'order_number' => (string) ($order['order_number'] ?? $orderKey),
-          'reason' => $ebayTransactionId === '' ? 'Missing Transaction ID' : 'Missing Item Number',
-        ];
-      }
-    }
+    $message = count($targetIds) > 1
+      ? 'Tracking applied to ' . count($targetIds) . ' multishipping orders; all changed to SHIPPED.'
+      : ($insertedCount > 0
+        ? 'Tracking imported and status changed to SHIPPED.'
+        : 'Tracking already existed, shipment data updated and status changed to SHIPPED.');
   } catch (Throwable $e) {
+    if ($rowTransaction) {
+      $conn->rollback();
+    }
     $message = $e->getMessage();
     if (stripos($message, 'already existed') !== false) {
       $result = 'skipped';

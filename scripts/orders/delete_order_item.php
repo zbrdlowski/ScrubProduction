@@ -25,7 +25,7 @@ if ($itemId <= 0) {
 }
 
 $stmt = $conn->prepare("
-  SELECT id, order_id, sku, title, item_type_code, qty
+  SELECT id, order_id, sku, title, item_type_code, qty, unit_price
   FROM order_items
   WHERE id = ?
     AND deleted_at IS NULL
@@ -68,7 +68,7 @@ log_order_activity(
   'order_item',
   $itemId,
   $item,
-  'Item deleted: ' . (string)($item['title'] ?? '')
+  'Item deleted: ' . (string)($item['title'] ?? '') . ' (' . (int)($item['qty'] ?? 1) . ' × ' . number_format((float)($item['unit_price'] ?? 0), 2, '.', '') . ' EUR)'
 );
 recalculateOrderWorkflow($conn, $orderId);
 out(['ok' => true, 'order_id' => $orderId]);

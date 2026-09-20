@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 require_once dirname(__DIR__, 2) . '/includes/get_order_detail_product_spec_selects.php';
 require_once dirname(__DIR__, 2) . '/includes/orders_status_helpers.php';
+require_once dirname(__DIR__, 2) . '/includes/orders_plastics_gate_helpers.php';
 require_once dirname(__DIR__) . '/orders/department_config.php';
 
 function customOrdersFlash(string $type, string $message, array $meta = []): void
@@ -507,6 +508,22 @@ function customOrdersEnsureSchema(mysqli $conn): void
     customOrdersTableExists($conn, 'custom_order_item_assignments', true);
   }
 
+  if (!customOrdersTableExists($conn, 'custom_order_assignments')) {
+    $conn->query("
+      CREATE TABLE IF NOT EXISTS `custom_order_assignments` (
+        `id` bigint(20) NOT NULL AUTO_INCREMENT,
+        `custom_order_id` bigint(20) NOT NULL,
+        `employee_id` int(11) NOT NULL,
+        `assigned_by` int(11) DEFAULT NULL,
+        `assigned_at` datetime NOT NULL DEFAULT current_timestamp(),
+        PRIMARY KEY (`id`),
+        UNIQUE KEY `ux_custom_order_assignment_order` (`custom_order_id`),
+        KEY `ix_custom_order_assignments_employee` (`employee_id`)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    ");
+    customOrdersTableExists($conn, 'custom_order_assignments', true);
+  }
+
   if (customOrdersTableExists($conn, 'order_addresses')) {
     $addressColumns = customOrdersTableColumns($conn, 'order_addresses');
     if ($addressColumns && !isset($addressColumns['state'])) {
@@ -618,7 +635,11 @@ function customOrdersActivityActionLabel(string $action): string
     'note_edited' => 'Note edited',
     'note_deleted' => 'Note deleted',
     'owner_assigned' => 'Owner changed',
+    'order_taken' => 'Order taken',
+    'order_assignment_removed' => 'Order assignment removed',
     'official_number_assigned' => 'Official number assigned',
+    'duplicated_from' => 'Duplicated from',
+    'duplicated_to' => 'Duplicated to',
     'exported' => 'Exported',
   ];
 
@@ -1302,10 +1323,16 @@ function customOrdersGetOrder(mysqli $conn, int $orderId): ?array
     SELECT co.*,
            TRIM(CONCAT_WS(' ', eo.firstname, eo.lastname)) AS owner_name,
            eo.photo AS owner_photo,
-           TRIM(CONCAT_WS(' ', eab.firstname, eab.lastname)) AS owner_assigned_by_name
+           TRIM(CONCAT_WS(' ', eab.firstname, eab.lastname)) AS owner_assigned_by_name,
+           coa.id AS custom_order_assignment_id,
+           coa.employee_id AS assigned_employee_id,
+           TRIM(CONCAT_WS(' ', eca.firstname, eca.lastname)) AS assigned_employee_name,
+           eca.photo AS assigned_employee_photo
     FROM custom_orders co
     LEFT JOIN employees eo ON eo.id = co.owner_employee_id
     LEFT JOIN employees eab ON eab.id = co.owner_assigned_by
+    LEFT JOIN custom_order_assignments coa ON coa.custom_order_id = co.id
+    LEFT JOIN employees eca ON eca.id = coa.employee_id
     WHERE co.id = ?
     LIMIT 1
   ");
@@ -1613,6 +1640,159 @@ function customOrdersAssignOwner(mysqli $conn, int $orderId, int $ownerEmployeeI
   customOrdersLog($conn, $orderId, 'owner_assigned', $assignedBy, ['owner_employee_id' => $ownerEmployeeId], 'Custom order owner updated');
 }
 
+function customOrdersFetchOrderAssignment(mysqli $conn, int $orderId): ?array
+{
+  if ($orderId <= 0 || !customOrdersTableExists($conn, 'custom_order_assignments')) {
+    return null;
+  }
+
+  $stmt = $conn->prepare("
+    SELECT
+      coa.id AS assignment_id,
+      coa.custom_order_id,
+      coa.employee_id,
+      coa.assigned_by,
+      coa.assigned_at,
+      TRIM(CONCAT_WS(' ', e.firstname, e.lastname)) AS employee_name,
+      e.photo AS employee_photo
+    FROM custom_order_assignments coa
+    LEFT JOIN employees e ON e.id = coa.employee_id
+    WHERE coa.custom_order_id = ?
+    LIMIT 1
+  ");
+  if (!$stmt) {
+    return null;
+  }
+  $stmt->bind_param('i', $orderId);
+  $stmt->execute();
+  $row = $stmt->get_result()->fetch_assoc() ?: null;
+  $stmt->close();
+
+  return $row ?: null;
+}
+
+function customOrdersAssignOrder(mysqli $conn, int $orderId, int $employeeId, int $assignedBy): array
+{
+  if ($orderId <= 0 || $employeeId <= 0) {
+    throw new InvalidArgumentException('Invalid custom order assignment.');
+  }
+
+  if (!customOrdersTableExists($conn, 'custom_order_assignments')) {
+    customOrdersEnsureSchema($conn);
+  }
+
+  $stmt = $conn->prepare('SELECT id FROM custom_orders WHERE id = ? LIMIT 1');
+  if (!$stmt) {
+    throw new RuntimeException('Custom order lookup could not be prepared.');
+  }
+  $stmt->bind_param('i', $orderId);
+  $stmt->execute();
+  $exists = (bool) $stmt->get_result()->fetch_assoc();
+  $stmt->close();
+  if (!$exists) {
+    throw new RuntimeException('Custom order not found.');
+  }
+
+  $stmt = $conn->prepare('
+    INSERT INTO custom_order_assignments
+      (custom_order_id, employee_id, assigned_by)
+    VALUES
+      (?, ?, ?)
+    ON DUPLICATE KEY UPDATE
+      employee_id = IF(employee_id = VALUES(employee_id), VALUES(employee_id), employee_id),
+      assigned_by = IF(employee_id = VALUES(employee_id), VALUES(assigned_by), assigned_by),
+      assigned_at = IF(employee_id = VALUES(employee_id), NOW(), assigned_at)
+  ');
+  if (!$stmt) {
+    throw new RuntimeException('Custom order assignment could not be prepared.');
+  }
+  $stmt->bind_param('iii', $orderId, $employeeId, $assignedBy);
+  $stmt->execute();
+  $stmt->close();
+
+  $assignment = customOrdersFetchOrderAssignment($conn, $orderId);
+  $assignedEmployeeId = (int) ($assignment['employee_id'] ?? 0);
+  if ($assignedEmployeeId > 0 && $assignedEmployeeId !== $employeeId) {
+    $assignedName = trim((string) ($assignment['employee_name'] ?? 'another user'));
+    throw new RuntimeException('This custom order is already taken by ' . ($assignedName !== '' ? $assignedName : 'another user') . '.');
+  }
+  if ($assignedEmployeeId !== $employeeId) {
+    throw new RuntimeException('Custom order could not be taken.');
+  }
+
+  customOrdersLog(
+    $conn,
+    $orderId,
+    'order_taken',
+    $assignedBy,
+    [
+      'employee_id' => $employeeId,
+      'assignment_id' => (int) ($assignment['assignment_id'] ?? 0),
+    ],
+    'Custom order taken'
+  );
+
+  return $assignment ?: [];
+}
+
+function customOrdersAssignmentFromRow(array $row): ?array
+{
+  $employeeId = (int) ($row['assigned_employee_id'] ?? $row['employee_id'] ?? 0);
+  if ($employeeId <= 0) {
+    return null;
+  }
+
+  return [
+    'assignment_id' => (int) ($row['assignment_id'] ?? $row['custom_order_assignment_id'] ?? 0),
+    'employee_id' => $employeeId,
+    'employee_name' => (string) ($row['assigned_employee_name'] ?? $row['employee_name'] ?? ''),
+    'employee_photo' => (string) ($row['assigned_employee_photo'] ?? $row['employee_photo'] ?? ''),
+  ];
+}
+
+function customOrdersEmployeeInitials(string $name): string
+{
+  $initials = '';
+  foreach (preg_split('/\s+/', trim($name)) as $namePart) {
+    if ($namePart !== '') {
+      $initials .= mb_strtoupper(mb_substr($namePart, 0, 1));
+    }
+  }
+  return mb_substr($initials, 0, 2);
+}
+
+function customOrdersRenderOrderAssignmentHtml(array $row, int $orderId, bool $canTake, int $currentUserId): string
+{
+  $assignment = customOrdersAssignmentFromRow($row);
+
+  if ($assignment) {
+    $perm = (int) ($_SESSION['permission'] ?? 0);
+    $name = trim((string) ($assignment['employee_name'] ?? ''));
+    $photo = trim((string) ($assignment['employee_photo'] ?? ''));
+    $title = $name !== '' ? $name : 'Assigned';
+    $initials = customOrdersEmployeeInitials($name);
+    $assignmentId = (int) ($assignment['assignment_id'] ?? 0);
+    $employeeId = (int) ($assignment['employee_id'] ?? 0);
+    $mineClass = (int) ($assignment['employee_id'] ?? 0) === $currentUserId ? ' is-mine' : '';
+    $canRemove = $assignmentId > 0 && ($perm >= 300 || $employeeId === $currentUserId);
+    $removeButton = $canRemove
+      ? '<button type="button" class="custom-order-remove-assignment-btn" data-assignment-id="' . $assignmentId . '" data-custom-order-id="' . (int) $orderId . '" title="' . htmlspecialchars($employeeId === $currentUserId ? 'Remove my assignment' : 'Remove assignment', ENT_QUOTES, 'UTF-8') . '">&times;</button>'
+      : '';
+
+    if ($photo !== '') {
+      return '<span class="custom-order-assigned-avatar-wrap' . $mineClass . '"><img src="images/' . htmlspecialchars($photo, ENT_QUOTES, 'UTF-8') . '" class="custom-order-assigned-avatar" alt="' . htmlspecialchars($title, ENT_QUOTES, 'UTF-8') . '" title="' . htmlspecialchars($title, ENT_QUOTES, 'UTF-8') . '">' . $removeButton . '</span>';
+    }
+
+    return '<span class="custom-order-assigned-avatar-wrap' . $mineClass . '"><span class="custom-order-assigned-avatar custom-order-assigned-fallback" title="' . htmlspecialchars($title, ENT_QUOTES, 'UTF-8') . '">' . htmlspecialchars($initials !== '' ? $initials : '?', ENT_QUOTES, 'UTF-8') . '</span>' . $removeButton . '</span>';
+  }
+
+  if ($canTake && $orderId > 0) {
+    return '<button type="button" class="btn btn-xs btn-success custom-order-take-btn" data-action="scripts/custom_orders/take_order.php" data-custom-order-id="' . (int) $orderId . '" title="Take this custom order">Take</button>';
+  }
+
+  return '<span class="text-muted" title="Open custom order">-</span>';
+}
+
 function customOrdersComputeSummary(array $order): array
 {
   $itemSubtotal = 0.0;
@@ -1660,40 +1840,113 @@ function customOrdersComputeSummary(array $order): array
   ];
 }
 
-function customOrdersAssignOfficialNumber(mysqli $conn, int $orderId, string $prefix, int $userId): string
+function customOrdersFormatOfficialNumber(string $prefix, int $sequenceValue): string
+{
+  $prefix = strtoupper(trim($prefix));
+  if (!in_array($prefix, ['SO', 'GO', 'SC'], true)) {
+    throw new RuntimeException('Invalid official prefix');
+  }
+  if ($sequenceValue <= 0) {
+    throw new RuntimeException('Official number must be greater than zero.');
+  }
+
+  return $prefix . str_pad((string) $sequenceValue, 5, '0', STR_PAD_LEFT);
+}
+
+function customOrdersOfficialNumberExists(mysqli $conn, string $number, int $excludeCustomOrderId = 0): bool
+{
+  $number = strtoupper(trim($number));
+  if ($number === '') {
+    return false;
+  }
+
+  $stmt = $conn->prepare('
+    SELECT id
+    FROM custom_orders
+    WHERE UPPER(TRIM(official_order_number)) = ?
+      AND (? <= 0 OR id <> ?)
+    LIMIT 1
+  ');
+  if (!$stmt) {
+    throw new RuntimeException('Could not prepare official number duplicate check.');
+  }
+  $stmt->bind_param('sii', $number, $excludeCustomOrderId, $excludeCustomOrderId);
+  $stmt->execute();
+  $exists = (bool) $stmt->get_result()->fetch_assoc();
+  $stmt->close();
+  if ($exists) {
+    return true;
+  }
+
+  if (!customOrdersTableExists($conn, 'orders')) {
+    return false;
+  }
+
+  $stmt = $conn->prepare('
+    SELECT id
+    FROM orders
+    WHERE UPPER(TRIM(order_number)) = ?
+    LIMIT 1
+  ');
+  if (!$stmt) {
+    throw new RuntimeException('Could not prepare production order number duplicate check.');
+  }
+  $stmt->bind_param('s', $number);
+  $stmt->execute();
+  $exists = (bool) $stmt->get_result()->fetch_assoc();
+  $stmt->close();
+
+  return $exists;
+}
+
+function customOrdersAssignOfficialNumber(mysqli $conn, int $orderId, string $prefix, int $userId, ?int $requestedSequenceValue = null): string
 {
   $prefix = strtoupper(trim($prefix));
   if (!in_array($prefix, ['SO', 'GO', 'SC'], true)) {
     throw new RuntimeException('Invalid official prefix');
   }
 
-  $stmt = $conn->prepare('SELECT official_order_number FROM custom_orders WHERE id = ? LIMIT 1');
-  $stmt->bind_param('i', $orderId);
-  $stmt->execute();
-  $row = $stmt->get_result()->fetch_assoc();
-  $stmt->close();
-  if ($row && !empty($row['official_order_number'])) {
-    return (string) $row['official_order_number'];
-  }
-
   $conn->begin_transaction();
   try {
-    $stmt = $conn->prepare('SELECT current_value FROM custom_order_number_sequences WHERE prefix_code = ? FOR UPDATE');
-    $stmt->bind_param('s', $prefix);
+    $stmt = $conn->prepare('SELECT official_order_number FROM custom_orders WHERE id = ? LIMIT 1 FOR UPDATE');
+    $stmt->bind_param('i', $orderId);
     $stmt->execute();
     $row = $stmt->get_result()->fetch_assoc();
     $stmt->close();
     if (!$row) {
+      throw new RuntimeException('Custom order not found.');
+    }
+    if (!empty($row['official_order_number'])) {
+      $conn->commit();
+      return (string) $row['official_order_number'];
+    }
+
+    $stmt = $conn->prepare('SELECT current_value FROM custom_order_number_sequences WHERE prefix_code = ? FOR UPDATE');
+    $stmt->bind_param('s', $prefix);
+    $stmt->execute();
+    $sequenceRow = $stmt->get_result()->fetch_assoc();
+    $stmt->close();
+    if (!$sequenceRow) {
       throw new RuntimeException('Missing sequence for ' . $prefix);
     }
 
-    $next = ((int) $row['current_value']) + 1;
-    $number = $prefix . str_pad((string) $next, 5, '0', STR_PAD_LEFT);
+    $currentValue = (int) $sequenceRow['current_value'];
+    $sequenceValue = $requestedSequenceValue ?? ($currentValue + 1);
+    $number = customOrdersFormatOfficialNumber($prefix, $sequenceValue);
+    while ($requestedSequenceValue === null && customOrdersOfficialNumberExists($conn, $number, $orderId)) {
+      ++$sequenceValue;
+      $number = customOrdersFormatOfficialNumber($prefix, $sequenceValue);
+    }
+    if ($requestedSequenceValue !== null && customOrdersOfficialNumberExists($conn, $number, $orderId)) {
+      throw new RuntimeException('Official number ' . $number . ' already exists in the database.');
+    }
 
-    $stmt = $conn->prepare('UPDATE custom_order_number_sequences SET current_value = ? WHERE prefix_code = ?');
-    $stmt->bind_param('is', $next, $prefix);
-    $stmt->execute();
-    $stmt->close();
+    if ($sequenceValue > $currentValue) {
+      $stmt = $conn->prepare('UPDATE custom_order_number_sequences SET current_value = ? WHERE prefix_code = ?');
+      $stmt->bind_param('is', $sequenceValue, $prefix);
+      $stmt->execute();
+      $stmt->close();
+    }
 
     $stmt = $conn->prepare('UPDATE custom_orders SET official_order_number = ?, official_prefix = ?, updated_by = ? WHERE id = ?');
     $stmt->bind_param('ssii', $number, $prefix, $userId, $orderId);
@@ -1703,6 +1956,235 @@ function customOrdersAssignOfficialNumber(mysqli $conn, int $orderId, string $pr
     customOrdersLog($conn, $orderId, 'official_number_assigned', $userId, ['official_order_number' => $number], 'Official number assigned');
     $conn->commit();
     return $number;
+  } catch (Throwable $e) {
+    $conn->rollback();
+    throw $e;
+  }
+}
+
+function customOrdersReserveOfficialNumberInTransaction(mysqli $conn, string $prefix): string
+{
+  $prefix = strtoupper(trim($prefix));
+  if (!in_array($prefix, ['SO', 'GO', 'SC'], true)) {
+    throw new RuntimeException('Invalid official prefix');
+  }
+
+  $stmt = $conn->prepare('SELECT current_value FROM custom_order_number_sequences WHERE prefix_code = ? FOR UPDATE');
+  $stmt->bind_param('s', $prefix);
+  $stmt->execute();
+  $row = $stmt->get_result()->fetch_assoc();
+  $stmt->close();
+  if (!$row) {
+    throw new RuntimeException('Missing sequence for ' . $prefix);
+  }
+
+  $next = ((int) $row['current_value']) + 1;
+  $number = customOrdersFormatOfficialNumber($prefix, $next);
+  while (customOrdersOfficialNumberExists($conn, $number)) {
+    ++$next;
+    $number = customOrdersFormatOfficialNumber($prefix, $next);
+  }
+
+  $stmt = $conn->prepare('UPDATE custom_order_number_sequences SET current_value = ? WHERE prefix_code = ?');
+  $stmt->bind_param('is', $next, $prefix);
+  $stmt->execute();
+  $stmt->close();
+
+  return $number;
+}
+
+function customOrdersDuplicateStatus(?string $sourceStatus): string
+{
+  $status = strtoupper(trim((string) $sourceStatus));
+  if ($status === '') {
+    return 'LEAD';
+  }
+  if (in_array($status, ['EXPORTED', 'DEAD', 'CANCELLED'], true)) {
+    return 'DRAFT_X';
+  }
+  return $status;
+}
+
+function customOrdersBindDynamicParams(mysqli_stmt $stmt, string $types, array &$values): void
+{
+  $refs = [];
+  foreach ($values as $idx => &$value) {
+    $refs[$idx] = &$value;
+  }
+  $stmt->bind_param($types, ...$refs);
+}
+
+function customOrdersInsertDynamicRow(mysqli $conn, string $table, array $values): int
+{
+  $table = trim($table);
+  if ($table === '' || !preg_match('/^[a-zA-Z0-9_]+$/', $table)) {
+    throw new RuntimeException('Invalid table name.');
+  }
+  if (!$values) {
+    throw new RuntimeException('No data to insert.');
+  }
+
+  $columns = array_keys($values);
+  foreach ($columns as $column) {
+    if (!preg_match('/^[a-zA-Z0-9_]+$/', (string) $column)) {
+      throw new RuntimeException('Invalid column name.');
+    }
+  }
+
+  $placeholders = implode(', ', array_fill(0, count($columns), '?'));
+  $quotedColumns = '`' . implode('`, `', $columns) . '`';
+  $sql = 'INSERT INTO `' . $table . '` (' . $quotedColumns . ') VALUES (' . $placeholders . ')';
+  $stmt = $conn->prepare($sql);
+  if (!$stmt) {
+    throw new RuntimeException('Unable to prepare duplicate insert for ' . $table . '.');
+  }
+
+  $params = array_values($values);
+  customOrdersBindDynamicParams($stmt, str_repeat('s', count($params)), $params);
+  if (!$stmt->execute()) {
+    $error = $stmt->error;
+    $stmt->close();
+    throw new RuntimeException('Unable to create duplicate row in ' . $table . ': ' . $error);
+  }
+  $insertId = (int) $stmt->insert_id;
+  $stmt->close();
+  return $insertId;
+}
+
+function customOrdersDynamicValuesForTable(mysqli $conn, string $table, array $source, array $special, array $skip): array
+{
+  $columns = customOrdersTableColumns($conn, $table);
+  $values = [];
+  foreach ($columns as $column => $_exists) {
+    if ($column === 'id') {
+      continue;
+    }
+    if (array_key_exists($column, $special)) {
+      $values[$column] = $special[$column];
+      continue;
+    }
+    if (isset($skip[$column])) {
+      continue;
+    }
+    if (array_key_exists($column, $source)) {
+      $values[$column] = $source[$column];
+    }
+  }
+  return $values;
+}
+
+function customOrdersDuplicateOrder(mysqli $conn, int $sourceOrderId, int $userId): int
+{
+  $source = customOrdersGetOrder($conn, $sourceOrderId);
+  if (!$source) {
+    throw new RuntimeException('Custom order not found.');
+  }
+
+  $now = customOrdersNow();
+  $prefix = 'SO';
+  $ownerEmployeeId = (int) ($source['owner_employee_id'] ?? 0);
+  if ($ownerEmployeeId <= 0 && $userId > 0) {
+    $ownerEmployeeId = $userId;
+  }
+  $actorId = $userId > 0 ? $userId : null;
+
+  $conn->begin_transaction();
+  try {
+    $officialNumber = customOrdersReserveOfficialNumberInTransaction($conn, $prefix);
+    $tempInternalCode = 'PENDING-' . bin2hex(random_bytes(4));
+    $duplicateStatus = customOrdersDuplicateStatus((string) ($source['status'] ?? ''));
+
+    $orderSpecial = [
+      'internal_code' => $tempInternalCode,
+      'official_order_number' => $officialNumber,
+      'official_prefix' => $prefix,
+      'owner_employee_id' => $ownerEmployeeId > 0 ? $ownerEmployeeId : null,
+      'owner_assigned_by' => $actorId,
+      'owner_assigned_at' => $now,
+      'status' => $duplicateStatus,
+      'dead_order_flag' => 0,
+      'production_order_id' => null,
+      'exported_at' => null,
+      'exported_by' => null,
+      'created_by' => $actorId,
+      'updated_by' => $actorId,
+    ];
+    $orderSkip = array_fill_keys([
+      'created_at',
+      'updated_at',
+      'last_contact_at',
+      'next_followup_at',
+    ], true);
+    $orderValues = customOrdersDynamicValuesForTable($conn, 'custom_orders', $source, $orderSpecial, $orderSkip);
+    $newOrderId = customOrdersInsertDynamicRow($conn, 'custom_orders', $orderValues);
+
+    $internalCode = 'CO' . str_pad((string) $newOrderId, 6, '0', STR_PAD_LEFT);
+    $stmt = $conn->prepare('UPDATE custom_orders SET internal_code = ? WHERE id = ?');
+    $stmt->bind_param('si', $internalCode, $newOrderId);
+    $stmt->execute();
+    $stmt->close();
+
+    $itemSkip = array_fill_keys(['id', 'created_at', 'updated_at'], true);
+    foreach ((array) ($source['items'] ?? []) as $item) {
+      $itemSpecial = [
+        'custom_order_id' => $newOrderId,
+        'created_by' => $actorId,
+        'updated_by' => $actorId,
+      ];
+      $itemValues = customOrdersDynamicValuesForTable($conn, 'custom_order_items', $item, $itemSpecial, $itemSkip);
+      customOrdersInsertDynamicRow($conn, 'custom_order_items', $itemValues);
+    }
+
+    if (customOrdersTableExists($conn, 'custom_order_photos')) {
+      $photoSkip = array_fill_keys([
+        'id',
+        'created_at',
+        'deleted_at',
+        'deleted_by',
+        'production_photo_id',
+        'exported_at',
+      ], true);
+      foreach ((array) ($source['photos'] ?? []) as $photo) {
+        $photoSpecial = [
+          'custom_order_id' => $newOrderId,
+          'created_by' => $actorId,
+          'deleted_at' => null,
+          'deleted_by' => null,
+          'production_photo_id' => null,
+          'exported_at' => null,
+        ];
+        $photoValues = customOrdersDynamicValuesForTable($conn, 'custom_order_photos', $photo, $photoSpecial, $photoSkip);
+        customOrdersInsertDynamicRow($conn, 'custom_order_photos', $photoValues);
+      }
+    }
+
+    customOrdersLog($conn, $newOrderId, 'created', $actorId, ['internal_code' => $internalCode, 'owner_employee_id' => $ownerEmployeeId ?: null], 'Custom order duplicated');
+    customOrdersLog($conn, $newOrderId, 'official_number_assigned', $actorId, ['official_order_number' => $officialNumber], 'Official number assigned');
+    customOrdersLog(
+      $conn,
+      $newOrderId,
+      'duplicated_from',
+      $actorId,
+      [
+        'source_custom_order_id' => $sourceOrderId,
+        'source_official_order_number' => (string) ($source['official_order_number'] ?? ''),
+      ],
+      'Duplicated from custom order ' . (string) ($source['official_order_number'] ?: $source['internal_code'] ?: ('#' . $sourceOrderId))
+    );
+    customOrdersLog(
+      $conn,
+      $sourceOrderId,
+      'duplicated_to',
+      $actorId,
+      [
+        'duplicate_custom_order_id' => $newOrderId,
+        'duplicate_official_order_number' => $officialNumber,
+      ],
+      'Duplicated to custom order ' . $officialNumber
+    );
+
+    $conn->commit();
+    return $newOrderId;
   } catch (Throwable $e) {
     $conn->rollback();
     throw $e;
@@ -1910,12 +2392,19 @@ function customOrdersExportToProduction(mysqli $conn, int $customOrderId, int $u
       $unitPrice = (float) $item['unit_price'];
       $optionsJson = customOrdersOptionsWithProductionCategoryAliases((string) ($item['options_json'] ?? '{}'));
       $internalOptionsJson = customOrdersInternalOptionsWithProductionPrintAliases((string) ($item['internal_options_json'] ?? '{}'), $optionsJson);
-      $productionItemStatus = customOrdersResolveItemStatus($conn, $item, (string) ($item['status'] ?? ''));
+      $productionItemStatus = ordersPlasticsGateDefaultStatusForItem($conn, [
+        'item_type_code' => $typeCode,
+        'sku' => $sku,
+        'custom_label' => $label,
+        'options_json' => $optionsJson,
+        'internal_options_json' => $internalOptionsJson,
+      ]);
       $stmt->bind_param('iissssidssiis', $productionOrderId, $lineNo, $sku, $title, $label, $typeCode, $qty, $unitPrice, $optionsJson, $internalOptionsJson, $userId, $userId, $productionItemStatus);
       $stmt->execute();
     }
     $stmt->close();
 
+    ordersApplyPlasticsStockGate($conn, $productionOrderId);
     sync_order_categories($conn, $productionOrderId);
     recalculateOrderWorkflow($conn, $productionOrderId);
 

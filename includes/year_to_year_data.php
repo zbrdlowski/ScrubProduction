@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 const YTY_IMPORTED_SOURCE_NOTE = 'Imported from YearToYear.xlsx';
+const YTY_IMPORTED_DAILY_SOURCE_NOTE = 'Imported from WeeklyStat.xlsx';
 const YTY_DARKSCRUB_STATS_START_DATE = '2026-09-15';
 const YTY_TRANSITION_YEAR = 2026;
 const YTY_TRANSITION_WEEK = 38;
@@ -10,9 +11,9 @@ const YTY_TRANSITION_WEEK_BASELINE_PRODUCTS = 146;
 const YTY_IMPORTED_WEEKLY_PRODUCT_COUNTS = [
   2026 => [
     null,
-    0, 659, 477, 504, 489, 429, 537, 586, 558, 585, 691, 602, 639,
+    null, 659, 477, 504, 489, 429, 537, 586, 558, 585, 691, 602, 639,
     490, 559, 639, 573, 543, 593, 661, 526, 449, 497, 538, 495, 445,
-    514, 444, 501, 416, 446, 501, 434, 423, 438, 436, 420, 146,
+    514, 444, 501, 416, 446, 501, 434, 423, 438, 436, 420, 166,
     null, null, null, null, null, null, null, null, null, null, null, null,
     null, null,
   ],
@@ -54,6 +55,31 @@ function ytyEnsureSchema(mysqli $conn): void
       PRIMARY KEY (id),
       UNIQUE KEY uniq_year_week_source (stat_year, iso_week, source),
       KEY idx_year_week (stat_year, iso_week)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  ");
+
+  $conn->query("
+    CREATE TABLE IF NOT EXISTS year_to_year_daily_product_stats (
+      id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+      stat_date DATE NOT NULL,
+      stat_year SMALLINT UNSIGNED NOT NULL,
+      iso_week TINYINT UNSIGNED NOT NULL,
+      day_code VARCHAR(2) DEFAULT NULL,
+      graphics_count INT UNSIGNED NOT NULL DEFAULT 0,
+      plastics_count INT UNSIGNED NOT NULL DEFAULT 0,
+      seat_count INT UNSIGNED NOT NULL DEFAULT 0,
+      fitting_count INT UNSIGNED NOT NULL DEFAULT 0,
+      products_without_fitting INT UNSIGNED NOT NULL DEFAULT 0,
+      after_weekend_count INT UNSIGNED DEFAULT NULL,
+      products_with_fitting INT UNSIGNED NOT NULL DEFAULT 0,
+      source VARCHAR(24) NOT NULL DEFAULT 'imported',
+      note VARCHAR(255) DEFAULT NULL,
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      PRIMARY KEY (id),
+      UNIQUE KEY uniq_date_source (stat_date, source),
+      KEY idx_year_week (stat_year, iso_week),
+      KEY idx_stat_date (stat_date)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
   ");
 }
@@ -138,17 +164,17 @@ function ytyFetchLiveOrderStats(mysqli $conn): array
   $startDate = $conn->real_escape_string(YTY_DARKSCRUB_STATS_START_DATE);
   $res = $conn->query("
     SELECT
-      FLOOR(YEARWEEK(o.order_date, 3) / 100) AS stat_year,
-      MOD(YEARWEEK(o.order_date, 3), 100) AS iso_week,
+      FLOOR(YEARWEEK(o.imported_at, 3) / 100) AS stat_year,
+      MOD(YEARWEEK(o.imported_at, 3), 100) AS iso_week,
       SUM(COALESCE(NULLIF(oi.qty, 0), 1)) AS product_count
     FROM order_items oi
     INNER JOIN orders o ON o.id = oi.order_id
     WHERE oi.deleted_at IS NULL
-      AND o.order_date IS NOT NULL
-      AND o.order_date >= '{$startDate}'
+      AND o.imported_at IS NOT NULL
+      AND o.imported_at >= '{$startDate}'
       AND UPPER(TRIM(COALESCE(oi.item_type_code, ''))) IN ('G', 'P', 'S')
       AND COALESCE(UPPER(o.status), '') <> 'CANCELLED'
-    GROUP BY FLOOR(YEARWEEK(o.order_date, 3) / 100), MOD(YEARWEEK(o.order_date, 3), 100)
+    GROUP BY FLOOR(YEARWEEK(o.imported_at, 3) / 100), MOD(YEARWEEK(o.imported_at, 3), 100)
     HAVING iso_week BETWEEN 1 AND 53
     ORDER BY stat_year, iso_week
   ");
@@ -169,7 +195,73 @@ function ytyFetchLiveOrderStats(mysqli $conn): array
   return $rows;
 }
 
-function ytyFetchCurrentYearDailyStats(mysqli $conn, int $year): array
+function ytyDayCode(DateTimeInterface $date): string
+{
+  return [
+    1 => 'MO',
+    2 => 'TU',
+    3 => 'WE',
+    4 => 'TH',
+    5 => 'FR',
+    6 => 'SA',
+    7 => 'SU',
+  ][(int) $date->format('N')] ?? strtoupper($date->format('D'));
+}
+
+function ytyFetchStoredDailyStats(mysqli $conn, int $year): array
+{
+  $stmt = $conn->prepare("
+    SELECT
+      stat_date,
+      iso_week,
+      day_code,
+      graphics_count,
+      plastics_count,
+      seat_count,
+      fitting_count,
+      products_without_fitting,
+      after_weekend_count,
+      products_with_fitting,
+      source
+    FROM year_to_year_daily_product_stats
+    WHERE stat_year = ?
+      AND source = 'imported'
+    ORDER BY stat_date
+  ");
+
+  if (!$stmt) {
+    return [];
+  }
+
+  $stmt->bind_param('i', $year);
+  $stmt->execute();
+  $res = $stmt->get_result();
+  $rows = [];
+
+  while ($row = $res->fetch_assoc()) {
+    $date = new DateTimeImmutable((string) $row['stat_date']);
+    $afterWeekend = $row['after_weekend_count'];
+    $rows[] = [
+      'date' => $date->format('Y-m-d'),
+      'day_label' => (string) ($row['day_code'] ?: ytyDayCode($date)),
+      'iso_week' => (int) $row['iso_week'],
+      'graphics_count' => (int) $row['graphics_count'],
+      'plastics_count' => (int) $row['plastics_count'],
+      'seat_count' => (int) $row['seat_count'],
+      'fitting_count' => (int) $row['fitting_count'],
+      'products_without_fitting' => (int) $row['products_without_fitting'],
+      'after_weekend_count' => $afterWeekend === null ? null : (int) $afterWeekend,
+      'is_after_weekend' => $afterWeekend !== null,
+      'products_with_fitting' => (int) $row['products_with_fitting'],
+      'source' => (string) $row['source'],
+    ];
+  }
+
+  $stmt->close();
+  return $rows;
+}
+
+function ytyFetchLiveDailyStats(mysqli $conn, int $year): array
 {
   $yearStart = sprintf('%04d-01-01', $year);
   $yearEnd = sprintf('%04d-01-01', $year + 1);
@@ -177,7 +269,19 @@ function ytyFetchCurrentYearDailyStats(mysqli $conn, int $year): array
 
   $stmt = $conn->prepare("
     SELECT
-      DATE(o.order_date) AS order_day,
+      DATE(o.imported_at) AS import_day,
+      SUM(CASE
+        WHEN UPPER(TRIM(COALESCE(oi.item_type_code, ''))) = 'G'
+        THEN COALESCE(NULLIF(oi.qty, 0), 1) ELSE 0 END
+      ) AS graphics_count,
+      SUM(CASE
+        WHEN UPPER(TRIM(COALESCE(oi.item_type_code, ''))) = 'P'
+        THEN COALESCE(NULLIF(oi.qty, 0), 1) ELSE 0 END
+      ) AS plastics_count,
+      SUM(CASE
+        WHEN UPPER(TRIM(COALESCE(oi.item_type_code, ''))) = 'S'
+        THEN COALESCE(NULLIF(oi.qty, 0), 1) ELSE 0 END
+      ) AS seat_count,
       SUM(CASE
         WHEN UPPER(TRIM(COALESCE(oi.item_type_code, ''))) IN ('G', 'P', 'S')
         THEN COALESCE(NULLIF(oi.qty, 0), 1) ELSE 0 END
@@ -193,11 +297,11 @@ function ytyFetchCurrentYearDailyStats(mysqli $conn, int $year): array
     FROM order_items oi
     INNER JOIN orders o ON o.id = oi.order_id
     WHERE oi.deleted_at IS NULL
-      AND o.order_date >= ?
-      AND o.order_date < ?
+      AND o.imported_at >= ?
+      AND o.imported_at < ?
       AND COALESCE(UPPER(o.status), '') <> 'CANCELLED'
-    GROUP BY DATE(o.order_date)
-    ORDER BY DATE(o.order_date)
+    GROUP BY DATE(o.imported_at)
+    ORDER BY DATE(o.imported_at)
   ");
 
   if (!$stmt) {
@@ -210,19 +314,60 @@ function ytyFetchCurrentYearDailyStats(mysqli $conn, int $year): array
   $rows = [];
 
   while ($row = $res->fetch_assoc()) {
-    $date = new DateTimeImmutable((string) $row['order_day']);
+    $date = new DateTimeImmutable((string) $row['import_day']);
     $rows[] = [
       'date' => $date->format('Y-m-d'),
-      'day_label' => $date->format('D'),
+      'day_label' => ytyDayCode($date),
       'iso_week' => (int) $date->format('W'),
-      'is_after_weekend' => (int) $date->format('N') === 1,
+      'graphics_count' => (int) ($row['graphics_count'] ?? 0),
+      'plastics_count' => (int) ($row['plastics_count'] ?? 0),
+      'seat_count' => (int) ($row['seat_count'] ?? 0),
       'products_without_fitting' => (int) ($row['products_without_fitting'] ?? 0),
+      'after_weekend_count' => null,
+      'is_after_weekend' => false,
       'fitting_count' => (int) ($row['fitting_count'] ?? 0),
       'products_with_fitting' => (int) ($row['products_with_fitting'] ?? 0),
+      'source' => 'darkscrub',
     ];
   }
 
   $stmt->close();
+  return $rows;
+}
+
+function ytyBuildDailyStats(mysqli $conn, int $year): array
+{
+  $byDate = [];
+
+  foreach (ytyFetchStoredDailyStats($conn, $year) as $row) {
+    $byDate[$row['date']] = $row;
+  }
+
+  foreach (ytyFetchLiveDailyStats($conn, $year) as $row) {
+    $byDate[$row['date']] = $row;
+  }
+
+  ksort($byDate);
+  $rows = array_values($byDate);
+  $previousWeek = null;
+
+  foreach ($rows as &$row) {
+    if (($row['source'] ?? '') === 'darkscrub') {
+      $currentWeek = (int) $row['iso_week'];
+      if (
+        $previousWeek === null
+        || $currentWeek > $previousWeek
+        || ($currentWeek === 1 && $previousWeek >= 52)
+      ) {
+        $row['after_weekend_count'] = (int) $row['products_without_fitting'];
+      }
+      $row['is_after_weekend'] = $row['after_weekend_count'] !== null;
+    }
+
+    $previousWeek = (int) $row['iso_week'];
+  }
+  unset($row);
+
   return $rows;
 }
 
@@ -311,8 +456,9 @@ function ytyBuildReportData(mysqli $conn): array
     $averages[$year] = ytyAverage($series[$year]);
   }
 
-  $dailyRows = ytyFetchCurrentYearDailyStats($conn, $currentYear);
+  $dailyRows = ytyBuildDailyStats($conn, $currentYear);
   $dailyProductValues = array_map(static fn($row) => $row['products_without_fitting'], $dailyRows);
+  $dailyAfterWeekendValues = array_map(static fn($row) => $row['after_weekend_count'] ?? null, $dailyRows);
   $dailyWithFittingValues = array_map(static fn($row) => $row['products_with_fitting'], $dailyRows);
   $transitionLiveProducts = (int) ($live[YTY_TRANSITION_YEAR][YTY_TRANSITION_WEEK]['value'] ?? 0);
 
@@ -328,6 +474,7 @@ function ytyBuildReportData(mysqli $conn): array
     'live' => $live,
     'daily_rows' => $dailyRows,
     'daily_averages' => [
+      'after_weekend' => ytyAverage($dailyAfterWeekendValues),
       'products_without_fitting' => ytyAverage($dailyProductValues),
       'products_with_fitting' => ytyAverage($dailyWithFittingValues),
     ],

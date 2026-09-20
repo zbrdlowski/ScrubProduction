@@ -291,10 +291,16 @@ try {
       COALESCE(payment_stats.paid_total, 0) AS paid_total,
       po.traffic_light AS production_traffic_light,
       po.traffic_blocker AS production_traffic_blocker,
-      po.traffic_summary_json AS production_traffic_summary_json
+      po.traffic_summary_json AS production_traffic_summary_json,
+      coa.id AS custom_order_assignment_id,
+      coa.employee_id AS assigned_employee_id,
+      TRIM(CONCAT_WS(' ', eca.firstname, eca.lastname)) AS assigned_employee_name,
+      eca.photo AS assigned_employee_photo
     FROM custom_orders co
     LEFT JOIN employees eo ON eo.id = co.owner_employee_id
     LEFT JOIN orders po ON po.id = co.production_order_id
+    LEFT JOIN custom_order_assignments coa ON coa.custom_order_id = co.id
+    LEFT JOIN employees eca ON eca.id = coa.employee_id
     LEFT JOIN (
       SELECT
         custom_order_id,
@@ -794,11 +800,11 @@ function customOrderHelpMap(string $lang = 'sk'): array
     'order_photos' => 'Fotky priradene k objednavke. Mozes ich vlozit kliknutim alebo pretiahnutim; po exporte zostanu dostupne aj v production objednavke.',
     'followups_block' => 'Naplanovanie dalsieho kontaktu a historia komunikacie so zakaznikom.',
     'products_block' => 'Pridavanie a uprava produktov, ich cien, kompatibility, specifikacii a workflow statusov.',
-    'item_assigned' => 'Priradeny pracovnik. V Custom Orders sa zobrazuje vlastnik leadu; produkcne priradenie sa riesi po exporte.',
+    'item_assigned' => 'Priradenie sa v Custom Orders riesi na urovni celej objednavky v hlavicke; item-level Take je vypnuty.',
     'item_category' => 'Vyber Brand, Model a Year range. Kliknutim mozes kompatibilitu kedykolvek opravit.',
     'item_link' => 'Odkaz na produkt alebo externy podklad, ak je pre tento item dostupny.',
     'item_detail' => 'Rozsireny detail itemu a vsetky ulozene hodnoty.',
-    'item_action' => 'Aktualny workflow status itemu. Ponuka sa nacitava z Controls podla departmentu a graphics subcategory.',
+    'item_action' => 'Item workflow status je v Custom Orders vypnuty. Produkcny workflow sa riesi az v Production Orders.',
     'item_waiting' => 'Co momentalne chyba alebo na co sa caka, spolu s ocakavanym datumom.',
     'item_save' => 'Ulozi vsetky zmeny v tomto iteme bez prepinania do osobitneho edit rezimu.',
     'item_delete' => 'Natrvalo odstrani tento item z custom objednavky.',
@@ -919,11 +925,11 @@ function customOrderHelpMap(string $lang = 'sk'): array
     'order_photos' => 'Order photos. Click or drag files here; after export they remain available in the production order.',
     'followups_block' => 'Schedule the next contact and review the customer communication history.',
     'products_block' => 'Add and edit products, pricing, compatibility, specifications, and workflow statuses.',
-    'item_assigned' => 'Responsible employee. Custom Orders shows the lead owner; production assignment happens after export.',
+    'item_assigned' => 'Assignment in Custom Orders is handled on the whole order in the header; item-level Take is disabled.',
     'item_category' => 'Select Brand, Model, and Year range. Click again whenever compatibility needs correction.',
     'item_link' => 'Product or external reference link when available for this item.',
     'item_detail' => 'Expanded item detail and all stored values.',
-    'item_action' => 'Current item workflow status, loaded from Controls for its department and graphics subcategory.',
+    'item_action' => 'Item workflow status is disabled in Custom Orders. Production workflow is handled in Production Orders.',
     'item_waiting' => 'What is missing or being waited for, together with the expected date.',
     'item_save' => 'Saves every change in this item without opening a separate edit mode.',
     'item_delete' => 'Permanently removes this item from the custom order.',
@@ -1586,6 +1592,95 @@ if (!$customOrdersDetailRequest) {
     line-height: 1;
     vertical-align: middle;
   }
+
+  .custom-order-assigned-cell,
+  .custom-order-header-assigned {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 38px;
+  }
+
+  .custom-order-header-assigned {
+    min-width: 44px;
+  }
+
+  .custom-order-assigned-avatar-wrap {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+  }
+
+  .custom-order-assigned-avatar {
+    width: 30px;
+    height: 30px;
+    max-width: 30px;
+    max-height: 30px;
+    border-radius: 50%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    object-fit: cover;
+    border: 2px solid rgba(255, 193, 7, .72);
+    background: rgba(255, 193, 7, .16);
+    color: #fff3cd;
+    font-size: 11px;
+    font-weight: 800;
+    line-height: 1;
+    vertical-align: middle;
+  }
+
+  .custom-order-assigned-avatar.is-mine,
+  .custom-order-assigned-avatar-wrap.is-mine .custom-order-assigned-avatar {
+    border-color: #35d07f;
+    box-shadow: 0 0 0 2px rgba(53, 208, 127, .18);
+  }
+
+  .custom-order-remove-assignment-btn {
+    position: absolute;
+    right: -5px;
+    top: -6px;
+    width: 16px;
+    height: 16px;
+    padding: 0;
+    border: 1px solid rgba(255, 255, 255, .72);
+    border-radius: 50%;
+    background: #dc3545;
+    color: #fff;
+    cursor: pointer;
+    display: none;
+    font-size: 12px;
+    font-weight: 800;
+    line-height: 13px;
+    text-align: center;
+    z-index: 2;
+  }
+
+  .custom-order-assigned-avatar-wrap:hover .custom-order-remove-assignment-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .custom-order-take-btn {
+    white-space: nowrap;
+  }
+
+  .custom-order-traffic-placeholder {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 30px;
+    padding: 2px 7px;
+    border: 1px solid #6c757d;
+    border-radius: 4px;
+    color: #cbd3da;
+    background: transparent;
+    font-size: 12px;
+    font-weight: 700;
+    line-height: 1.2;
+  }
   .custom-order-detail-row > td {
     padding: 0 !important;
     border-top: 0 !important;
@@ -1833,6 +1928,24 @@ if (!$customOrdersDetailRequest) {
     display: inline-flex !important;
     align-items: center;
     justify-content: center;
+  }
+
+  .custom-official-number-choice {
+    display: grid;
+    grid-template-columns: 110px minmax(0, 1fr);
+    gap: 10px;
+    align-items: end;
+  }
+
+  .custom-official-number-preview {
+    min-height: 24px;
+    color: #adb5bd;
+  }
+
+  @media (max-width: 575.98px) {
+    .custom-official-number-choice {
+      grid-template-columns: 1fr;
+    }
   }
 
   .btn-copy-inline {
@@ -3415,6 +3528,41 @@ if (!$customOrdersDetailRequest) {
       </div>
     </div>
   </div>
+  <div class="modal fade" id="custom-order-number-modal" tabindex="-1" role="dialog" aria-labelledby="custom-order-number-modal-title" aria-hidden="true">
+    <div class="modal-dialog" role="document">
+      <div class="modal-content bg-dark text-light">
+        <div class="modal-header">
+          <h5 class="modal-title" id="custom-order-number-modal-title">Assign Official Order Number</h5>
+          <button type="button" class="close text-white custom-official-number-modal-close" data-dismiss="modal" aria-label="Close"><span aria-hidden="true">&times;</span></button>
+        </div>
+        <form method="post" action="scripts/custom_orders/assign_official_number.php" id="custom-order-number-form" novalidate>
+          <div class="modal-body">
+            <input type="hidden" name="custom_order_id" value="0">
+            <div class="custom-official-number-choice">
+              <div class="form-group mb-0">
+                <label for="custom-official-prefix">Number branch</label>
+                <select id="custom-official-prefix" name="official_prefix" class="form-control" required>
+                  <option value="SO" selected>SO</option>
+                  <option value="GO">GO</option>
+                  <option value="SC">SC</option>
+                </select>
+              </div>
+              <div class="form-group mb-0">
+                <label for="custom-official-sequence-value">Next number</label>
+                <input id="custom-official-sequence-value" type="number" name="official_sequence_value" class="form-control" min="1" max="2147483647" step="1" inputmode="numeric" required>
+              </div>
+            </div>
+            <div class="custom-official-number-preview small mt-2" data-official-number-preview aria-live="polite"></div>
+            <div class="alert alert-danger mt-2 mb-0" data-official-number-warning role="alert" hidden></div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary custom-official-number-modal-close" data-dismiss="modal">Cancel</button>
+            <button type="submit" class="btn btn-warning" data-official-number-confirm disabled>Assign Number</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
   <?php endif; ?>
 
   <div class="custom-status-tabs">
@@ -3655,17 +3803,11 @@ if (!$customOrdersDetailRequest) {
                 <div class="input-group-append"><button type="submit" class="btn btn-info">Assign</button></div>
               </div>
             </form>
-            <form method="post" action="scripts/custom_orders/assign_official_number.php" class="mb-2">
-              <input type="hidden" name="custom_order_id" value="<?= (int) $selectedOrder['id'] ?>">
-              <div class="input-group input-group-sm">
-                <select name="official_prefix" class="form-control<?= customOrderInvalid($invalidFields, 'official_prefix') ?>">
-                  <option value="SO" <?= ($selectedOrder['official_prefix'] ?? 'SO') === 'SO' ? 'selected' : '' ?>>SO</option>
-                  <option value="GO" <?= ($selectedOrder['official_prefix'] ?? '') === 'GO' ? 'selected' : '' ?>>GO</option>
-                  <option value="SC" <?= ($selectedOrder['official_prefix'] ?? '') === 'SC' ? 'selected' : '' ?>>SC</option>
-                </select>
-                <div class="input-group-append"><button type="submit" class="btn btn-warning">Official No.</button></div>
-              </div>
-            </form>
+            <?php if (trim((string) ($selectedOrder['official_order_number'] ?? '')) === '' && (int) ($selectedOrder['production_order_id'] ?? 0) <= 0): ?>
+              <button type="button" class="btn btn-warning btn-sm btn-block mb-2 custom-assign-official-number-btn" data-custom-order-id="<?= (int) $selectedOrder['id'] ?>">
+                Official No.
+              </button>
+            <?php endif; ?>
             <form method="post" action="scripts/custom_orders/export_order.php" class="mb-2 custom-export-production-form" data-export-order-number="<?= h((string) ($selectedOrder['official_order_number'] ?: $selectedOrder['internal_code'])) ?>" data-export-total="<?= h(number_format((float) ($selectedOrder['summary']['gross_total'] ?? 0), 2, '.', '')) ?>" data-export-currency="<?= h((string) ($selectedOrder['currency'] ?: 'EUR')) ?>">
               <input type="hidden" name="custom_order_id" value="<?= (int) $selectedOrder['id'] ?>">
               <button type="submit" class="btn btn-primary btn-sm btn-block" <?= (int) ($selectedOrder['production_order_id'] ?? 0) > 0 ? 'disabled' : '' ?>>Export To Production</button>
@@ -3740,6 +3882,7 @@ if (!$customOrdersDetailRequest) {
                     <th>Status<?= customOrderHelp('status') ?></th>
                     <th>Complexity<?= customOrderHelp('complexity_level') ?></th>
                     <th class="text-center">Traffic<?= customOrderHelp('list_traffic') ?></th>
+                    <th class="text-center">Assigned</th>
                     <th>Owner<?= customOrderHelp('list_owner') ?></th>
                     <th>Items<?= customOrderHelp('list_items') ?></th>
                     <th>Total<?= customOrderHelp('list_total') ?></th>
@@ -3759,7 +3902,7 @@ if (!$customOrdersDetailRequest) {
                     <?php if ($rowDayKey !== $customOrdersPreviousListDay): ?>
                       <?php $customOrdersPreviousListDay = $rowDayKey; ?>
                       <tr class="custom-order-day-separator-row">
-                        <td colspan="11"><div class="custom-order-day-separator"><span><?= h($rowDayLabel) ?></span></div></td>
+                        <td colspan="12"><div class="custom-order-day-separator"><span><?= h($rowDayLabel) ?></span></div></td>
                       </tr>
                     <?php endif; ?>
                     <tr class="custom-order-table-row" data-order-id="<?= (int) $row['id'] ?>" data-href="<?= h($rowUrl) ?>">
@@ -3865,8 +4008,32 @@ if (!$customOrdersDetailRequest) {
                             <?php endforeach; ?>
                           </span>
                         <?php else: ?>
-                          <span class="text-muted">-</span>
+                          <?php
+                          $rowUnexportedTrafficTypes = [];
+                          if ($rowProductionOrderId <= 0) {
+                            foreach (str_split(str_replace([',', ' '], '', strtoupper((string) ($row['item_types'] ?? '')))) as $rowTrafficType) {
+                              if (in_array($rowTrafficType, ['G', 'F', 'P', 'S'], true)) {
+                                $rowUnexportedTrafficTypes[$rowTrafficType] = true;
+                              }
+                            }
+                          }
+                          ?>
+                          <?php if ($rowUnexportedTrafficTypes): ?>
+                            <span class="custom-order-traffic-badges d-inline-flex justify-content-center flex-wrap" style="gap:4px;">
+                              <?php foreach (['G', 'F', 'P', 'S'] as $rowTrafficType): ?>
+                                <?php if (!isset($rowUnexportedTrafficTypes[$rowTrafficType])) continue; ?>
+                                <span class="custom-order-traffic-placeholder" title="<?= h($rowTrafficType . ' - not exported yet') ?>" aria-label="<?= h($rowTrafficType . ' - not exported yet') ?>"><?= h($rowTrafficType) ?></span>
+                              <?php endforeach; ?>
+                            </span>
+                          <?php else: ?>
+                            <span class="text-muted">-</span>
+                          <?php endif; ?>
                         <?php endif; ?>
+                      </td>
+                      <td class="text-center">
+                        <span class="custom-order-assigned-cell" data-custom-assigned-cell="<?= (int) $row['id'] ?>">
+                          <?= customOrdersRenderOrderAssignmentHtml($row, (int) $row['id'], $customOrdersCanContribute, $customOrdersCurrentUserId) ?>
+                        </span>
                       </td>
                       <td class="text-center">
                         <?php
@@ -3891,12 +4058,12 @@ if (!$customOrdersDetailRequest) {
                       <td><?= h(date('d.m.Y H:i', strtotime((string) $row['updated_at']))) ?></td>
                     </tr>
                     <tr class="custom-order-detail-row" data-detail-order-id="<?= (int) $row['id'] ?>">
-                      <td colspan="11"><div class="custom-order-detail-wrap" id="custom-detail-<?= (int) $row['id'] ?>"></div></td>
+                      <td colspan="12"><div class="custom-order-detail-wrap" id="custom-detail-<?= (int) $row['id'] ?>"></div></td>
                     </tr>
                   <?php endforeach; ?>
                   <?php if (!$listRows): ?>
                     <tr>
-                      <td colspan="11" class="text-muted">No custom orders found for the current filter.</td>
+                      <td colspan="12" class="text-muted">No custom orders found for the current filter.</td>
                     </tr>
                   <?php endif; ?>
                 </tbody>
@@ -3969,17 +4136,9 @@ if (!$customOrdersDetailRequest) {
                 </button>
               <?php endif; ?>
               <?php if ($customOrdersCanManage && trim((string) ($selectedOrder['official_order_number'] ?? '')) === '' && !$customOfficialNumberLocked): ?>
-                <form method="post" action="scripts/custom_orders/assign_official_number.php" class="d-inline-flex align-items-center mb-0" style="gap:4px;">
-                  <input type="hidden" name="custom_order_id" value="<?= (int) $selectedOrder['id'] ?>">
-                  <select name="official_prefix" class="form-control form-control-sm" style="width:72px;">
-                    <option value="SO" <?= ($selectedOrder['official_prefix'] ?? 'SO') === 'SO' ? 'selected' : '' ?>>SO</option>
-                    <option value="GO" <?= ($selectedOrder['official_prefix'] ?? '') === 'GO' ? 'selected' : '' ?>>GO</option>
-                    <option value="SC" <?= ($selectedOrder['official_prefix'] ?? '') === 'SC' ? 'selected' : '' ?>>SC</option>
-                  </select>
-                  <button type="submit" class="btn btn-outline-warning btn-sm" title="Generate the next sequential official number">
-                    <i class="fas fa-hashtag mr-1"></i>Generate Number
-                  </button>
-                </form>
+                <button type="button" class="btn btn-outline-warning btn-sm custom-assign-official-number-btn" data-custom-order-id="<?= (int) $selectedOrder['id'] ?>" title="Choose an official number">
+                  <i class="fas fa-hashtag mr-1"></i>Assign Number
+                </button>
               <?php elseif ($customOrdersCanManage && (int) ($selectedOrder['production_order_id'] ?? 0) <= 0): ?>
                 <form method="post" action="scripts/custom_orders/export_order.php" class="mb-0 custom-export-production-form" data-export-order-number="<?= h((string) ($selectedOrder['official_order_number'] ?: $selectedOrder['internal_code'])) ?>" data-export-total="<?= h(number_format((float) ($summary['gross_total'] ?? 0), 2, '.', '')) ?>" data-export-currency="<?= h((string) ($selectedOrder['currency'] ?: 'EUR')) ?>">
                   <input type="hidden" name="custom_order_id" value="<?= (int) $selectedOrder['id'] ?>">
@@ -3992,6 +4151,14 @@ if (!$customOrdersDetailRequest) {
                   <i class="fas fa-external-link-alt mr-1"></i>Open Production #<?= (int) $selectedOrder['production_order_id'] ?>
                 </a>
               <?php endif; ?>
+              <?php if ($customOrdersCanManage): ?>
+                <form method="post" action="scripts/custom_orders/duplicate_order.php" class="d-inline-flex align-items-center mb-0" onsubmit="return confirm('This will create a duplicate custom order with the next SO number. Continue?');">
+                  <input type="hidden" name="custom_order_id" value="<?= (int) $selectedOrder['id'] ?>">
+                  <button type="submit" class="btn btn-outline-light btn-sm" title="Duplicate custom order">
+                    <i class="fas fa-copy mr-1"></i>Duplicate Order
+                  </button>
+                </form>
+              <?php endif; ?>
               <?php if ($customOrdersCanManage && !$customOfficialNumberLocked): ?>
                 <form method="post" action="scripts/custom_orders/delete_order.php" class="d-inline-flex align-items-center mb-0" onsubmit="return confirm('Delete this custom order? This cannot be undone.');">
                   <input type="hidden" name="custom_order_id" value="<?= (int) $selectedOrder['id'] ?>">
@@ -4002,6 +4169,9 @@ if (!$customOrdersDetailRequest) {
               <?php endif; ?>
             </div>
             <div class="custom-twin-header-controls">
+              <span class="custom-order-header-assigned" data-custom-assigned-cell="<?= (int) $selectedOrder['id'] ?>">
+                <?= customOrdersRenderOrderAssignmentHtml($selectedOrder, (int) $selectedOrder['id'], $customOrdersCanContribute, $customOrdersCurrentUserId) ?>
+              </span>
               <?php $currentComplexityLevel = (int) ($selectedOrder['complexity_level'] ?? 1); if ($currentComplexityLevel <= 0) { $currentComplexityLevel = 1; } ?>
               <select name="complexity_level" form="custom-twin-header-form-<?= (int) $selectedOrder['id'] ?>" class="form-control form-control-sm custom-complexity-control" title="Complexity Level" aria-label="Complexity Level" <?= $customOrdersCanManage ? '' : 'disabled' ?>>
                 <?php if (!isset($customOrderComplexityOptions[$currentComplexityLevel])): ?>
@@ -4242,7 +4412,7 @@ if (!$customOrdersDetailRequest) {
         <div id="custom-order-builder-panel" data-scroll-block class="custom-orders-panel mb-3<?= isset($invalidFields['items']) ? ' custom-panel-invalid' : '' ?>">
           <div class="panel-body">
             <div class="custom-order-section-title">3. Products<?= customOrderHelp('products_block') ?></div>
-            <?php $itemWorkflowStatusEnabled = (int) ($selectedOrder['production_order_id'] ?? 0) > 0; ?>
+            <?php $itemWorkflowStatusEnabled = false; ?>
             <?php $editOptions = $editItem ? (json_decode((string) $editItem['options_json'], true) ?: []) : []; ?>
             <?php $editInternalOptions = $editItem ? (json_decode((string) ($editItem['internal_options_json'] ?? ''), true) ?: []) : []; ?>
             <?php
@@ -4371,9 +4541,9 @@ if (!$customOrdersDetailRequest) {
                             <button type="button" class="btn btn-xs btn-outline-info custom-builder-mini-btn" disabled>Detail</button>
                           </td>
                           <td style="min-width:140px;">
-                            <select name="item_status" class="form-control form-control-sm custom-item-status-select<?= $itemWorkflowStatusEnabled ? '' : ' is-workflow-disabled' ?>" data-status-dynamic="1" <?= $itemWorkflowStatusEnabled ? '' : 'disabled aria-disabled="true" title="Item workflow starts after export to Production."' ?>>
+                            <select name="item_status" class="form-control form-control-sm custom-item-status-select<?= $itemWorkflowStatusEnabled ? '' : ' is-workflow-disabled' ?>" data-status-dynamic="1" <?= $itemWorkflowStatusEnabled ? '' : 'disabled aria-disabled="true" title="Item workflow is disabled in Custom Orders."' ?>>
                               <?php if (!$itemWorkflowStatusEnabled): ?>
-                                <option value="" data-color="#6c757d" selected>Disabled until export</option>
+                                <option value="" data-color="#6c757d" selected>Disabled in Custom Orders</option>
                               <?php else: ?>
                               <?php foreach ($builderStatusDefinitions as $statusCode => $statusMeta): ?>
                                 <option value="<?= h($statusCode) ?>" data-color="<?= h((string) ($statusMeta['color'] ?? '')) ?>" <?= $builderCurrentStatus === $statusCode ? 'selected' : '' ?>><?= h((string) ($statusMeta['label'] ?? $statusCode)) ?></option>
@@ -4552,7 +4722,7 @@ if (!$customOrdersDetailRequest) {
                                   <span class="custom-order-item-assignee-fallback" title="<?= h($itemAssignmentName ?: 'Assigned') ?>"><?= h($itemAssignmentInitials !== '' ? $itemAssignmentInitials : '?') ?></span>
                                 <?php endif; ?>
                               <?php else: ?>
-                                <button type="button" class="btn btn-xs btn-outline-info custom-item-take-btn" data-action="scripts/custom_orders/take_item.php" data-custom-order-id="<?= (int) $selectedOrder['id'] ?>" data-custom-item-id="<?= (int) $item['id'] ?>">Take</button>
+                                <button type="button" class="btn btn-xs btn-outline-secondary custom-item-take-btn" title="Take is handled on the whole custom order" disabled>Take</button>
                               <?php endif; ?>
                             </span>
                           </td>
@@ -4583,9 +4753,9 @@ if (!$customOrdersDetailRequest) {
                           <td class="text-center" style="width:76px;"><button type="button" class="btn btn-sm btn-outline-info custom-builder-link-btn" disabled><i class="fas fa-external-link-alt"></i></button></td>
                           <td class="text-center" style="width:92px;"><button type="button" class="btn btn-xs btn-outline-info custom-builder-mini-btn" data-toggle="modal" data-target="#<?= h($itemModalId) ?>">Detail</button></td>
                           <td style="min-width:160px;">
-                            <select name="item_status" class="form-control form-control-sm custom-item-status-select<?= $itemWorkflowStatusEnabled ? '' : ' is-workflow-disabled' ?>" <?= $itemWorkflowStatusEnabled ? '' : 'disabled aria-disabled="true" title="Item workflow starts after export to Production."' ?>>
+                            <select name="item_status" class="form-control form-control-sm custom-item-status-select<?= $itemWorkflowStatusEnabled ? '' : ' is-workflow-disabled' ?>" <?= $itemWorkflowStatusEnabled ? '' : 'disabled aria-disabled="true" title="Item workflow is disabled in Custom Orders."' ?>>
                               <?php if (!$itemWorkflowStatusEnabled): ?>
-                                <option value="" data-color="#6c757d" selected>Disabled until export</option>
+                                <option value="" data-color="#6c757d" selected>Disabled in Custom Orders</option>
                               <?php else: ?>
                               <?php foreach ($itemStatusDefinitions as $statusCode => $statusMeta): ?>
                                 <option value="<?= h($statusCode) ?>" data-color="<?= h((string) ($statusMeta['color'] ?? '')) ?>" <?= $itemCurrentStatus === $statusCode ? 'selected' : '' ?>><?= h((string) ($statusMeta['label'] ?? $statusCode)) ?></option>
@@ -5079,7 +5249,7 @@ if (!$customOrdersDetailRequest) {
     var customOrdersHighlightStorageKey = 'custom-orders-highlight:' + window.location.pathname;
     var customBuilderStatusMap = <?= json_encode($customBuilderStatusMap, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE) ?>;
     var customOrdersCanManage = <?= $customOrdersCanManage ? 'true' : 'false' ?>;
-    var customItemWorkflowStatusEnabled = <?= isset($selectedOrder) && (int) ($selectedOrder['production_order_id'] ?? 0) > 0 ? 'true' : 'false' ?>;
+    var customItemWorkflowStatusEnabled = false;
     var customOrdersHelpLang = <?= json_encode($customOrderHelpLang === 'en' ? 'en' : 'sk', JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
 
     function confirmCustomOrderProductionExport(form) {
@@ -5097,6 +5267,128 @@ if (!$customOrdersDetailRequest) {
         ? 'Export ' + orderNumber + ' to Production Orders? After export it will enter the standard production workflow.'
         : 'Exportovať ' + orderNumber + ' do Production Orders? Po exporte pôjde do štandardného production workflow.');
     }
+
+    function initializeCustomOfficialNumberModal() {
+      var modal = document.getElementById('custom-order-number-modal');
+      var form = document.getElementById('custom-order-number-form');
+      if (!modal || !form || form.dataset.officialNumberModalBound === '1') return;
+      form.dataset.officialNumberModalBound = '1';
+
+      var orderIdInput = form.querySelector('input[name="custom_order_id"]');
+      var prefixSelect = form.querySelector('select[name="official_prefix"]');
+      var numberInput = form.querySelector('input[name="official_sequence_value"]');
+      var preview = form.querySelector('[data-official-number-preview]');
+      var warning = form.querySelector('[data-official-number-warning]');
+      var confirmButton = form.querySelector('[data-official-number-confirm]');
+      var requestVersion = 0;
+      var inputTimer = 0;
+
+      function setWarning(message) {
+        warning.textContent = message || '';
+        warning.hidden = !message;
+      }
+
+      function setChecking() {
+        form.dataset.numberAvailable = '0';
+        confirmButton.disabled = true;
+        preview.textContent = 'Checking number…';
+        setWarning('');
+      }
+
+      function checkNumber(useSuggestion) {
+        var version = ++requestVersion;
+        setChecking();
+        var body = new URLSearchParams();
+        body.set('custom_order_id', orderIdInput.value || '0');
+        body.set('official_prefix', prefixSelect.value || 'SO');
+        if (!useSuggestion) body.set('official_sequence_value', numberInput.value || '');
+
+        fetch('scripts/custom_orders/check_official_number.php', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+            'X-Requested-With': 'XMLHttpRequest'
+          },
+          body: body.toString()
+        })
+          .then(function (response) {
+            return response.json().catch(function () { throw new Error('Invalid server response.'); }).then(function (payload) {
+              if (!response.ok || !payload.ok) throw new Error(payload.message || 'Number could not be checked.');
+              return payload;
+            });
+          })
+          .then(function (payload) {
+            if (version !== requestVersion) return;
+            if (useSuggestion) numberInput.value = String(payload.suggested_value || '');
+            preview.textContent = payload.official_number ? ('Official number: ' + payload.official_number) : '';
+            if (!payload.valid || payload.exists) {
+              form.dataset.numberAvailable = '0';
+              confirmButton.disabled = true;
+              setWarning(payload.message || 'This number cannot be used.');
+              return;
+            }
+            form.dataset.numberAvailable = '1';
+            confirmButton.disabled = false;
+            setWarning('');
+          })
+          .catch(function (error) {
+            if (version !== requestVersion) return;
+            form.dataset.numberAvailable = '0';
+            confirmButton.disabled = true;
+            preview.textContent = '';
+            setWarning(error && error.message ? error.message : String(error));
+          });
+      }
+
+      document.addEventListener('click', function (event) {
+        var button = event.target && event.target.closest ? event.target.closest('.custom-assign-official-number-btn') : null;
+        if (!button) return;
+        event.preventDefault();
+        event.stopPropagation();
+        orderIdInput.value = button.getAttribute('data-custom-order-id') || '0';
+        prefixSelect.value = 'SO';
+        numberInput.value = '';
+        form.dataset.numberAvailable = '0';
+        checkNumber(true);
+        if (window.jQuery && window.jQuery.fn && window.jQuery.fn.modal) {
+          window.jQuery(modal).modal('show');
+        }
+      });
+
+      prefixSelect.addEventListener('change', function () {
+        numberInput.value = '';
+        checkNumber(true);
+      });
+      numberInput.addEventListener('input', function () {
+        window.clearTimeout(inputTimer);
+        setChecking();
+        inputTimer = window.setTimeout(function () { checkNumber(false); }, 250);
+      });
+      modal.querySelectorAll('.custom-official-number-modal-close').forEach(function (closeButton) {
+        closeButton.addEventListener('click', function (event) {
+          event.preventDefault();
+          event.stopPropagation();
+          ++requestVersion;
+          window.clearTimeout(inputTimer);
+          if (window.jQuery && window.jQuery.fn && window.jQuery.fn.modal) {
+            window.jQuery(modal).modal('hide');
+            return;
+          }
+          modal.classList.remove('show');
+          modal.style.display = 'none';
+          modal.setAttribute('aria-hidden', 'true');
+          document.body.classList.remove('modal-open');
+          document.querySelectorAll('.modal-backdrop').forEach(function (backdrop) { backdrop.remove(); });
+        });
+      });
+      form.addEventListener('submit', function (event) {
+        if (form.dataset.numberAvailable !== '1') {
+          event.preventDefault();
+          checkNumber(false);
+        }
+      });
+    }
+
     function applyCustomOrdersAccess(root) {
       if (!root || customOrdersCanManage) return;
 
@@ -5271,7 +5563,7 @@ if (!$customOrdersDetailRequest) {
         select.innerHTML = '';
         var option = document.createElement('option');
         option.value = '';
-        option.textContent = 'Disabled until export';
+        option.textContent = 'Disabled in Custom Orders';
         option.setAttribute('data-color', '#6c757d');
         option.selected = true;
         select.appendChild(option);
@@ -6806,6 +7098,100 @@ if (!$customOrdersDetailRequest) {
     });
 
     document.addEventListener('click', function (event) {
+      var button = event.target && event.target.closest ? event.target.closest('.custom-order-take-btn') : null;
+      if (!button) return;
+      event.preventDefault();
+      event.stopPropagation();
+      if (button.dataset.takeOrderBusy === '1') return;
+
+      var orderId = parseInt(button.getAttribute('data-custom-order-id') || '0', 10);
+      if (!orderId) return;
+
+      var originalText = button.textContent || 'Take';
+      button.dataset.takeOrderBusy = '1';
+      button.disabled = true;
+      button.textContent = 'Taking...';
+
+      var formData = new FormData();
+      formData.append('custom_order_id', String(orderId));
+      fetch(button.getAttribute('data-action') || 'scripts/custom_orders/take_order.php', {
+        method: 'POST',
+        headers: { 'X-Requested-With': 'XMLHttpRequest' },
+        body: formData
+      })
+        .then(function (response) {
+          return response.text().then(function (rawBody) {
+            var payload;
+            try {
+              payload = JSON.parse(rawBody);
+            } catch (parseError) {
+              throw new Error(String(rawBody || 'Invalid server response').trim().substring(0, 400));
+            }
+            if (!response.ok || !payload.ok) throw new Error(payload.message || 'Custom order could not be taken.');
+            return payload;
+          });
+        })
+        .then(function (payload) {
+          document.querySelectorAll('[data-custom-assigned-cell="' + orderId + '"]').forEach(function (cell) {
+            cell.innerHTML = payload.assignment_html || '';
+          });
+        })
+        .catch(function (error) {
+          button.dataset.takeOrderBusy = '0';
+          button.disabled = false;
+          button.textContent = originalText;
+          alert(error && error.message ? error.message : String(error));
+        });
+    });
+
+    document.addEventListener('click', function (event) {
+      var button = event.target && event.target.closest ? event.target.closest('.custom-order-remove-assignment-btn') : null;
+      if (!button) return;
+      event.preventDefault();
+      event.stopPropagation();
+      if (button.dataset.removeAssignmentBusy === '1') return;
+      if (!confirm('Remove this assignment?')) return;
+
+      var assignmentId = parseInt(button.getAttribute('data-assignment-id') || '0', 10);
+      var orderId = parseInt(button.getAttribute('data-custom-order-id') || '0', 10);
+      if (!assignmentId || !orderId) return;
+
+      button.dataset.removeAssignmentBusy = '1';
+      button.disabled = true;
+
+      var formData = new FormData();
+      formData.append('assignment_id', String(assignmentId));
+      formData.append('custom_order_id', String(orderId));
+      fetch('scripts/custom_orders/remove_order_assignment.php', {
+        method: 'POST',
+        headers: { 'X-Requested-With': 'XMLHttpRequest' },
+        body: formData
+      })
+        .then(function (response) {
+          return response.text().then(function (rawBody) {
+            var payload;
+            try {
+              payload = JSON.parse(rawBody);
+            } catch (parseError) {
+              throw new Error(String(rawBody || 'Invalid server response').trim().substring(0, 400));
+            }
+            if (!response.ok || !payload.ok) throw new Error(payload.message || 'Assignment could not be removed.');
+            return payload;
+          });
+        })
+        .then(function (payload) {
+          document.querySelectorAll('[data-custom-assigned-cell="' + orderId + '"]').forEach(function (cell) {
+            cell.innerHTML = payload.assignment_html || '';
+          });
+        })
+        .catch(function (error) {
+          button.dataset.removeAssignmentBusy = '0';
+          button.disabled = false;
+          alert(error && error.message ? error.message : String(error));
+        });
+    });
+
+    document.addEventListener('click', function (event) {
       var closeButton = event.target.closest('.btn-close-custom-order-detail');
       if (!closeButton) return;
       event.preventDefault();
@@ -6875,6 +7261,7 @@ if (!$customOrdersDetailRequest) {
     });
 
     initializeCustomCountryState(document);
+    initializeCustomOfficialNumberModal();
     initializeCustomOfficialNumberEditors(document);
     initializeCustomDetailRefreshForms(document);
     applyCustomOrdersAccess(document);

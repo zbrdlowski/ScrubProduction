@@ -17,9 +17,15 @@
 session_start();
 require_once __DIR__ . '/../includes/conn.php'; // subor je v scripts/, conn.php v includes/ (o uroven vyssie)
 
-// ---- ACL – management a vyššie (permission 300+) --------------------------
-if (!isset($_SESSION['permission']) || (int)$_SESSION['permission'] < 300) {
+// ---- ACL: superadmin alebo explicitne povoleni editori --------------------
+$productChartEditorIds = [3, 16, 17];
+$productChartUserId = (int) ($_SESSION['user_id'] ?? 0);
+$productChartPermission = (int) ($_SESSION['permission'] ?? 0);
+$canEditProductChart = $productChartPermission >= 900 || in_array($productChartUserId, $productChartEditorIds, true);
+
+if (!$canEditProductChart) {
     http_response_code(403);
+    header('Content-Type: application/json; charset=utf-8');
     echo json_encode(['ok' => false, 'error' => 'Nedostatočné oprávnenie.']);
     exit;
 }

@@ -15,6 +15,7 @@
     console.log('[scrub_update_tracking] script loaded');
 
     const AJAX_URL = 'scripts/scrub_update_tracking_ajax.php';
+    const CAN_EDIT = window.productChartCanEdit === true;
 
     const TRACKING_ITEMS = [
         ['Web', 'done_web'],
@@ -40,7 +41,7 @@
         return tracking || null;
     }
 
-    // ── VIEW renderer (4 mini bloky, col-md-3) ─────────────────────────────
+    // ── VIEW renderer ─────────────────────────────────────────────────────
 
     function renderTrackingView(rowkey, tracking) {
         const $container = $('#tracking-view-' + rowkey);
@@ -117,6 +118,7 @@
     // ── Alert badge (počet nedokončených) ───────────────────────────────────
 
     function refreshPendingCount() {
+        if (!CAN_EDIT) return;
         $.get(AJAX_URL, { action: 'count_pending' }, function (resp) {
             if (!resp || !resp.ok) return;
             const $badge = $('#trackingPendingBadge');
@@ -152,22 +154,23 @@
     }
 
     function loadPendingTrackingList() {
+        if (!CAN_EDIT) return;
         console.log('[scrub_update_tracking] loadPendingTrackingList() called');
         const $body = $('#tut_body');
         if (!$body.length) {
             console.error('[scrub_update_tracking] #tut_body nenájdené v DOM — modal HTML zrejme chýba.');
             return;
         }
-        $body.html('<tr><td colspan="9" class="text-center text-muted py-3">Načítavam…</td></tr>');
+        $body.html('<tr><td colspan="10" class="text-center text-muted py-3">Načítavam…</td></tr>');
 
         $.get(AJAX_URL, { action: 'list_pending' }, function (resp) {
             console.log('[scrub_update_tracking] list_pending odpoveď:', resp);
             if (!resp || !resp.ok) {
-                $body.html('<tr><td colspan="9" class="text-center text-danger py-3">' + (resp && resp.error ? resp.error : 'Chyba') + '</td></tr>');
+                $body.html('<tr><td colspan="10" class="text-center text-danger py-3">' + (resp && resp.error ? resp.error : 'Chyba') + '</td></tr>');
                 return;
             }
             if (!resp.rows.length) {
-                $body.html('<tr><td colspan="9" class="text-center text-muted py-3">Žiadne nedokončené updaty 🎉</td></tr>');
+                $body.html('<tr><td colspan="10" class="text-center text-muted py-3">Žiadne nedokončené updaty 🎉</td></tr>');
                 return;
             }
 
@@ -192,6 +195,7 @@
                 done_ebay: row.done_ebay,
                 done_graphics_templates: row.done_graphics_templates,
                 done_seatcover_templates: row.done_seatcover_templates,
+                done_products: row.done_products,
             });
             $row.data('tracking', updated);
 
@@ -244,6 +248,7 @@
             .off('click.trackingEdit', '.btn-edit-tracking')
             .on('click.trackingEdit', '.btn-edit-tracking', function (e) {
                 e.stopPropagation();
+                if (!CAN_EDIT) return;
                 const rowkey = $(this).data('rowkey');
                 const tracking = parseTrackingData($('tr.model-row[data-rowkey="' + rowkey + '"]').data('tracking'));
                 if (!tracking) return;
@@ -258,6 +263,7 @@
             .off('click.trackingCancel', '.btn-cancel-tracking-edit')
             .on('click.trackingCancel', '.btn-cancel-tracking-edit', function (e) {
                 e.stopPropagation();
+                if (!CAN_EDIT) return;
                 const rowkey = $(this).data('rowkey');
                 $('#tracking-edit-' + rowkey).hide();
                 $('#tracking-view-' + rowkey).show();
@@ -267,6 +273,7 @@
         $(document)
             .off('change.trackingToggle', '.tracking-field-toggle')
             .on('change.trackingToggle', '.tracking-field-toggle', function () {
+                if (!CAN_EDIT) return;
                 const checked = $(this).is(':checked');
                 $(this).closest('.tracking-toggle-row').find('.tracking-toggle-display')
                     .text(checked ? 'DONE' : 'PENDING')
@@ -278,6 +285,7 @@
             .off('click.trackingSave', '.btn-save-tracking')
             .on('click.trackingSave', '.btn-save-tracking', function (e) {
                 e.stopPropagation();
+                if (!CAN_EDIT) return;
                 const $btn = $(this);
                 const rowkey = $btn.data('rowkey');
                 const $row = $('tr.model-row[data-rowkey="' + rowkey + '"]');
@@ -303,6 +311,7 @@
                         done_ebay: resp.done_ebay,
                         done_graphics_templates: resp.done_graphics_templates,
                         done_seatcover_templates: resp.done_seatcover_templates,
+                        done_products: resp.done_products,
                     });
                     $row.data('tracking', updated);
                     renderTrackingView(rowkey, updated);
@@ -326,6 +335,7 @@
         $(document)
             .off('change.tutCheckbox', '.tut-checkbox')
             .on('change.tutCheckbox', '.tut-checkbox', function () {
+                if (!CAN_EDIT) return;
                 const $cb = $(this);
                 const trackid = $cb.data('trackid');
                 const field = $cb.data('field');
@@ -347,7 +357,7 @@
                     }
 
                     const row = resp.row;
-                    const allDone = !!(row.done_web && row.done_ebay && row.done_graphics_templates && row.done_seatcover_templates);
+                    const allDone = !!(row.done_web && row.done_ebay && row.done_graphics_templates && row.done_seatcover_templates && row.done_products);
                     const $tr = $cb.closest('tr');
 
                     syncRowTrackingData(row);

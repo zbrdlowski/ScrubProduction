@@ -74,7 +74,7 @@ try {
       'amount' => (float) $adjustment['amount'],
       'currency' => $adjustment['currency'],
     ],
-    'Financial adjustment deleted'
+    ((string) $adjustment['type'] === 'REFUND' ? 'Refund' : 'Payment') . ' deleted: ' . (string) $adjustment['purpose'] . ' (' . ((float) $adjustment['amount'] > 0 ? '+' : '') . number_format((float) $adjustment['amount'], 2, '.', '') . ' EUR), ref. ' . (string) $adjustment['reference']
   );
 
   out(['ok' => true, 'order_id' => (int) $adjustment['order_id']]);

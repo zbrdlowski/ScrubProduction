@@ -26,6 +26,8 @@ if ($orderId <= 0 || $itemId <= 0 || $userId <= 0) {
   $finish(false, 'Invalid item take request.');
 }
 
+$finish(false, 'Item-level Take is disabled in Custom Orders. Take the whole custom order instead.');
+
 if (!customOrdersTableExists($conn, 'custom_order_item_assignments')) {
   customOrdersEnsureSchema($conn);
 }

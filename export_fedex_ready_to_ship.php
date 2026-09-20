@@ -14,6 +14,8 @@ if (!isset($_SESSION['permission'])) {
 }
 
 require_once __DIR__ . '/includes/conn.php';
+require_once __DIR__ . '/scripts/orders/financial_helpers.php';
+require_once __DIR__ . '/includes/orders_multishipping_helpers.php';
 
 if (!isset($conn) || !$conn instanceof mysqli) {
   http_response_code(500);
@@ -287,7 +289,7 @@ function resolveUsState(array $row): string
   return '';
 }
 
-function fetchReadyToShipOrders(mysqli $conn, array $aclCats, array $aclTypes, string $fitWhere): array
+function fetchReadyToShipOrders(mysqli $conn, array $aclCats, array $aclTypes, string $fitWhere, bool $lockRows = false): array
 {
   [$aclClauses, $aclTypesStr, $aclParams] = buildAclWhere($conn, $aclCats, $aclTypes, $fitWhere);
 
@@ -297,11 +299,29 @@ function fetchReadyToShipOrders(mysqli $conn, array $aclCats, array $aclTypes, s
   }
   $whereSql = implode(' AND ', $where);
 
+  $hasFinancialTotalColumns = order_financial_column_exists($conn, 'orders', 'financial_total_value')
+    && order_financial_column_exists($conn, 'orders', 'financial_total_currency');
+  $hasFinancialAdjustments = order_financial_adjustments_ready($conn);
+
+  $financialTotalSelect = $hasFinancialTotalColumns
+    ? "o.financial_total_value,\n    o.financial_total_currency,"
+    : "NULL AS financial_total_value,\n    'EUR' AS financial_total_currency,";
+  $financialAdjustmentSelect = $hasFinancialAdjustments
+    ? "COALESCE(ofa.financial_adjustments_total, 0) AS financial_adjustments_total,"
+    : "0 AS financial_adjustments_total,";
+  $financialAdjustmentJoin = $hasFinancialAdjustments
+    ? "LEFT JOIN (\n    SELECT order_id, COALESCE(SUM(amount), 0) AS financial_adjustments_total\n    FROM order_financial_adjustments\n    WHERE deleted_at IS NULL\n    GROUP BY order_id\n  ) ofa ON ofa.order_id = o.id"
+    : "";
+
   $sql = "SELECT
     o.id,
     o.order_number,
     o.external_order_id,
     o.total AS order_total,
+    msg.id AS multishipping_group_id,
+    msm.position AS multishipping_position,
+    {$financialTotalSelect}
+    {$financialAdjustmentSelect}
 
     cu.name AS customer_name,
     cu.email AS customer_email,
@@ -335,8 +355,13 @@ function fetchReadyToShipOrders(mysqli $conn, array $aclCats, array $aclTypes, s
   LEFT JOIN customers cu ON cu.id = o.customer_id
   LEFT JOIN order_addresses oa_ship
     ON oa_ship.order_id = o.id AND UPPER(oa_ship.type) = 'SHIPPING'
+  LEFT JOIN order_multishipping_orders msm ON msm.order_id = o.id
+  LEFT JOIN order_multishipping_groups msg
+    ON msg.id = msm.group_id AND msg.status <> 'CANCELLED'
+  {$financialAdjustmentJoin}
   WHERE $whereSql
-  ORDER BY o.id ASC";
+    AND (msg.id IS NULL OR msm.position = 0)
+  ORDER BY o.id ASC" . ($lockRows ? ' FOR UPDATE' : '');
 
   if (empty($aclParams)) {
     $res = $conn->query($sql);
@@ -363,6 +388,81 @@ function fetchReadyToShipOrders(mysqli $conn, array $aclCats, array $aclTypes, s
   return $rows;
 }
 
+function applyMultishippingAggregates(mysqli $conn, array $orders): array
+{
+  $groupIndexes = [];
+  foreach ($orders as $index => $row) {
+    $groupId = (int) ($row['multishipping_group_id'] ?? 0);
+    if ($groupId > 0) {
+      $groupIndexes[$groupId] = $index;
+    }
+  }
+  if (!$groupIndexes) {
+    return $orders;
+  }
+
+  $hasFinancialTotalColumns = order_financial_column_exists($conn, 'orders', 'financial_total_value')
+    && order_financial_column_exists($conn, 'orders', 'financial_total_currency');
+  $hasFinancialAdjustments = order_financial_adjustments_ready($conn);
+  $financialTotalSelect = $hasFinancialTotalColumns
+    ? 'o.financial_total_value'
+    : 'NULL AS financial_total_value';
+  $adjustmentSelect = $hasFinancialAdjustments
+    ? 'COALESCE(ofa.adjustments_total, 0) AS financial_adjustments_total'
+    : '0 AS financial_adjustments_total';
+  $adjustmentJoin = $hasFinancialAdjustments
+    ? "LEFT JOIN (SELECT order_id, SUM(amount) AS adjustments_total
+        FROM order_financial_adjustments WHERE deleted_at IS NULL GROUP BY order_id) ofa ON ofa.order_id = o.id"
+    : '';
+
+  $groupIds = array_keys($groupIndexes);
+  $placeholders = implode(',', array_fill(0, count($groupIds), '?'));
+  $types = str_repeat('i', count($groupIds));
+  $sql = "SELECT m.group_id, m.order_id, o.total AS order_total,
+      {$financialTotalSelect}, {$adjustmentSelect},
+      (SELECT GROUP_CONCAT(DISTINCT oi.item_type_code ORDER BY oi.item_type_code SEPARATOR '')
+       FROM order_items oi WHERE oi.order_id = o.id AND oi.item_type_code IS NOT NULL AND oi.item_type_code <> '') AS item_types
+    FROM order_multishipping_orders m
+    JOIN orders o ON o.id = m.order_id
+    {$adjustmentJoin}
+    WHERE m.group_id IN ($placeholders)
+    ORDER BY m.group_id, m.position";
+  $stmt = $conn->prepare($sql);
+  $stmt->bind_param($types, ...$groupIds);
+  $stmt->execute();
+  $aggregate = [];
+  $res = $stmt->get_result();
+  while ($row = $res->fetch_assoc()) {
+    $groupId = (int) $row['group_id'];
+    if (!isset($aggregate[$groupId])) {
+      $aggregate[$groupId] = ['total' => 0.0, 'types' => [], 'member_types' => [], 'count' => 0];
+    }
+    $override = order_financial_money_value($row['financial_total_value'] ?? null);
+    $base = order_financial_money_value($row['order_total'] ?? null) ?? 0.0;
+    $adjustments = order_financial_money_value($row['financial_adjustments_total'] ?? null) ?? 0.0;
+    $aggregate[$groupId]['total'] += $override !== null ? $override : ($base + $adjustments);
+    $memberTypes = normalizeTypesOrder((string) ($row['item_types'] ?? ''));
+    $aggregate[$groupId]['member_types'][] = $memberTypes;
+    foreach (str_split($memberTypes) as $type) {
+      $aggregate[$groupId]['types'][$type] = true;
+    }
+    $aggregate[$groupId]['count']++;
+  }
+  $stmt->close();
+
+  foreach ($groupIndexes as $groupId => $index) {
+    if (!isset($aggregate[$groupId])) {
+      continue;
+    }
+    $orders[$index]['financial_total_value'] = round(max(0.0, $aggregate[$groupId]['total']), 2);
+    $orders[$index]['financial_adjustments_total'] = 0;
+    $orders[$index]['item_types'] = normalizeTypesOrder(implode('', array_keys($aggregate[$groupId]['types'])));
+    $orders[$index]['multishipping_member_types'] = $aggregate[$groupId]['member_types'];
+    $orders[$index]['multishipping_member_count'] = $aggregate[$groupId]['count'];
+  }
+  return $orders;
+}
+
 function buildExportRows(array $orders, array $materialMap, string $materialDefault, array $weightMap, float $weightDefault): array
 {
   $exportRows = [];
@@ -370,7 +470,13 @@ function buildExportRows(array $orders, array $materialMap, string $materialDefa
   foreach ($orders as $row) {
     $typesRaw = (string) ($row['item_types'] ?? '');
     $typesNorm = normalizeTypesOrder($typesRaw);
-    $orderTotal = (float) ($row['order_total'] ?? 0);
+    $financialOverride = order_financial_money_value($row['financial_total_value'] ?? null);
+    $orderBaseTotal = order_financial_money_value($row['order_total'] ?? null) ?? 0.0;
+    $financialAdjustmentsTotal = order_financial_money_value($row['financial_adjustments_total'] ?? null) ?? 0.0;
+    $orderTotal = $financialOverride !== null
+      ? $financialOverride
+      : ($orderBaseTotal + $financialAdjustmentsTotal);
+    $orderTotal = max(0.0, round($orderTotal, 2));
 
     $orderNumber = trim((string) ($row['order_number'] ?? ''));
     $externalOrderId = trim((string) ($row['external_order_id'] ?? ''));
@@ -383,12 +489,26 @@ function buildExportRows(array $orders, array $materialMap, string $materialDefa
 
     $material = $materialMap[$typesNorm] ?? $materialDefault;
     $weight = $weightMap[$typesNorm] ?? $weightDefault;
+    if (!empty($row['multishipping_member_types']) && is_array($row['multishipping_member_types'])) {
+      $groupWeight = 0.0;
+      foreach ($row['multishipping_member_types'] as $memberTypes) {
+        $memberWeight = $weightMap[$memberTypes] ?? $weightDefault;
+        if (is_numeric((string) $memberWeight)) {
+          $groupWeight += (float) $memberWeight;
+        }
+      }
+      if ($groupWeight > 0) {
+        $weight = $groupWeight;
+      }
+    }
     if ($weight === null || $weight === '') {
       $weight = $weightDefault;
     }
 
     $exportRows[(int) $row['id']] = [
       'order_id' => (int) $row['id'],
+      'multishipping_group_id' => (int) ($row['multishipping_group_id'] ?? 0),
+      'multishipping_member_count' => (int) ($row['multishipping_member_count'] ?? 1),
       'order_number' => $orderNumber,
       'external_order_id' => $externalOrderId,
       'types' => $typesNorm,
@@ -482,7 +602,11 @@ function renderPreviewRows(array $rows): void
     $orderId = (int) $row['order_id'];
     $orderLabel = $row['order_number'] !== '' ? $row['order_number'] : $row['external_order_id'];
     echo '<tr>';
-    echo '<td><strong>' . htmlspecialchars($orderLabel) . '</strong><br><small class="text-muted">#' . $orderId . '</small></td>';
+    echo '<td><strong>' . htmlspecialchars($orderLabel) . '</strong>';
+    if ((int) ($row['multishipping_group_id'] ?? 0) > 0) {
+      echo '<br><span class="badge badge-info">MULTI · ' . (int) ($row['multishipping_member_count'] ?? 1) . ' orders</span>';
+    }
+    echo '<br><small class="text-muted">#' . $orderId . '</small></td>';
     echo '<td>' . htmlspecialchars((string) $row['types']) . '</td>';
 
     foreach ([
@@ -501,10 +625,26 @@ function renderPreviewRows(array $rows): void
   echo '</tbody></table></div>';
 }
 
-$orders = fetchReadyToShipOrders($conn, $aclCats, $aclTypes, $fitWhere);
-$defaultRows = buildExportRows($orders, $MATERIAL_MAP, $MATERIAL_DEFAULT, $WEIGHT_MAP, $WEIGHT_DEFAULT);
+$isPreview = isset($_GET['preview']);
+$exportTransaction = false;
+try {
+  ordersMultishippingEnsureSchema($conn);
+  if (!$isPreview) {
+    $conn->begin_transaction();
+    $exportTransaction = true;
+  }
+  $orders = fetchReadyToShipOrders($conn, $aclCats, $aclTypes, $fitWhere, !$isPreview);
+  $orders = applyMultishippingAggregates($conn, $orders);
+  $defaultRows = buildExportRows($orders, $MATERIAL_MAP, $MATERIAL_DEFAULT, $WEIGHT_MAP, $WEIGHT_DEFAULT);
+} catch (Throwable $e) {
+  if ($exportTransaction) {
+    $conn->rollback();
+  }
+  http_response_code(500);
+  die('FedEx export failed: ' . htmlspecialchars($e->getMessage(), ENT_QUOTES, 'UTF-8'));
+}
 
-if (isset($_GET['preview'])) {
+if ($isPreview) {
   renderPreviewRows($defaultRows);
   $conn->close();
   exit;
@@ -512,6 +652,18 @@ if (isset($_GET['preview'])) {
 
 $submittedRows = isset($_POST['rows']) && is_array($_POST['rows']) ? $_POST['rows'] : [];
 $exportRows = applyOverrides($defaultRows, $submittedRows);
+
+try {
+  ordersMultishippingMarkExported($conn, array_values($defaultRows), (int) ($_SESSION['user_id'] ?? 0));
+  $conn->commit();
+  $exportTransaction = false;
+} catch (Throwable $e) {
+  if ($exportTransaction) {
+    $conn->rollback();
+  }
+  http_response_code(409);
+  die('FedEx export could not be locked: ' . htmlspecialchars($e->getMessage(), ENT_QUOTES, 'UTF-8'));
+}
 
 // FedEx Stratus vie robit problemy s diakritikou/cudzimi znakmi v UTF-8,
 // preto vystup konvertujeme do Windows-1252 ("ANSI"). //TRANSLIT skusi znak

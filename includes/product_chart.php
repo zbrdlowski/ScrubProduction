@@ -9,10 +9,12 @@ $scrubcode = isset($_GET['scrubcocode']) ? trim($_GET['scrubcocode']) : '';
 
 $canArrangeProductChartColumns = !empty($_SESSION['user_id']);
 
-// Management a vyššie (300+) — Add/Update Model Year + Updates to Apply tracking.
-// Rovnaký limit ako v scrub_model_manage_ajax.php a scrub_update_tracking_ajax.php,
-// aby tlačidlá v UI neboli zavádzajúco aktívne pre niekoho, koho backend rovnako odmietne (403).
-$canManageModelYears = isset($_SESSION['permission']) && (int) $_SESSION['permission'] >= 300;
+// Product chart editacia: iba superadmin alebo konkretne povoleni useri.
+// Rovnake pravidlo musi byt aj v AJAX endpointoch pre meta/model-year/tracking ulozenia.
+$productChartEditorIds = [3, 16, 17];
+$productChartUserId = (int) ($_SESSION['user_id'] ?? 0);
+$productChartPermission = (int) ($_SESSION['permission'] ?? 0);
+$canEditProductChart = $productChartPermission >= 900 || in_array($productChartUserId, $productChartEditorIds, true);
 
 // Ak príde priamy scrubcocode link, načítaj brand/model/range
 if ($scrubcode !== '') {
@@ -798,7 +800,8 @@ if ($resTrackCnt) {
             <h3 class="card-title mb-0">Scrub Database</h3>
             <div class="d-flex align-items-center" style="gap:14px;">
                 <small class="text-muted">Click on row to see details</small>
-                <select id="trackingStatusFilter" class="form-control form-control-sm" style="width:165px;">
+                <select id="trackingStatusFilter" class="form-control form-control-sm" style="width:165px;"
+                    <?= $canEditProductChart ? '' : 'disabled title="Update filtre su dostupne len povolenym editorom" data-toggle="tooltip"' ?>>
                     <option value="">All update statuses</option>
                     <option value="Pending">Pending updates</option>
                     <option value="Complete">Complete</option>
@@ -809,7 +812,7 @@ if ($resTrackCnt) {
                         <i class="fas fa-columns mr-1"></i> Arrange columns
                     </button>
                 <?php endif; ?>
-                <?php if ($canManageModelYears): ?>
+                <?php if ($canEditProductChart): ?>
                     <button type="button" id="btnUpdateTrackingAlert" class="btn btn-sm btn-outline-warning"
                         data-toggle="modal" data-target="#updateTrackingModal">
                         <i class="fas fa-bell mr-1"></i> Updates to Apply
@@ -822,11 +825,11 @@ if ($resTrackCnt) {
                     </button>
                 <?php else: ?>
                     <button type="button" class="btn btn-sm btn-outline-warning" disabled
-                        title="Vyžaduje oprávnenie Management (300) a vyššie" data-toggle="tooltip">
+                        title="Dostupne len pre superadmina a povolenych editorov" data-toggle="tooltip">
                         <i class="fas fa-lock mr-1"></i> Updates to Apply
                     </button>
                     <button type="button" class="btn btn-sm btn-outline-success" disabled
-                        title="Vyžaduje oprávnenie Management (300) a vyššie" data-toggle="tooltip">
+                        title="Dostupne len pre superadmina a povolenych editorov" data-toggle="tooltip">
                         <i class="fas fa-lock mr-1"></i> Add / Update Model Year
                     </button>
                 <?php endif; ?>
@@ -970,27 +973,36 @@ if ($resTrackCnt) {
                                 </span>
                             <?php endif; ?>
                         </span>
-                        <button type="button" class="btn btn-sm btn-outline-info btn-edit-tracking"
-                            data-rowkey="<?= htmlspecialchars($rowkey2) ?>"
-                            data-trackid="<?= $tracking2 ? (int) $tracking2['trackid'] : '' ?>"
-                            style="<?= $tracking2 ? '' : 'display:none;' ?>">
-                            <i class="fas fa-edit mr-1"></i> Edit tracking
-                        </button>
+                        <?php if ($canEditProductChart): ?>
+                            <button type="button" class="btn btn-sm btn-outline-info btn-edit-tracking"
+                                data-rowkey="<?= htmlspecialchars($rowkey2) ?>"
+                                data-trackid="<?= $tracking2 ? (int) $tracking2['trackid'] : '' ?>"
+                                style="<?= $tracking2 ? '' : 'display:none;' ?>">
+                                <i class="fas fa-edit mr-1"></i> Edit tracking
+                            </button>
+                        <?php elseif ($tracking2): ?>
+                            <button type="button" class="btn btn-sm btn-outline-info" disabled
+                                title="Dostupne len pre superadmina a povolenych editorov" data-toggle="tooltip">
+                                <i class="fas fa-lock mr-1"></i> Edit tracking
+                            </button>
+                        <?php endif; ?>
                     </div>
 
                     <div class="row tracking-view-area" id="tracking-view-<?= htmlspecialchars($rowkey2) ?>"></div>
 
-                    <div class="tracking-edit-area" id="tracking-edit-<?= htmlspecialchars($rowkey2) ?>" style="display:none;">
-                        <div class="tracking-toggles" id="tracking-editor-<?= htmlspecialchars($rowkey2) ?>"></div>
-                        <div class="d-flex justify-content-end mt-2" style="gap:8px;">
-                            <button type="button" class="btn btn-sm btn-secondary btn-cancel-tracking-edit"
-                                data-rowkey="<?= htmlspecialchars($rowkey2) ?>">Cancel</button>
-                            <button type="button" class="btn btn-sm btn-success btn-save-tracking"
-                                data-rowkey="<?= htmlspecialchars($rowkey2) ?>">
-                                <i class="fas fa-save mr-1"></i> Save
-                            </button>
+                    <?php if ($canEditProductChart): ?>
+                        <div class="tracking-edit-area" id="tracking-edit-<?= htmlspecialchars($rowkey2) ?>" style="display:none;">
+                            <div class="tracking-toggles" id="tracking-editor-<?= htmlspecialchars($rowkey2) ?>"></div>
+                            <div class="d-flex justify-content-end mt-2" style="gap:8px;">
+                                <button type="button" class="btn btn-sm btn-secondary btn-cancel-tracking-edit"
+                                    data-rowkey="<?= htmlspecialchars($rowkey2) ?>">Cancel</button>
+                                <button type="button" class="btn btn-sm btn-success btn-save-tracking"
+                                    data-rowkey="<?= htmlspecialchars($rowkey2) ?>">
+                                    <i class="fas fa-save mr-1"></i> Save
+                                </button>
+                            </div>
                         </div>
-                    </div>
+                    <?php endif; ?>
                 </div>
 
                 <hr class="tracking-divider">
@@ -1002,40 +1014,49 @@ if ($resTrackCnt) {
                         (<?= htmlspecialchars($row2['rangeyear']) ?>)
                         <code><?= htmlspecialchars($code2) ?></code>
                     </span>
-                    <button type="button" class="btn btn-sm btn-outline-warning btn-edit-model-meta"
-                        data-rowkey="<?= htmlspecialchars($rowkey2) ?>"
-                        data-brand="<?= htmlspecialchars($row2['brand']) ?>"
-                        data-model="<?= htmlspecialchars($row2['model']) ?>"
-                        data-rangeyear="<?= htmlspecialchars($row2['rangeyear']) ?>"
-                        data-modelcode="<?= htmlspecialchars($code2) ?>">
-                        <i class="fas fa-edit mr-1"></i> Edit meta
-                    </button>
-                </div>
-
-                <div class="row meta-view-area" id="view-<?= htmlspecialchars($rowkey2) ?>"></div>
-
-                <div class="meta-edit-area" id="edit-<?= htmlspecialchars($rowkey2) ?>" style="display:none;">
-                    <div class="d-flex justify-content-between align-items-center mb-2">
-                        <small class="text-muted">Pridaj alebo uprav bloky a fieldy.</small>
-                        <button type="button" class="btn btn-sm btn-outline-info btn-add-meta-block"
-                            data-rowkey="<?= htmlspecialchars($rowkey2) ?>">
-                            <i class="fas fa-plus mr-1"></i> Add block
-                        </button>
-                    </div>
-                    <div class="meta-blocks-editor" id="editor-<?= htmlspecialchars($rowkey2) ?>"></div>
-                    <div class="d-flex justify-content-end mt-2" style="gap:8px;">
-                        <button type="button" class="btn btn-sm btn-secondary btn-cancel-meta-edit"
-                        data-rowkey="<?= htmlspecialchars($rowkey2) ?>">Cancel</button>
-                        <button type="button" class="btn btn-sm btn-success btn-save-model-meta"
+                    <?php if ($canEditProductChart): ?>
+                        <button type="button" class="btn btn-sm btn-outline-warning btn-edit-model-meta"
                             data-rowkey="<?= htmlspecialchars($rowkey2) ?>"
                             data-brand="<?= htmlspecialchars($row2['brand']) ?>"
                             data-model="<?= htmlspecialchars($row2['model']) ?>"
                             data-rangeyear="<?= htmlspecialchars($row2['rangeyear']) ?>"
                             data-modelcode="<?= htmlspecialchars($code2) ?>">
-                            <i class="fas fa-save mr-1"></i> Save
+                            <i class="fas fa-edit mr-1"></i> Edit meta
                         </button>
-                    </div>
+                    <?php else: ?>
+                        <button type="button" class="btn btn-sm btn-outline-warning" disabled
+                            title="Dostupne len pre superadmina a povolenych editorov" data-toggle="tooltip">
+                            <i class="fas fa-lock mr-1"></i> Edit meta
+                        </button>
+                    <?php endif; ?>
                 </div>
+
+                <div class="row meta-view-area" id="view-<?= htmlspecialchars($rowkey2) ?>"></div>
+
+                <?php if ($canEditProductChart): ?>
+                    <div class="meta-edit-area" id="edit-<?= htmlspecialchars($rowkey2) ?>" style="display:none;">
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <small class="text-muted">Pridaj alebo uprav bloky a fieldy.</small>
+                            <button type="button" class="btn btn-sm btn-outline-info btn-add-meta-block"
+                                data-rowkey="<?= htmlspecialchars($rowkey2) ?>">
+                                <i class="fas fa-plus mr-1"></i> Add block
+                            </button>
+                        </div>
+                        <div class="meta-blocks-editor" id="editor-<?= htmlspecialchars($rowkey2) ?>"></div>
+                        <div class="d-flex justify-content-end mt-2" style="gap:8px;">
+                            <button type="button" class="btn btn-sm btn-secondary btn-cancel-meta-edit"
+                            data-rowkey="<?= htmlspecialchars($rowkey2) ?>">Cancel</button>
+                            <button type="button" class="btn btn-sm btn-success btn-save-model-meta"
+                                data-rowkey="<?= htmlspecialchars($rowkey2) ?>"
+                                data-brand="<?= htmlspecialchars($row2['brand']) ?>"
+                                data-model="<?= htmlspecialchars($row2['model']) ?>"
+                                data-rangeyear="<?= htmlspecialchars($row2['rangeyear']) ?>"
+                                data-modelcode="<?= htmlspecialchars($code2) ?>">
+                                <i class="fas fa-save mr-1"></i> Save
+                            </button>
+                        </div>
+                    </div>
+                <?php endif; ?>
 
             </div>
         </div>
@@ -1046,6 +1067,7 @@ if ($resTrackCnt) {
     <!-- Skrytý sklad pre detail panely — JS ich odtiaľto presúva za riadok -->
     <div id="scrubDetailStore" style="display:none;"></div>
 
+    <?php if ($canEditProductChart): ?>
     <!-- ── Modal: Add / Update Model Year ──────────────────────────────── -->
     <div class="modal fade" id="modelYearModal" tabindex="-1" role="dialog" aria-hidden="true">
         <div class="modal-dialog modal-lg" role="document">
@@ -1199,6 +1221,7 @@ if ($resTrackCnt) {
             </div>
         </div>
     </div>
+    <?php endif; ?>
 
     <?php if ($canArrangeProductChartColumns): ?>
         <div class="modal fade" id="columnArrangeModal" tabindex="-1" role="dialog" aria-hidden="true">
@@ -1230,6 +1253,9 @@ if ($resTrackCnt) {
 
 </section>
 
+<script>
+    window.productChartCanEdit = <?= $canEditProductChart ? 'true' : 'false' ?>;
+</script>
 <script src="scripts/product_chart_actions.js?v=<?= (int) @filemtime(__DIR__ . '/../scripts/product_chart_actions.js') ?>"></script>
 <script src="scripts/scrub_model_manage.js?v=<?= (int) @filemtime(__DIR__ . '/../scripts/scrub_model_manage.js') ?>"></script>
 <script src="scripts/scrub_update_tracking.js?v=<?= (int) @filemtime(__DIR__ . '/../scripts/scrub_update_tracking.js') ?>"></script>
@@ -1299,6 +1325,7 @@ if ($resTrackCnt) {
         const savedFilters = chartPreferences.filters || {};
         const columnOrder = normalizeProductChartColumnOrder(chartPreferences.column_order);
         const columnIndex = function (columnId) { return columnOrder.indexOf(columnId); };
+        const canUseTrackingStatusFilter = window.productChartCanEdit === true;
 
         applyProductChartColumnOrder(columnOrder);
 
@@ -1339,8 +1366,8 @@ if ($resTrackCnt) {
             }
         });
 
-        $('#trackingStatusFilter').val(savedFilters.tracking_status || '');
-        if ($('#trackingStatusFilter').val()) {
+        $('#trackingStatusFilter').val(canUseTrackingStatusFilter ? (savedFilters.tracking_status || '') : '');
+        if (canUseTrackingStatusFilter && $('#trackingStatusFilter').val()) {
             scrubTable.column(columnIndex('update'))
                 .search('^' + $('#trackingStatusFilter').val() + '$', true, false)
                 .draw();
@@ -1350,7 +1377,7 @@ if ($resTrackCnt) {
             return {
                 column_order: order || columnOrder,
                 filters: {
-                    tracking_status: $('#trackingStatusFilter').val() || '',
+                    tracking_status: canUseTrackingStatusFilter ? ($('#trackingStatusFilter').val() || '') : '',
                     search: scrubTable.search() || '',
                     page_length: scrubTable.page.len()
                 }

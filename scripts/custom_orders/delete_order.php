@@ -42,6 +42,7 @@ try {
   $deleteByOrderId($conn, 'custom_order_photos', $orderId);
   $deleteByOrderId($conn, 'custom_order_followups', $orderId);
   $deleteByOrderId($conn, 'custom_order_payments', $orderId);
+  $deleteByOrderId($conn, 'custom_order_assignments', $orderId);
   $deleteByOrderId($conn, 'custom_order_item_assignments', $orderId);
   $deleteByOrderId($conn, 'custom_order_items', $orderId);
   $deleteByOrderId($conn, 'custom_order_activity', $orderId);

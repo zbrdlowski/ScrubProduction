@@ -28,6 +28,8 @@ if ($customOrdersPermission < 300) {
     'edit_note.php',
     'delete_note.php',
     'upload_photos.php',
+    'take_order.php',
+    'remove_order_assignment.php',
     'take_item.php',
     'save_order.php',
   ];

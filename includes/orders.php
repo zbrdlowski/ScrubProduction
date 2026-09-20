@@ -6,6 +6,7 @@ require_once __DIR__ . '/render_assigned_users.php';
 require_once __DIR__ . '/orders_status_helpers.php';
 require_once __DIR__ . '/orders_workflow_helpers.php';
 require_once __DIR__ . '/orders_customs_helpers.php';
+require_once __DIR__ . '/orders_multishipping_helpers.php';
 
 if (!isset($conn) || !$conn instanceof mysqli) {
   echo '<div class="alert alert-danger">Database connection error.</div>';
@@ -42,6 +43,105 @@ function normalizeTypesOrder(string $types): string
   });
 
   return implode('', $typesArr);
+}
+
+function ordersWorkflowPeopleFromRow(array $row): array
+{
+  $people = [];
+
+  $addPerson = static function (int $employeeId, string $firstName, string $lastName, string $photo, string $role) use (&$people): void {
+    if ($employeeId <= 0) {
+      return;
+    }
+
+    if (!isset($people[$employeeId])) {
+      $fullName = trim($firstName . ' ' . $lastName);
+      $people[$employeeId] = [
+        'id' => $employeeId,
+        'name' => $fullName !== '' ? $fullName : ('Employee #' . $employeeId),
+        'photo' => trim($photo),
+        'roles' => [],
+      ];
+    }
+
+    $people[$employeeId]['roles'][$role] = true;
+  };
+
+  // Custom-order owner is shown only for an order that is actually linked back
+  // to custom_orders through production_order_id.
+  $addPerson(
+    (int) ($row['custom_owner_id'] ?? 0),
+    (string) ($row['custom_owner_firstname'] ?? ''),
+    (string) ($row['custom_owner_lastname'] ?? ''),
+    (string) ($row['custom_owner_photo'] ?? ''),
+    'owner'
+  );
+
+  if (
+    (int) ($row['status_override'] ?? 0) === 1
+    && trim((string) ($row['status_override_note'] ?? '')) === 'Manual status change'
+  ) {
+    $addPerson(
+      (int) ($row['status_override_by'] ?? 0),
+      (string) ($row['status_override_firstname'] ?? ''),
+      (string) ($row['status_override_lastname'] ?? ''),
+      (string) ($row['status_override_photo'] ?? ''),
+      'override'
+    );
+  }
+
+  return array_values($people);
+}
+
+function ordersRenderWorkflowPeople(array $row): string
+{
+  $people = ordersWorkflowPeopleFromRow($row);
+  if (!$people) {
+    return '';
+  }
+
+  $html = '<div class="order-workflow-people">';
+  foreach ($people as $person) {
+    $roles = array_keys($person['roles'] ?? []);
+    $roleLabels = [];
+    if (in_array('owner', $roles, true)) {
+      $roleLabels[] = 'Custom order owner';
+    }
+    if (in_array('override', $roles, true)) {
+      $roleLabels[] = 'Manual workflow override';
+    }
+
+    $name = (string) ($person['name'] ?? 'Employee');
+    $title = $name . ($roleLabels ? ' · ' . implode(' · ', $roleLabels) : '');
+    $class = 'order-workflow-person';
+    foreach ($roles as $role) {
+      $class .= ' is-' . $role;
+    }
+
+    $photo = trim((string) ($person['photo'] ?? ''));
+    if ($photo !== '') {
+      $html .= '<img src="images/' . htmlspecialchars($photo, ENT_QUOTES, 'UTF-8') . '"'
+        . ' class="' . htmlspecialchars($class, ENT_QUOTES, 'UTF-8') . '"'
+        . ' alt="' . htmlspecialchars($name, ENT_QUOTES, 'UTF-8') . '"'
+        . ' title="' . htmlspecialchars($title, ENT_QUOTES, 'UTF-8') . '">';
+      continue;
+    }
+
+    $initials = '';
+    foreach (preg_split('/\\s+/u', trim($name)) ?: [] as $namePart) {
+      if ($namePart !== '') {
+        $initials .= mb_strtoupper(mb_substr($namePart, 0, 1));
+      }
+      if (mb_strlen($initials) >= 2) {
+        break;
+      }
+    }
+    $html .= '<span class="' . htmlspecialchars($class, ENT_QUOTES, 'UTF-8') . '"'
+      . ' title="' . htmlspecialchars($title, ENT_QUOTES, 'UTF-8') . '">'
+      . htmlspecialchars($initials !== '' ? $initials : '?', ENT_QUOTES, 'UTF-8')
+      . '</span>';
+  }
+  return $html . '</div>';
 }
 
 function ordersFollowupTypeLabel(string $type): string
@@ -352,7 +452,7 @@ $fSource = isset($_GET['source']) ? trim((string) $_GET['source']) : '';
 // Špeciálny parameter pre pracovné queue — vylúčenie viacerých overall statusov.
 // Hodnoty oddelené čiarkou, napr. "PENDING,SHIPPED"
 $fExcludeStatuses = isset($_GET['exclude_status']) ? trim((string) $_GET['exclude_status']) : '';
-$defaultHiddenOrderStatuses = ['SHIPPED', 'CANCELLED', 'PENDING'];
+$defaultHiddenOrderStatuses = ['SHIPPED', 'CANCELLED', 'PENDING', 'DELIVERED'];
 
 $fCountry = isset($_GET['country']) ? strtoupper(trim((string) $_GET['country'])) : '';
 $fPayment = isset($_GET['payment']) ? trim((string) $_GET['payment']) : '';
@@ -479,20 +579,11 @@ $allowedStatuses = array_keys($orderStatusLabels);
 if ($fStatus !== '' && !in_array($fStatus, $allowedStatuses, true))
   $fStatus = '';
 
-// Horné fulltext vyhľadávanie má hľadať naprieč všetkými objednávkami,
-// nie len v aktuálne aktívnom quick tabe.
-if ($fQ !== '') {
-  $fStatus = '';
-  $fItemStatus = '';
-  $fItemDepartment = '';
-}
-
-// Ak je zvolený konkrétny overall status tabom alebo filtrom, má prednosť.
-// Search je výnimka: musí vedieť nájsť aj finálne/neplatené overall statusy.
-// Inak pracovné queue tieto statusy schovávajú.
-if ($fStatus !== '') {
-  $fExcludeStatuses = '';
-} elseif ($fQ !== '') {
+// Bez vedomého filtra zobrazujeme iba Open Orders. Konkrétny status alebo
+// fulltextové vyhľadávanie je explicitná požiadavka používateľa, preto pri
+// nich dovolíme nájsť aj SHIPPED/CANCELLED/PENDING/DELIVERED objednávky.
+// Ostatné aktívne filtre pritom search zachováva.
+if ($fStatus !== '' || $fQ !== '') {
   $fExcludeStatuses = '';
 } else {
   $excludedStatuses = array_filter(array_map(static function ($status) {
@@ -515,7 +606,7 @@ $quickTabCounts = ordersGetOrderStatusCounts($conn);
 $itemQuickTabCounts = ordersGetItemStatusCounts($conn);
 $openOrdersCount = 0;
 foreach ($quickTabCounts as $statusCode => $statusCount) {
-  if (!in_array($statusCode, ['SHIPPED', 'CANCELLED', 'PENDING'], true)) {
+  if (!in_array($statusCode, $defaultHiddenOrderStatuses, true)) {
     $openOrdersCount += (int)$statusCount;
   }
 }
@@ -597,7 +688,7 @@ $rolePrimaryUI = $uiDeptCode ? ('PRIMARY_' . $uiDeptCode) : null;
 $meUserId = (int) ($_SESSION['user_id'] ?? 0);
 $perm = (int) ($_SESSION['permission'] ?? 0);
 $isSuperAdmin = $perm >= 900;
-$ordersTableColumnCount = $isSuperAdmin ? 12 : 11;
+$ordersTableColumnCount = $isSuperAdmin ? 13 : 12;
 
 $aclCats = [];
 $aclTypes = [];
@@ -984,6 +1075,8 @@ $sql = " SELECT
   o.imported_at,
   o.status,
   o.status_override,
+  o.status_override_by,
+  o.status_override_note,
   o.priority,
   o.priority_date,
   o.traffic_light,
@@ -1000,6 +1093,13 @@ $sql = " SELECT
   COALESCE(oa_ship.country, oa_bill.country) AS country_code,
   COALESCE(oa_bill.company, '') AS billing_company,
   COALESCE(oa_bill.company_id, '') AS billing_company_id,
+  co.owner_employee_id AS custom_owner_id,
+  custom_owner.firstname AS custom_owner_firstname,
+  custom_owner.lastname AS custom_owner_lastname,
+  custom_owner.photo AS custom_owner_photo,
+  status_override_employee.firstname AS status_override_firstname,
+  status_override_employee.lastname AS status_override_lastname,
+  status_override_employee.photo AS status_override_photo,
 
   (
     SELECT GROUP_CONCAT(DISTINCT c.code ORDER BY c.code SEPARATOR ', ')
@@ -1101,6 +1201,15 @@ LEFT JOIN order_addresses oa_ship
   ON oa_ship.order_id = o.id AND UPPER(oa_ship.type) = 'SHIPPING'
 LEFT JOIN order_addresses oa_bill
   ON oa_bill.order_id = o.id AND UPPER(oa_bill.type) = 'BILLING'
+LEFT JOIN custom_orders co
+  ON co.production_order_id = o.id
+  AND UPPER(os.code) = 'CUSTOM'
+LEFT JOIN employees custom_owner
+  ON custom_owner.id = co.owner_employee_id
+LEFT JOIN employees status_override_employee
+  ON status_override_employee.id = o.status_override_by
+  AND o.status_override = 1
+  AND o.status_override_note = 'Manual status change'
 $whereSql
 
 ORDER BY
@@ -1149,6 +1258,14 @@ $orderIds = [];
 while ($row = $res->fetch_assoc()) {
   $orderRows[] = $row;
   $orderIds[] = (int) ($row['id'] ?? 0);
+}
+
+try {
+  $orderMultishippingMap = ordersMultishippingMap($conn, $orderIds);
+} catch (Throwable $e) {
+  $orderMultishippingMap = [];
+  echo '<div class="alert alert-danger">Multishipping initialization failed: '
+    . htmlspecialchars($e->getMessage(), ENT_QUOTES, 'UTF-8') . '</div>';
 }
 
 // Order Split grouping: force SPLIT follow-up rows (Q1, Q2, ...) to sit directly
@@ -1299,6 +1416,49 @@ $deptOptions = [
     color: #ffab5e;
     text-decoration: none;
   }
+  .order-dup-customer-badge.is-multishipping-trigger {
+    color: #67d5e8;
+    background: rgba(23, 162, 184, .16);
+    border-color: rgba(23, 162, 184, .55);
+    cursor: pointer;
+  }
+  .order-dup-customer-badge.is-multishipping-trigger:hover,
+  .order-dup-customer-badge.is-multishipping-trigger:focus-visible {
+    color: #a5edf7;
+    background: rgba(23, 162, 184, .30);
+    border-color: rgba(103, 213, 232, .85);
+    text-decoration: none;
+  }
+
+  .order-multishipping-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    border: 1px solid rgba(23, 162, 184, .55);
+    border-radius: 10px;
+    padding: 1px 7px;
+    background: rgba(23, 162, 184, .16);
+    color: #67d5e8;
+    font-size: .68rem;
+    font-weight: 700;
+    line-height: 1.5;
+    white-space: nowrap;
+    cursor: pointer;
+  }
+  .order-multishipping-badge.is-member {
+    border-color: rgba(255, 193, 7, .55);
+    background: rgba(255, 193, 7, .13);
+    color: #ffd55c;
+  }
+  .order-multishipping-badge:hover { filter: brightness(1.18); }
+  .multishipping-candidate {
+    border: 1px solid #495057;
+    border-radius: 6px;
+    padding: 10px 12px;
+    margin-bottom: 8px;
+    background: rgba(255,255,255,.025);
+  }
+  .multishipping-candidate.is-blocked { opacity: .62; }
 
   .tm-highlight {
     background: rgba(255, 193, 7, 0.12) !important;
@@ -1470,6 +1630,43 @@ $deptOptions = [
     gap: 4px;
     white-space: nowrap;
     width: 100%;
+  }
+
+  .order-workflow-people {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    min-width: 34px;
+    white-space: nowrap;
+  }
+
+  .order-workflow-person {
+    width: 28px;
+    height: 28px;
+    flex: 0 0 28px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 2px solid rgba(23, 162, 184, .9);
+    border-radius: 50%;
+    background: #33414a;
+    color: #fff;
+    object-fit: cover;
+    font-size: .68rem;
+    font-weight: 800;
+    line-height: 1;
+    box-shadow: 0 0 0 2px rgba(23, 162, 184, .12);
+  }
+
+  .order-workflow-person.is-override {
+    border-color: #ffc107;
+    box-shadow: 0 0 0 2px rgba(255, 193, 7, .14);
+  }
+
+  .order-workflow-person.is-owner.is-override {
+    border-color: #9b7cff;
+    box-shadow: 0 0 0 2px rgba(155, 124, 255, .18);
   }
 
   .assigned-avatar,
@@ -2745,7 +2942,7 @@ $deptOptions = [
               <i class="fas fa-search mr-1"></i>Search
             </button>
 
-            <a class="btn btn-secondary btn-sm" href="?page=orders&exclude_status=SHIPPED%2CCANCELLED%2CPENDING">
+            <a class="btn btn-secondary btn-sm" href="?page=orders&exclude_status=SHIPPED%2CCANCELLED%2CPENDING%2CDELIVERED">
               <i class="fas fa-times mr-1"></i>Reset
             </a>
 
@@ -2762,6 +2959,9 @@ $deptOptions = [
           <tr style="background:#343a40;color:#fff;">
             <th class="text-center" width="5%">Import</th>
             <th class="text-center" width="5%">Date</th>
+            <th class="text-center" width="4%" title="Custom order owner / manual workflow override">
+              <i class="fas fa-user-circle" aria-hidden="true"></i><span class="sr-only">Owner / override</span>
+            </th>
             <th class="text-center" width="5%">Source</th>
             <th class="text-center" width="11%">Order #</th>
             <th>Customer</th>
@@ -2904,6 +3104,9 @@ $deptOptions = [
                 }
                 ?>
               </td>
+              <td class="text-center" data-workflow-people-cell="<?= $orderId ?>">
+                <?= ordersRenderWorkflowPeople($row) ?>
+              </td>
               <td class="text-center"><?= htmlspecialchars((string) $row['source_code']) ?></td>
               <td class="text-center">
                 <div><?php if ($isSplitChildRow): ?><span class="order-split-arrow">↳</span><?php endif; ?><b><?= htmlspecialchars((string) ($row['order_number'] ?? $row['external_order_id'] ?? '')) ?></b>
@@ -2918,19 +3121,39 @@ $deptOptions = [
               <?php
               $customerDupCount = $customerNameCounts[$customer] ?? 1;
               $customerIsDup = $customerDupCount >= 2;
+              $multishipping = $orderMultishippingMap[$orderId] ?? null;
+              $multishippingIsMaster = $multishipping && (int) ($multishipping['position'] ?? -1) === 0;
+              $multishippingMasterLabel = $multishipping
+                ? trim((string) (($multishipping['master_order_number'] ?? '') ?: ($multishipping['master_external_order_id'] ?? '')))
+                : '';
               ?>
               <td>
                 <span
                   style="display:flex; justify-content:space-between; align-items:center; gap:6px; white-space:nowrap;">
                   <span style="padding-left:5px; display:inline-flex; align-items:center; gap:5px;">
                     <?= htmlspecialchars($customer) ?>
-                    <?php if ($customerIsDup): ?>
-                      <a href="?page=orders&q=<?= urlencode($customer) ?>"
-                        class="order-dup-customer-badge"
-                        title="<?= htmlspecialchars($customerDupCount . ' open orders from this customer - Click to search') ?>"
-                        onclick="event.stopPropagation();">
+                    <?php if ($multishipping): ?>
+                      <button type="button"
+                        class="order-multishipping-badge js-open-multishipping <?= $multishippingIsMaster ? '' : 'is-member' ?>"
+                        data-order-id="<?= $orderId ?>"
+                        title="<?= htmlspecialchars($multishippingIsMaster
+                          ? ('Multishipping master · ' . (int) $multishipping['member_count'] . ' orders · ' . $multishipping['status'])
+                          : ('Ships with ' . $multishippingMasterLabel . ' · ' . $multishipping['status'])) ?>">
+                        <i class="fas fa-box"></i>
+                        <?= $multishippingIsMaster
+                          ? 'MULTI · ' . (int) $multishipping['member_count']
+                          : 'MULTI → ' . htmlspecialchars($multishippingMasterLabel) ?>
+                      </button>
+                    <?php elseif ($customerIsDup && strtoupper((string) ($row['status'] ?? '')) === 'READY_TO_SHIP'): ?>
+                      <button type="button" class="order-dup-customer-badge is-multishipping-trigger js-open-multishipping"
+                        data-order-id="<?= $orderId ?>"
+                        title="<?= htmlspecialchars($customerDupCount . ' open orders from this customer · Create multishipping') ?>">
                         <i class="fas fa-clone"></i><?= $customerDupCount ?>
-                      </a>
+                      </button>
+                    <?php elseif ($customerIsDup): ?>
+                      <a href="?page=orders&q=<?= urlencode($customer) ?>" class="order-dup-customer-badge"
+                        title="<?= htmlspecialchars($customerDupCount . ' open orders from this customer - Click to search') ?>"
+                        onclick="event.stopPropagation();"><i class="fas fa-clone"></i><?= $customerDupCount ?></a>
                     <?php endif; ?>
                   </span>
                   <?php if ($hasCompanyInfo): ?>
@@ -4029,6 +4252,8 @@ $deptOptions = [
     const $wrap = $('#detail-' + orderId);
     if (!$wrap.length) return;
 
+    const activityWasOpen = $wrap.find('.activity-log-panel:visible').length > 0;
+
     // Zapamätaj si presnú scroll pozíciu PRED akoukoľvek manipuláciou s DOM.
     const scrollX = window.scrollX;
     const scrollY = window.scrollY;
@@ -4065,6 +4290,9 @@ $deptOptions = [
         }
         $wrap.html(resp.html);
         $wrap.data('loaded', true);
+        if (activityWasOpen) {
+          $wrap.find('.activity-log-panel').show();
+        }
 
         // Výška detailu sa po naplnení obsahu zmenila — vráť scroll presne
         // tam, kde bol pred refreshom.
@@ -4832,6 +5060,7 @@ $deptOptions = [
     const qty = $tr.find('.item-qty').val();
     const sku = $tr.find('.item-sku').val();
     const label = $tr.find('.item-label').val();
+    const unitPrice = $tr.find('.item-unit-price').val();
 
     $.post('scripts/orders/update_order_item.php', {
       item_id: itemId,
@@ -4839,7 +5068,8 @@ $deptOptions = [
       type: type,
       qty: qty,
       sku: sku,
-      custom_label: label
+      custom_label: label,
+      unit_price: unitPrice
     }, function (res) {
       if (!res.ok) {
         alert(res.error || 'Update failed');
@@ -5503,6 +5733,40 @@ $deptOptions = [
   </div>
 </div>
 
+<div class="modal fade" id="multishippingModal" tabindex="-1" role="dialog" aria-hidden="true">
+  <div class="modal-dialog modal-lg" role="document">
+    <div class="modal-content bg-dark text-light">
+      <div class="modal-header border-secondary">
+        <h5 class="modal-title"><i class="fas fa-box mr-2"></i>Multishipping</h5>
+        <button type="button" class="close text-light" data-dismiss="modal" data-bs-dismiss="modal" aria-label="Close">
+          <span aria-hidden="true">&times;</span>
+        </button>
+      </div>
+      <div class="modal-body">
+        <div id="multishippingMessage"></div>
+        <div class="text-muted small mb-3">
+          Select all orders packed into one box and choose the master order used in the FedEx CSV.
+        </div>
+        <div id="multishippingCandidates">
+          <span class="spinner-border spinner-border-sm mr-2"></span>Loading orders…
+        </div>
+      </div>
+      <div class="modal-footer border-secondary">
+        <button type="button" class="btn btn-outline-danger btn-sm mr-auto d-none" id="multishippingCancelBtn">
+          Remove group
+        </button>
+        <button type="button" class="btn btn-outline-warning btn-sm d-none" id="multishippingUnlockBtn">
+          Unlock exported group
+        </button>
+        <button type="button" class="btn btn-secondary btn-sm" data-dismiss="modal" data-bs-dismiss="modal">Close</button>
+        <button type="button" class="btn btn-info btn-sm" id="multishippingSaveBtn">
+          <i class="fas fa-save mr-1"></i>Save multishipping
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div class="modal fade" id="fedexExportModal" tabindex="-1" role="dialog" aria-hidden="true">
   <div class="modal-dialog modal-xl" role="document">
     <div class="modal-content bg-dark text-light">
@@ -5584,6 +5848,13 @@ $deptOptions = [
     const $fedexEodFile = $('#fedexEodFile');
     const $fedexEodImportResult = $('#fedexEodImportResult');
     const $fedexEodImportSubmitBtn = $('#fedexEodImportSubmitBtn');
+    const $multishippingModal = $('#multishippingModal');
+    const $multishippingCandidates = $('#multishippingCandidates');
+    const $multishippingMessage = $('#multishippingMessage');
+    const $multishippingSaveBtn = $('#multishippingSaveBtn');
+    const $multishippingCancelBtn = $('#multishippingCancelBtn');
+    const $multishippingUnlockBtn = $('#multishippingUnlockBtn');
+    let multishippingOrderId = 0;
     let fedexEodImportShouldReload = false;
     let fedexExportResizableInit = false;
 
@@ -5644,6 +5915,118 @@ $deptOptions = [
       $fedexEodImportSubmitBtn.prop('disabled', false).html('<i class="fas fa-upload mr-1"></i>Import Tracking');
       $fedexEodImportModal.find('.custom-file-label').text('Choose EOD file');
     }
+
+    function escapeMultishippingHtml(value) {
+      return $('<div>').text(value == null ? '' : String(value)).html();
+    }
+
+    function loadMultishipping(orderId) {
+      multishippingOrderId = parseInt(orderId, 10) || 0;
+      $multishippingMessage.empty();
+      $multishippingCandidates.html('<span class="spinner-border spinner-border-sm mr-2"></span>Loading orders…');
+      $multishippingSaveBtn.prop('disabled', true).removeClass('d-none');
+      $multishippingCancelBtn.addClass('d-none');
+      $multishippingUnlockBtn.addClass('d-none');
+
+      $.getJSON('scripts/orders/multishipping.php', { action: 'fetch', order_id: multishippingOrderId })
+        .done(function (resp) {
+          if (!resp || !resp.ok) {
+            $multishippingCandidates.html('<div class="alert alert-danger mb-0">' + escapeMultishippingHtml(resp && resp.error ? resp.error : 'Unable to load multishipping.') + '</div>');
+            return;
+          }
+          const groupStatus = resp.group ? String(resp.group.status || '') : '';
+          const editable = !resp.group || groupStatus === 'DRAFT';
+          let html = '';
+          (resp.candidates || []).forEach(function (row) {
+            const blocked = !!row.blocked_group || !!row.export_locked || row.status !== 'READY_TO_SHIP';
+            const disabled = !editable || blocked;
+            const checked = !!row.selected;
+            const selectedMaster = !!row.master || (!resp.group && parseInt(row.id, 10) === parseInt(resp.requested_order_id, 10));
+            let warning = '';
+            if (row.blocked_group) warning = 'Already in multishipping with ' + row.blocked_group_master;
+            else if (row.export_locked) warning = 'Already included in a FedEx CSV at ' + row.exported_at;
+            else if (row.status !== 'READY_TO_SHIP') warning = 'Status: ' + row.status;
+            else if (row.address_mismatch) warning = 'Shipping address differs from the opened order. Verify before grouping.';
+            html += '<div class="multishipping-candidate' + (blocked ? ' is-blocked' : '') + '">' +
+              '<div class="d-flex align-items-start">' +
+                '<div class="custom-control custom-checkbox mr-3">' +
+                  '<input type="checkbox" class="custom-control-input ms-order-check" id="ms-order-' + row.id + '" value="' + row.id + '" ' + ((checked || (!resp.group && row.id === resp.requested_order_id)) ? 'checked ' : '') + (disabled ? 'disabled' : '') + '>' +
+                  '<label class="custom-control-label" for="ms-order-' + row.id + '"></label>' +
+                '</div>' +
+                '<div class="flex-grow-1"><strong>' + escapeMultishippingHtml(row.label) + '</strong>' +
+                  '<div class="small text-muted">' + escapeMultishippingHtml(row.address || 'Shipping address not available') + '</div>' +
+                  (warning ? '<div class="small text-warning mt-1">' + escapeMultishippingHtml(warning) +
+                    (row.export_locked && editable ? ' <button type="button" class="btn btn-link btn-sm p-0 ml-1 js-ms-unlock-order" data-order-id="' + row.id + '">Release lock</button>' : '') + '</div>' : '') +
+                '</div>' +
+                '<div class="custom-control custom-radio ml-3">' +
+                  '<input type="radio" class="custom-control-input ms-master-radio" name="ms-master" id="ms-master-' + row.id + '" value="' + row.id + '" ' + (selectedMaster ? 'checked ' : '') + (disabled ? 'disabled' : '') + '>' +
+                  '<label class="custom-control-label text-nowrap" for="ms-master-' + row.id + '">Master</label>' +
+                '</div>' +
+              '</div></div>';
+          });
+          if (!html) html = '<div class="alert alert-warning mb-0">No other READY_TO_SHIP orders were found for this customer.</div>';
+          $multishippingCandidates.html(html);
+          $multishippingSaveBtn.prop('disabled', !editable || (resp.candidates || []).length < 2).toggleClass('d-none', !editable);
+          $multishippingCancelBtn.toggleClass('d-none', !resp.group || groupStatus !== 'DRAFT');
+          $multishippingUnlockBtn.toggleClass('d-none', !resp.group || groupStatus !== 'EXPORTED');
+          if (resp.group && !editable) {
+            $multishippingMessage.html('<div class="alert alert-warning py-2">Group status: <strong>' + escapeMultishippingHtml(groupStatus) + '</strong>. Unlock the group before changing it.</div>');
+          }
+        })
+        .fail(function (xhr) {
+          const message = xhr.responseJSON && xhr.responseJSON.error ? xhr.responseJSON.error : 'Unable to load multishipping.';
+          $multishippingCandidates.html('<div class="alert alert-danger mb-0">' + escapeMultishippingHtml(message) + '</div>');
+        });
+    }
+
+    $(document).on('click', '.js-open-multishipping', function (e) {
+      e.preventDefault();
+      e.stopPropagation();
+      $multishippingModal.modal('show');
+      loadMultishipping($(this).data('order-id'));
+    });
+
+    $(document).on('change', '.ms-master-radio', function () {
+      $('#ms-order-' + $(this).val()).prop('checked', true);
+    });
+
+    $multishippingSaveBtn.on('click', function () {
+      const ids = $('.ms-order-check:checked').map(function () { return parseInt(this.value, 10); }).get();
+      const masterId = parseInt($('.ms-master-radio:checked').val(), 10) || 0;
+      if (ids.length < 2 || !masterId || ids.indexOf(masterId) === -1) {
+        alert('Choose one master and at least one additional order.');
+        return;
+      }
+      const $button = $(this).prop('disabled', true).text('Saving…');
+      $.post('scripts/orders/multishipping.php', {
+        action: 'save', master_order_id: masterId, order_ids: JSON.stringify(ids)
+      }, null, 'json').done(function (resp) {
+        if (!resp || !resp.ok) { alert(resp && resp.error ? resp.error : 'Save failed.'); $button.prop('disabled', false).html('<i class="fas fa-save mr-1"></i>Save multishipping'); return; }
+        location.reload();
+      }).fail(function (xhr) {
+        alert(xhr.responseJSON && xhr.responseJSON.error ? xhr.responseJSON.error : 'Save failed.');
+        $button.prop('disabled', false).html('<i class="fas fa-save mr-1"></i>Save multishipping');
+      });
+    });
+
+    $multishippingCancelBtn.on('click', function () {
+      if (!confirm('Remove this multishipping group?')) return;
+      $.post('scripts/orders/multishipping.php', { action: 'cancel', order_id: multishippingOrderId }, null, 'json')
+        .done(function (resp) { if (resp && resp.ok) location.reload(); else alert(resp.error || 'Remove failed.'); });
+    });
+
+    $multishippingUnlockBtn.on('click', function () {
+      if (!confirm('Release the FedEx export lock? Do this only if the generated CSV will not be used.')) return;
+      $.post('scripts/orders/multishipping.php', { action: 'unlock_group', order_id: multishippingOrderId }, null, 'json')
+        .done(function (resp) { if (resp && resp.ok) loadMultishipping(multishippingOrderId); else alert(resp.error || 'Unlock failed.'); });
+    });
+
+    $(document).on('click', '.js-ms-unlock-order', function () {
+      const orderId = parseInt($(this).data('order-id'), 10) || 0;
+      if (!confirm('Release this order\'s FedEx export lock? Only continue if its previous CSV will not be used.')) return;
+      $.post('scripts/orders/multishipping.php', { action: 'unlock_order', order_id: orderId }, null, 'json')
+        .done(function (resp) { if (resp && resp.ok) loadMultishipping(multishippingOrderId); else alert(resp.error || 'Unlock failed.'); });
+    });
 
     $(document).on('click', '.priority-badge-clickable', function (e) {
       e.preventDefault();

@@ -11,6 +11,10 @@ function pcEscHtml(str) {
         .replace(/'/g, '&#039;');
 }
 
+function pcCanEdit() {
+    return window.productChartCanEdit === true;
+}
+
 // Detekcia či hodnota je yes/no typ
 function isYesNoValue(val) {
     if (typeof val !== 'string') return false;
@@ -290,6 +294,7 @@ $(document)
     .off('click.scrubEditMeta', '.btn-edit-model-meta')
     .on('click.scrubEditMeta', '.btn-edit-model-meta', function (e) {
         e.stopPropagation();
+        if (!pcCanEdit()) return;
         const code = $(this).data('modelcode');
         const rowkey = $(this).data('rowkey');
         const meta = $('tr.model-row[data-rowkey="' + rowkey + '"]').data('meta') || {};
@@ -317,6 +322,7 @@ $(document)
 $(document)
     .off('change.metaToggle', '.meta-field-toggle')
     .on('change.metaToggle', '.meta-field-toggle', function () {
+        if (!pcCanEdit()) return;
         const $row = $(this).closest('.meta-field');
         const checked = $(this).is(':checked');
         $row.find('.meta-field-value').val(checked ? 'yes' : 'no');
@@ -332,6 +338,7 @@ $(document)
     .off('click.metaTypeSwitch', '.meta-type-icon')
     .on('click.metaTypeSwitch', '.meta-type-icon', function (e) {
         e.stopPropagation();
+        if (!pcCanEdit()) return;
         const $field = $(this).closest('.meta-field');
         const current = $(this).data('current');
         const key = $field.find('.meta-field-key').val();
@@ -348,6 +355,7 @@ $(document)
     .off('click.scrubAddBlock', '.btn-add-meta-block')
     .on('click.scrubAddBlock', '.btn-add-meta-block', function (e) {
         e.stopPropagation();
+        if (!pcCanEdit()) return;
         const rowkey = $(this).data('rowkey');
         $('#editor-' + rowkey).append(buildBlockEditorHtml('', {}));
     });
@@ -359,6 +367,7 @@ $(document)
     .on('click.scrubAddField', '.btn-add-meta-field', function (e) {
         e.preventDefault();
         e.stopPropagation();
+        if (!pcCanEdit()) return;
         const type = $(this).data('type') || 'text';
         const newRow = buildFieldRowHtmlTyped('', type === 'toggle' ? 'no' : '', type);
         $(this).closest('.meta-block').find('.meta-fields').append(newRow);
@@ -370,6 +379,7 @@ $(document)
     .off('click.scrubRemoveField', '.btn-remove-meta-field')
     .on('click.scrubRemoveField', '.btn-remove-meta-field', function (e) {
         e.stopPropagation();
+        if (!pcCanEdit()) return;
         $(this).closest('.meta-field').remove();
     });
 
@@ -379,6 +389,7 @@ $(document)
     .off('click.scrubRemoveBlock', '.btn-remove-meta-block')
     .on('click.scrubRemoveBlock', '.btn-remove-meta-block', function (e) {
         e.stopPropagation();
+        if (!pcCanEdit()) return;
         if (confirm('Odstrániť tento blok?')) {
             $(this).closest('.meta-block').remove();
         }
@@ -390,6 +401,7 @@ $(document)
     .off('click.scrubSaveMeta', '.btn-save-model-meta')
     .on('click.scrubSaveMeta', '.btn-save-model-meta', function (e) {
         e.stopPropagation();
+        if (!pcCanEdit()) return;
         const $btn = $(this);
         const rowkey = $btn.data('rowkey');
         const code = $btn.data('modelcode');

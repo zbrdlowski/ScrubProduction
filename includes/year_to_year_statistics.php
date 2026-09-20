@@ -18,6 +18,23 @@ function ytyNum(?int $value): string
   return $value === null ? '-' : number_format($value, 0, '.', ' ');
 }
 
+function ytyDailyLimitClass(?int $value): string
+{
+  if ($value === null) {
+    return '';
+  }
+
+  if ($value < 50) {
+    return 'yty-daily-limit-low';
+  }
+
+  if ($value <= 60) {
+    return 'yty-daily-limit-mid';
+  }
+
+  return 'yty-daily-limit-high';
+}
+
 $report = ytyBuildReportData($conn);
 $years = $report['years'];
 $selectedYear = isset($_GET['year']) ? (int) $_GET['year'] : (int) ($years[0] ?? $report['current_year']);
@@ -27,7 +44,6 @@ if (!in_array($selectedYear, $years, true)) {
 
 $labels = $report['labels'];
 $series = $report['series'];
-$sources = $report['sources'];
 $totals = $report['totals'];
 $latest = $report['latest'];
 $averages = $report['averages'];
@@ -115,41 +131,7 @@ $chartPayload = [
 
   .yty-chart-wrap {
     position: relative;
-    min-height: 340px;
-  }
-
-  .yty-chart-wrap.is-bar {
-    min-height: 300px;
-  }
-
-  .yty-source-legend {
-    display: flex;
-    gap: 14px;
-    flex-wrap: wrap;
-    align-items: center;
-    color: #adb5bd;
-    font-size: 12px;
-  }
-
-  .yty-source-dot {
-    display: inline-block;
-    width: 9px;
-    height: 9px;
-    margin-right: 5px;
-    border-radius: 50%;
-    vertical-align: 0;
-  }
-
-  .yty-source-dot.is-imported {
-    background: #4285f4;
-  }
-
-  .yty-source-dot.is-darkscrub {
-    background: #34a853;
-  }
-
-  .yty-source-dot.is-mixed {
-    background: #d7a8ff;
+    height: 340px;
   }
 
   .yty-week-table th,
@@ -166,20 +148,28 @@ $chartPayload = [
     background: rgba(52, 168, 83, .08);
   }
 
-  .yty-cell-source {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 5px;
-  }
-
-  .yty-cell-source .yty-source-dot {
-    margin-right: 0;
-  }
-
   .yty-daily-table td.is-after-weekend {
-    background: rgba(52, 168, 83, .20);
-    box-shadow: inset 0 0 0 1px rgba(52, 168, 83, .36);
+    font-weight: 700;
+  }
+
+  .yty-daily-table td.yty-daily-limit-low {
+    background: rgba(220, 53, 69, .26);
+    box-shadow: inset 0 0 0 1px rgba(220, 53, 69, .45);
+    color: #ffd7dc;
+    font-weight: 700;
+  }
+
+  .yty-daily-table td.yty-daily-limit-mid {
+    background: rgba(255, 193, 7, .28);
+    box-shadow: inset 0 0 0 1px rgba(255, 193, 7, .48);
+    color: #fff2bd;
+    font-weight: 700;
+  }
+
+  .yty-daily-table td.yty-daily-limit-high {
+    background: rgba(40, 167, 69, .30);
+    box-shadow: inset 0 0 0 1px rgba(40, 167, 69, .50);
+    color: #d8f8df;
     font-weight: 700;
   }
 
@@ -189,9 +179,8 @@ $chartPayload = [
   }
 
   @media (max-width: 767.98px) {
-    .yty-chart-wrap,
-    .yty-chart-wrap.is-bar {
-      min-height: 260px;
+    .yty-chart-wrap {
+      height: 260px;
     }
   }
 </style>
@@ -264,8 +253,8 @@ $chartPayload = [
     <div class="col-lg-3 col-6">
       <div class="small-box bg-secondary yty-stat-card">
         <div class="inner">
-          <h3><?= ytyNum($dailyAverages['products_without_fitting'] ?? null) ?></h3>
-          <p>AVG / Day <?= (int) $currentYear ?> (G+P+S)</p>
+          <h3><?= ytyNum($dailyAverages['products_with_fitting'] ?? null) ?></h3>
+          <p>AVG / Day <?= (int) $currentYear ?> (G+F+P+S)</p>
         </div>
         <div class="icon"><i class="fas fa-calendar-day"></i></div>
       </div>
@@ -279,7 +268,7 @@ $chartPayload = [
           <h3 class="card-title">Number of Products per Week: <?= (int) $selectedYear ?></h3>
         </div>
         <div class="card-body">
-          <div class="yty-chart-wrap is-bar">
+          <div class="yty-chart-wrap">
             <canvas id="ytyBarChart"></canvas>
           </div>
         </div>
@@ -288,13 +277,8 @@ $chartPayload = [
 
     <div class="col-xl-7">
       <div class="card card-dark">
-        <div class="card-header d-flex align-items-center justify-content-between flex-wrap">
+        <div class="card-header">
           <h3 class="card-title mb-0"><?= ytyH(implode(' vs. ', array_map('strval', $years))) ?></h3>
-          <div class="yty-source-legend mt-2 mt-sm-0">
-            <span><span class="yty-source-dot is-imported"></span>Excel history</span>
-            <span><span class="yty-source-dot is-mixed"></span>Excel + Darkscrub</span>
-            <span><span class="yty-source-dot is-darkscrub"></span>Darkscrub live</span>
-          </div>
         </div>
         <div class="card-body">
           <div class="yty-chart-wrap">
@@ -309,14 +293,14 @@ $chartPayload = [
     <div class="card-header d-flex align-items-center justify-content-between flex-wrap">
       <h3 class="card-title mb-0">Daily Values: <?= (int) $currentYear ?></h3>
       <span class="yty-muted-note">
-        Darkscrub daily data starts <?= ytyH(date('d.m.Y', strtotime((string) $transition['start_date']))) ?>.
+        Daily values use import date. AVG / Day uses G+F+P+S / day. Historical rows come from WeeklyStat.xlsx; Darkscrub continues from <?= ytyH(date('d.m.Y', strtotime((string) $transition['start_date']))) ?>.
       </span>
     </div>
     <div class="card-body table-responsive p-0">
       <table class="table table-bordered table-striped table-sm mb-0 yty-daily-table">
         <thead>
           <tr>
-            <th>Date</th>
+            <th>Import Date</th>
             <th>Day</th>
             <th>Week</th>
             <th>G+P+S / day</th>
@@ -332,16 +316,21 @@ $chartPayload = [
             </tr>
           <?php endif; ?>
           <?php foreach ($dailyRows as $row): ?>
+            <?php
+            $productsWithoutFitting = (int) $row['products_without_fitting'];
+            $afterWeekendCount = $row['after_weekend_count'] ?? null;
+            $productsWithFitting = (int) $row['products_with_fitting'];
+            ?>
             <tr>
               <td><?= ytyH(date('d.m.Y', strtotime((string) $row['date']))) ?></td>
               <td><?= ytyH((string) $row['day_label']) ?></td>
               <td><?= (int) $row['iso_week'] ?></td>
-              <td><?= ytyNum((int) $row['products_without_fitting']) ?></td>
-              <td class="<?= !empty($row['is_after_weekend']) ? 'is-after-weekend' : '' ?>">
-                <?= !empty($row['is_after_weekend']) ? ytyNum((int) $row['products_without_fitting']) : '' ?>
+              <td class="<?= ytyH(ytyDailyLimitClass($productsWithoutFitting)) ?>"><?= ytyNum($productsWithoutFitting) ?></td>
+              <td class="<?= ytyH(trim(($afterWeekendCount !== null ? 'is-after-weekend ' : '') . ytyDailyLimitClass($afterWeekendCount === null ? null : (int) $afterWeekendCount))) ?>">
+                <?= $afterWeekendCount !== null ? ytyNum((int) $afterWeekendCount) : '' ?>
               </td>
               <td><?= ytyNum((int) $row['fitting_count']) ?></td>
-              <td><?= ytyNum((int) $row['products_with_fitting']) ?></td>
+              <td class="<?= ytyH(ytyDailyLimitClass($productsWithFitting)) ?>"><?= ytyNum($productsWithFitting) ?></td>
             </tr>
           <?php endforeach; ?>
         </tbody>
@@ -370,24 +359,13 @@ $chartPayload = [
               <?php foreach ($years as $year): ?>
                 <?php
                 $value = $series[$year][$labelIndex] ?? null;
-                $source = $sources[$year][$labelIndex] ?? null;
-                $sourceClass = $source === 'darkscrub' ? 'is-darkscrub' : ($source === 'mixed' ? 'is-mixed' : 'is-imported');
-                $sourceTitle = 'Excel history';
-                if ($source === 'darkscrub') {
-                  $sourceTitle = 'Darkscrub live';
-                } elseif ($source === 'mixed') {
-                  $sourceTitle = 'Excel history + Darkscrub live';
-                }
                 $isCurrentWeek = (int) $year === $currentYear && (int) $week === $currentWeek;
                 ?>
                 <td class="<?= $isCurrentWeek ? 'is-current-week' : '' ?>">
                   <?php if ($value === null): ?>
                     <span class="text-muted">-</span>
                   <?php else: ?>
-                    <span class="yty-cell-source" title="<?= ytyH($sourceTitle) ?>">
-                      <span class="yty-source-dot <?= ytyH($sourceClass) ?>"></span>
-                      <?= ytyNum((int) $value) ?>
-                    </span>
+                    <?= ytyNum((int) $value) ?>
                   <?php endif; ?>
                 </td>
               <?php endforeach; ?>

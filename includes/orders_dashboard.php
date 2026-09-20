@@ -28,6 +28,7 @@ function dash_rows(mysqli $conn, string $sql): array
 
 $todayOrders = dash_scalar($conn, "SELECT COUNT(*) FROM orders
   WHERE DATE(order_date) = CURDATE()
+    AND COALESCE(UPPER(status), '') <> 'DELIVERED'
 ");
 
 $inProgress = dash_scalar($conn, "SELECT COUNT(*) FROM orders
@@ -44,7 +45,7 @@ $readyToShip = dash_scalar($conn, "SELECT COUNT(*) FROM orders
 
 $waitingBlocked = dash_scalar($conn, "SELECT COUNT(*) FROM orders
   WHERE traffic_light IN ('ORANGE','RED')
-    AND status NOT IN ('SHIPPED','CANCELLED')
+    AND status NOT IN ('SHIPPED','CANCELLED','DELIVERED')
 ");
 
 $shippedToday = dash_scalar($conn, "SELECT COUNT(DISTINCT order_id)
@@ -62,38 +63,38 @@ $shippedToday = dash_scalar($conn, "SELECT COUNT(DISTINCT order_id)
 
 $deptBlocked = [
   'G' => dash_scalar($conn, "SELECT COUNT(*) FROM orders
-    WHERE status NOT IN ('SHIPPED','CANCELLED','PENDING')
+    WHERE status NOT IN ('SHIPPED','CANCELLED','PENDING','DELIVERED')
       AND (traffic_summary_json LIKE '%\"G\":\"ORANGE\"%' OR traffic_summary_json LIKE '%\"G\":\"RED\"%')
   "),
   'P' => dash_scalar($conn, "SELECT COUNT(*) FROM orders
-    WHERE status NOT IN ('SHIPPED','CANCELLED','PENDING')
+    WHERE status NOT IN ('SHIPPED','CANCELLED','PENDING','DELIVERED')
       AND (traffic_summary_json LIKE '%\"P\":\"ORANGE\"%' OR traffic_summary_json LIKE '%\"P\":\"RED\"%')
   "),
   'F' => dash_scalar($conn, "SELECT COUNT(*) FROM orders
-    WHERE status NOT IN ('SHIPPED','CANCELLED','PENDING')
+    WHERE status NOT IN ('SHIPPED','CANCELLED','PENDING','DELIVERED')
       AND (traffic_summary_json LIKE '%\"F\":\"ORANGE\"%' OR traffic_summary_json LIKE '%\"F\":\"RED\"%')
   "),
   'S' => dash_scalar($conn, "SELECT COUNT(*) FROM orders
-    WHERE status NOT IN ('SHIPPED','CANCELLED','PENDING')
+    WHERE status NOT IN ('SHIPPED','CANCELLED','PENDING','DELIVERED')
       AND (traffic_summary_json LIKE '%\"S\":\"ORANGE\"%' OR traffic_summary_json LIKE '%\"S\":\"RED\"%')
   "),
 ];
 
 $deptActive = [
   'G' => dash_scalar($conn, "SELECT COUNT(*) FROM orders
-    WHERE status NOT IN ('SHIPPED','CANCELLED','PENDING')
+    WHERE status NOT IN ('SHIPPED','CANCELLED','PENDING','DELIVERED')
       AND traffic_summary_json LIKE '%\"G\":%'
   "),
   'P' => dash_scalar($conn, "SELECT COUNT(*) FROM orders
-    WHERE status NOT IN ('SHIPPED','CANCELLED','PENDING')
+    WHERE status NOT IN ('SHIPPED','CANCELLED','PENDING','DELIVERED')
       AND traffic_summary_json LIKE '%\"P\":%'
   "),
   'F' => dash_scalar($conn, "SELECT COUNT(*) FROM orders
-    WHERE status NOT IN ('SHIPPED','CANCELLED','PENDING')
+    WHERE status NOT IN ('SHIPPED','CANCELLED','PENDING','DELIVERED')
       AND traffic_summary_json LIKE '%\"F\":%'
   "),
   'S' => dash_scalar($conn, "SELECT COUNT(*) FROM orders
-    WHERE status NOT IN ('SHIPPED','CANCELLED','PENDING')
+    WHERE status NOT IN ('SHIPPED','CANCELLED','PENDING','DELIVERED')
       AND traffic_summary_json LIKE '%\"S\":%'
   "),
 ];
@@ -106,7 +107,7 @@ $workload = dash_rows($conn, "SELECT
   WHERE oi.deleted_at IS NULL
     AND oi.item_type_code IS NOT NULL
     AND oi.item_type_code <> ''
-    AND o.status NOT IN ('SHIPPED','CANCELLED')
+    AND o.status NOT IN ('SHIPPED','CANCELLED','DELIVERED')
   GROUP BY oi.item_type_code
   ORDER BY cnt DESC
 ");
@@ -156,7 +157,7 @@ $blockedRows = dash_rows($conn, "SELECT
   LEFT JOIN order_addresses oa_bill
     ON oa_bill.order_id = o.id AND UPPER(oa_bill.type) = 'BILLING'
   WHERE o.traffic_light IN ('ORANGE','RED')
-    AND o.status NOT IN ('SHIPPED','CANCELLED','PENDING')
+    AND o.status NOT IN ('SHIPPED','CANCELLED','PENDING','DELIVERED')
   ORDER BY COALESCE(o.production_started_at, o.order_date) ASC, o.order_date ASC
   LIMIT 10
 ");
@@ -170,7 +171,7 @@ $countryMapRows = dash_rows($conn, "SELECT
   LEFT JOIN order_addresses oa_bill
     ON oa_bill.order_id = o.id AND UPPER(oa_bill.type) = 'BILLING'
   WHERE o.order_date >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)
-    AND COALESCE(UPPER(o.status), '') <> 'CANCELLED'
+    AND COALESCE(UPPER(o.status), '') NOT IN ('CANCELLED','DELIVERED')
   GROUP BY country
   ORDER BY cnt DESC
 ");
@@ -191,6 +192,7 @@ foreach ($countryMapRows as $countryMapRow) {
 $dailyRows = dash_rows($conn, "SELECT DATE(order_date) AS d, COUNT(*) AS cnt
   FROM orders
   WHERE order_date >= DATE_SUB(CURDATE(), INTERVAL 14 DAY)
+    AND COALESCE(UPPER(status), '') <> 'DELIVERED'
   GROUP BY DATE(order_date)
   ORDER BY d ASC
 ");
@@ -236,7 +238,7 @@ $addonSalesRows = dash_rows($conn, "SELECT
   FROM order_items oi
   INNER JOIN orders o ON o.id = oi.order_id
   WHERE oi.deleted_at IS NULL
-    AND COALESCE(UPPER(o.status), '') <> 'CANCELLED'
+    AND COALESCE(UPPER(o.status), '') NOT IN ('CANCELLED','DELIVERED')
     AND o.order_date >= DATE_FORMAT(DATE_SUB(CURDATE(), INTERVAL 11 MONTH), '%Y-%m-01')
   GROUP BY DATE_FORMAT(o.order_date, '%Y-%m')
   ORDER BY month_key ASC
@@ -645,7 +647,7 @@ function dashboardInfoIcon(string $tooltip): string
         <div class="card-header">
           <h3 class="card-title dashboard-filter-title">
             Active Work by Department
-            <?= dashboardInfoIcon('Filters open orders that still contain work for the selected department. Pending, shipped and cancelled orders are excluded.') ?>
+            <?= dashboardInfoIcon('Filters open orders that still contain work for the selected department. Pending, shipped, delivered and cancelled orders are excluded.') ?>
           </h3>
         </div>
         <div class="card-body">
@@ -668,7 +670,7 @@ function dashboardInfoIcon(string $tooltip): string
         <div class="card-header">
           <h3 class="card-title dashboard-filter-title">
             Unfinished Work by Department
-            <?= dashboardInfoIcon('Filters open orders where the selected department is waiting or blocked, based on orange or red traffic status. Pending, shipped and cancelled orders are excluded.') ?>
+            <?= dashboardInfoIcon('Filters open orders where the selected department is waiting or blocked, based on orange or red traffic status. Pending, shipped, delivered and cancelled orders are excluded.') ?>
           </h3>
         </div>
         <div class="card-body">
@@ -737,7 +739,7 @@ function dashboardInfoIcon(string $tooltip): string
           <div class="small text-muted mt-2">
             Generic = deliberately ordered product or bundle component. Upsell = item generated from the Shoptet
             “include Seat Cover / Mid Forks as displayed” or “Applying Graphics” checkbox. GFP generic counts only
-            the main G row with a GFP_ SKU/code, so its generated P and F rows are not counted again. Cancelled orders are excluded.
+            the main G row with a GFP_ SKU/code, so its generated P and F rows are not counted again. Cancelled and delivered orders are excluded.
           </div>
         </div>
       </div>
@@ -815,7 +817,7 @@ function dashboardInfoIcon(string $tooltip): string
         <div class="card-header">
           <h3 class="card-title dashboard-filter-title">
             Oldest Waiting / Blocked
-            <?= dashboardInfoIcon('Shows the oldest open orders whose overall traffic light is orange or red. Pending, shipped and cancelled orders are excluded.') ?>
+            <?= dashboardInfoIcon('Shows the oldest open orders whose overall traffic light is orange or red. Pending, shipped, delivered and cancelled orders are excluded.') ?>
           </h3>
         </div>
 
@@ -884,7 +886,7 @@ function dashboardInfoIcon(string $tooltip): string
         <div class="card-header">
           <h3 class="card-title dashboard-filter-title">
             Department Workload
-            <?= dashboardInfoIcon('Shows open order items grouped by department item type. Shipped and cancelled orders are excluded.') ?>
+            <?= dashboardInfoIcon('Shows open order items grouped by department item type. Shipped, delivered and cancelled orders are excluded.') ?>
           </h3>
         </div>
 

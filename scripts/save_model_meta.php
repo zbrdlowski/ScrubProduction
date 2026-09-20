@@ -9,15 +9,20 @@ function out(int $code, array $payload): void {
     exit;
 }
 
-if (!isset($_SESSION['permission'])) {
+$productChartEditorIds = [3, 16, 17];
+$productChartUserId = (int)($_SESSION['user_id'] ?? 0);
+$productChartPermission = (int)($_SESSION['permission'] ?? 0);
+$canEditProductChart = $productChartPermission >= 900 || in_array($productChartUserId, $productChartEditorIds, true);
+
+if ($productChartUserId <= 0) {
     out(403, ['ok' => false, 'error' => 'Not logged in']);
 }
-/*
-// ── Oprávnenie: permission >= 300 (admin/manager) ─────────────────────────
-if ((int)($_SESSION['permission'] ?? 0) < 300) {
+
+// Product chart editacia je obmedzena na superadmina a povolenych editorov.
+if (!$canEditProductChart) {
     out(403, ['ok' => false, 'error' => 'Insufficient permission']);
 }
-*/
+
 // scripts/ a includes/ sú súrodenci — __DIR__ je darkscrub/scripts
 $connFile = dirname(__DIR__) . '/includes/conn.php';
 if (!is_file($connFile)) {

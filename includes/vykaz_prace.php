@@ -44,7 +44,8 @@ $reportColumns = [
   'order_number' => 'Order Number',
   'order_date' => 'Order Date',
   'started_at' => 'Taken (Take/Assign)',
-  'shipped_at' => 'Completion Date (Shipped)',
+  'completed_at' => 'Work Completed',
+  'estimated_time' => 'Estimated Time',
   'department' => 'Department',
   'item_title' => 'Item',
   'workers' => 'Worker(s)',
@@ -67,7 +68,9 @@ $fDateFrom = trim((string) ($_GET['date_from'] ?? ''));
 $fDateTo = trim((string) ($_GET['date_to'] ?? ''));
 $fDept = trim((string) ($_GET['dept'] ?? ''));           // '', 'G', 'F'
 $fWorker = (int) ($_GET['worker'] ?? 0);
-$fOnlyShipped = isset($_GET['only_shipped']) && $_GET['only_shipped'] === '1';
+$fOnlyCompleted = (isset($_GET['only_completed']) && $_GET['only_completed'] === '1')
+  // Spätná kompatibilita so starými uloženými URL reportu.
+  || (isset($_GET['only_shipped']) && $_GET['only_shipped'] === '1');
 
 // Validácia a orezanie dátumového rozsahu. Robí sa VŽDY (aj pri prvom
 // načítaní bez odoslaného filtra), aby mal formulár rozumný prednastavený
@@ -129,7 +132,7 @@ if ($stmt) {
 // načítaní stránky sa report nenačítava, aby sme zbytočne nezaťažovali DB.
 $rows = [];
 $orderIds = [];
-$shippedDates = [];
+$itemCompletionDates = [];
 $startDates = [];
 
 if ($hasSubmitted):
@@ -202,73 +205,38 @@ if ($stmt) {
   $stmt->close();
 }
 
-// ── Dátum "Shipped" pre všetky nájdené objednávky ────────────────────────
-// 1) Preferovaný zdroj: order_status_history (ak existuje).
-// 2) Fallback: priamy stĺpec na orders (shipped_at / shipped_date), ak existuje.
+// ── Dátum dokončenia práce na konkrétnej položke ────────────────────────────
+// Graphics končí prechodom do RIP, Fitting prechodom do READY. Používame
+// históriu statusov položky, nie aktuálny stav ani odoslanie objednávky.
 $orderIds = array_values(array_unique(array_map(fn($r) => (int) $r['order_id'], $rows)));
-$shippedDates = [];
+$itemIds = array_values(array_unique(array_map(fn($r) => (int) $r['item_id'], $rows)));
+$itemCompletionDates = [];
 
-if ($orderIds) {
-  $historyColsRes = $conn->query("SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'order_status_history'");
-  $historyCols = [];
-  if ($historyColsRes) {
-    while ($c = $historyColsRes->fetch_assoc()) {
-      $historyCols[] = $c['COLUMN_NAME'];
+if ($itemIds) {
+  $itemIdPh = implode(',', array_fill(0, count($itemIds), '?'));
+  $completionSql = "SELECT
+      ois.order_item_id,
+      MAX(ois.changed_at) AS completed_at
+    FROM order_item_statuses ois
+    JOIN order_items oi_done ON oi_done.id = ois.order_item_id
+    WHERE ois.order_item_id IN ($itemIdPh)
+      AND (
+        (UPPER(TRIM(oi_done.item_type_code)) = 'G' AND UPPER(TRIM(ois.new_status)) = 'RIP')
+        OR
+        (UPPER(TRIM(oi_done.item_type_code)) = 'F' AND UPPER(TRIM(ois.new_status)) = 'READY')
+      )
+    GROUP BY ois.order_item_id
+  ";
+  $completionStmt = $conn->prepare($completionSql);
+  if ($completionStmt) {
+    $completionTypes = str_repeat('i', count($itemIds));
+    $completionStmt->bind_param($completionTypes, ...$itemIds);
+    $completionStmt->execute();
+    $completionRes = $completionStmt->get_result();
+    while ($completionRow = $completionRes->fetch_assoc()) {
+      $itemCompletionDates[(int) $completionRow['order_item_id']] = (string) $completionRow['completed_at'];
     }
-  }
-
-  if (in_array('order_id', $historyCols, true) && in_array('new_status', $historyCols, true) && in_array('changed_at', $historyCols, true)) {
-    $idPh = implode(',', array_fill(0, count($orderIds), '?'));
-    $sql2 = "SELECT order_id, MAX(changed_at) AS shipped_at
-      FROM order_status_history
-      WHERE order_id IN ($idPh) AND UPPER(new_status) = 'SHIPPED'
-      GROUP BY order_id
-    ";
-    $stmt2 = $conn->prepare($sql2);
-    if ($stmt2) {
-      $types2 = str_repeat('i', count($orderIds));
-      $stmt2->bind_param($types2, ...$orderIds);
-      $stmt2->execute();
-      $res2 = $stmt2->get_result();
-      while ($r2 = $res2->fetch_assoc()) {
-        $shippedDates[(int) $r2['order_id']] = (string) $r2['shipped_at'];
-      }
-      $stmt2->close();
-    }
-  }
-
-  // Fallback pre objednávky, ktoré ešte nemajú záznam v histórii.
-  $missing = array_values(array_diff($orderIds, array_keys($shippedDates)));
-  if ($missing) {
-    $ordersColsRes = $conn->query("SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'orders'");
-    $ordersCols = [];
-    if ($ordersColsRes) {
-      while ($c = $ordersColsRes->fetch_assoc()) {
-        $ordersCols[] = $c['COLUMN_NAME'];
-      }
-    }
-    $directCol = '';
-    foreach (['shipped_at', 'shipped_date', 'shipped_on'] as $cand) {
-      if (in_array($cand, $ordersCols, true)) {
-        $directCol = $cand;
-        break;
-      }
-    }
-    if ($directCol !== '') {
-      $idPh = implode(',', array_fill(0, count($missing), '?'));
-      $sql3 = "SELECT id, `$directCol` AS shipped_at FROM orders WHERE id IN ($idPh) AND `$directCol` IS NOT NULL";
-      $stmt3 = $conn->prepare($sql3);
-      if ($stmt3) {
-        $types3 = str_repeat('i', count($missing));
-        $stmt3->bind_param($types3, ...$missing);
-        $stmt3->execute();
-        $res3 = $stmt3->get_result();
-        while ($r3 = $res3->fetch_assoc()) {
-          $shippedDates[(int) $r3['id']] = (string) $r3['shipped_at'];
-        }
-        $stmt3->close();
-      }
-    }
+    $completionStmt->close();
   }
 }
 
@@ -322,12 +290,44 @@ if ($orderIds) {
 endif; // hasSubmitted
 
 // ── Príprava riadkov na vykreslenie ──────────────────────────────────────
+$formatEstimatedDuration = static function (?string $startedAt, ?string $completedAt): array {
+  if (!$startedAt || !$completedAt) {
+    return ['label' => '—', 'seconds' => null];
+  }
+
+  $startedTimestamp = strtotime($startedAt);
+  $completedTimestamp = strtotime($completedAt);
+  if ($startedTimestamp === false || $completedTimestamp === false || $completedTimestamp < $startedTimestamp) {
+    return ['label' => '—', 'seconds' => null];
+  }
+
+  $elapsedSeconds = $completedTimestamp - $startedTimestamp;
+  $totalMinutes = (int) floor($elapsedSeconds / 60);
+  if ($totalMinutes < 1) {
+    return ['label' => '< 1 min', 'seconds' => $elapsedSeconds];
+  }
+
+  $days = intdiv($totalMinutes, 1440);
+  $hours = intdiv($totalMinutes % 1440, 60);
+  $minutes = $totalMinutes % 60;
+  $parts = [];
+  if ($days > 0) {
+    $parts[] = $days . ' d';
+  }
+  if ($hours > 0) {
+    $parts[] = $hours . ' h';
+  }
+  $parts[] = $minutes . ' min';
+
+  return ['label' => implode(' ', $parts), 'seconds' => $elapsedSeconds];
+};
+
 $displayRows = [];
 foreach ($rows as $r) {
   $orderId = (int) $r['order_id'];
-  $shippedAt = $shippedDates[$orderId] ?? null;
+  $completedAt = $itemCompletionDates[(int) $r['item_id']] ?? null;
 
-  if ($fOnlyShipped && $shippedAt === null) {
+  if ($fOnlyCompleted && $completedAt === null) {
     continue;
   }
 
@@ -336,11 +336,15 @@ foreach ($rows as $r) {
     : (string) ($r['custom_label'] ?? '');
 
   $itemDept = $r['item_type_code'];
+  $startedAt = $startDates[$orderId][$itemDept] ?? null;
+  $estimatedDuration = $formatEstimatedDuration($startedAt, $completedAt);
   $displayRows[] = [
     'order_number' => $r['order_number'],
     'order_date' => $r['order_date'],
-    'started_at' => $startDates[$orderId][$itemDept] ?? null,
-    'shipped_at' => $shippedAt,
+    'started_at' => $startedAt,
+    'completed_at' => $completedAt,
+    'estimated_time' => $estimatedDuration['label'],
+    'estimated_time_seconds' => $estimatedDuration['seconds'],
     'department' => $reportItemTypes[$itemDept] ?? $itemDept,
     'item_title' => $itemLabel . ($r['qty'] > 1 ? ' (x' . (int) $r['qty'] . ')' : ''),
     'workers' => $r['workers'] ?: '—',
@@ -390,8 +394,8 @@ foreach ($rows as $r) {
           </div>
           <div class="col-auto">
             <div class="custom-control custom-checkbox mt-4">
-              <input type="checkbox" class="custom-control-input" id="onlyShipped" name="only_shipped" value="1" <?= $fOnlyShipped ? 'checked' : '' ?>>
-              <label class="custom-control-label" for="onlyShipped">Only Completed (Shipped)</label>
+              <input type="checkbox" class="custom-control-input" id="onlyCompleted" name="only_completed" value="1" <?= $fOnlyCompleted ? 'checked' : '' ?>>
+              <label class="custom-control-label" for="onlyCompleted">Only Completed</label>
             </div>
           </div>
           <div class="col-auto">
@@ -435,6 +439,68 @@ foreach ($rows as $r) {
   #vykazTable_wrapper .dataTables_filter {
     margin-bottom: 12px;
   }
+
+  .job-report-day-separator-row > td {
+    padding: 7px 0 6px !important;
+    border-top: 0 !important;
+    border-bottom: 0 !important;
+    background: #171b20 !important;
+  }
+
+  .job-report-day-separator {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    color: #9ed6ff;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: .05em;
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+
+  .job-report-day-separator::before,
+  .job-report-day-separator::after {
+    content: "";
+    flex: 1 1 auto;
+    height: 1px;
+    background: linear-gradient(90deg, rgba(63, 158, 255, .12), rgba(63, 158, 255, .72));
+  }
+
+  .job-report-day-separator::after {
+    background: linear-gradient(90deg, rgba(63, 158, 255, .72), rgba(63, 158, 255, .12));
+  }
+
+  .job-order-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 8px;
+    border: 1px solid rgba(23, 162, 184, .5);
+    border-radius: 6px;
+    background: rgba(23, 162, 184, .12);
+    color: #67d5e8 !important;
+    font-weight: 700;
+    line-height: 1.35;
+    white-space: nowrap;
+    text-decoration: none !important;
+    transition: background-color .15s ease, border-color .15s ease, color .15s ease, transform .15s ease;
+  }
+
+  .job-order-link i {
+    font-size: .72em;
+    opacity: .8;
+  }
+
+  .job-order-link:hover,
+  .job-order-link:focus-visible {
+    color: #c0f4fb !important;
+    background: rgba(23, 162, 184, .28);
+    border-color: rgba(103, 213, 232, .9);
+    transform: translateY(-1px);
+    box-shadow: 0 2px 7px rgba(0, 0, 0, .2);
+    outline: none;
+  }
 </style>
 
       <?php if (!$hasSubmitted): ?>
@@ -459,12 +525,35 @@ foreach ($rows as $r) {
             </tr>
           <?php endif; ?>
           <?php foreach ($displayRows as $dr): ?>
-            <tr>
+            <?php
+            $rowDayTimestamp = !empty($dr['order_date']) ? strtotime((string) $dr['order_date']) : false;
+            $rowDayKey = $rowDayTimestamp !== false ? date('Y-m-d', $rowDayTimestamp) : 'unknown';
+            $rowDayLabel = $rowDayTimestamp !== false ? date('d.m.Y', $rowDayTimestamp) : 'Unknown date';
+            ?>
+            <tr data-report-day="<?= htmlspecialchars($rowDayKey, ENT_QUOTES, 'UTF-8') ?>"
+                data-report-day-label="<?= htmlspecialchars($rowDayLabel, ENT_QUOTES, 'UTF-8') ?>">
               <?php foreach (array_keys($reportColumns) as $colKey): ?>
-                <td>
+                <?php
+                $sortAttribute = '';
+                if ($colKey === 'estimated_time') {
+                  $sortSeconds = $dr['estimated_time_seconds'] ?? null;
+                  $sortAttribute = ' data-order="' . ($sortSeconds === null ? -1 : (int) $sortSeconds) . '"';
+                }
+                ?>
+                <td<?= $sortAttribute ?>>
                   <?php
                   $val = $dr[$colKey] ?? '';
-                  if (in_array($colKey, ['order_date', 'started_at', 'shipped_at'], true)) {
+                  if ($colKey === 'order_number' && trim((string) $val) !== '') {
+                    $orderNumber = trim((string) $val);
+                    $orderUrl = 'index.php?' . http_build_query([
+                      'page' => 'orders',
+                      'q' => $orderNumber,
+                    ]);
+                    echo '<a class="job-order-link" href="' . htmlspecialchars($orderUrl, ENT_QUOTES, 'UTF-8') . '" title="Open order in Orders">'
+                      . htmlspecialchars($orderNumber, ENT_QUOTES, 'UTF-8')
+                      . '<i class="fas fa-arrow-right" aria-hidden="true"></i>'
+                      . '</a>';
+                  } elseif (in_array($colKey, ['order_date', 'started_at', 'completed_at'], true)) {
                     echo $val ? htmlspecialchars(date('d.m.Y H:i', strtotime((string) $val))) : '—';
                   } else {
                     echo htmlspecialchars((string) $val);
@@ -503,6 +592,30 @@ foreach ($rows as $r) {
     clampDateTo();
 
     <?php if ($hasSubmitted): ?>
+    function addJobReportDaySeparators(dataTableApi) {
+      var $body = $(dataTableApi.table().body());
+      $body.find('tr.job-report-day-separator-row').remove();
+
+      var previousDay = null;
+      $(dataTableApi.rows({ page: 'current', search: 'applied' }).nodes()).each(function () {
+        var $row = $(this);
+        var dayKey = String($row.attr('data-report-day') || 'unknown');
+        if (dayKey === previousDay) return;
+
+        previousDay = dayKey;
+        var dayLabel = String($row.attr('data-report-day-label') || 'Unknown date');
+        $('<tr/>', { class: 'job-report-day-separator-row' })
+          .append(
+            $('<td/>', { colspan: <?= count($reportColumns) ?> }).append(
+              $('<div/>', { class: 'job-report-day-separator' }).append(
+                $('<span/>').text(dayLabel)
+              )
+            )
+          )
+          .insertBefore($row);
+      });
+    }
+
     $('#vykazTable').DataTable({
       responsive: true,
       info: true,
@@ -512,7 +625,10 @@ foreach ($rows as $r) {
       pageLength: 200,
       order: [],
       dom: 'Bfrtip',
-      buttons: ["copy", "csv", "excel", "pdf", "print", "colvis"]
+      buttons: ["copy", "csv", "excel", "pdf", "print", "colvis"],
+      drawCallback: function () {
+        addJobReportDaySeparators(this.api());
+      }
     }).buttons().container().appendTo('#vykazTable_wrapper .col-md-6:eq(0)');
     <?php endif; ?>
   });

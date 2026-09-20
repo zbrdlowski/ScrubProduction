@@ -17,12 +17,16 @@ $sidebarUserId = intval($_SESSION['user_id'] ?? 0);
 $canSeeFullOrdersSection = $sidebarPermission >= 300;
 $canSeeRestrictedAdminItems = $sidebarPermission === 900 || in_array($sidebarUserId, [3, 5], true);
 $canSeeStandardAdminItems = $sidebarPermission > 300;
+$canSeeOrderExportReset = in_array($sidebarUserId, [1], true);
 $adminMenuPages = [];
 if ($canSeeRestrictedAdminItems) {
   $adminMenuPages = array_merge($adminMenuPages, ['employee', 'calendar', 'attendance_databases', 'vykaz_prace']);
 }
 if ($canSeeStandardAdminItems) {
   $adminMenuPages = array_merge($adminMenuPages, ['controlls', 'import_orders', 'shoptet_order_download', 'status_policies']);
+}
+if ($canSeeOrderExportReset) {
+  $adminMenuPages[] = 'order_export_reset';
 }
 $ordersSectionPages = ['kit_diss'];
 if ($canSeeFullOrdersSection) {
@@ -111,7 +115,7 @@ function isMenuOpen($pages = [])
           'import_orders'
         ]) ? 'menu-open' : '' ?>">
           <?
-          if ($canSeeRestrictedAdminItems || $canSeeStandardAdminItems) {
+          if ($canSeeRestrictedAdminItems || $canSeeStandardAdminItems || $canSeeOrderExportReset) {
             ?>
           <li class="nav-item <?= isMenuOpen($adminMenuPages) ? 'menu-open' : '' ?>">
             <?
@@ -181,6 +185,16 @@ function isMenuOpen($pages = [])
             echo '<i class="fas fa-project-diagram nav-icon"></i>';
             echo '<p>';
             echo 'Status Policies';
+            echo '</p>';
+            echo '</a>';
+            echo '</li>';
+            }
+            if ($canSeeOrderExportReset) {
+            echo '<li class="nav-item active">';
+            echo '<a href="' . basename($_SERVER['PHP_SELF']) . '?page=order_export_reset" class="nav-link  ' . isActive('order_export_reset') . '">';
+            echo '<i class="fas fa-undo-alt nav-icon"></i>';
+            echo '<p>';
+            echo 'Order Export Reset';
             echo '</p>';
             echo '</a>';
             echo '</li>';

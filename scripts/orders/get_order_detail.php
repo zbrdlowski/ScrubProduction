@@ -4424,7 +4424,11 @@ ob_start();
                       </span>
                       <?php if ($financialCanEdit): ?>
                         <button type="button" class="btn btn-xs btn-outline-danger ml-2 btn-delete-financial-adjustment"
-                          data-id="<?php echo (int) ($financialAdjustment['id'] ?? 0); ?>">
+                          data-id="<?php echo (int) ($financialAdjustment['id'] ?? 0); ?>"
+                          data-order-id="<?php echo (int) $orderId; ?>"
+                          title="Delete this payment/refund"
+                          aria-label="Delete this payment/refund"
+                          onclick="if (window.deleteOrderFinancialAdjustment) return window.deleteOrderFinancialAdjustment(this, event); return false;">
                           ×
                         </button>
                       <?php endif; ?>

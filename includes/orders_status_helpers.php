@@ -528,7 +528,7 @@ function ordersGetItemStatusCounts(mysqli $conn): array
         FROM order_items oi
         LEFT JOIN orders o ON o.id = oi.order_id
         WHERE oi.deleted_at IS NULL
-          AND UPPER(TRIM(COALESCE(o.status, ''))) NOT IN ('PENDING', 'CANCELLED', 'SHIPPED')
+          AND UPPER(TRIM(COALESCE(o.status, ''))) NOT IN ('PENDING', 'CANCELLED', 'SHIPPED', 'DELIVERED')
         GROUP BY department, status_code
     ");
     if (!$result instanceof mysqli_result) {

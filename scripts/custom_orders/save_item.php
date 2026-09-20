@@ -38,7 +38,7 @@ $orderStmt->close();
 if (!$orderRow) {
   $finish(false, 'Custom order not found.');
 }
-$itemWorkflowStatusEnabled = (int) ($orderRow['production_order_id'] ?? 0) > 0;
+$itemWorkflowStatusEnabled = false;
 
 $type = strtoupper(trim((string) ($_POST['item_type_code'] ?? 'G')));
 $allowedTypes = array_keys(customOrdersAllowedItemTypes());

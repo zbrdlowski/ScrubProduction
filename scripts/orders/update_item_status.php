@@ -175,11 +175,14 @@ while ($historyRow = $historyResult->fetch_assoc()) {
 $historyCheck->close();
 $isFirstStatusChange = $isActualStatusChange && !$isStockCheckRelease && !$hasMeaningfulHistory;
 $departmentCode = orderItemDepartmentCode($itemType);
+$shouldAutoAssignFromFirstStatusChange = $departmentCode === 'PLASTICS';
 $autoPrimaryAssigned = false;
 $autoPreparedAssigned = false;
 $autoCheckedAssigned = false;
 
-if ($isFirstStatusChange) {
+// First status change is a real auto-take only for Plastics. Other
+// departments must use explicit Take/Assign; Ready still records CHECKED below.
+if ($isFirstStatusChange && $shouldAutoAssignFromFirstStatusChange) {
     $autoPrimaryAssigned = orderItemEnsurePrimaryAssignment(
         $conn,
         $orderId,

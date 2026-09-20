@@ -149,8 +149,8 @@ log_order_activity(
     'status' => $itemStatus,
     'reason' => $reason
   ],
-  'Manual item added: ' . $title
+  'Item added: ' . $title . ' (' . $qty . ' × ' . number_format($unitPrice, 2, '.', '') . ' EUR)'
 );
 
 recalculateOrderWorkflow($conn, $orderId);
-out(['ok' => true, 'item_id' => $itemId]);
+out(['ok' => true, 'item_id' => $itemId, 'order_id' => $orderId]);

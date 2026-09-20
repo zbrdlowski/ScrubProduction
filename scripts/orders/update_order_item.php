@@ -83,7 +83,9 @@ log_order_activity(
     'custom_label' => $customLabel,
     'unit_price'   => $unitPrice,
   ]],
-  'Item updated'
+  ($old['unit_price'] === null ? null : round((float)$old['unit_price'], 2)) !== $unitPrice
+    ? 'Item price changed: ' . $title . ' (' . number_format((float)($old['unit_price'] ?? 0), 2, '.', '') . ' → ' . number_format((float)($unitPrice ?? 0), 2, '.', '') . ' EUR)'
+    : 'Item updated: ' . $title
 );
 recalculateOrderWorkflow($conn, (int)$old['order_id']);
-out(['ok'=>true]);
+out(['ok'=>true, 'order_id'=>(int)$old['order_id']]);

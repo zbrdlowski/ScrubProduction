@@ -103,7 +103,7 @@ try {
       'amount' => $amount,
       'currency' => $currency,
     ],
-    'Financial adjustment added'
+    ($type === 'REFUND' ? 'Refund' : 'Payment') . ' added: ' . $purpose . ' (' . ($amount > 0 ? '+' : '') . number_format($amount, 2, '.', '') . ' EUR), ref. ' . $reference
   );
 
   out(['ok' => true, 'order_id' => $orderId, 'id' => $adjustmentId]);
