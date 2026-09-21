@@ -16,6 +16,7 @@ require_once __DIR__ . '/../../includes/orders_plastics_gate_helpers.php';
 require_once __DIR__ . '/activity_helper.php';
 
 $orderId = (int)($_POST['order_id'] ?? 0);
+$itemId = (int)($_POST['item_id'] ?? 0);
 if ($orderId <= 0) {
   http_response_code(400);
   echo json_encode(['ok'=>false,'error'=>'Invalid order_id']);
@@ -133,6 +134,112 @@ try {
     $conn->rollback();
     http_response_code(409);
     echo json_encode(['ok'=>false,'error'=>'Finish plastics stock check before taking this order']);
+    exit;
+  }
+
+  if ($itemId > 0) {
+    $itemStmt = $conn->prepare("
+      SELECT id, order_id, item_type_code, sku, title
+      FROM order_items
+      WHERE id = ?
+        AND order_id = ?
+        AND deleted_at IS NULL
+      LIMIT 1
+      FOR UPDATE
+    ");
+    $itemStmt->bind_param('ii', $itemId, $orderId);
+    $itemStmt->execute();
+    $itemRow = $itemStmt->get_result()->fetch_assoc();
+    $itemStmt->close();
+
+    if (!$itemRow) {
+      $conn->rollback();
+      http_response_code(404);
+      echo json_encode(['ok'=>false,'error'=>'Item not found']);
+      exit;
+    }
+
+    $itemTypeCode = strtoupper(trim((string)($itemRow['item_type_code'] ?? '')));
+    $itemDeptCode = orderItemDepartmentCode($itemTypeCode);
+
+    if ($itemDeptCode === '' || $itemDeptCode !== $deptCode) {
+      $conn->rollback();
+      http_response_code(403);
+      echo json_encode(['ok'=>false,'error'=>'This item belongs to another department']);
+      exit;
+    }
+
+    $itemTaken = $conn->prepare("
+      SELECT oia.employee_id,
+             CONCAT(e.firstname,' ',e.lastname) AS emp_name
+      FROM order_item_assignments oia
+      JOIN employees e ON e.id = oia.employee_id
+      WHERE oia.item_id = ?
+        AND oia.assignment_role = 'PREPARED'
+        AND oia.removed_at IS NULL
+      LIMIT 1
+      FOR UPDATE
+    ");
+    $itemTaken->bind_param('i', $itemId);
+    $itemTaken->execute();
+    $itemTakenRow = $itemTaken->get_result()->fetch_assoc();
+    $itemTaken->close();
+
+    if ($itemTakenRow && (int)$itemTakenRow['employee_id'] !== $userId) {
+      $conn->rollback();
+      http_response_code(409);
+      echo json_encode([
+        'ok'=>false,
+        'error'=>'Item already taken',
+        'taken_by'=>(int)$itemTakenRow['employee_id'],
+        'taken_by_name'=>(string)$itemTakenRow['emp_name']
+      ], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+
+    $itemAssignmentChanged = false;
+    if (!$itemTakenRow) {
+      $itemAssignmentChanged = orderItemSetRoleAssignment($conn, $orderId, $itemId, $userId, 'PREPARED');
+    }
+
+    $upd = $conn->prepare("
+      UPDATE orders
+      SET status = 'IN_PROGRESS'
+      WHERE id = ?
+        AND status = 'NEW'
+    ");
+    $upd->bind_param('i', $orderId);
+    $upd->execute();
+    $upd->close();
+
+    if ($itemAssignmentChanged) {
+      log_order_activity(
+        $conn,
+        $orderId,
+        $userId,
+        'order_item_taken',
+        'order_item',
+        $itemId,
+        [
+          'role' => $rolePrimary,
+          'item_type_code' => $itemTypeCode,
+          'sku' => $itemRow['sku'],
+          'title' => $itemRow['title']
+        ],
+        'Order item taken'
+      );
+    }
+
+    $conn->commit();
+    echo json_encode([
+      'ok' => true,
+      'role' => $rolePrimary,
+      'order_id' => $orderId,
+      'item_id' => $itemId,
+      'dept_code' => $deptCode,
+      'avatars_html' => render_assigned_users_html($conn, $orderId),
+      'take_assign_html' => render_order_take_assign_html($conn, $orderId, $deptCode, $perm, $userId),
+    ], JSON_UNESCAPED_UNICODE);
     exit;
   }
 

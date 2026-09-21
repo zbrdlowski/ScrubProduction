@@ -2248,10 +2248,9 @@ ob_start();
                   $statusLabels = ordersGetItemStatusLabelsForItem($conn, $it, true);
                   $statuses = array_keys($statusLabels);
 
-                  $currentStatus = strtoupper(trim((string) ($it['item_status'] ?? 'NEW')));
-                  if ($currentStatus === '') {
-                    $currentStatus = 'NEW';
-                  }
+                  $defaultStatus = $statuses[0] ?? 'NEW';
+                  $rawStatus = strtoupper(trim((string) ($it['item_status'] ?? '')));
+                  $currentStatus = ($rawStatus !== '' && $rawStatus !== 'NEW') ? $rawStatus : $defaultStatus;
 
                   if (!in_array($currentStatus, $statuses, true)) {
                     $statuses[] = $currentStatus;
@@ -2443,10 +2442,9 @@ ob_start();
                   $statusLabels = ordersGetItemStatusLabelsForItem($conn, $it, true);
                   $statuses = array_keys($statusLabels);
 
-                  $currentStatus = strtoupper(trim((string) ($it['item_status'] ?? 'NEW')));
-                  if ($currentStatus === '') {
-                    $currentStatus = 'NEW';
-                  }
+                  $defaultStatus = $statuses[0] ?? 'NEW';
+                  $rawStatus = strtoupper(trim((string) ($it['item_status'] ?? '')));
+                  $currentStatus = ($rawStatus !== '' && $rawStatus !== 'NEW') ? $rawStatus : $defaultStatus;
 
                   if (!in_array($currentStatus, $statuses, true)) {
                     $statuses[] = $currentStatus;

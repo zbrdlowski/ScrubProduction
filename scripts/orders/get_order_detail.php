@@ -57,6 +57,32 @@ function orderDetailMoneyValue($value): ?float
   return is_numeric($value) ? (float) $value : null;
 }
 
+function orderDetailTableColumns(mysqli $conn, string $tableName): array
+{
+  static $cache = [];
+  if (isset($cache[$tableName])) {
+    return $cache[$tableName];
+  }
+
+  $columns = [];
+  $stmt = $conn->prepare("SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?");
+  if (!$stmt) {
+    $cache[$tableName] = $columns;
+    return $columns;
+  }
+
+  $stmt->bind_param('s', $tableName);
+  $stmt->execute();
+  $res = $stmt->get_result();
+  while ($row = $res->fetch_assoc()) {
+    $columns[] = (string) ($row['COLUMN_NAME'] ?? '');
+  }
+  $stmt->close();
+
+  $cache[$tableName] = $columns;
+  return $columns;
+}
+
 /**
  * odhadované rozdelenie nákladov pre jednotlivé dpt....
  * Hodnoty sú v percentách a mali by sa sčítať na 100 pre každý zdroj.
@@ -238,6 +264,67 @@ function productSpecValueFromKeys(array $data, array $keys): string
   return '';
 }
 
+function productSpecFieldRoleFromParts(string $specKey, string $sourceKey, string $label): string
+{
+  $candidates = array_values(array_filter([
+    productSpecNormalizeKey($specKey),
+    productSpecNormalizeKey($sourceKey),
+    productSpecNormalizeKey($label),
+  ]));
+
+  foreach ($candidates as $candidate) {
+    if (
+      in_array($candidate, ['material', 'base-material', 'graphics-material'], true)
+      || preg_match('/(?:^|-)base-material$/', $candidate)
+      || preg_match('/(?:^|-)graphics-material$/', $candidate)
+    ) {
+      return 'material';
+    }
+
+    if (
+      in_array($candidate, ['finish', 'graphics-finish'], true)
+      || preg_match('/(?:^|-)graphics-finish$/', $candidate)
+    ) {
+      return 'finish';
+    }
+
+    if ($candidate === 'grip' || preg_match('/(?:^|-)grip$/', $candidate)) {
+      return 'grip';
+    }
+
+    if (
+      in_array($candidate, ['tr-swingarms', 'swingarms'], true)
+      || preg_match('/(?:^|-)tr-swingarms$/', $candidate)
+    ) {
+      return 'tr_swingarms';
+    }
+
+    if ($candidate === 'printer' || preg_match('/(?:^|-)printer$/', $candidate)) {
+      return 'printer';
+    }
+  }
+
+  return '';
+}
+
+function productSpecFieldRole(array $meta): string
+{
+  return productSpecFieldRoleFromParts(
+    (string) ($meta['spec_key'] ?? ''),
+    (string) ($meta['source_key'] ?? ''),
+    (string) ($meta['label'] ?? '')
+  );
+}
+
+function productSpecAddControlClass(array &$meta, string $class): void
+{
+  $classes = preg_split('/\s+/', trim((string) ($meta['control_class'] ?? ''))) ?: [];
+  if (!in_array($class, $classes, true)) {
+    $classes[] = $class;
+  }
+  $meta['control_class'] = trim(implode(' ', array_filter($classes)));
+}
+
 function productSpecFieldMeta(array $definition): array
 {
   $specKey = (string) ($definition['spec_key'] ?? '');
@@ -326,6 +413,21 @@ function productSpecFieldMeta(array $definition): array
       $meta['source_keys'] = ['patch-style'];
       $meta['fallback_options'] = ['0' => '✗', '1' => '✓'];
       break;
+  }
+
+  $fieldRole = productSpecFieldRoleFromParts($specKey, $sourceKey, $label);
+  if ($fieldRole === 'material') {
+    productSpecAddControlClass($meta, 'item-print-material');
+    productSpecAddControlClass($meta, 'item-print-generic');
+  } elseif ($fieldRole === 'finish') {
+    productSpecAddControlClass($meta, 'item-print-finish');
+    productSpecAddControlClass($meta, 'item-print-generic');
+  } elseif ($fieldRole === 'grip') {
+    productSpecAddControlClass($meta, 'item-print-grip');
+  } elseif ($fieldRole === 'tr_swingarms') {
+    productSpecAddControlClass($meta, 'item-print-tr-swingarms');
+  } elseif ($fieldRole === 'printer') {
+    productSpecAddControlClass($meta, 'item-print-printer');
   }
 
   if ($isNoteLikeField) {
@@ -629,6 +731,118 @@ function orderDetailLoadCustomItemOptionFallbacks(mysqli $conn, array $sourceMet
   $stmt->close();
 
   return $fallbacks;
+}
+
+function orderDetailNormalizeCustomFinancialBreakdown(array $breakdown): array
+{
+  $keys = [
+    'total',
+    'graphics',
+    'plastics',
+    'seat_covers',
+    'fitting',
+    'accessories',
+    'other',
+    'shipping',
+    'deposits',
+    'paid_net',
+    'balance_due',
+  ];
+  $normalized = [];
+  foreach ($keys as $key) {
+    $value = orderDetailMoneyValue($breakdown[$key] ?? null);
+    if ($value !== null) {
+      $normalized[$key] = $value;
+    }
+  }
+  $currency = strtoupper(trim((string) ($breakdown['currency'] ?? '')));
+  if ($currency !== '') {
+    $normalized['currency'] = $currency;
+  }
+
+  return $normalized;
+}
+
+function orderDetailLoadCustomFinancialBreakdownFallback(mysqli $conn, array $sourceMeta): array
+{
+  $customOrderId = (int) ($sourceMeta['custom_order_id'] ?? 0);
+  if ($customOrderId <= 0) {
+    return [];
+  }
+
+  $stmt = $conn->prepare("
+    SELECT
+      co.currency,
+      COALESCE(co.shipping_price, 0) AS shipping,
+      COALESCE(item_stats.graphics, 0) AS graphics,
+      COALESCE(item_stats.plastics, 0) AS plastics,
+      COALESCE(item_stats.seat_covers, 0) AS seat_covers,
+      COALESCE(item_stats.fitting, 0) AS fitting,
+      COALESCE(item_stats.accessories, 0) AS accessories,
+      COALESCE(item_stats.other_total, 0) AS other_total,
+      COALESCE(payment_stats.deposits, 0) AS deposits,
+      COALESCE(payment_stats.paid_net, 0) AS paid_net
+    FROM custom_orders co
+    LEFT JOIN (
+      SELECT
+        custom_order_id,
+        SUM(CASE WHEN UPPER(TRIM(COALESCE(item_type_code, 'M'))) = 'G' THEN qty * unit_price ELSE 0 END) AS graphics,
+        SUM(CASE WHEN UPPER(TRIM(COALESCE(item_type_code, 'M'))) = 'P' THEN qty * unit_price ELSE 0 END) AS plastics,
+        SUM(CASE WHEN UPPER(TRIM(COALESCE(item_type_code, 'M'))) = 'S' THEN qty * unit_price ELSE 0 END) AS seat_covers,
+        SUM(CASE WHEN UPPER(TRIM(COALESCE(item_type_code, 'M'))) = 'F' THEN qty * unit_price ELSE 0 END) AS fitting,
+        SUM(CASE WHEN UPPER(TRIM(COALESCE(item_type_code, 'M'))) = 'T' THEN qty * unit_price ELSE 0 END) AS accessories,
+        SUM(CASE WHEN UPPER(TRIM(COALESCE(item_type_code, 'M'))) NOT IN ('G', 'P', 'S', 'F', 'T') THEN qty * unit_price ELSE 0 END) AS other_total
+      FROM custom_order_items
+      WHERE custom_order_id = ?
+      GROUP BY custom_order_id
+    ) item_stats ON item_stats.custom_order_id = co.id
+    LEFT JOIN (
+      SELECT
+        custom_order_id,
+        SUM(CASE WHEN UPPER(TRIM(payment_kind)) IN ('DEPOSIT', 'EXTRA_DEPOSIT') THEN amount ELSE 0 END) AS deposits,
+        SUM(CASE WHEN UPPER(TRIM(payment_kind)) = 'REFUND' THEN -amount ELSE amount END) AS paid_net
+      FROM custom_order_payments
+      WHERE custom_order_id = ?
+      GROUP BY custom_order_id
+    ) payment_stats ON payment_stats.custom_order_id = co.id
+    WHERE co.id = ?
+    LIMIT 1
+  ");
+  if (!$stmt) {
+    return [];
+  }
+
+  $stmt->bind_param('iii', $customOrderId, $customOrderId, $customOrderId);
+  $stmt->execute();
+  $row = $stmt->get_result()->fetch_assoc();
+  $stmt->close();
+  if (!$row) {
+    return [];
+  }
+
+  $total = (float) ($row['graphics'] ?? 0)
+    + (float) ($row['plastics'] ?? 0)
+    + (float) ($row['seat_covers'] ?? 0)
+    + (float) ($row['fitting'] ?? 0)
+    + (float) ($row['accessories'] ?? 0)
+    + (float) ($row['other_total'] ?? 0)
+    + (float) ($row['shipping'] ?? 0);
+  $paidNet = (float) ($row['paid_net'] ?? 0);
+
+  return [
+    'currency' => strtoupper(trim((string) ($row['currency'] ?? ''))),
+    'total' => $total,
+    'graphics' => (float) ($row['graphics'] ?? 0),
+    'plastics' => (float) ($row['plastics'] ?? 0),
+    'seat_covers' => (float) ($row['seat_covers'] ?? 0),
+    'fitting' => (float) ($row['fitting'] ?? 0),
+    'accessories' => (float) ($row['accessories'] ?? 0),
+    'other' => (float) ($row['other_total'] ?? 0),
+    'shipping' => (float) ($row['shipping'] ?? 0),
+    'deposits' => (float) ($row['deposits'] ?? 0),
+    'paid_net' => $paidNet,
+    'balance_due' => $total - $paidNet,
+  ];
 }
 
 function orderDetailCustomItemFallbackForItem(array $fallbacks, array $item): array
@@ -1120,6 +1334,20 @@ if (!is_array($sourceMeta)) {
   $sourceMeta = [];
 }
 
+$isCustomOrder = strtoupper(trim((string) ($order['source_code'] ?? ''))) === 'CUSTOM';
+$customFinancialBreakdown = [];
+if ($isCustomOrder) {
+  if (is_array($sourceMeta['financial_breakdown'] ?? null)) {
+    $customFinancialBreakdown = orderDetailNormalizeCustomFinancialBreakdown($sourceMeta['financial_breakdown']);
+  }
+  if (empty($customFinancialBreakdown)) {
+    $customFinancialBreakdown = orderDetailLoadCustomFinancialBreakdownFallback($conn, $sourceMeta);
+  }
+  if (!isset($sourceMeta['shipping_price']) && isset($customFinancialBreakdown['shipping'])) {
+    $sourceMeta['shipping_price'] = $customFinancialBreakdown['shipping'];
+  }
+}
+
 $financialInfo = order_financial_effective_totals($conn, $order, $sourceMeta);
 $financialAdjustmentRows = order_financial_fetch_adjustments($conn, $orderId);
 $financialBaseTotal = (float) $financialInfo['base_total'];
@@ -1305,6 +1533,47 @@ while ($it = $r->fetch_assoc()) {
 $stmt->close();
 $customItemOptionFallbacks = orderDetailLoadCustomItemOptionFallbacks($conn, $sourceMeta);
 
+$removedPreparedByItem = [];
+if ($items) {
+  $itemIdsForRemovedPrepared = [];
+  foreach ($items as $itemForRemovedPrepared) {
+    $itemIdForRemovedPrepared = (int) ($itemForRemovedPrepared['id'] ?? 0);
+    if ($itemIdForRemovedPrepared > 0) {
+      $itemIdsForRemovedPrepared[] = $itemIdForRemovedPrepared;
+    }
+  }
+  $itemIdsForRemovedPrepared = array_values(array_unique($itemIdsForRemovedPrepared));
+
+  if ($itemIdsForRemovedPrepared) {
+    $removedPlaceholders = implode(',', array_fill(0, count($itemIdsForRemovedPrepared), '?'));
+    $removedTypes = 'i' . str_repeat('i', count($itemIdsForRemovedPrepared));
+    $removedParams = array_merge([$orderId], $itemIdsForRemovedPrepared);
+    $removedPreparedStmt = $conn->prepare("
+      SELECT item_id, employee_id, MAX(assigned_at) AS assigned_at
+      FROM order_item_assignments
+      WHERE order_id = ?
+        AND item_id IN ($removedPlaceholders)
+        AND assignment_role = 'PREPARED'
+        AND removed_at IS NOT NULL
+      GROUP BY item_id, employee_id
+    ");
+
+    if ($removedPreparedStmt) {
+      $removedPreparedStmt->bind_param($removedTypes, ...$removedParams);
+      $removedPreparedStmt->execute();
+      $removedPreparedResult = $removedPreparedStmt->get_result();
+      while ($removedPreparedRow = $removedPreparedResult->fetch_assoc()) {
+        $removedItemId = (int) ($removedPreparedRow['item_id'] ?? 0);
+        $removedEmployeeId = (int) ($removedPreparedRow['employee_id'] ?? 0);
+        if ($removedItemId > 0 && $removedEmployeeId > 0) {
+          $removedPreparedByItem[$removedItemId][$removedEmployeeId] = (string) ($removedPreparedRow['assigned_at'] ?? '');
+        }
+      }
+      $removedPreparedStmt->close();
+    }
+  }
+}
+
 // Doplní avatar človeka, ktorý prevzal objednávku cez TAKE.
 // TAKE zapisuje department-level assignment do order_assignments,
 // zatiaľ čo pôvodná bunka Assigned čítala iba order_item_assignments.
@@ -1314,6 +1583,7 @@ $deptAssignmentStmt = $conn->prepare("
     oa.id AS assignment_id,
     oa.employee_id,
     oa.role,
+    oa.assigned_at,
     TRIM(CONCAT(e.firstname, ' ', e.lastname)) AS employee_name,
     COALESCE(e.photo, '') AS photo
   FROM order_assignments oa
@@ -1348,6 +1618,7 @@ if ($deptAssignmentRows) {
   ];
 
   foreach ($items as &$itemForDeptAssignment) {
+    $itemIdForDeptAssignment = (int) ($itemForDeptAssignment['id'] ?? 0);
     $itemTypeForDeptAssignment = strtoupper(trim((string) ($itemForDeptAssignment['item_type_code'] ?? '')));
     $existingAssignedRaw = trim((string) ($itemForDeptAssignment['item_assigned_users'] ?? ''));
     $existingEmployeeIds = [];
@@ -1377,6 +1648,11 @@ if ($deptAssignmentRows) {
 
       $employeeId = (int) ($deptAssignment['employee_id'] ?? 0);
       if ($employeeId <= 0 || isset($existingEmployeeIds[$employeeId])) {
+        continue;
+      }
+      $removedPreparedAssignedAt = $removedPreparedByItem[$itemIdForDeptAssignment][$employeeId] ?? '';
+      $orderAssignmentAssignedAt = (string) ($deptAssignment['assigned_at'] ?? '');
+      if ($removedPreparedAssignedAt !== '' && ($orderAssignmentAssignedAt === '' || strcmp($removedPreparedAssignedAt, $orderAssignmentAssignedAt) >= 0)) {
         continue;
       }
 
@@ -1482,6 +1758,7 @@ $orderValueBreakdown = [
   'plastics' => 0.0,
   'seat_covers' => 0.0,
   'fitting' => 0.0,
+  'accessories' => 0.0,
   'other' => 0.0,
 ];
 foreach ($items as $breakdownItem) {
@@ -1501,6 +1778,12 @@ foreach ($items as $breakdownItem) {
 }
 $orderValueBreakdown['shipping'] = orderDetailMoneyValue($sourceMeta['shipping_price'] ?? null) ?? 0.0;
 $orderValueBreakdown['total'] = $financialEffectiveTotal;
+
+if (!empty($customFinancialBreakdown)) {
+  foreach (['graphics', 'plastics', 'seat_covers', 'fitting', 'accessories', 'other', 'shipping'] as $breakdownKey) {
+    $orderValueBreakdown[$breakdownKey] = (float) ($customFinancialBreakdown[$breakdownKey] ?? 0.0);
+  }
+}
 
 $percentageBreakdownConfig = orderDetailPercentageBreakdownBySource();
 $breakdownSourceCode = strtoupper(trim((string) ($order['source_code'] ?? '')));
@@ -1627,6 +1910,7 @@ if ($activePercentageBreakdown !== null) {
     + $orderValueBreakdown['plastics']
     + $orderValueBreakdown['seat_covers']
     + $orderValueBreakdown['fitting']
+    + $orderValueBreakdown['accessories']
     + $orderValueBreakdown['other'];
   $percentageTotal = $financialEffectiveTotal > 0
     ? $financialEffectiveTotal
@@ -1641,7 +1925,7 @@ if ($activePercentageBreakdown !== null) {
   $lastPercentageKey = end($nonZeroPercentageKeys);
 
   // Vynulujeme všetky breakdown kľúče — zobrazíme len tie, čo sú v konfigu
-  foreach (['graphics', 'plastics', 'seat_covers', 'fitting', 'shipping', 'other'] as $resetKey) {
+  foreach (['graphics', 'plastics', 'seat_covers', 'fitting', 'accessories', 'shipping', 'other'] as $resetKey) {
     $orderValueBreakdown[$resetKey] = 0.0;
   }
 
@@ -1669,6 +1953,7 @@ if ($activePercentageBreakdown === null) {
       + $orderValueBreakdown['plastics']
       + $orderValueBreakdown['seat_covers']
       + $orderValueBreakdown['fitting']
+      + $orderValueBreakdown['accessories']
       + $orderValueBreakdown['shipping']
       + $orderValueBreakdown['other'];
   }
@@ -3642,6 +3927,50 @@ ob_start();
     overflow-wrap: anywhere;
   }
 
+  .tracking-copy-row {
+    display: grid;
+    grid-template-columns: minmax(108px, max-content) minmax(88px, 1fr) max-content max-content max-content;
+    align-items: center;
+    gap: 6px;
+    white-space: nowrap;
+  }
+
+  .tracking-copy-main {
+    display: inline-flex;
+    align-items: center;
+    min-width: 0;
+    gap: 4px;
+  }
+
+  .tracking-copy-main .order-header-copy-value {
+    white-space: nowrap;
+    overflow-wrap: normal;
+  }
+
+  .tracking-carrier-label {
+    min-width: 0;
+    overflow: hidden;
+    color: rgba(255, 255, 255, .58);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .tracking-date-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    max-width: 130px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-size: 10.5px;
+    line-height: 1.1;
+    white-space: nowrap;
+  }
+
+  .tracking-copy-row .btn-delete-tracking {
+    justify-self: end;
+  }
+
   .order-header-copy-empty {
     color: rgba(255, 255, 255, .48);
     font-size: 12px;
@@ -4033,10 +4362,19 @@ ob_start();
 
             <div class="order-summary-meta-item">
               <span class="order-summary-label">Order timeline</span>
-              <div class="order-summary-line small"><b>Order:</b> <?php echo h($order['order_date'] ?? '-'); ?></div>
-              <div class="order-summary-line small"><b>Import:</b> <?php echo h($order['imported_at'] ?? '-'); ?></div>
+              <div class="order-summary-line small">
+                <i class="fas fa-calendar-alt mr-1 text-muted"></i><b>Order:</b> <?php echo h($order['order_date'] ?? '-'); ?>
+              </div>
+              <div class="order-summary-line small">
+                <i class="fas fa-upload mr-1 text-muted"></i><b>Import:</b> <?php echo h($order['imported_at'] ?? '-'); ?>
+              </div>
+              <div class="order-summary-line small">
+                <i class="fas fa-check-circle mr-1 <?php echo !empty($order['delivered_at']) ? 'text-success' : 'text-muted'; ?>"></i><b>Delivered:</b> <?php echo h($order['delivered_at'] ?? '-'); ?>
+              </div>
               <?php if (!empty($order['production_started_at'])): ?>
-                <div class="order-summary-line small"><b>Production:</b> <?php echo h($order['production_started_at']); ?></div>
+                <div class="order-summary-line small">
+                  <i class="fas fa-cogs mr-1 text-muted"></i><b>Production:</b> <?php echo h($order['production_started_at']); ?>
+                </div>
               <?php endif; ?>
             </div>
           </div>
@@ -4308,7 +4646,10 @@ ob_start();
               <div class="order-header-operations-title">Tracking</div>
               <?php
               $trackingRows = [];
-              $trackingStmt = $conn->prepare("SELECT id, tracking_number, carrier, created_at FROM order_tracking_numbers WHERE order_id = ? AND deleted_at IS NULL ORDER BY id DESC");
+              $trackingColumns = orderDetailTableColumns($conn, 'order_tracking_numbers');
+              $trackingDeliveredSelect = in_array('delivered_at', $trackingColumns, true) ? 'delivered_at' : 'NULL AS delivered_at';
+              $trackingFedexStatusSelect = in_array('fedex_status_detail', $trackingColumns, true) ? 'fedex_status_detail' : 'NULL AS fedex_status_detail';
+              $trackingStmt = $conn->prepare("SELECT id, tracking_number, carrier, created_at, $trackingDeliveredSelect, $trackingFedexStatusSelect FROM order_tracking_numbers WHERE order_id = ? AND deleted_at IS NULL ORDER BY id DESC");
               if ($trackingStmt) {
                 $trackingStmt->bind_param('i', $orderId);
                 $trackingStmt->execute();
@@ -4321,14 +4662,40 @@ ob_start();
               ?>
               <?php if ($trackingRows): ?>
                 <?php foreach ($trackingRows as $t): ?>
-                  <?php $trackingNumber = trim((string) ($t['tracking_number'] ?? '')); ?>
-                  <div class="small mb-1 order-header-copy-row">
-                    <b class="order-header-copy-value"><?php echo h($trackingNumber); ?></b>
-                    <button type="button" class="btn btn-xs btn-copy-inline" data-copy="<?php echo h($trackingNumber); ?>" title="Copy tracking number">📋</button>
-                    <?php if (!empty($t['carrier'])): ?><span class="text-muted ml-1">(<?php echo h($t['carrier']); ?>)</span><?php endif; ?>
-                    <?php if (!empty($t['created_at'])): ?><span class="text-muted ml-2">| Shipped: <?php echo h(date('d.m.Y H:i', strtotime((string) $t['created_at']))); ?></span><?php endif; ?>
+                  <?php
+                  $trackingNumber = trim((string) ($t['tracking_number'] ?? ''));
+                  $trackingCarrier = trim((string) ($t['carrier'] ?? ''));
+                  $trackingShippedTs = !empty($t['created_at']) ? strtotime((string) $t['created_at']) : false;
+                  $trackingDeliveredTs = !empty($t['delivered_at']) ? strtotime((string) $t['delivered_at']) : false;
+                  ?>
+                  <div class="small mb-1 tracking-copy-row">
+                    <span class="tracking-copy-main">
+                      <b class="order-header-copy-value"><?php echo h($trackingNumber); ?></b>
+                      <button type="button" class="btn btn-xs btn-copy-inline" data-copy="<?php echo h($trackingNumber); ?>" title="Copy tracking number">📋</button>
+                    </span>
+                    <span class="tracking-carrier-label" title="<?php echo h($trackingCarrier); ?>"><?php echo h($trackingCarrier !== '' ? $trackingCarrier : '-'); ?></span>
+                    <?php if ($trackingShippedTs !== false): ?>
+                      <span class="tracking-date-chip text-muted" title="Shipped: <?php echo h(date('d.m.Y H:i', $trackingShippedTs)); ?>">
+                        <i class="fas fa-truck"></i><?php echo h(date('d.m.y H:i', $trackingShippedTs)); ?>
+                      </span>
+                    <?php else: ?>
+                      <span></span>
+                    <?php endif; ?>
+                    <?php if ($trackingDeliveredTs !== false): ?>
+                      <span class="tracking-date-chip text-success" title="Delivered: <?php echo h(date('d.m.Y H:i', $trackingDeliveredTs)); ?>">
+                        <i class="fas fa-check-circle"></i><?php echo h(date('d.m.y H:i', $trackingDeliveredTs)); ?>
+                      </span>
+                    <?php elseif (!empty($t['fedex_status_detail'])): ?>
+                      <span class="tracking-date-chip text-muted" title="FedEx: <?php echo h((string) $t['fedex_status_detail']); ?>">
+                        <i class="fas fa-info-circle"></i><?php echo h((string) $t['fedex_status_detail']); ?>
+                      </span>
+                    <?php else: ?>
+                      <span></span>
+                    <?php endif; ?>
                     <?php if ($orderOperationsCanEdit): ?>
                       <button type="button" class="btn btn-xs btn-outline-danger ml-1 py-0 px-2 btn-delete-tracking" data-id="<?php echo (int) $t['id']; ?>" data-order-id="<?php echo (int) $orderId; ?>">×</button>
+                    <?php else: ?>
+                      <span></span>
                     <?php endif; ?>
                   </div>
                 <?php endforeach; ?>
@@ -4424,11 +4791,7 @@ ob_start();
                       </span>
                       <?php if ($financialCanEdit): ?>
                         <button type="button" class="btn btn-xs btn-outline-danger ml-2 btn-delete-financial-adjustment"
-                          data-id="<?php echo (int) ($financialAdjustment['id'] ?? 0); ?>"
-                          data-order-id="<?php echo (int) $orderId; ?>"
-                          title="Delete this payment/refund"
-                          aria-label="Delete this payment/refund"
-                          onclick="if (window.deleteOrderFinancialAdjustment) return window.deleteOrderFinancialAdjustment(this, event); return false;">
+                          data-id="<?php echo (int) ($financialAdjustment['id'] ?? 0); ?>">
                           ×
                         </button>
                       <?php endif; ?>
@@ -4438,7 +4801,7 @@ ob_start();
               </div>
             <?php endif; ?>
 
-            <?php if ($paymentReceivedAmount !== null): ?>
+            <?php if ($paymentReceivedAmount !== null && empty($customFinancialBreakdown)): ?>
               <div class="order-value-breakdown-row text-success">
                 <span>Payment received:</span>
                 <span><?php echo number_format($paymentReceivedAmount, 2, '.', ''); ?><?php echo h($orderCurrencySuffix); ?></span>
@@ -4461,6 +4824,7 @@ ob_start();
                 'plastics'    => 'Plastics',
                 'seat_covers' => 'Seat Covers',
                 'fitting'     => 'Fitting',
+                'accessories' => 'Accessories',
                 'shipping'    => 'Shipping',
                 'other'       => 'Other',
               ] as $breakdownKey => $breakdownLabel): ?>
@@ -4477,12 +4841,19 @@ ob_start();
                 'plastics'    => 'Plastics',
                 'seat_covers' => 'Seat Covers',
                 'fitting'     => 'Fitting',
+                'accessories' => 'Accessories',
                 'shipping'    => 'Shipping',
                 'other'       => 'Other',
               ] as $breakdownKey => $breakdownLabel): ?>
+                <?php
+                $breakdownValue = (float) ($orderValueBreakdown[$breakdownKey] ?? 0.0);
+                if (!empty($customFinancialBreakdown) && $breakdownKey !== 'shipping' && $breakdownValue <= 0.0) {
+                  continue;
+                }
+                ?>
                 <div class="order-value-breakdown-row">
                   <span><?php echo h($breakdownLabel); ?>:</span>
-                  <span><?php echo number_format($orderValueBreakdown[$breakdownKey], 2, '.', ''); ?><?php echo h($orderCurrencySuffix); ?></span>
+                  <span><?php echo number_format($breakdownValue, 2, '.', ''); ?><?php echo h($orderCurrencySuffix); ?></span>
                 </div>
               <?php endforeach; ?>
               <?php if (abs($financialBreakdownAdjustment) >= 0.005): ?>
@@ -4491,6 +4862,22 @@ ob_start();
                   <span><?php echo ($financialBreakdownAdjustment > 0 ? '+' : ''); ?><?php echo number_format($financialBreakdownAdjustment, 2, '.', ''); ?><?php echo h($orderCurrencySuffix); ?></span>
                 </div>
               <?php endif; ?>
+            <?php endif; ?>
+            <?php if (!empty($customFinancialBreakdown)): ?>
+              <?php $customPaidNet = (float) ($customFinancialBreakdown['paid_net'] ?? 0.0); ?>
+              <hr style="border-color:rgba(255,255,255,.14);">
+              <div class="order-value-breakdown-row">
+                <span>Deposits:</span>
+                <span><?php echo number_format((float) ($customFinancialBreakdown['deposits'] ?? 0.0), 2, '.', ''); ?><?php echo h($orderCurrencySuffix); ?></span>
+              </div>
+              <div class="order-value-breakdown-row">
+                <span>Paid net:</span>
+                <span><?php echo number_format($customPaidNet, 2, '.', ''); ?><?php echo h($orderCurrencySuffix); ?></span>
+              </div>
+              <div class="order-value-breakdown-row font-weight-bold">
+                <span>Balance due:</span>
+                <span><?php echo number_format((float) $orderValueBreakdown['total'] - $customPaidNet, 2, '.', ''); ?><?php echo h($orderCurrencySuffix); ?></span>
+              </div>
             <?php endif; ?>
           </div>
         </div>
@@ -4902,26 +5289,8 @@ ob_start();
                   $currentDeptCode = $itemTypeDeptCodeMap[$itemType] ?? '';
                   $currentUserCanPersonalOrders = $currentUserHasPersonalOrders;
 
-                  $orderTakenForMyDept = false;
-
-                  if ($currentDeptPrimaryRole !== '') {
-                    $stmtTaken = $conn->prepare("
-                      SELECT 1
-                      FROM order_assignments
-                      WHERE order_id = ?
-                        AND role = ?
-                        AND removed_at IS NULL
-                      LIMIT 1
-                    ");
-                    $stmtTaken->bind_param('is', $orderId, $currentDeptPrimaryRole);
-                    $stmtTaken->execute();
-                    $orderTakenForMyDept = (bool) $stmtTaken->get_result()->fetch_row();
-                    $stmtTaken->close();
-                  }
-
                   $canTakeOrderFromDetail = (
                     $currentDeptPrimaryRole !== ''
-                    && !$orderTakenForMyDept
                     && (
                       ((int) ($_SESSION['permission'] ?? 0) >= 400)
                       || ($itemType === 'F' && $currentUserCanPersonalOrders)
@@ -4951,12 +5320,11 @@ ob_start();
                       }
                       $initials = mb_substr($initials, 0, 2);
 
-                      $removeAssignmentKind = !empty($a['item_assignment_id']) ? 'item' : 'order';
-                      $removeAssignmentId = $removeAssignmentKind === 'order'
-                        ? (int) $a['assignment_id']
-                        : (int) ($a['item_assignment_id'] ?? 0);
+                      $removeAssignmentKind = 'item';
+                      $removeAssignmentId = (int) ($a['item_assignment_id'] ?? 0);
+                      $removeOrderAssignmentId = $removeAssignmentId > 0 ? 0 : (int) ($a['assignment_id'] ?? 0);
                       $canRemoveThisAssignment = (
-                        $removeAssignmentId > 0
+                        ($removeAssignmentId > 0 || $removeOrderAssignmentId > 0)
                         && (
                           (int) ($_SESSION['permission'] ?? 0) >= 300
                           || (int) $a['id'] === $currentUserId
@@ -4987,6 +5355,8 @@ ob_start();
                           <button type="button" class="btn-remove-assignment btn-remove-item-assignment"
                             data-assignment-id="<?= $removeAssignmentId ?>"
                             data-assignment-kind="<?= h($removeAssignmentKind) ?>"
+                            data-order-assignment-id="<?= $removeOrderAssignmentId ?>"
+                            data-item-id="<?= (int) $it['id'] ?>"
                             title="<?= ((int) $a['id'] === $currentUserId ? 'Remove my assignment' : 'Remove assignment') ?>">
                             ×
                           </button>
@@ -4997,10 +5367,10 @@ ob_start();
 
                     <?php if ($canTakeOrderFromDetail && empty($realItemAssigned)): ?>
                       <button type="button" class="btn btn-sm btn-warning btn-take-order px-2 py-1"
-                        style="font-size:11px; font-weight:700; border-radius:8px; letter-spacing:.3px;"
+                        style="font-size:11px; font-weight:700; padding:2px 8px; border-radius:8px; letter-spacing:.3px;"
                         data-order-id="<?= (int) $orderId ?>" data-dept-code="<?= h($currentDeptCode) ?>"
-                        title="Take this order for my department"
-                        style="font-size:11px; font-weight:700; padding:2px 8px; border-radius:8px;">
+                        data-item-id="<?= (int) $it['id'] ?>"
+                        title="Take this item for my department">
                         TAKE
                       </button>
                     <?php endif; ?>
@@ -5180,16 +5550,19 @@ ob_start();
                     $fieldMeta['current_value'] = productSpecFieldCurrentValue($fieldMeta, $extOptArr, $internalOptArr, (string) ($order['source_code'] ?? ''));
                     $fieldMeta['has_any_value'] = productSpecFieldHasAnyValue($fieldMeta, $extOptArr, $internalOptArr);
 
-                    if ($fieldMeta['spec_key'] === 'graphics_material') {
-                      $printMaterial = $fieldMeta['current_value'];
-                    } elseif ($fieldMeta['spec_key'] === 'graphics_finish') {
-                      $printFinish = $fieldMeta['current_value'];
-                    } elseif ($fieldMeta['spec_key'] === 'graphics_grip') {
-                      $printGrip = $fieldMeta['current_value'];
-                    } elseif ($fieldMeta['spec_key'] === 'graphics_tr_swingarms') {
-                      $printTrSwingarms = $fieldMeta['current_value'];
-                    } elseif ($fieldMeta['spec_key'] === 'graphics_printer') {
-                      $printPrinter = $fieldMeta['current_value'];
+                    $fieldRole = productSpecFieldRole($fieldMeta);
+                    if ($fieldMeta['current_value'] !== '') {
+                      if ($fieldRole === 'material') {
+                        $printMaterial = $fieldMeta['current_value'];
+                      } elseif ($fieldRole === 'finish') {
+                        $printFinish = $fieldMeta['current_value'];
+                      } elseif ($fieldRole === 'grip') {
+                        $printGrip = $fieldMeta['current_value'];
+                      } elseif ($fieldRole === 'tr_swingarms') {
+                        $printTrSwingarms = $fieldMeta['current_value'];
+                      } elseif ($fieldRole === 'printer') {
+                        $printPrinter = $fieldMeta['current_value'];
+                      }
                     }
 
                     if ($fieldMeta['has_any_value']) {

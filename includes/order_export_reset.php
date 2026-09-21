@@ -15,7 +15,10 @@ if (!orderExportResetCurrentUserAllowed()) {
 
 <style>
   .order-reset-tool {
+    width: 100%;
     max-width: 980px;
+    margin-left: auto;
+    margin-right: auto;
   }
 
   .order-reset-panel {

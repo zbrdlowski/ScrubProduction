@@ -196,8 +196,11 @@ $statusDateDetailRules = [
     'label' => 'Shipped',
     'empty' => 'Shipped date not found',
   ],
+  'DELIVERED' => [
+    'label' => 'Delivered',
+    'empty' => 'Delivered date not found',
+  ],
   // 'READY_TO_SHIP' => ['label' => 'Ready to Ship', 'empty' => 'Ready to Ship date not found'],
-  // 'DELIVERED' => ['label' => 'Delivered', 'empty' => 'Delivered date not found'],
 ];
 
 function ordersGetTableColumns(mysqli $conn, string $table): array
@@ -440,6 +443,33 @@ $fDept = isset($_GET['dept']) ? (int) $_GET['dept'] : -1;
 $fCat = isset($_GET['cat']) ? trim((string) $_GET['cat']) : '';
 $fType = isset($_GET['type']) ? trim((string) $_GET['type']) : '';
 $fQ = isset($_GET['q']) ? trim((string) $_GET['q']) : '';
+$fCustomerId = isset($_GET['customer_id']) ? max(0, (int) $_GET['customer_id']) : 0;
+$fCustomerScope = $fCustomerId > 0 && strtolower(trim((string) ($_GET['customer_scope'] ?? 'open'))) === 'all'
+  ? 'all'
+  : ($fCustomerId > 0 ? 'open' : '');
+$filteredCustomerName = '';
+
+if ($fCustomerId > 0) {
+  $customerFilterStmt = $conn->prepare('SELECT name, email FROM customers WHERE id = ? LIMIT 1');
+  if ($customerFilterStmt) {
+    $customerFilterStmt->bind_param('i', $fCustomerId);
+    $customerFilterStmt->execute();
+    $customerFilterRow = $customerFilterStmt->get_result()->fetch_assoc();
+    $customerFilterStmt->close();
+    if ($customerFilterRow) {
+      $filteredCustomerName = trim((string) ($customerFilterRow['name'] ?? ''));
+      if ($filteredCustomerName === '') {
+        $filteredCustomerName = trim((string) ($customerFilterRow['email'] ?? ''));
+      }
+      if ($filteredCustomerName === '') {
+        $filteredCustomerName = 'Customer #' . $fCustomerId;
+      }
+    } else {
+      $fCustomerId = 0;
+      $fCustomerScope = '';
+    }
+  }
+}
 
 // ── Nové filtre ──────────────────────────────────────────────────────────────
 $fStatus = isset($_GET['status']) ? trim((string) $_GET['status']) : '';
@@ -583,7 +613,11 @@ if ($fStatus !== '' && !in_array($fStatus, $allowedStatuses, true))
 // fulltextové vyhľadávanie je explicitná požiadavka používateľa, preto pri
 // nich dovolíme nájsť aj SHIPPED/CANCELLED/PENDING/DELIVERED objednávky.
 // Ostatné aktívne filtre pritom search zachováva.
-if ($fStatus !== '' || $fQ !== '') {
+if ($fCustomerId > 0 && $fCustomerScope === 'all') {
+  $fExcludeStatuses = '';
+} elseif ($fCustomerId > 0 && $fCustomerScope === 'open' && $fStatus === '') {
+  $fExcludeStatuses = implode(',', $defaultHiddenOrderStatuses);
+} elseif ($fStatus !== '' || $fQ !== '') {
   $fExcludeStatuses = '';
 } else {
   $excludedStatuses = array_filter(array_map(static function ($status) {
@@ -604,6 +638,22 @@ if ($detailStatusCode !== '' && isset($statusDateDetailRules[$detailStatusCode])
 // ── Počty objednávok pre jednotlivé taby ──────────────────────────────────────────────────────────
 $quickTabCounts = ordersGetOrderStatusCounts($conn);
 $itemQuickTabCounts = ordersGetItemStatusCounts($conn);
+if ($fCustomerId > 0) {
+  $quickTabCounts = [];
+  $customerStatusCountStmt = $conn->prepare('SELECT UPPER(status) AS status_code, COUNT(*) AS order_count
+    FROM orders
+    WHERE customer_id = ?
+    GROUP BY UPPER(status)');
+  if ($customerStatusCountStmt) {
+    $customerStatusCountStmt->bind_param('i', $fCustomerId);
+    $customerStatusCountStmt->execute();
+    $customerStatusCountResult = $customerStatusCountStmt->get_result();
+    while ($customerStatusCountRow = $customerStatusCountResult->fetch_assoc()) {
+      $quickTabCounts[(string) $customerStatusCountRow['status_code']] = (int) $customerStatusCountRow['order_count'];
+    }
+    $customerStatusCountStmt->close();
+  }
+}
 $openOrdersCount = 0;
 foreach ($quickTabCounts as $statusCode => $statusCount) {
   if (!in_array($statusCode, $defaultHiddenOrderStatuses, true)) {
@@ -791,6 +841,12 @@ if ($fType !== '') {
   }
 }
 
+if ($fCustomerId > 0) {
+  $where[] = 'o.customer_id = ?';
+  $types .= 'i';
+  $params[] = $fCustomerId;
+}
+
 if ($fQ !== '') {
   $where[] = "(
     o.order_number LIKE CONCAT('%', ?, '%')
@@ -813,10 +869,22 @@ if ($fQ !== '') {
         AND otn_q.deleted_at IS NULL
         AND otn_q.tracking_number LIKE CONCAT('%', ?, '%')
     )
+
+    OR EXISTS (
+      SELECT 1
+      FROM order_items item_q
+      WHERE item_q.order_id = o.id
+        AND item_q.deleted_at IS NULL
+        AND (
+          item_q.title LIKE CONCAT('%', ?, '%')
+          OR item_q.sku LIKE CONCAT('%', ?, '%')
+          OR item_q.custom_label LIKE CONCAT('%', ?, '%')
+        )
+    )
   )";
 
-  $types .= 'ssssss';
-  array_push($params, $fQ, $fQ, $fQ, $fQ, $fQ, $fQ);
+  $types .= 'sssssssss';
+  array_push($params, $fQ, $fQ, $fQ, $fQ, $fQ, $fQ, $fQ, $fQ, $fQ);
 }
 
 if ($fWorker > 0) {
@@ -858,19 +926,25 @@ if ($fItemDepartment !== '' && $fItemStatus !== '') {
   $itemDepartmentSql = $fItemDepartment === 'P'
     ? "UPPER(TRIM(COALESCE(oist.item_type_code, ''))) IN ('P', 'T', 'M')"
     : "UPPER(TRIM(COALESCE(oist.item_type_code, ''))) = ?";
+  $itemDefaultStatus = ordersGetDefaultItemStatusCode($conn, $fItemDepartment, true);
+  $itemEffectiveStatusSql = "CASE
+      WHEN UPPER(TRIM(COALESCE(oist.status, ''))) IN ('', 'NEW') THEN ?
+      ELSE UPPER(TRIM(COALESCE(oist.status, 'NEW')))
+    END";
   $where[] = "EXISTS (
     SELECT 1
     FROM order_items oist
     WHERE oist.order_id = o.id
       AND oist.deleted_at IS NULL
       AND $itemDepartmentSql
-      AND UPPER(TRIM(COALESCE(oist.status, 'NEW'))) = ?
+      AND $itemEffectiveStatusSql = ?
   )";
   if ($fItemDepartment !== 'P') {
     $types .= 's';
     $params[] = $fItemDepartment;
   }
-  $types .= 's';
+  $types .= 'ss';
+  $params[] = $itemDefaultStatus;
   $params[] = $fItemStatus;
 }
 
@@ -1068,6 +1142,7 @@ $whereSql = $where ? ('WHERE ' . implode(' AND ', $where)) : '';
 
 $sql = " SELECT
   o.id,
+  o.customer_id,
   o.order_number,
   o.external_order_id,
   o.order_date,
@@ -1192,7 +1267,50 @@ EXISTS (
   JOIN employees e ON e.id = oa.employee_id
   WHERE oa.order_id = o.id
     AND oa.removed_at IS NULL
-) AS assigned_users
+) AS assigned_users,
+
+(
+  SELECT GROUP_CONCAT(DISTINCT
+      CONCAT(
+        0, '|',
+        e.id, '|',
+        e.firstname, ' ', e.lastname, '|',
+        CASE
+          WHEN UPPER(oi.item_type_code) = 'G' THEN 'ITEM_GRAPHICS'
+          WHEN UPPER(oi.item_type_code) IN ('P', 'T', 'M') THEN 'ITEM_PLASTICS'
+          WHEN UPPER(oi.item_type_code) = 'S' THEN 'ITEM_SEATCOVER'
+          WHEN UPPER(oi.item_type_code) = 'F' THEN 'ITEM_FITTING'
+          ELSE 'ITEM'
+        END, '|',
+        'ITEM', '|',
+        COALESCE(e.photo, '')
+      )
+      ORDER BY
+        CASE
+          WHEN UPPER(oi.item_type_code) = 'G' THEN 12
+          WHEN UPPER(oi.item_type_code) = 'F' THEN 22
+          WHEN UPPER(oi.item_type_code) IN ('P', 'T', 'M') THEN 32
+          WHEN UPPER(oi.item_type_code) = 'S' THEN 42
+          ELSE 98
+        END,
+        e.firstname,
+        e.lastname
+      SEPARATOR ';;'
+    )
+  FROM order_item_assignments oia
+  JOIN order_items oi ON oi.id = oia.item_id
+  JOIN employees e ON e.id = oia.employee_id
+  WHERE oi.order_id = o.id
+    AND oi.deleted_at IS NULL
+    AND oia.removed_at IS NULL
+    AND NOT EXISTS (
+      SELECT 1
+      FROM order_assignments oa_dup
+      WHERE oa_dup.order_id = o.id
+        AND oa_dup.employee_id = oia.employee_id
+        AND oa_dup.removed_at IS NULL
+    )
+) AS item_assigned_users
 
 FROM orders o
 JOIN order_sources os ON os.id = o.source_id
@@ -1317,18 +1435,34 @@ $detailStatusDates = $detailStatusDateRule
   ? ordersFetchStatusEventDates($conn, $orderIds, [$detailStatusCode])
   : [];
 
-// ── Duplicitní zákazníci: spočítaj, koľkokrát sa každé meno vyskytuje
-// medzi aktuálne zobrazenými riadkami (už so zahrnutými filtrami).
-// Ignorujeme prázdne mená. Výsledok sa použije pri renderingu riadkov
-// na zobrazenie vizuálneho indikátora ak má zákazník 2+ objednávky.
-$customerNameCounts = [];
-foreach ($orderRows as $_cr) {
-  $_cn = trim((string) ($_cr['customer_name'] ?? ''));
-  if ($_cn === '') $_cn = trim((string) ($_cr['customer_email'] ?? ''));
-  if ($_cn === '') continue;
-  $customerNameCounts[$_cn] = ($customerNameCounts[$_cn] ?? 0) + 1;
+// Počet otvorených objednávok zákazníka musí byť stabilný a nezávislý od
+// aktuálneho status tabu či fulltextového vyhľadávania. Používame customer_id,
+// aby sa nespojili dvaja rôzni zákazníci s rovnakým menom.
+$customerOpenOrderCounts = [];
+$visibleCustomerIds = array_values(array_unique(array_filter(array_map(
+  static fn(array $row): int => (int) ($row['customer_id'] ?? 0),
+  $orderRows
+))));
+if ($visibleCustomerIds) {
+  $customerPlaceholders = implode(',', array_fill(0, count($visibleCustomerIds), '?'));
+  $statusPlaceholders = implode(',', array_fill(0, count($defaultHiddenOrderStatuses), '?'));
+  $countTypes = str_repeat('i', count($visibleCustomerIds)) . str_repeat('s', count($defaultHiddenOrderStatuses));
+  $countParams = array_merge($visibleCustomerIds, $defaultHiddenOrderStatuses);
+  $customerCountStmt = $conn->prepare("SELECT customer_id, COUNT(*) AS open_count
+    FROM orders
+    WHERE customer_id IN ($customerPlaceholders)
+      AND status NOT IN ($statusPlaceholders)
+    GROUP BY customer_id");
+  if ($customerCountStmt) {
+    $customerCountStmt->bind_param($countTypes, ...$countParams);
+    $customerCountStmt->execute();
+    $customerCountResult = $customerCountStmt->get_result();
+    while ($customerCountRow = $customerCountResult->fetch_assoc()) {
+      $customerOpenOrderCounts[(int) $customerCountRow['customer_id']] = (int) $customerCountRow['open_count'];
+    }
+    $customerCountStmt->close();
+  }
 }
-unset($_cr, $_cn);
 
 $orderDepartmentStatusMap = [];
 if ($orderIds) {
@@ -2221,7 +2355,7 @@ $deptOptions = [
 
       <div class="input-group input-group-sm <?= fActive($fQ) ?>">
         <input class="form-control form-control-sm" name="q" value="<?= htmlspecialchars($fQ) ?>"
-          placeholder="Order #, Ext. ID, Customer Name, Email, Invoice, Tracking Number…" />
+          placeholder="Order #, product, SKU, customer, email, invoice, tracking…" />
 
         <div class="input-group-append">
           <button class="btn btn-primary btn-sm" type="submit">
@@ -2268,6 +2402,9 @@ $deptOptions = [
     $current = $_GET;
     foreach (['status', 'item_status', 'item_department', 'traffic_department', 'traffic_state', 'exclude_status', 'source', 'country', 'payment', 'shipping', 'priority', 'date_from', 'date_to', 'worker', 'dept', 'cat', 'type', 'q', 'print_printer', 'print_material', 'print_finish', 'item_feature'] as $k) {
       unset($current[$k]);
+    }
+    if (isset($tabParams['exclude_status']) && !empty($current['customer_id'])) {
+      $current['customer_scope'] = 'open';
     }
     $qs = http_build_query(array_merge($current, $tabParams));
     return '?' . ($qs ?: '');
@@ -2395,6 +2532,11 @@ $deptOptions = [
       $activeFilterBadges[] = ['label' => 'Priority', 'display' => ($priorityOptions[(int) $fPriority] ?? $fPriority)];
     if ($fQ !== '')
       $activeFilterBadges[] = ['label' => 'Search', 'display' => '"' . $fQ . '"'];
+    if ($fCustomerId > 0)
+      $activeFilterBadges[] = [
+        'label' => 'Customer',
+        'display' => $filteredCustomerName . ($fCustomerScope === 'all' ? ' · All history' : ' · Open only'),
+      ];
     if ($fCat !== '')
       $activeFilterBadges[] = ['label' => 'Category', 'display' => $fCat];
     if ($fType !== '')
@@ -2634,6 +2776,7 @@ $deptOptions = [
     );
     $filterIsOnlyQuickSearch = (
       $fQ !== ''
+      && $fCustomerId <= 0
       && $fStatus === ''
       && $fSource === ''
       && $fPriority === ''
@@ -2654,7 +2797,12 @@ $deptOptions = [
       && $fItemFeature === ''
     );
 
-    $collapseShow = ($hasActiveFilters && !$filterIsOnlyFromTab && !$filterIsOnlyQuickSearch) ? 'show' : '';
+    $filterIsOnlyCustomer = (
+      $fCustomerId > 0
+      && count($activeFilterBadges) === 1
+    );
+
+    $collapseShow = ($hasActiveFilters && !$filterIsOnlyFromTab && !$filterIsOnlyQuickSearch && !$filterIsOnlyCustomer) ? 'show' : '';
     ?>
 
     <!-- ── Toolbar: active pills + Filters button ──────────────────────── -->
@@ -2668,6 +2816,20 @@ $deptOptions = [
               <span class="pill-value"><?= htmlspecialchars((string) $af['display']) ?></span>
             </span>
           <?php endforeach; ?>
+          <?php if ($fCustomerId > 0): ?>
+            <?php
+            $customerScopeToggle = $_GET;
+            $customerScopeToggle['page'] = 'orders';
+            $customerScopeToggle['customer_id'] = $fCustomerId;
+            $customerScopeToggle['customer_scope'] = $fCustomerScope === 'all' ? 'open' : 'all';
+            unset($customerScopeToggle['exclude_status']);
+            ?>
+            <a class="active-filter-pill pill-action"
+              href="?<?= htmlspecialchars(http_build_query($customerScopeToggle), ENT_QUOTES, 'UTF-8') ?>">
+              <i class="fas <?= $fCustomerScope === 'all' ? 'fa-folder-open' : 'fa-history' ?> mr-1"></i>
+              <span class="pill-value"><?= $fCustomerScope === 'all' ? 'Show open only' : 'Include completed' ?></span>
+            </a>
+          <?php endif; ?>
           <?php if (strtoupper($fStatus) === 'READY_TO_SHIP'): ?>
             <button type="button" class="active-filter-pill pill-action border-0 js-open-fedex-export-modal"
               data-dept="<?= (int) $fDept ?>"
@@ -2685,7 +2847,14 @@ $deptOptions = [
           <span class="text-muted small">No filters active</span>
         <?php endif; ?>
       </div>
-      <button class="btn btn-sm btn-outline-secondary ml-auto" type="button" data-toggle="collapse"
+      <?php if ($hasActiveFilters): ?>
+        <a class="btn btn-sm btn-outline-secondary ml-auto mr-2"
+          href="?page=orders&amp;exclude_status=SHIPPED%2CCANCELLED%2CPENDING%2CDELIVERED"
+          title="Reset all order filters">
+          <i class="fas fa-times mr-1"></i>Reset filters
+        </a>
+      <?php endif; ?>
+      <button class="btn btn-sm btn-outline-secondary <?= $hasActiveFilters ? '' : 'ml-auto' ?>" type="button" data-toggle="collapse"
         data-target="#ordersFilterCollapse" aria-expanded="<?= $collapseShow === 'show' ? 'true' : 'false' ?>">
         <i class="fas fa-filter mr-1"></i>+ Filters
       </button>
@@ -2695,6 +2864,10 @@ $deptOptions = [
     <div class="collapse <?= $collapseShow ?>" id="ordersFilterCollapse">
       <form method="get" id="ordersFilterForm" class="mb-2">
         <input type="hidden" name="page" value="<?= htmlspecialchars($page) ?>" />
+        <?php if ($fCustomerId > 0): ?>
+          <input type="hidden" name="customer_id" value="<?= (int) $fCustomerId ?>" />
+          <input type="hidden" name="customer_scope" value="<?= htmlspecialchars($fCustomerScope) ?>" />
+        <?php endif; ?>
 
         <div class="filter-panel">
 
@@ -3119,7 +3292,8 @@ $deptOptions = [
 
               </td>
               <?php
-              $customerDupCount = $customerNameCounts[$customer] ?? 1;
+              $rowCustomerId = (int) ($row['customer_id'] ?? 0);
+              $customerDupCount = $rowCustomerId > 0 ? ($customerOpenOrderCounts[$rowCustomerId] ?? 0) : 0;
               $customerIsDup = $customerDupCount >= 2;
               $multishipping = $orderMultishippingMap[$orderId] ?? null;
               $multishippingIsMaster = $multishipping && (int) ($multishipping['position'] ?? -1) === 0;
@@ -3151,7 +3325,7 @@ $deptOptions = [
                         <i class="fas fa-clone"></i><?= $customerDupCount ?>
                       </button>
                     <?php elseif ($customerIsDup): ?>
-                      <a href="?page=orders&q=<?= urlencode($customer) ?>" class="order-dup-customer-badge"
+                      <a href="?page=orders&amp;customer_id=<?= $rowCustomerId ?>&amp;customer_scope=open" class="order-dup-customer-badge"
                         title="<?= htmlspecialchars($customerDupCount . ' open orders from this customer - Click to search') ?>"
                         onclick="event.stopPropagation();"><i class="fas fa-clone"></i><?= $customerDupCount ?></a>
                     <?php endif; ?>
@@ -3350,7 +3524,14 @@ $deptOptions = [
                   </span>
                 <?php endif; ?>
               </td>
-              <td data-assigned-cell="<?= $orderId ?>"><?= render_assigned_users_html($conn, $orderId, (string) ($row['assigned_users'] ?? '')) ?></td>
+              <?php
+              $assignedUsersRaw = trim((string) ($row['assigned_users'] ?? ''));
+              $itemAssignedUsersRaw = trim((string) ($row['item_assigned_users'] ?? ''));
+              if ($itemAssignedUsersRaw !== '') {
+                $assignedUsersRaw .= ($assignedUsersRaw !== '' ? ';;' : '') . $itemAssignedUsersRaw;
+              }
+              ?>
+              <td data-assigned-cell="<?= $orderId ?>"><?= render_assigned_users_html($conn, $orderId, $assignedUsersRaw) ?></td>
 
 
               <td class="text-nowrap">
@@ -3381,7 +3562,7 @@ $deptOptions = [
                     (string) $uiDeptCode,
                     $perm,
                     $meUserId,
-                    (string) ($row['assigned_users'] ?? '')
+                    $assignedUsersRaw
                   ) ?>
                 </span>
                 <?php endif; ?>

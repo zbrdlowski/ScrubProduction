@@ -281,6 +281,18 @@ function ordersGetItemStatusDefinitions(mysqli $conn, string $itemType, bool $ac
     });
 }
 
+function ordersGetDefaultItemStatusCode(mysqli $conn, string $itemType, bool $activeOnly = true): string
+{
+    foreach (ordersGetItemStatusDefinitions($conn, $itemType, $activeOnly) as $code => $meta) {
+        $statusCode = strtoupper(trim((string)($meta['code'] ?? $code)));
+        if ($statusCode !== '') {
+            return $statusCode;
+        }
+    }
+
+    return 'NEW';
+}
+
 function ordersStatusDefinitionAppliesToPosition(array $definition, ?int $positionId): bool
 {
     if ((int)($definition['tab_bar'] ?? 0) !== 1) {
@@ -517,13 +529,33 @@ function ordersGetOrderStatusCounts(mysqli $conn): array
 function ordersGetItemStatusCounts(mysqli $conn): array
 {
     $counts = [];
+
+    $defaultG = $conn->real_escape_string(ordersGetDefaultItemStatusCode($conn, 'G', true));
+    $defaultS = $conn->real_escape_string(ordersGetDefaultItemStatusCode($conn, 'S', true));
+    $defaultP = $conn->real_escape_string(ordersGetDefaultItemStatusCode($conn, 'P', true));
+    $defaultF = $conn->real_escape_string(ordersGetDefaultItemStatusCode($conn, 'F', true));
+
+    $departmentSql = "
+        CASE
+            WHEN UPPER(TRIM(COALESCE(oi.item_type_code, ''))) IN ('T', 'M') THEN 'P'
+            ELSE UPPER(TRIM(COALESCE(oi.item_type_code, '')))
+        END
+    ";
+    $rawStatusSql = "UPPER(TRIM(COALESCE(oi.status, '')))";
+    $effectiveStatusSql = "
+        CASE
+            WHEN $rawStatusSql IN ('', 'NEW') AND $departmentSql = 'G' THEN '$defaultG'
+            WHEN $rawStatusSql IN ('', 'NEW') AND $departmentSql = 'S' THEN '$defaultS'
+            WHEN $rawStatusSql IN ('', 'NEW') AND $departmentSql = 'P' THEN '$defaultP'
+            WHEN $rawStatusSql IN ('', 'NEW') AND $departmentSql = 'F' THEN '$defaultF'
+            ELSE UPPER(TRIM(COALESCE(oi.status, 'NEW')))
+        END
+    ";
+
     $result = $conn->query("
         SELECT
-            CASE
-                WHEN UPPER(TRIM(COALESCE(oi.item_type_code, ''))) IN ('T', 'M') THEN 'P'
-                ELSE UPPER(TRIM(COALESCE(oi.item_type_code, '')))
-            END AS department,
-            UPPER(TRIM(COALESCE(oi.status, 'NEW'))) AS status_code,
+            $departmentSql AS department,
+            $effectiveStatusSql AS status_code,
             COUNT(DISTINCT oi.order_id) AS cnt
         FROM order_items oi
         LEFT JOIN orders o ON o.id = oi.order_id

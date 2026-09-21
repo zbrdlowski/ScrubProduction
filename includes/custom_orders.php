@@ -331,6 +331,7 @@ try {
   while ($row = $res->fetch_assoc()) {
     $listRows[] = $row;
   }
+  $listRows = array_reverse($listRows);
 
   $customOrdersProductionOrderIds = [];
   foreach ($listRows as $customOrdersListRow) {
@@ -758,6 +759,7 @@ function customOrderHelpMap(string $lang = 'sk'): array
     'payment_amount' => 'Prijata alebo vracana suma bez meny.',
     'payment_currency' => 'Mena danej platby, najcastejsie EUR.',
     'payment_received_at' => 'Datum a cas prijatia platby.',
+    'payment_invoice' => 'Cislo faktury, ak uz bola k tejto platbe vystavena.',
     'payment_note' => 'Krátka poznamka, napr. first design deposit alebo extra deposit after 3 revisions.',
     'followup_contacted_at' => 'Datum a cas kontaktovania zakaznika.',
     'followup_channel' => 'Kanal komunikacie, napr. Instagram, WhatsApp, Messenger, Email.',
@@ -883,6 +885,7 @@ function customOrderHelpMap(string $lang = 'sk'): array
     'payment_amount' => 'Received or refunded amount without currency.',
     'payment_currency' => 'Currency of this payment, most often EUR.',
     'payment_received_at' => 'Date and time when the payment was received.',
+    'payment_invoice' => 'Invoice number if one has already been generated for this payment.',
     'payment_note' => 'Short note, for example first design deposit or extra deposit after 3 revisions.',
     'followup_contacted_at' => 'Date and time when the customer was contacted.',
     'followup_channel' => 'Communication channel, for example Instagram, WhatsApp, Messenger, Email.',
@@ -959,7 +962,7 @@ function customOrderHelp(string $key): string
   }
 
   $text = htmlspecialchars($map[$key], ENT_QUOTES, 'UTF-8');
-  return ' <span class="custom-help-icon" data-help="' . $text . '" aria-label="Help" tabindex="0">i</span>';
+  return ' <span class="custom-help-icon" data-help="' . $text . '" title="' . $text . '" aria-label="Help" tabindex="0">i</span>';
 }
 
 function customOrderInvalid(array $invalidFields, string $key): string
@@ -2431,7 +2434,7 @@ if (!$customOrdersDetailRequest) {
 
   .custom-payment-entry-grid {
     display: grid;
-    grid-template-columns: 1.05fr 1.05fr .85fr .7fr 1.05fr;
+    grid-template-columns: 1.05fr 1.05fr .85fr .7fr 1.05fr .9fr;
     gap: 4px;
     align-items: end;
   }
@@ -2457,6 +2460,7 @@ if (!$customOrdersDetailRequest) {
   .custom-payment-history-box {
     margin-top: 11px;
     padding: 7px;
+    overflow: visible;
     border: 1px solid rgba(255, 193, 7, .24);
     border-radius: 8px;
     background: rgba(0, 0, 0, .18);
@@ -2493,9 +2497,22 @@ if (!$customOrdersDetailRequest) {
     padding-bottom: 3px;
   }
 
+  #custom-order-payments-block .custom-payment-history .custom-help-icon::before {
+    top: calc(100% + 3px);
+    bottom: auto;
+    border-top-color: transparent;
+    border-bottom-color: rgba(17, 24, 39, .96);
+  }
+
+  #custom-order-payments-block .custom-payment-history .custom-help-icon::after {
+    top: calc(100% + 14px);
+    bottom: auto;
+  }
+
   .custom-payment-kind-select,
   .custom-payment-amount-input,
   .custom-payment-currency-input,
+  .custom-payment-invoice-input,
   .custom-payment-date-input {
     width: 100%;
     min-width: 0;
@@ -3548,8 +3565,8 @@ if (!$customOrdersDetailRequest) {
                 </select>
               </div>
               <div class="form-group mb-0">
-                <label for="custom-official-sequence-value">Next number</label>
-                <input id="custom-official-sequence-value" type="number" name="official_sequence_value" class="form-control" min="1" max="2147483647" step="1" inputmode="numeric" required>
+                <label for="custom-official-sequence-value">Number</label>
+                <input id="custom-official-sequence-value" type="text" name="official_sequence_value" class="form-control" maxlength="32" placeholder="21603 or SO20930-3" autocapitalize="characters" spellcheck="false" required>
               </div>
             </div>
             <div class="custom-official-number-preview small mt-2" data-official-number-preview aria-live="polite"></div>
@@ -3869,7 +3886,7 @@ if (!$customOrdersDetailRequest) {
           <div class="panel-body">
             <div class="d-flex justify-content-between align-items-center mb-3">
               <div class="custom-order-section-title mb-0">Orders List</div>
-              <div class="text-muted small">Showing up to 300 matching rows, newest updates first</div>
+              <div class="text-muted small">Showing up to 300 latest matching rows, oldest updates first</div>
             </div>
             <div class="table-responsive custom-orders-list-table-wrap">
               <table id="customOrdersTable" class="table table-sm table-dark table-striped custom-mini-table mb-0">
@@ -4341,6 +4358,8 @@ if (!$customOrdersDetailRequest) {
                   class="form-control form-control-sm" value="<?= h($selectedOrder['currency']) ?>"></div>
               <div><label>Received at<?= customOrderHelp('payment_received_at') ?></label><input type="datetime-local"
                   name="received_at" class="form-control form-control-sm custom-payment-datetime-input"></div>
+              <div><label>Invoice<?= customOrderHelp('payment_invoice') ?></label><input type="text"
+                  name="invoice_number" class="form-control form-control-sm custom-payment-invoice-input"></div>
             </div>
             <div class="custom-payment-note-row">
               <div><label>Note<?= customOrderHelp('payment_note') ?></label><input type="text" name="note" class="form-control form-control-sm"></div>
@@ -4357,6 +4376,7 @@ if (!$customOrdersDetailRequest) {
                 <th>PayPal<?= customOrderHelp('paypal_transaction_id') ?></th>
                 <th>Note<?= customOrderHelp('payment_note') ?></th>
                 <th>At<?= customOrderHelp('payment_received_at') ?></th>
+                <th>Invoice<?= customOrderHelp('payment_invoice') ?></th>
                 <th class="text-right"></th>
               </tr>
             </thead>
@@ -4386,6 +4406,7 @@ if (!$customOrdersDetailRequest) {
                   <td><input type="text" name="paypal_transaction_id" form="<?= h($paymentEditFormId) ?>" class="form-control form-control-sm" value="<?= h((string) ($payment['paypal_transaction_id'] ?? '')) ?>"></td>
                   <td><input type="text" name="note" form="<?= h($paymentEditFormId) ?>" class="form-control form-control-sm" value="<?= h((string) ($payment['note'] ?? '')) ?>"></td>
                   <td><input type="datetime-local" name="received_at" form="<?= h($paymentEditFormId) ?>" class="form-control form-control-sm custom-payment-datetime-input custom-payment-date-input" value="<?= h($paymentReceivedValue) ?>"></td>
+                  <td><input type="text" name="invoice_number" form="<?= h($paymentEditFormId) ?>" class="form-control form-control-sm custom-payment-invoice-input" value="<?= h((string) ($payment['invoice_number'] ?? '')) ?>"></td>
                   <td class="text-right">
                     <span class="custom-payment-actions">
                       <form method="post" action="scripts/custom_orders/save_payment.php" id="<?= h($paymentEditFormId) ?>" class="mb-0" data-scroll-target="#custom-order-payments-block" data-custom-detail-refresh-form>

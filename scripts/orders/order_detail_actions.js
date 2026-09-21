@@ -8,6 +8,7 @@ $(document)
     const $btn = $(this);
     const orderId = $btn.data("order-id");
     const deptCode = $btn.data("dept-code") || "";
+    const itemId = parseInt($btn.data("item-id"), 10) || 0;
 
     if (!orderId) {
       alert("Missing order ID");
@@ -23,6 +24,7 @@ $(document)
       data: {
         order_id: orderId,
         dept_code: deptCode,
+        item_id: itemId,
       },
       success: function (resp) {
         if (!resp || !resp.ok) {
@@ -45,6 +47,14 @@ $(document)
           } else {
             // Fallback, keby take_assign_html z nejakého dôvodu chýbal.
             $btn.remove();
+          }
+
+          if (itemId > 0) {
+            if (typeof window.refreshOrderDetail === "function") {
+              window.refreshOrderDetail(resp.order_id);
+            } else {
+              location.reload();
+            }
           }
           return;
         }
@@ -777,6 +787,7 @@ $(document)
       location.reload();
     });
   }
+  window.refreshOrderDetail = refreshOrderDetail;
 
   function findInlineActionRow($el, primarySelector) {
     return $el.closest(primarySelector + ", .form-row");
@@ -871,47 +882,6 @@ $(document)
       ),
     );
   }
-
-  function deleteOrderFinancialAdjustment(button, event) {
-    if (event) {
-      event.preventDefault();
-      event.stopPropagation();
-    }
-
-    var $btn = $(button);
-    var id = parseInt($btn.data("id"), 10) || 0;
-    var orderId = parseInt($btn.data("order-id"), 10) || findOpenOrderIdFromElement($btn);
-    if (!id) {
-      alert("Missing payment/refund movement ID.");
-      return false;
-    }
-    if (!confirm("Delete this payment/refund movement?")) return false;
-
-    $btn.prop("disabled", true);
-    $.ajax({
-      url: "scripts/orders/delete_order_financial_adjustment.php",
-      method: "POST",
-      dataType: "json",
-      data: { id: id },
-      success: function (resp) {
-        if (!resp || !resp.ok) {
-          alert(resp && resp.error ? resp.error : "Financial movement delete failed");
-          $btn.prop("disabled", false);
-          return;
-        }
-
-        refreshFinancialOrderDetail(resp.order_id || orderId);
-      },
-      error: function (xhr) {
-        console.log(xhr.responseText);
-        alert("Financial movement delete request failed");
-        $btn.prop("disabled", false);
-      },
-    });
-
-    return false;
-  }
-  window.deleteOrderFinancialAdjustment = deleteOrderFinancialAdjustment;
 
   $(document)
     .off("click.saveWaiting", ".btn-save-waiting")
@@ -1422,10 +1392,12 @@ $(document)
       e.stopPropagation();
 
       const $btn = $(this);
-      const assignmentId = $btn.data("assignment-id");
+      const assignmentId = parseInt($btn.data("assignment-id"), 10) || 0;
       const assignmentKind = $btn.data("assignment-kind") || "order";
+      const itemId = parseInt($btn.data("item-id"), 10) || 0;
+      const orderAssignmentId = parseInt($btn.data("order-assignment-id"), 10) || 0;
 
-      if (!assignmentId) {
+      if (!assignmentId && !(assignmentKind === "item" && itemId > 0 && orderAssignmentId > 0)) {
         alert("Missing assignment ID");
         return;
       }
@@ -1445,6 +1417,8 @@ $(document)
         dataType: "json",
         data: {
           assignment_id: assignmentId,
+          item_id: itemId,
+          order_assignment_id: orderAssignmentId,
         },
         success: function (resp) {
           if (!resp || !resp.ok) {
@@ -2565,9 +2539,6 @@ $(document)
     }
 
     $currentCard.addClass("is-refreshing").css("opacity", ".55");
-    var $currentDetail = $currentCard.closest(".order-detail-card, .detail-wrap, .profile-order-detail-row").first();
-    var $currentActivityPanel = $currentDetail.find(".activity-log-panel").first();
-    var activityWasOpen = $currentActivityPanel.is(":visible");
 
     $.post(
       "scripts/orders/get_order_detail.php",
@@ -2586,11 +2557,6 @@ $(document)
         }
 
         $currentCard.replaceWith($freshCard);
-        var $freshActivityPanel = $fresh.find(".activity-log-panel").first();
-        if ($currentActivityPanel.length && $freshActivityPanel.length) {
-          if (activityWasOpen) $freshActivityPanel.show();
-          $currentActivityPanel.replaceWith($freshActivityPanel);
-        }
       },
       "json",
     ).fail(function () {
@@ -2766,7 +2732,36 @@ $(document)
     })
     .off("click.deleteFinancialAdjustment", ".btn-delete-financial-adjustment")
     .on("click.deleteFinancialAdjustment", ".btn-delete-financial-adjustment", function (e) {
-      deleteOrderFinancialAdjustment(this, e);
+      e.preventDefault();
+      e.stopPropagation();
+
+      var $btn = $(this);
+      var id = parseInt($btn.data("id"), 10) || 0;
+      var orderId = findOpenOrderIdFromElement($btn);
+      if (!id) return;
+      if (!confirm("Delete this payment/refund movement?")) return;
+
+      $btn.prop("disabled", true);
+      $.ajax({
+        url: "scripts/orders/delete_order_financial_adjustment.php",
+        method: "POST",
+        dataType: "json",
+        data: { id: id },
+        success: function (resp) {
+          if (!resp || !resp.ok) {
+            alert(resp && resp.error ? resp.error : "Financial movement delete failed");
+            $btn.prop("disabled", false);
+            return;
+          }
+
+          refreshFinancialOrderDetail(resp.order_id || orderId);
+        },
+        error: function (xhr) {
+          console.log(xhr.responseText);
+          alert("Financial movement delete request failed");
+          $btn.prop("disabled", false);
+        },
+      });
     });
 
   $(document)

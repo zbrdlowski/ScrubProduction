@@ -72,7 +72,58 @@ function fetch_assigned_users_raw(mysqli $conn, int $orderId): string
   $stmt->execute();
   $raw = (string) ($stmt->get_result()->fetch_assoc()['assigned_users'] ?? '');
   $stmt->close();
-  return $raw;
+
+  $itemStmt = $conn->prepare("
+    SELECT GROUP_CONCAT(DISTINCT
+        CONCAT(
+          0, '|',
+          e.id, '|',
+          e.firstname, ' ', e.lastname, '|',
+          CASE
+            WHEN UPPER(oi.item_type_code) = 'G' THEN 'ITEM_GRAPHICS'
+            WHEN UPPER(oi.item_type_code) IN ('P', 'T', 'M') THEN 'ITEM_PLASTICS'
+            WHEN UPPER(oi.item_type_code) = 'S' THEN 'ITEM_SEATCOVER'
+            WHEN UPPER(oi.item_type_code) = 'F' THEN 'ITEM_FITTING'
+            ELSE 'ITEM'
+          END, '|',
+          'ITEM', '|',
+          COALESCE(e.photo, '')
+        )
+        ORDER BY
+          CASE
+            WHEN UPPER(oi.item_type_code) = 'G' THEN 12
+            WHEN UPPER(oi.item_type_code) = 'F' THEN 22
+            WHEN UPPER(oi.item_type_code) IN ('P', 'T', 'M') THEN 32
+            WHEN UPPER(oi.item_type_code) = 'S' THEN 42
+            ELSE 98
+          END,
+          e.firstname,
+          e.lastname
+        SEPARATOR ';;'
+      ) AS item_assigned_users
+    FROM order_item_assignments oia
+    JOIN order_items oi ON oi.id = oia.item_id
+    JOIN employees e ON e.id = oia.employee_id
+    WHERE oi.order_id = ?
+      AND oi.deleted_at IS NULL
+      AND oia.removed_at IS NULL
+      AND NOT EXISTS (
+        SELECT 1
+        FROM order_assignments oa_dup
+        WHERE oa_dup.order_id = oi.order_id
+          AND oa_dup.employee_id = oia.employee_id
+          AND oa_dup.removed_at IS NULL
+      )
+  ");
+  $itemStmt->bind_param('i', $orderId);
+  $itemStmt->execute();
+  $itemRaw = (string) ($itemStmt->get_result()->fetch_assoc()['item_assigned_users'] ?? '');
+  $itemStmt->close();
+
+  if ($raw !== '' && $itemRaw !== '') {
+    return $raw . ';;' . $itemRaw;
+  }
+  return $raw !== '' ? $raw : $itemRaw;
 }
 
 function render_assigned_users_html(mysqli $conn, int $orderId, ?string $assignedRawOverride = null): string
@@ -112,8 +163,8 @@ function render_assigned_users_html(mysqli $conn, int $orderId, ?string $assigne
       $initials = mb_substr($initials, 0, 2);
 
       $roleLabel = str_replace(
-        ['PRIMARY_', 'COLLAB_', '_'],
-        ['', 'Collab ', ' '],
+        ['PRIMARY_', 'COLLAB_', 'ITEM_', '_'],
+        ['', 'Collab ', 'Item ', ' '],
         $role
       );
 
