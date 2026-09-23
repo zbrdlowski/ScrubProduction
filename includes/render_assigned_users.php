@@ -137,6 +137,33 @@ function render_assigned_users_html(mysqli $conn, int $orderId, ?string $assigne
 
   $assigned = parse_assigned_users_raw($assignedRaw);
 
+  // The same employee can have several active rows (different items, workflow
+  // roles or legacy duplicates). The order list is a people summary, so render
+  // every employee only once. Prefer an order-level row because it carries a
+  // removable assignment ID; keep the SQL order otherwise.
+  $distinctAssigned = [];
+  $employeePositions = [];
+  foreach ($assigned as $assignment) {
+    $employeeId = (int) ($assignment['id'] ?? 0);
+    $dedupeKey = $employeeId > 0
+      ? 'employee:' . $employeeId
+      : 'assignment:' . (int) ($assignment['assignment_id'] ?? 0) . ':' . count($distinctAssigned);
+
+    if (!array_key_exists($dedupeKey, $employeePositions)) {
+      $employeePositions[$dedupeKey] = count($distinctAssigned);
+      $distinctAssigned[] = $assignment;
+      continue;
+    }
+
+    $position = $employeePositions[$dedupeKey];
+    $existingAssignmentId = (int) ($distinctAssigned[$position]['assignment_id'] ?? 0);
+    $candidateAssignmentId = (int) ($assignment['assignment_id'] ?? 0);
+    if ($existingAssignmentId <= 0 && $candidateAssignmentId > 0) {
+      $distinctAssigned[$position] = $assignment;
+    }
+  }
+  $assigned = $distinctAssigned;
+
   if (!$assigned) {
     return '<span class="text-muted"></span>';
   }

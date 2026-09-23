@@ -89,26 +89,94 @@ $stateToUse = ($perm >= 400 && $mode === 'assign')
   : 'INVITED';
 $isAdminAssign = ($perm >= 400 && $mode === 'assign');
 
+function inviteAssignmentConflictPayload(
+  mysqli $conn,
+  int $orderId,
+  string $deptCode,
+  int $perm,
+  int $viewerUserId,
+  string $error,
+  string $conflictCode,
+  array $extra = []
+): array {
+  return array_merge([
+    'ok' => false,
+    'error' => $error,
+    'conflict_code' => $conflictCode,
+    'order_id' => $orderId,
+    'dept_code' => $deptCode,
+    'avatars_html' => render_assigned_users_html($conn, $orderId),
+    'take_assign_html' => render_order_take_assign_html($conn, $orderId, $deptCode, $perm, $viewerUserId),
+  ], $extra);
+}
+
 try {
   $conn->begin_transaction();
 
-if ($isAdminAssign) {
-  // Reassign only PRIMARY role for this department.
-  // Collaborators stay untouched.
-  $rm = $conn->prepare("
-    UPDATE order_assignments
-    SET removed_at = NOW()
-    WHERE order_id = ?
-      AND role = ?
-      AND removed_at IS NULL
-  ");
-  if (!$rm) {
+  $lock = $conn->prepare("SELECT id, status FROM orders WHERE id = ? FOR UPDATE");
+  if (!$lock) {
     throw new Exception($conn->error);
   }
-  $rm->bind_param('is', $orderId, $rolePrimary);
-  $rm->execute();
-  $rm->close();
-}
+  $lock->bind_param('i', $orderId);
+  $lock->execute();
+  $orderRow = $lock->get_result()->fetch_assoc();
+  $lock->close();
+
+  if (!$orderRow) {
+    $conn->rollback();
+    http_response_code(404);
+    echo json_encode(['ok'=>false,'error'=>'Order not found']);
+    exit;
+  }
+
+  if ($isAdminAssign) {
+    $itemAssignmentState = orderItemWorkflowAssignmentState($conn, $orderId, $deptCode, $employeeIdToInvite);
+    $blockedItems = $itemAssignmentState['other_items'] ?? [];
+    if ($blockedItems) {
+      $freeItems = $itemAssignmentState['free_items'] ?? [];
+      $firstBlocked = reset($blockedItems);
+      $blockingAssignment = is_array($firstBlocked) ? ($firstBlocked['blocking_assignment'] ?? []) : [];
+      $takenByName = trim((string)($blockingAssignment['employee_name'] ?? ''));
+
+      $conn->rollback();
+      http_response_code(409);
+      echo json_encode(inviteAssignmentConflictPayload(
+        $conn,
+        $orderId,
+        $deptCode,
+        $perm,
+        $userId,
+        $freeItems
+          ? 'Objednávku nie je možné priradiť celú. Niektoré položky už niekto vzal; treba vybrať jednu z voľných položiek.'
+          : 'Objednávku nie je možné priradiť. Na položkách už niekto pracuje.',
+        $freeItems ? 'FREE_ITEMS_AVAILABLE' : 'ORDER_ITEMS_ALREADY_TAKEN',
+        [
+          'free_item_count' => count($freeItems),
+          'blocked_item_count' => count($blockedItems),
+          'taken_by_name' => $takenByName,
+        ]
+      ), JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+  }
+
+  if ($isAdminAssign) {
+    // Reassign only PRIMARY role for this department.
+    // Collaborators stay untouched.
+    $rm = $conn->prepare("
+      UPDATE order_assignments
+      SET removed_at = NOW()
+      WHERE order_id = ?
+        AND role = ?
+        AND removed_at IS NULL
+    ");
+    if (!$rm) {
+      throw new Exception($conn->error);
+    }
+    $rm->bind_param('is', $orderId, $rolePrimary);
+    $rm->execute();
+    $rm->close();
+  }
 
 
   // allow invite if: (a) user is PRIMARY for this dept, OR (b) admin/moderator permission
@@ -164,52 +232,17 @@ $st->bind_param(
   $assignmentId = (int)$conn->insert_id;
 
   if ($isAdminAssign) {
-  $itemTypeMap = [
-    'GRAPHICS' => 'G',
-    'PLASTICS' => 'P',
-    'SEATCOVER' => 'S',
-    'FITTING' => 'F',
-  ];
-
-  $itemType = $itemTypeMap[$deptCode] ?? '';
-
-  if ($itemType !== '') {
-    $itemTypeCondition = $deptCode === 'PLASTICS'
-      ? "item_type_code IN ('P', 'T', 'M')"
-      : "item_type_code = ?";
-    $stmtItems = $conn->prepare("
-      SELECT id
-      FROM order_items
-      WHERE order_id = ?
-        AND deleted_at IS NULL
-        AND {$itemTypeCondition}
-    ");
-    if ($deptCode === 'PLASTICS') {
-      $stmtItems->bind_param('i', $orderId);
-    } else {
-      $stmtItems->bind_param('is', $orderId, $itemType);
-    }
-    $stmtItems->execute();
-    $itemsRes = $stmtItems->get_result();
-
-    $itemIds = [];
-    while ($itemRow = $itemsRes->fetch_assoc()) {
-      $itemIds[] = (int)$itemRow['id'];
-    }
-    $stmtItems->close();
-
-    foreach ($itemIds as $orderItemId) {
+    foreach (($itemAssignmentState['items'] ?? []) as $orderItemId => $_itemRow) {
       orderItemSetRoleAssignment(
         $conn,
         $orderId,
-        $orderItemId,
+        (int)$orderItemId,
         $employeeIdToInvite,
         'PREPARED',
         $userId
       );
     }
   }
-}
 
 if ($isAdminAssign) {
   $upd = $conn->prepare("

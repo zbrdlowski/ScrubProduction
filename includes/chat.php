@@ -20,7 +20,7 @@ if (empty($_SESSION['user_id'])) {
                 <div class="card-header">
                     <h3 class="card-title">Kolegovia</h3>
                     
-                <? if (($_SESSION['permission']) > 300) { ?>
+                <? if (($_SESSION['permission']) >= 500) { ?>
                 <div class="custom-control custom-switch mb-2">
                     <input type="checkbox" class="custom-control-input" id="chatBroadcastModeToggle">
                     <label class="custom-control-label" for="chatBroadcastModeToggle">Hromadný oznam</label>
@@ -671,6 +671,35 @@ if (empty($_SESSION['user_id'])) {
 </style>
 
 <script>
+    (function ($) {
+        if (!$) {
+            return;
+        }
+
+        const chatEventNamespace = '.darkScrubChat';
+        const chatRuntime = window.darkScrubChatRuntime || {};
+
+        if (chatRuntime.chatPollInterval) {
+            clearInterval(chatRuntime.chatPollInterval);
+        }
+
+        if (chatRuntime.titleBlinkInterval) {
+            clearInterval(chatRuntime.titleBlinkInterval);
+        }
+
+        if (chatRuntime.visibilityHandler) {
+            document.removeEventListener('visibilitychange', chatRuntime.visibilityHandler);
+        }
+
+        if (chatRuntime.originalPageTitle) {
+            document.title = chatRuntime.originalPageTitle;
+        }
+
+        $(document).off(chatEventNamespace);
+        $(window).off(chatEventNamespace);
+
+        window.darkScrubChatRuntime = chatRuntime;
+
     function formatDateEU(datetimeStr) {
         if (!datetimeStr) return '';
 
@@ -716,26 +745,36 @@ if (empty($_SESSION['user_id'])) {
         return `${count} neprečítaných správ`;
     }
     const canSendAnnouncements = <?php echo ((int) ($_SESSION['permission'] ?? 0) >= 500 ? 'true' : 'false'); ?>;
+    const currentUserId = <?php echo (int) ($_SESSION['user_id'] ?? 0); ?>;
     let broadcastModeEnabled = false;
     let selectedAnnouncementRecipients = new Set();
     let contactsCache = [];
-    let lastToastSignature = '';
-    let lastToastAt = 0;
+    let lastToastSignature = chatRuntime.lastToastSignature || '';
+    let lastToastAt = chatRuntime.lastToastAt || 0;
     let currentThreadId = null;
     let currentChatUserName = '';
     let currentChatUserId = null;
     let chatPollInterval = null;
 
-    let originalPageTitle = document.title;
+    let originalPageTitle = chatRuntime.originalPageTitle || document.title;
     let titleBlinkInterval = null;
-    let knownLastMessageIds = {};
-    let initializedThreadIds = {};
-    let userHasInteracted = false;
+    let knownLastMessageIds = chatRuntime.knownLastMessageIds || {};
+    let initializedThreadIds = chatRuntime.initializedThreadIds || {};
+    let notifiedMessageIds = chatRuntime.notifiedMessageIds || {};
+    let userHasInteracted = chatRuntime.userHasInteracted === true;
     let notifyAudio = null;
     let shouldAutoScrollOnNextRender = false;
     let forceScrollOnNextRender = false;
     let suppressNextIncomingSoundForThreadId = null;
+    let isCheckingUpdates = false;
+    let pendingCheckUpdates = false;
+    let notificationPermissionRequested = chatRuntime.notificationPermissionRequested === true;
     const chatEmojiList = ['😀', '😁', '😂', '🤣', '😊', '😉', '😍', '😘', '😎', '🤩', '🙂', '🙃', '🤗', '🤔', '😴', '🤤', '🤝', '👏', '👍', '👎', '🙏', '💪', '🔥', '✨', '🎉', '❤️', '💙', '💚', '💛', '💯', '✅', '❌', '⚠️', '🚀', '📦', '📞', '💬', '😅', '😭', '😡', '🤯', '😇', '🤌', '👌', '🙌', '👀', '🎯'];
+
+    chatRuntime.originalPageTitle = originalPageTitle;
+    chatRuntime.knownLastMessageIds = knownLastMessageIds;
+    chatRuntime.initializedThreadIds = initializedThreadIds;
+    chatRuntime.notifiedMessageIds = notifiedMessageIds;
 
     function isChatScrolledNearBottom() {
         const el = $('#chatMessages')[0];
@@ -1132,6 +1171,36 @@ if (empty($_SESSION['user_id'])) {
         return fallback;
     }
 
+    function pruneNotifiedMessageIds(nowTs) {
+        const keys = Object.keys(notifiedMessageIds);
+
+        if (keys.length <= 80) {
+            return;
+        }
+
+        keys.forEach(function (key) {
+            if ((nowTs - notifiedMessageIds[key]) > 60 * 60 * 1000) {
+                delete notifiedMessageIds[key];
+            }
+        });
+    }
+
+    function rememberNotifiedMessage(threadId, messageId, nowTs) {
+        if (!threadId || !messageId) {
+            return true;
+        }
+
+        const key = threadId + ':' + messageId;
+        if (notifiedMessageIds[key]) {
+            return false;
+        }
+
+        notifiedMessageIds[key] = nowTs;
+        chatRuntime.notifiedMessageIds = notifiedMessageIds;
+        pruneNotifiedMessageIds(nowTs);
+        return true;
+    }
+
     function showChatToast(payload) {
         const data = (payload && typeof payload === 'object') ? payload : { message: payload };
         const threadId = parseInt(data.thread_id || 0, 10);
@@ -1143,11 +1212,17 @@ if (empty($_SESSION['user_id'])) {
 
         const signature = [threadId, messageId, senderName, shortPreview].join('|');
         const nowTs = Date.now();
+        if (!rememberNotifiedMessage(threadId, messageId, nowTs)) {
+            return false;
+        }
+
         if (signature === lastToastSignature && (nowTs - lastToastAt) < 4000) {
-            return;
+            return false;
         }
         lastToastSignature = signature;
         lastToastAt = nowTs;
+        chatRuntime.lastToastSignature = lastToastSignature;
+        chatRuntime.lastToastAt = lastToastAt;
 
         const contact = threadId ? $('.chat-contact[data-thread-id="' + threadId + '"]') : $();
         const threadType = contact.attr('data-thread-type') || data.thread_type || 'dm';
@@ -1226,6 +1301,8 @@ if (empty($_SESSION['user_id'])) {
                 toast.remove();
             }, 150);
         });
+
+        return true;
     }
 
     function ensureNotificationAudio() {
@@ -1247,6 +1324,62 @@ if (empty($_SESSION['user_id'])) {
         notifyAudio.play().catch(function () { });
     }
 
+    function supportsBrowserNotifications() {
+        return 'Notification' in window && (
+            window.isSecureContext ||
+            Notification.permission === 'granted' ||
+            /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?/i.test(window.location.origin)
+        );
+    }
+
+    function requestBrowserNotificationPermission() {
+        if (!supportsBrowserNotifications() || notificationPermissionRequested || Notification.permission !== 'default') {
+            return;
+        }
+
+        notificationPermissionRequested = true;
+        chatRuntime.notificationPermissionRequested = true;
+
+        try {
+            const permissionRequest = Notification.requestPermission();
+            if (permissionRequest && typeof permissionRequest.catch === 'function') {
+                permissionRequest.catch(function () { });
+            }
+        } catch (e) {
+            Notification.requestPermission(function () { });
+        }
+    }
+
+    function showBrowserNotification(thread, titleText, bodyText, iconPath, threadUrl) {
+        if (!supportsBrowserNotifications() || Notification.permission !== 'granted') {
+            return;
+        }
+
+        const threadId = parseInt((thread && thread.thread_id) || 0, 10);
+        const messageId = parseInt((thread && (thread.last_message_id || thread.message_id)) || 0, 10);
+        const tag = threadId && messageId ? ('chat-' + threadId + '-' + messageId) : ('chat-' + Date.now());
+
+        try {
+            const notification = new Notification(titleText, {
+                body: bodyText,
+                icon: iconPath || 'images/profile.jpg',
+                tag: tag,
+                requireInteraction: true
+            });
+
+            notification.onclick = function () {
+                window.focus();
+                if (threadUrl) {
+                    window.location.href = threadUrl;
+                }
+                notification.close();
+            };
+
+        } catch (e) {
+            // Browser notifications are best-effort only.
+        }
+    }
+
     function startTitleBlink(text) {
         if (titleBlinkInterval) return;
 
@@ -1255,6 +1388,7 @@ if (empty($_SESSION['user_id'])) {
             document.title = toggle ? text : originalPageTitle;
             toggle = !toggle;
         }, 1000);
+        chatRuntime.titleBlinkInterval = titleBlinkInterval;
     }
 
     function stopTitleBlink() {
@@ -1262,15 +1396,31 @@ if (empty($_SESSION['user_id'])) {
             clearInterval(titleBlinkInterval);
             titleBlinkInterval = null;
         }
+        chatRuntime.titleBlinkInterval = null;
         document.title = originalPageTitle;
     }
 
     function triggerIncomingNotification(thread) {
-        const safeName = normalizeToastText(thread && thread.sender_name, 'kolegu');
-        showChatToast(thread || {});
-        playNotificationSound();
+        const data = thread || {};
+        const safeName = normalizeToastText(data.sender_name, 'kolegu');
+        const threadId = parseInt(data.thread_id || 0, 10);
+        const contact = threadId ? $('.chat-contact[data-thread-id="' + threadId + '"]') : $();
+        const threadType = contact.attr('data-thread-type') || data.thread_type || 'dm';
+        const titleText = threadType === 'announcement' ? 'Nový oznam' : ('Nová správa od ' + safeName);
+        const rawPreview = normalizeToastText(data.last_message_text || data.message_text || data.preview || data.message, '');
+        const preview = rawPreview && rawPreview.trim() !== '' ? rawPreview.trim() : 'Máš novú správu';
+        const shortPreview = preview.length > 140 ? preview.substring(0, 140) + '...' : preview;
+        const iconPath = data.sender_photo ? buildPhotoPath(data.sender_photo) : 'images/profile.jpg';
+        const threadUrl = '?page=chat&thread_id=' + encodeURIComponent(threadId || '');
 
-        if (document.hidden || parseInt(currentThreadId || 0, 10) !== parseInt((thread && thread.thread_id) || 0, 10)) {
+        if (!showChatToast(data)) {
+            return;
+        }
+
+        playNotificationSound();
+        showBrowserNotification(data, titleText, shortPreview, iconPath, threadUrl);
+
+        if (document.hidden || parseInt(currentThreadId || 0, 10) !== threadId) {
             startTitleBlink('💬 Nová správa od ' + safeName);
         }
     }
@@ -1806,6 +1956,13 @@ if (empty($_SESSION['user_id'])) {
     }
 
     function checkForIncomingMessages() {
+        if (isCheckingUpdates) {
+            pendingCheckUpdates = true;
+            return;
+        }
+
+        isCheckingUpdates = true;
+
         $.ajax({
             url: 'scripts/chat/check_updates.php',
             method: 'GET',
@@ -1822,8 +1979,9 @@ if (empty($_SESSION['user_id'])) {
                     let threadId = parseInt(thread.thread_id || 0, 10);
                     let lastMessageId = parseInt(thread.last_message_id || 0, 10);
                     let unreadCount = parseInt(thread.unread_count || 0, 10);
-                    let senderName = thread.sender_name || 'kolegu';
+                    let lastSenderId = parseInt(thread.last_sender_id || 0, 10);
                     let isCurrentThread = threadId === parseInt(currentThreadId || 0, 10);
+                    let isOwnLastMessage = lastSenderId > 0 && lastSenderId === currentUserId;
 
                     if (!threadId || !lastMessageId) return;
 
@@ -1836,13 +1994,17 @@ if (empty($_SESSION['user_id'])) {
                         if (isCurrentThread) {
                             if (suppressNextIncomingSoundForThreadId === threadId) {
                                 suppressNextIncomingSoundForThreadId = null;
-                            } else {
-                                playNotificationSound();
+                            } else if (!isOwnLastMessage) {
+                                if (document.hidden || !document.hasFocus()) {
+                                    triggerIncomingNotification(thread);
+                                } else {
+                                    playNotificationSound();
+                                }
                             }
 
                             forceScrollOnNextRender = isChatScrolledNearBottom();
                             shouldReloadCurrentThread = true;
-                        } else {
+                        } else if (!isOwnLastMessage) {
                             triggerIncomingNotification(thread);
                             markContactUnread(threadId, unreadCount);
                         }
@@ -1871,6 +2033,14 @@ if (empty($_SESSION['user_id'])) {
             },
             error: function (xhr) {
                 console.log('checkForIncomingMessages error:', xhr.responseText);
+            },
+            complete: function () {
+                isCheckingUpdates = false;
+
+                if (pendingCheckUpdates) {
+                    pendingCheckUpdates = false;
+                    checkForIncomingMessages();
+                }
             }
         });
     }
@@ -1883,6 +2053,7 @@ if (empty($_SESSION['user_id'])) {
         chatPollInterval = setInterval(function () {
             checkForIncomingMessages();
         }, 5000);
+        chatRuntime.chatPollInterval = chatPollInterval;
     }
 
     $(document).ready(function () {
@@ -1891,33 +2062,38 @@ if (empty($_SESSION['user_id'])) {
         checkForIncomingMessages();
         startPolling();
 
-        $(document).on('click keydown mousedown', function () {
+        $('#chatSearch, #chatEmojiToggle, #chatSendForm, #chatMessageInput, #chatAttachToggle, #chatAttachmentInput, #chatAttachmentRemove')
+            .off(chatEventNamespace);
+
+        $(document).on('click.darkScrubChat keydown.darkScrubChat mousedown.darkScrubChat', function () {
             userHasInteracted = true;
+            chatRuntime.userHasInteracted = true;
+            requestBrowserNotificationPermission();
         });
 
-        $('#chatSearch').on('keyup', function () {
+        $('#chatSearch').on('keyup.darkScrubChat', function () {
             loadContacts($(this).val());
         });
 
-        $('#chatEmojiToggle').on('click', function (e) {
+        $('#chatEmojiToggle').on('click.darkScrubChat', function (e) {
             e.preventDefault();
             if ($(this).prop('disabled')) return;
             toggleEmojiPicker();
         });
 
-        $(document).on('click', '.chat-emoji-btn', function (e) {
+        $(document).on('click.darkScrubChat', '.chat-emoji-btn', function (e) {
             e.preventDefault();
             insertEmojiToMessage($(this).data('emoji') || '');
         });
 
-        $(document).on('click', function (e) {
+        $(document).on('click.darkScrubChat', function (e) {
             const $target = $(e.target);
             if (!$target.closest('#chatEmojiPicker').length && !$target.closest('#chatEmojiToggle').length) {
                 toggleEmojiPicker(false);
             }
         });
 
-        $(document).on('click', '.chat-contact', function (e) {
+        $(document).on('click.darkScrubChat', '.chat-contact', function (e) {
             const threadType = $(this).attr('data-thread-type') || 'dm';
             const userId = $(this).data('user-id');
             const userName = $(this).data('user-name');
@@ -1938,19 +2114,19 @@ if (empty($_SESSION['user_id'])) {
             openDmWithUser(userId, userName, userPhoto);
         });
 
-        $('#chatSendForm').on('submit', function (e) {
+        $('#chatSendForm').on('submit.darkScrubChat', function (e) {
             e.preventDefault();
             sendMessage();
         });
 
-        $('#chatMessageInput').on('keypress', function (e) {
+        $('#chatMessageInput').on('keypress.darkScrubChat', function (e) {
             if (e.which === 13 && !e.shiftKey) {
                 e.preventDefault();
                 sendMessage();
             }
         });
 
-        $(window).on('focus', function () {
+        $(window).on('focus.darkScrubChat', function () {
             if (currentThreadId) {
                 stopTitleBlink();
                 forceScrollOnNextRender = false;
@@ -1958,13 +2134,14 @@ if (empty($_SESSION['user_id'])) {
             }
         });
 
-        document.addEventListener('visibilitychange', function () {
+        chatRuntime.visibilityHandler = function () {
             if (!document.hidden && currentThreadId) {
                 stopTitleBlink();
                 forceScrollOnNextRender = false;
                 loadMessages(currentThreadId);
             }
-        });
+        };
+        document.addEventListener('visibilitychange', chatRuntime.visibilityHandler);
 
         const preselectedThreadId = getUrlParam('thread_id');
         if (preselectedThreadId) {
@@ -1991,30 +2168,30 @@ if (empty($_SESSION['user_id'])) {
             renderChatHeader(null);
         }
 
-        $('#chatAttachToggle').on('click', function (e) {
+        $('#chatAttachToggle').on('click.darkScrubChat', function (e) {
             e.preventDefault();
             if ($(this).prop('disabled')) return;
             $('#chatAttachmentInput').trigger('click');
         });
 
-        $('#chatAttachmentInput').on('change', function () {
+        $('#chatAttachmentInput').on('change.darkScrubChat', function () {
             const file = this.files && this.files[0] ? this.files[0] : null;
             setAttachmentPreview(file);
         });
 
-        $('#chatAttachmentRemove').on('click', function (e) {
+        $('#chatAttachmentRemove').on('click.darkScrubChat', function (e) {
             e.preventDefault();
             resetAttachmentPreview();
         });
-        $(document).on('change', '#chatBroadcastModeToggle', function () {
+        $(document).on('change.darkScrubChat', '#chatBroadcastModeToggle', function () {
             toggleBroadcastMode($(this).is(':checked'));
         });
 
-        $(document).on('change', '#chatAnnouncementDepartments', function () {
+        $(document).on('change.darkScrubChat', '#chatAnnouncementDepartments', function () {
             applyDepartmentSelection();
         });
 
-        $(document).on('click', '#chatBroadcastSelectAll', function (e) {
+        $(document).on('click.darkScrubChat', '#chatBroadcastSelectAll', function (e) {
             e.preventDefault();
             selectedAnnouncementRecipients = new Set(
                 contactsCache
@@ -2026,7 +2203,7 @@ if (empty($_SESSION['user_id'])) {
             loadContacts($('#chatSearch').val());
         });
 
-        $(document).on('click', '#chatBroadcastClearAll', function (e) {
+        $(document).on('click.darkScrubChat', '#chatBroadcastClearAll', function (e) {
             e.preventDefault();
             $('#chatAnnouncementDepartments').val([]);
             selectedAnnouncementRecipients = new Set();
@@ -2077,30 +2254,33 @@ if (empty($_SESSION['user_id'])) {
         html += linkifyHttp(source.slice(lastIndex));
         return html;
     }
-    $(document).on('click', '.chat-file-link', function(e) {
+    $(document).on('click.darkScrubChat', '.chat-file-link', function(e) {
         // optional: warning
         console.log('Opening file path:', this.href);
-    });$(document).on('click', '.chat-copy-path', function(e) {
-    e.preventDefault();
-
-    const encodedPath = $(this).attr('data-path');
-    const path = encodedPath ? decodeURIComponent(encodedPath) : '';
-
-    if (!path) return;
-
-    navigator.clipboard.writeText(path).then(() => {
-        const btn = $(this);
-        const original = btn.html();
-
-        btn.html('<i class="fas fa-check"></i>');
-        btn.css('color', '#28a745');
-
-        setTimeout(() => {
-            btn.html(original);
-            btn.css('color', '');
-        }, 1200);
-    }).catch(() => {
-        alert('Nepodarilo sa skopírovať cestu');
     });
-});
+
+    $(document).on('click.darkScrubChat', '.chat-copy-path', function(e) {
+        e.preventDefault();
+
+        const encodedPath = $(this).attr('data-path');
+        const path = encodedPath ? decodeURIComponent(encodedPath) : '';
+
+        if (!path) return;
+
+        navigator.clipboard.writeText(path).then(() => {
+            const btn = $(this);
+            const original = btn.html();
+
+            btn.html('<i class="fas fa-check"></i>');
+            btn.css('color', '#28a745');
+
+            setTimeout(() => {
+                btn.html(original);
+                btn.css('color', '');
+            }, 1200);
+        }).catch(() => {
+            alert('Nepodarilo sa skopírovať cestu');
+        });
+    });
+    })(window.jQuery);
 </script>

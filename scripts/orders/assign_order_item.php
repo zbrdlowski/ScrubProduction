@@ -131,34 +131,110 @@ if ($perm < 400) {
   }
 }
 
-$stmt = $conn->prepare("
-  INSERT INTO order_item_assignments
-    (order_id, item_id, employee_id, assigned_by)
-  VALUES
-    (?, ?, ?, ?)
-  ON DUPLICATE KEY UPDATE
-    removed_at = NULL,
-    assigned_by = VALUES(assigned_by),
-    assigned_at = NOW()
-");
-$stmt->bind_param('iiii', $orderId, $itemId, $userId, $userId);
-$stmt->execute();
-$stmt->close();
+try {
+  $conn->begin_transaction();
 
-log_order_activity(
-  $conn,
-  $orderId,
-  $userId,
-  'item_assigned',
-  'order_item',
-  $itemId,
-  [
-    'employee_id' => $userId,
-    'item_type_code' => $itemType,
-    'sku' => $item['sku'],
-    'title' => $item['title']
-  ],
-  'User assigned to item'
-);
+  $lockItem = $conn->prepare("
+    SELECT id
+    FROM order_items
+    WHERE id = ?
+      AND order_id = ?
+      AND deleted_at IS NULL
+    LIMIT 1
+    FOR UPDATE
+  ");
+  $lockItem->bind_param('ii', $itemId, $orderId);
+  $lockItem->execute();
+  $lockedItem = $lockItem->get_result()->fetch_assoc();
+  $lockItem->close();
+
+  if (!$lockedItem) {
+    $conn->rollback();
+    http_response_code(404);
+    echo json_encode(['ok' => false, 'error' => 'Item not found']);
+    exit;
+  }
+
+  $busyStmt = $conn->prepare("
+    SELECT oia.employee_id,
+           TRIM(CONCAT(e.firstname, ' ', e.lastname)) AS emp_name,
+           oia.assignment_role
+    FROM order_item_assignments oia
+    JOIN employees e ON e.id = oia.employee_id
+    WHERE oia.item_id = ?
+      AND oia.assignment_role IN ('PREPARED', 'CHECKED')
+      AND oia.removed_at IS NULL
+      AND oia.employee_id <> ?
+    ORDER BY
+      CASE oia.assignment_role
+        WHEN 'PREPARED' THEN 1
+        WHEN 'CHECKED' THEN 2
+        ELSE 3
+      END,
+      oia.id
+    LIMIT 1
+    FOR UPDATE
+  ");
+  $busyStmt->bind_param('ii', $itemId, $userId);
+  $busyStmt->execute();
+  $busyRow = $busyStmt->get_result()->fetch_assoc();
+  $busyStmt->close();
+
+  if ($busyRow) {
+    $conn->rollback();
+    http_response_code(409);
+    $takenByName = trim((string)($busyRow['emp_name'] ?? ''));
+    echo json_encode([
+      'ok' => false,
+      'error' => $takenByName !== ''
+        ? 'Túto položku medzitým prevzal(a) ' . $takenByName . '.'
+        : 'Túto položku medzitým prevzal niekto iný.',
+      'conflict_code' => 'ITEM_ALREADY_TAKEN',
+      'order_id' => $orderId,
+      'item_id' => $itemId,
+      'taken_by' => (int)$busyRow['employee_id'],
+      'taken_by_name' => $takenByName,
+      'assignment_role' => (string)$busyRow['assignment_role'],
+    ], JSON_UNESCAPED_UNICODE);
+    exit;
+  }
+
+  $stmt = $conn->prepare("
+    INSERT INTO order_item_assignments
+      (order_id, item_id, employee_id, assigned_by)
+    VALUES
+      (?, ?, ?, ?)
+    ON DUPLICATE KEY UPDATE
+      removed_at = NULL,
+      assigned_by = VALUES(assigned_by),
+      assigned_at = NOW()
+  ");
+  $stmt->bind_param('iiii', $orderId, $itemId, $userId, $userId);
+  $stmt->execute();
+  $stmt->close();
+
+  log_order_activity(
+    $conn,
+    $orderId,
+    $userId,
+    'item_assigned',
+    'order_item',
+    $itemId,
+    [
+      'employee_id' => $userId,
+      'item_type_code' => $itemType,
+      'sku' => $item['sku'],
+      'title' => $item['title']
+    ],
+    'User assigned to item'
+  );
+
+  $conn->commit();
+} catch (Throwable $e) {
+  $conn->rollback();
+  http_response_code(500);
+  echo json_encode(['ok' => false, 'error' => 'Server error: ' . $e->getMessage()]);
+  exit;
+}
 
 echo json_encode(['ok' => true]);

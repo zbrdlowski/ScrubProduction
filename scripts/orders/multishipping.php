@@ -17,7 +17,7 @@ function multishippingJson(array $payload, int $status = 200): void
   exit;
 }
 
-if (!isset($_SESSION['permission']) || (int) $_SESSION['permission'] < 400) {
+if ((int) ($_SESSION['permission'] ?? 0) < 1) {
   multishippingJson(['ok' => false, 'error' => 'No permission.'], 403);
 }
 
@@ -28,6 +28,7 @@ try {
 }
 
 $userId = (int) ($_SESSION['user_id'] ?? 0);
+$sessionDept = (int) ($_SESSION['dpt'] ?? 0);
 $action = trim((string) ($_REQUEST['action'] ?? 'fetch'));
 
 function multishippingOrderLabel(array $row): string
@@ -57,11 +58,29 @@ function multishippingLoadOrder(mysqli $conn, int $orderId, bool $forUpdate = fa
   return $row ?: null;
 }
 
+function multishippingOrderMatchesShippingScope(mysqli $conn, int $orderId, int $sessionDept): bool
+{
+  if ($orderId <= 0) {
+    return false;
+  }
+
+  $scopeWhere = ordersShippingScopeWhereSql($sessionDept, 'o');
+  $stmt = $conn->prepare("SELECT 1 FROM orders o WHERE o.id = ? AND $scopeWhere LIMIT 1");
+  $stmt->bind_param('i', $orderId);
+  $stmt->execute();
+  $ok = (bool) $stmt->get_result()->fetch_row();
+  $stmt->close();
+  return $ok;
+}
+
 if ($action === 'fetch') {
   $orderId = (int) ($_GET['order_id'] ?? 0);
   $base = multishippingLoadOrder($conn, $orderId);
   if (!$base) {
     multishippingJson(['ok' => false, 'error' => 'Order not found.'], 404);
+  }
+  if (!multishippingOrderMatchesShippingScope($conn, $orderId, $sessionDept)) {
+    multishippingJson(['ok' => false, 'error' => 'This order belongs to the other shipping workplace.'], 403);
   }
 
   $group = ordersMultishippingGroupForOrder($conn, $orderId);
@@ -77,7 +96,7 @@ if ($action === 'fetch') {
   $customerEmail = trim((string) ($base['customer_email'] ?? ''));
   $customerName = trim((string) ($base['customer_name'] ?? ''));
 
-  $clauses = ["o.status = 'READY_TO_SHIP'"];
+  $clauses = ["o.status = 'READY_TO_SHIP'", ordersShippingScopeWhereSql($sessionDept, 'o')];
   $types = '';
   $params = [];
   $identityClauses = [];
@@ -219,6 +238,20 @@ if ($action === 'save') {
       if (strtoupper((string) $row['status']) !== 'READY_TO_SHIP') {
         throw new RuntimeException('All selected orders must be READY_TO_SHIP.');
       }
+    }
+
+    $scopeWhere = ordersShippingScopeWhereSql($sessionDept, 'o');
+    $scopeStmt = $conn->prepare("SELECT o.id FROM orders o WHERE o.id IN ($placeholders) AND $scopeWhere");
+    $scopeStmt->bind_param($types, ...$orderIds);
+    $scopeStmt->execute();
+    $scopeRows = [];
+    $scopeRes = $scopeStmt->get_result();
+    while ($scopeRow = $scopeRes->fetch_assoc()) {
+      $scopeRows[(int) $scopeRow['id']] = true;
+    }
+    $scopeStmt->close();
+    if (count($scopeRows) !== count($orderIds)) {
+      throw new RuntimeException('Selected orders include an order from the other shipping workplace.');
     }
 
     $customerIds = array_values(array_unique(array_filter(array_map(

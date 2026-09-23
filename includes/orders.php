@@ -244,6 +244,135 @@ function ordersStatusDateColumnCandidates(string $status): array
   ];
 }
 
+function ordersNormalizeDateFilter(?string $value): string
+{
+  $value = trim((string) $value);
+  if ($value === '' || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $value)) {
+    return '';
+  }
+
+  $dt = DateTime::createFromFormat('!Y-m-d', $value);
+  if (!$dt || $dt->format('Y-m-d') !== $value) {
+    return '';
+  }
+
+  return $value;
+}
+
+function ordersBuildStatusDateFilter(mysqli $conn, string $status, string $from, string $to): array
+{
+  $status = strtoupper(trim($status));
+  if ($status === '' || ($from === '' && $to === '')) {
+    return ['', '', []];
+  }
+
+  $clauses = [];
+  $types = '';
+  $params = [];
+
+  $appendClause = static function (string $sql, string $localTypes = '', array $localParams = []) use (&$clauses, &$types, &$params): void {
+    $clauses[] = $sql;
+    $types .= $localTypes;
+    array_push($params, ...$localParams);
+  };
+
+  $dateRangeSql = static function (string $columnSql) use ($from, $to): array {
+    $parts = [];
+    $localTypes = '';
+    $localParams = [];
+
+    if ($from !== '') {
+      $parts[] = "DATE($columnSql) >= ?";
+      $localTypes .= 's';
+      $localParams[] = $from;
+    }
+
+    if ($to !== '') {
+      $parts[] = "DATE($columnSql) <= ?";
+      $localTypes .= 's';
+      $localParams[] = $to;
+    }
+
+    return [implode(' AND ', $parts), $localTypes, $localParams];
+  };
+
+  $orderCols = ordersGetTableColumns($conn, 'orders');
+  $directCol = ordersFirstExistingColumn($orderCols, ordersStatusDateColumnCandidates($status));
+  if ($directCol !== '') {
+    [$rangeSql, $rangeTypes, $rangeParams] = $dateRangeSql("o.`$directCol`");
+    $appendClause("(o.`$directCol` IS NOT NULL AND $rangeSql)", $rangeTypes, $rangeParams);
+  }
+
+  $historyCols = ordersGetTableColumns($conn, 'order_status_history');
+  if (
+    in_array('order_id', $historyCols, true)
+    && in_array('new_status', $historyCols, true)
+    && in_array('changed_at', $historyCols, true)
+  ) {
+    [$rangeSql, $rangeTypes, $rangeParams] = $dateRangeSql('osh.`changed_at`');
+    $appendClause(
+      "EXISTS (
+        SELECT 1
+        FROM order_status_history osh
+        WHERE osh.order_id = o.id
+          AND UPPER(TRIM(COALESCE(osh.`new_status`, ''))) = ?
+          AND $rangeSql
+      )",
+      's' . $rangeTypes,
+      array_merge([$status], $rangeParams)
+    );
+  }
+
+  $activityCols = ordersGetTableColumns($conn, 'order_activity');
+  if ($activityCols && in_array('order_id', $activityCols, true)) {
+    $dateCol = ordersFirstExistingColumn($activityCols, ['created_at', 'activity_at', 'logged_at', 'changed_at', 'event_at', 'updated_at']);
+    $newValueCol = ordersFirstExistingColumn($activityCols, ['new_value', 'new_status', 'status_to', 'to_status', 'value_after', 'after_value', 'status']);
+    $fieldCol = ordersFirstExistingColumn($activityCols, ['field_name', 'field', 'changed_field', 'column_name']);
+    $actionCol = ordersFirstExistingColumn($activityCols, ['action', 'event', 'type', 'activity_type']);
+
+    if ($dateCol !== '' && $newValueCol !== '') {
+      $extra = '';
+      if ($fieldCol !== '') {
+        $extra = " AND (LOWER(TRIM(COALESCE(oaf.`$fieldCol`, ''))) IN ('status','order_status') OR oaf.`$fieldCol` IS NULL OR oaf.`$fieldCol` = '')";
+      }
+      [$rangeSql, $rangeTypes, $rangeParams] = $dateRangeSql("oaf.`$dateCol`");
+      $appendClause(
+        "EXISTS (
+          SELECT 1
+          FROM order_activity oaf
+          WHERE oaf.order_id = o.id
+            AND UPPER(TRIM(COALESCE(oaf.`$newValueCol`, ''))) = ?
+            $extra
+            AND $rangeSql
+        )",
+        's' . $rangeTypes,
+        array_merge([$status], $rangeParams)
+      );
+    }
+
+    if ($dateCol !== '' && $actionCol !== '') {
+      [$rangeSql, $rangeTypes, $rangeParams] = $dateRangeSql("oaa.`$dateCol`");
+      $appendClause(
+        "EXISTS (
+          SELECT 1
+          FROM order_activity oaa
+          WHERE oaa.order_id = o.id
+            AND UPPER(COALESCE(oaa.`$actionCol`, '')) LIKE ?
+            AND $rangeSql
+        )",
+        's' . $rangeTypes,
+        array_merge(['%' . $status . '%'], $rangeParams)
+      );
+    }
+  }
+
+  if (!$clauses) {
+    return ['0=1', '', []];
+  }
+
+  return ['(' . implode(' OR ', $clauses) . ')', $types, $params];
+}
+
 function ordersFetchStatusEventDates(mysqli $conn, array $orderIds, array $statuses): array
 {
   $orderIds = array_values(array_unique(array_filter(array_map('intval', $orderIds), fn($v) => $v > 0)));
@@ -488,8 +617,34 @@ $fCountry = isset($_GET['country']) ? strtoupper(trim((string) $_GET['country'])
 $fPayment = isset($_GET['payment']) ? trim((string) $_GET['payment']) : '';
 $fShipping = isset($_GET['shipping']) ? trim((string) $_GET['shipping']) : '';
 $fPriority = isset($_GET['priority']) ? trim((string) $_GET['priority']) : '';
-$fDateFrom = isset($_GET['date_from']) ? trim((string) $_GET['date_from']) : '';
-$fDateTo = isset($_GET['date_to']) ? trim((string) $_GET['date_to']) : '';
+$fPriorityDue = isset($_GET['priority_due']) ? strtolower(trim((string) $_GET['priority_due'])) : '';
+$fPriorityDue = in_array($fPriorityDue, ['1', 'true', 'today', 'due'], true) ? '1' : '';
+if ($fPriorityDue === '') {
+  unset($_GET['priority_due']);
+} else {
+  $_GET['priority_due'] = '1';
+}
+$fDateFrom = ordersNormalizeDateFilter($_GET['date_from'] ?? '');
+$fDateTo = ordersNormalizeDateFilter($_GET['date_to'] ?? '');
+$fDateMode = strtolower(trim((string) ($_GET['date_mode'] ?? 'order')));
+if (!in_array($fDateMode, ['order', 'status'], true)) {
+  $fDateMode = 'order';
+}
+
+$legacyStatusDateFrom = ordersNormalizeDateFilter($_GET['status_date_from'] ?? '');
+$legacyStatusDateTo = ordersNormalizeDateFilter($_GET['status_date_to'] ?? '');
+if (($legacyStatusDateFrom !== '' || $legacyStatusDateTo !== '') && $fDateFrom === '' && $fDateTo === '') {
+  $fDateFrom = $legacyStatusDateFrom;
+  $fDateTo = $legacyStatusDateTo;
+  $fDateMode = 'status';
+}
+unset($_GET['status_date_from'], $_GET['status_date_to']);
+
+if ($fDateFrom !== '' && $fDateTo !== '' && $fDateFrom > $fDateTo) {
+  [$fDateFrom, $fDateTo] = [$fDateTo, $fDateFrom];
+}
+$_GET['date_from'] = $fDateFrom;
+$_GET['date_to'] = $fDateTo;
 $fWorker = isset($_GET['worker']) ? (int) $_GET['worker'] : 0;
 // ── Print settings filters ─────────────────────────────────────────────────
 $fPrinter = isset($_GET['print_printer']) ? trim((string) $_GET['print_printer']) : '';
@@ -608,6 +763,9 @@ $orderStatusLabels = ordersGetOrderStatusLabels($conn, true);
 $allowedStatuses = array_keys($orderStatusLabels);
 if ($fStatus !== '' && !in_array($fStatus, $allowedStatuses, true))
   $fStatus = '';
+if ($fStatus === '') {
+  $fDateMode = 'order';
+}
 
 // Bez vedomého filtra zobrazujeme iba Open Orders. Konkrétny status alebo
 // fulltextové vyhľadávanie je explicitná požiadavka používateľa, preto pri
@@ -628,11 +786,22 @@ if ($fCustomerId > 0 && $fCustomerScope === 'all') {
 
 $detailColumnTitle = 'Detail';
 $detailStatusCode = strtoupper(trim((string) $fStatus));
+$dateModeStatusLabel = '';
 
 if ($detailStatusCode !== '' && isset($statusDateDetailRules[$detailStatusCode])) {
   $detailColumnTitle =
     ($statusDateDetailRules[$detailStatusCode]['label'] ?? str_replace('_', ' ', $detailStatusCode))
     . ' At';
+  $dateModeStatusLabel = $detailColumnTitle;
+}
+
+if ($fDateMode === 'status' && ($dateModeStatusLabel === '' || ($fDateFrom === '' && $fDateTo === ''))) {
+  $fDateMode = 'order';
+}
+if ($fDateMode === 'order') {
+  unset($_GET['date_mode']);
+} else {
+  $_GET['date_mode'] = $fDateMode;
 }
 
 // ── Počty objednávok pre jednotlivé taby ──────────────────────────────────────────────────────────
@@ -1008,17 +1177,35 @@ if ($fPriority !== '') {
   $types .= 'i';
   $params[] = (int) $fPriority;
 }
-
-// Date range (order_date)
-if ($fDateFrom !== '') {
-  $where[] = 'DATE(o.order_date) >= ?';
+if ($fPriorityDue !== '') {
+  $priorityDueToday = (new DateTimeImmutable('today', new DateTimeZone('Europe/Bratislava')))->format('Y-m-d');
+  $where[] = 'o.priority_date IS NOT NULL AND o.priority_date <= ?';
   $types .= 's';
-  $params[] = $fDateFrom;
+  $params[] = $priorityDueToday;
 }
-if ($fDateTo !== '') {
-  $where[] = 'DATE(o.order_date) <= ?';
-  $types .= 's';
-  $params[] = $fDateTo;
+
+// Date range. By default it uses order creation date; for statuses that show
+// a status date in the last column it can use that event date instead.
+if ($fDateFrom !== '' || $fDateTo !== '') {
+  if ($fDateMode === 'status') {
+    [$dateFilterSql, $dateFilterTypes, $dateFilterParams] = ordersBuildStatusDateFilter($conn, $detailStatusCode, $fDateFrom, $fDateTo);
+    if ($dateFilterSql !== '') {
+      $where[] = $dateFilterSql;
+      $types .= $dateFilterTypes;
+      array_push($params, ...$dateFilterParams);
+    }
+  } else {
+    if ($fDateFrom !== '') {
+      $where[] = 'DATE(o.order_date) >= ?';
+      $types .= 's';
+      $params[] = $fDateFrom;
+    }
+    if ($fDateTo !== '') {
+      $where[] = 'DATE(o.order_date) <= ?';
+      $types .= 's';
+      $params[] = $fDateTo;
+    }
+  }
 }
 // ── koniec nových WHERE podmienok ───────────────────────────────────────────
 
@@ -1098,6 +1285,9 @@ if ($fItemFeature === 'grip') {
       AND ($gripConditionSql)
   )";
 } elseif ($fItemFeature === 'printed_ribs') {
+  $printedRibsInternalSql = $itemFeatureJsonValueSql('oif.internal_options_json', '$._seat_printed_ribs');
+  $printedRibsSourceSql = $itemFeatureJsonValueSql('oif.options_json', '$."printed-ribs"');
+  $printedRibsConditionSql = $itemFeaturePositiveSql($printedRibsInternalSql) . ' OR ' . $itemFeaturePositiveSql($printedRibsSourceSql);
   $where[] = "EXISTS (
     SELECT 1 FROM order_items oif
     WHERE oif.order_id = o.id
@@ -1105,13 +1295,7 @@ if ($fItemFeature === 'grip') {
       AND UPPER(TRIM(COALESCE(oif.item_type_code, ''))) = 'S'
       AND (
         UPPER(TRIM(COALESCE(oif.custom_label, ''))) LIKE 'S_RIDGE%'
-        OR LOWER(COALESCE(oif.custom_label, '')) LIKE '%ridge%'
-        OR LOWER(COALESCE(oif.title, '')) LIKE '%printed ribs%'
-        OR LOWER(COALESCE(oif.title, '')) LIKE '%printed rib%'
-        OR LOWER(COALESCE(oif.title, '')) LIKE '%gripper ribs%'
-        OR LOWER(COALESCE(oif.title, '')) LIKE '%ribs%'
-        OR LOWER(COALESCE(oif.options_json, '')) LIKE '%printed ribs%'
-        OR LOWER(COALESCE(oif.options_json, '')) LIKE '%gripper ribs%'
+        OR $printedRibsConditionSql
       )
   )";
 } elseif ($fItemFeature === 'patch') {
@@ -2289,6 +2473,12 @@ $deptOptions = [
     background: #343a40;
   }
 
+  .orders-search-header .orders-page-title {
+    font-size: 1.75rem;
+    font-weight: 500;
+    line-height: 1.2;
+  }
+
   /* Quick tabs sticky pod search headerom */
   .orders-quicktabs {
     position: static;
@@ -2333,7 +2523,7 @@ $deptOptions = [
 
 <div class="card card-dark">
   <div class="card-header orders-search-header d-flex align-items-center justify-content-between flex-wrap" style="gap:10px;">
-    <h3 class="card-title mb-0">
+    <h3 class="card-title orders-page-title mb-0">
       Orders
       <?php if ($dpt === 6): ?><span class="badge badge-warning ml-2">T/M highlighted</span><?php endif; ?>
     </h3>
@@ -2382,7 +2572,7 @@ $deptOptions = [
   function qtabIsActive(array $tabParams): bool
   {
     global $fExcludeStatuses;
-    $filterKeys = ['status', 'item_status', 'item_department', 'traffic_department', 'traffic_state', 'exclude_status', 'source', 'country', 'payment', 'shipping', 'priority', 'date_from', 'date_to', 'worker', 'dept', 'cat', 'type', 'q', 'print_printer', 'print_material', 'print_finish', 'item_feature'];
+    $filterKeys = ['status', 'date_mode', 'item_status', 'item_department', 'traffic_department', 'traffic_state', 'exclude_status', 'source', 'country', 'payment', 'shipping', 'priority', 'priority_due', 'date_from', 'date_to', 'worker', 'dept', 'cat', 'type', 'q', 'print_printer', 'print_material', 'print_finish', 'item_feature'];
     foreach ($tabParams as $k => $v) {
       $actualValue = $k === 'exclude_status' ? $fExcludeStatuses : ($_GET[$k] ?? '');
       if ((string)$actualValue !== (string)$v)
@@ -2400,7 +2590,7 @@ $deptOptions = [
   function qtabUrl(array $tabParams): string
   {
     $current = $_GET;
-    foreach (['status', 'item_status', 'item_department', 'traffic_department', 'traffic_state', 'exclude_status', 'source', 'country', 'payment', 'shipping', 'priority', 'date_from', 'date_to', 'worker', 'dept', 'cat', 'type', 'q', 'print_printer', 'print_material', 'print_finish', 'item_feature'] as $k) {
+    foreach (['status', 'date_mode', 'item_status', 'item_department', 'traffic_department', 'traffic_state', 'exclude_status', 'source', 'country', 'payment', 'shipping', 'priority', 'priority_due', 'date_from', 'date_to', 'worker', 'dept', 'cat', 'type', 'q', 'print_printer', 'print_material', 'print_finish', 'item_feature'] as $k) {
       unset($current[$k]);
     }
     if (isset($tabParams['exclude_status']) && !empty($current['customer_id'])) {
@@ -2516,6 +2706,8 @@ $deptOptions = [
     $activeFilterBadges = [];
     if ($fStatus !== '')
       $activeFilterBadges[] = ['label' => 'Status', 'display' => str_replace('_', ' ', $fStatus)];
+    if ($fDateMode === 'status' && ($fDateFrom !== '' || $fDateTo !== '') && $dateModeStatusLabel !== '')
+      $activeFilterBadges[] = ['label' => 'Date by', 'display' => $dateModeStatusLabel];
     if ($fItemStatus !== '' && $fItemDepartment !== '')
       $activeFilterBadges[] = [
         'label' => $fItemDepartment . ' item status',
@@ -2530,6 +2722,8 @@ $deptOptions = [
       $activeFilterBadges[] = ['label' => 'Source', 'display' => $fSource];
     if ($fPriority !== '')
       $activeFilterBadges[] = ['label' => 'Priority', 'display' => ($priorityOptions[(int) $fPriority] ?? $fPriority)];
+    if ($fPriorityDue !== '')
+      $activeFilterBadges[] = ['label' => 'Priority date', 'display' => 'Today / overdue'];
     if ($fQ !== '')
       $activeFilterBadges[] = ['label' => 'Search', 'display' => '"' . $fQ . '"'];
     if ($fCustomerId > 0)
@@ -2595,12 +2789,13 @@ $deptOptions = [
 
       #ordersFilterForm .filter-grid-row2 {
         grid-template-columns:
-          minmax(220px, 1.35fr) minmax(125px, .8fr) minmax(125px, .8fr) minmax(90px, .65fr) minmax(150px, 1fr) minmax(150px, 1fr);
+          minmax(220px, 1.35fr) minmax(120px, .75fr) minmax(125px, .8fr) minmax(125px, .8fr) minmax(90px, .65fr) minmax(150px, 1fr) minmax(150px, 1fr);
       }
 
       /* Aktívny filter — žltý lem + žltý label */
       #ordersFilterForm .filter-active .form-control,
-      #ordersFilterForm .filter-active input.form-control {
+      #ordersFilterForm .filter-active input.form-control,
+      #ordersFilterForm .filter-active .input-group-text {
         border-color: #ffc107 !important;
         box-shadow: 0 0 0 1px rgba(255, 193, 7, .35) !important;
       }
@@ -2608,6 +2803,10 @@ $deptOptions = [
       #ordersFilterForm .filter-active label {
         color: #ffc107 !important;
         font-weight: 600;
+      }
+
+      #ordersFilterForm .bootstrap-datetimepicker-widget {
+        z-index: 1080;
       }
 
       /* Oddeľovač riadkov */
@@ -2778,8 +2977,10 @@ $deptOptions = [
       $fQ !== ''
       && $fCustomerId <= 0
       && $fStatus === ''
+      && $fDateMode === 'order'
       && $fSource === ''
       && $fPriority === ''
+      && $fPriorityDue === ''
       && $fCat === ''
       && $fType === ''
       && $fTrafficDepartment === ''
@@ -2871,7 +3072,7 @@ $deptOptions = [
 
         <div class="filter-panel">
 
-          <!-- ── ROW 1: 6 polí ─────────────────────────────────────────────────
+          <!-- ── ROW 1: hlavné filtre ──────────────────────────────────────────
              Pridať pole: skopíruj <div class="form-group [fActive(...)]"> blok,
              vlož do filter-grid, pridaj $fXxx do PHP filtrov na začiatku súboru.
              ──────────────────────────────────────────────────────────────── -->
@@ -2978,7 +3179,7 @@ $deptOptions = [
 
           <hr class="filter-row-divider">
 
-          <!-- ── ROW 2: 6 polí ───────────────────────────────────────────────── -->
+          <!-- ── ROW 2: vyhľadávanie a order-date filtre ────────────────────── -->
           <div class="filter-grid filter-grid-row2">
 
             <!-- 9. Search -->
@@ -2986,6 +3187,22 @@ $deptOptions = [
               <label class="small mb-1">Search</label>
               <input class="form-control form-control-sm" name="q" value="<?= htmlspecialchars($fQ) ?>"
                 placeholder="Order #, ext. ID, customer, email, invoice, tracking…" />
+            </div>
+
+            <?php
+            $dateModeOptions = ['order' => 'Created'];
+            if ($dateModeStatusLabel !== '') {
+              $dateModeOptions['status'] = $dateModeStatusLabel;
+            }
+            ?>
+            <!-- 10. Date basis -->
+            <div class="form-group <?= $fDateMode === 'status' ? 'filter-active' : '' ?>">
+              <label class="small mb-1">Date by</label>
+              <select class="form-control form-control-sm" name="date_mode">
+                <?php foreach ($dateModeOptions as $dateModeValue => $dateModeLabel): ?>
+                  <?= fOpt($dateModeValue, $dateModeLabel, $fDateMode) ?>
+                <?php endforeach; ?>
+              </select>
             </div>
 
             <!-- 10. Date from -->
@@ -3109,7 +3326,7 @@ $deptOptions = [
           <?php endif; ?>
 
           <!-- ── Tlačidlá + active filter pills ─────────────────────────────── -->
-          <div class="d-flex align-items-center flex-wrap mt-1" style="gap: 6px;">
+          <div class="d-flex align-items-center justify-content-end flex-wrap mt-1" style="gap: 6px;">
 
             <button class="btn btn-primary btn-sm" type="submit">
               <i class="fas fa-search mr-1"></i>Search
@@ -3305,7 +3522,7 @@ $deptOptions = [
                 <span
                   style="display:flex; justify-content:space-between; align-items:center; gap:6px; white-space:nowrap;">
                   <span style="padding-left:5px; display:inline-flex; align-items:center; gap:5px;">
-                    <?= htmlspecialchars($customer) ?>
+                    <span data-order-customer-name><?= htmlspecialchars($customer) ?></span>
                     <?php if ($multishipping): ?>
                       <button type="button"
                         class="order-multishipping-badge js-open-multishipping <?= $multishippingIsMaster ? '' : 'is-member' ?>"
@@ -3863,7 +4080,12 @@ $deptOptions = [
       },
       success: function (resp) {
         if (!resp || !resp.ok) {
-          alert('Invite error: ' + (resp && resp.error ? resp.error : 'unknown'));
+          if (typeof showOrderActionToast === 'function') {
+            showOrderActionToast(resp && resp.conflict_code ? 'warning' : 'error', resp && resp.error ? resp.error : 'Invite error', resp && resp.conflict_code ? 'Obsadené' : 'Chyba');
+            if (typeof updateOrderAssignmentCells === 'function') updateOrderAssignmentCells(resp);
+          } else {
+            alert('Invite error: ' + (resp && resp.error ? resp.error : 'unknown'));
+          }
           return;
         }
         $('#inviteModal').modal('hide');
@@ -3884,8 +4106,14 @@ $deptOptions = [
 
         location.reload();
       },
-      error: function () {
-        alert('Invite error (request failed)');
+      error: function (xhr) {
+        const resp = typeof parseOrderActionError === 'function' ? parseOrderActionError(xhr) : null;
+        if (typeof showOrderActionToast === 'function') {
+          showOrderActionToast(resp && resp.conflict_code ? 'warning' : 'error', resp && resp.error ? resp.error : 'Invite error (request failed)', resp && resp.conflict_code ? 'Obsadené' : 'Chyba');
+          if (typeof updateOrderAssignmentCells === 'function') updateOrderAssignmentCells(resp);
+        } else {
+          alert(resp && resp.error ? resp.error : 'Invite error (request failed)');
+        }
       }
     });
   });
@@ -4243,6 +4471,7 @@ $deptOptions = [
       dataType: 'json',
       data: {
         order_id: orderId,
+        customer_name: $box.find('.edit-customer-name').val(),
         delivery: $box.find('.edit-delivery').val(),
         payment: $box.find('.edit-payment').val(),
         customs_identifier: $box.find('.edit-customs-identifier').val(),
@@ -4281,6 +4510,9 @@ $deptOptions = [
 
         const customsMissing = resp.customs_identifier_missing === true;
         const $orderRow = $('#ordersTable .order-row[data-order-id="' + orderId + '"]');
+        if (resp.customer_name !== undefined) {
+          $orderRow.find('[data-order-customer-name]').text(resp.customer_name || '-');
+        }
         $orderRow.toggleClass('order-customs-id-missing', customsMissing);
         if (!customsMissing) {
           $orderRow.find('.order-customs-id-warning').remove();
@@ -5452,7 +5684,12 @@ $deptOptions = [
       },
       success: function (resp) {
         if (!resp || !resp.ok) {
-          alert(resp && resp.error ? resp.error : 'Assign / Invite failed');
+          if (typeof showOrderActionToast === 'function') {
+            showOrderActionToast(resp && resp.conflict_code ? 'warning' : 'error', resp && resp.error ? resp.error : 'Assign / Invite failed', resp && resp.conflict_code ? 'Obsadené' : 'Chyba');
+            if (typeof updateOrderAssignmentCells === 'function') updateOrderAssignmentCells(resp);
+          } else {
+            alert(resp && resp.error ? resp.error : 'Assign / Invite failed');
+          }
           return;
         }
 
@@ -5476,7 +5713,13 @@ $deptOptions = [
       },
       error: function (xhr) {
         console.log(xhr.responseText);
-        alert('Assign / Invite request failed');
+        const resp = typeof parseOrderActionError === 'function' ? parseOrderActionError(xhr) : null;
+        if (typeof showOrderActionToast === 'function') {
+          showOrderActionToast(resp && resp.conflict_code ? 'warning' : 'error', resp && resp.error ? resp.error : 'Assign / Invite request failed', resp && resp.conflict_code ? 'Obsadené' : 'Chyba');
+          if (typeof updateOrderAssignmentCells === 'function') updateOrderAssignmentCells(resp);
+        } else {
+          alert(resp && resp.error ? resp.error : 'Assign / Invite request failed');
+        }
       }
     });
   });
@@ -5640,6 +5883,32 @@ $deptOptions = [
   $(document).on('change', '#ordersFilterForm select', function () {
     $('#ordersFilterForm').trigger('submit');
   });
+
+  $(function () {
+    if (!$.fn.datetimepicker) return;
+
+    $('.orders-status-date-picker').datetimepicker({
+      format: 'YYYY-MM-DD',
+      useCurrent: false,
+      buttons: {
+        showToday: true,
+        showClear: true,
+        showClose: true
+      },
+      icons: {
+        time: 'far fa-clock',
+        date: 'far fa-calendar-alt',
+        up: 'fas fa-arrow-up',
+        down: 'fas fa-arrow-down',
+        previous: 'fas fa-chevron-left',
+        next: 'fas fa-chevron-right',
+        today: 'far fa-calendar-check',
+        clear: 'far fa-trash-alt',
+        close: 'fas fa-times'
+      }
+    });
+  });
+
   function updateOrdersStickyOffsets() {
     const baseTop = 50;
 
@@ -5952,6 +6221,7 @@ $deptOptions = [
   <div class="modal-dialog modal-xl" role="document">
     <div class="modal-content bg-dark text-light">
       <form method="post" action="export_fedex_ready_to_ship.php" target="_blank">
+        <input type="hidden" name="dept" id="fedexExportDeptInput" value="<?= (int) $fDept ?>">
         <div class="modal-header border-secondary">
           <h5 class="modal-title">
             <i class="fas fa-file-csv mr-2"></i>FedEx CSV Preview
@@ -6025,6 +6295,7 @@ $deptOptions = [
     const $fedexExportContent = $fedexExportModal.find('.modal-content');
     const $fedexExportModalBody = $('#fedexExportModalBody');
     const $fedexExportSubmitBtn = $('#fedexExportSubmitBtn');
+    const $fedexExportDeptInput = $('#fedexExportDeptInput');
     const $fedexEodImportModal = $('#fedexEodImportModal');
     const $fedexEodFile = $('#fedexEodFile');
     const $fedexEodImportResult = $('#fedexEodImportResult');
@@ -6070,7 +6341,7 @@ $deptOptions = [
       $.ajax({
         url: 'export_fedex_ready_to_ship.php',
         method: 'GET',
-        data: { preview: 1 },
+        data: { preview: 1, dept: $fedexExportDeptInput.val() },
         cache: false,
         success: function (html) {
           $fedexExportModalBody
@@ -6266,6 +6537,8 @@ $deptOptions = [
     $(document).on('click', '.js-open-fedex-export-modal', function (e) {
       e.preventDefault();
       e.stopPropagation();
+      const dept = parseInt($(this).data('dept'), 10);
+      $fedexExportDeptInput.val(isNaN(dept) ? -1 : dept);
       $fedexExportModal.modal('show');
       loadFedexExportPreview();
     });

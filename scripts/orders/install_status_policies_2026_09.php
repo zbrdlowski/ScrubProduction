@@ -34,6 +34,7 @@ if (php_sapi_name() !== 'cli') {
 
 $requiredStatusDefinitions = [
     ['item', 'P', 'CHECK_STOCK', 'Check Stock', '#6c757d', 5],
+    ['item', 'G', 'DRAFT_✗', 'Draft ✗', '#ff0000', 52],
     ['item', 'G', 'PLASTICS_IN_STOCK', 'Plastics in stock?', '#00ffe1', 120],
     ['item', 'S', 'PLASTICS_IN_STOCK', 'Plastics in stock?', '#00ffe1', 100],
     ['item', 'F', 'PLASTICS_IN_STOCK', 'Plastics in stock?', '#6c757d', 5],
@@ -284,7 +285,7 @@ $policies = [
         'result' => 'IN_PROGRESS',
         'stop' => 1,
         'conditions' => [
-            ['G', 'status', 'IN', ['RTP_AD_CHANGES', 'RTP_READY', 'RIP', 'PRINTED', 'CUT', 'PRODUCED', 'DRAFT_✗', 'DRAFT_AD_CHANGES', 'DRAFT_READY', 'DRAFT_SENT', 'HO_RIP', 'REPRINT', 'BARTOS_PRODUCTION']],
+            ['G', 'status', 'IN', ['RTP_AD_CHANGES', 'RTP_READY', 'RIP', 'PRINTED', 'CUT', 'PRODUCED', 'DRAFT_AD_CHANGES', 'DRAFT_READY', 'DRAFT_SENT', 'HO_RIP', 'REPRINT', 'BARTOS_PRODUCTION']],
         ],
     ],
     [
@@ -328,7 +329,7 @@ $newOrderCombinations = [
     ['GPFS', 980],
 ];
 $newDefaults = [
-    'G' => ['RTP_✗', 'SPOKE_COATS_✗'],
+    'G' => ['RTP_✗', 'DRAFT_✗', 'SPOKE_COATS_✗'],
     'S' => ['SEW_✗'],
     'P' => ['PK_✗'],
     'F' => ['FIT_✗'],

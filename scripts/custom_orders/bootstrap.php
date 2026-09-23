@@ -32,6 +32,7 @@ if ($customOrdersPermission < 300) {
     'remove_order_assignment.php',
     'take_item.php',
     'save_order.php',
+    'update_status.php',
   ];
   $customOrdersEntryScript = basename((string) ($_SERVER['SCRIPT_FILENAME'] ?? ''));
   if (!in_array($customOrdersEntryScript, $customOrdersLimitedEndpoints, true)) {

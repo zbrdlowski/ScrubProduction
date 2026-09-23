@@ -120,6 +120,10 @@ function dashboard_json($value): string
   $json = json_encode($value, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT);
   return $json === false ? 'null' : $json;
 }
+function dashboard_count_fraction(int $dueCount, int $totalCount): string
+{
+  return $totalCount > 0 ? $dueCount . '/' . $totalCount : '0';
+}
 function dashboard_fedex_countdown_config(DateTimeImmutable $now): array
 {
   $today = $now->setTime(0, 0, 0);
@@ -353,29 +357,45 @@ function dashboard_orders_link(array $params = []): string
   $query = array_merge(['page' => 'orders', 'exclude_status' => DASHBOARD_EXCLUDE_QUERY], $params);
   return 'index.php?' . http_build_query($query, '', '&', PHP_QUERY_RFC3986);
 }
-function dashboard_priority_breakdown(mysqli $conn, int $priority, array $departments): array
+function dashboard_priority_breakdown(mysqli $conn, int $priority, array $departments, DateTimeInterface $today): array
 {
   $counts = [];
+  $dueCounts = [];
   foreach ($departments as $department => $_meta)
     $counts[$department] = 0;
-  $rows = dashboard_rows($conn, "SELECT o.id AS order_id, o.manual_types_override, oi.item_type_code, oi.sku, oi.custom_label, oi.options_json FROM orders o LEFT JOIN order_items oi ON oi.order_id = o.id AND oi.deleted_at IS NULL WHERE " . dashboard_active_order_where() . " AND o.priority = ?", 'i', [$priority]);
+  foreach ($departments as $department => $_meta)
+    $dueCounts[$department] = 0;
+  $todaySql = $today->format('Y-m-d');
+  $rows = dashboard_rows($conn, "SELECT o.id AS order_id, o.manual_types_override, o.priority_date, oi.item_type_code, oi.sku, oi.custom_label, oi.options_json FROM orders o LEFT JOIN order_items oi ON oi.order_id = o.id AND oi.deleted_at IS NULL WHERE " . dashboard_active_order_where() . " AND o.priority = ? AND o.priority_date IS NOT NULL", 'i', [$priority]);
   $orderDepartments = [];
+  $dueOrders = [];
   foreach ($rows as $row) {
     $orderId = (int) ($row['order_id'] ?? 0);
     if ($orderId <= 0)
       continue;
     if (!isset($orderDepartments[$orderId]))
       $orderDepartments[$orderId] = [];
+    $priorityDate = substr(trim((string) ($row['priority_date'] ?? '')), 0, 10);
+    if ($priorityDate !== '' && $priorityDate <= $todaySql)
+      $dueOrders[$orderId] = true;
     $manualDepartments = dashboard_departments_from_manual($row['manual_types_override'] ?? '');
     $rowDepartments = $manualDepartments ?: dashboard_item_departments_for_order($row);
     foreach ($rowDepartments as $department)
       if (isset($counts[$department]))
         $orderDepartments[$orderId][$department] = true;
   }
-  foreach ($orderDepartments as $departmentSet)
-    foreach (array_keys($departmentSet) as $department)
+  $dueTotal = 0;
+  foreach ($orderDepartments as $orderId => $departmentSet) {
+    $isDue = isset($dueOrders[$orderId]);
+    if ($isDue)
+      $dueTotal++;
+    foreach (array_keys($departmentSet) as $department) {
       $counts[$department]++;
-  return ['total' => count($orderDepartments), 'departments' => $counts];
+      if ($isDue)
+        $dueCounts[$department]++;
+    }
+  }
+  return ['total' => count($orderDepartments), 'due_total' => $dueTotal, 'departments' => $counts, 'due_departments' => $dueCounts];
 }
 function dashboard_department_status_blocks(mysqli $conn, array $departments, array $statusMeta, array $displayStatuses): array
 {
@@ -447,11 +467,11 @@ function dashboard_fetch_order_departments(mysqli $conn, array $orderIds): array
 }
 
 $statusMeta = dashboard_load_item_status_meta($conn);
-$priorityBreakdown = dashboard_priority_breakdown($conn, 20, $dashboardDepartments);
-$deadlineBreakdown = dashboard_priority_breakdown($conn, 10, $dashboardDepartments);
+$today = new DateTimeImmutable('today');
+$priorityBreakdown = dashboard_priority_breakdown($conn, 20, $dashboardDepartments, $today);
+$deadlineBreakdown = dashboard_priority_breakdown($conn, 10, $dashboardDepartments, $today);
 $departmentBlocks = dashboard_department_status_blocks($conn, $dashboardDepartments, $statusMeta, $dashboardDisplayStatuses);
 $fedexCountdown = dashboard_fedex_countdown_config(new DateTimeImmutable('now'));
-$today = new DateTimeImmutable('today');
 $weekStart = $today->modify('monday this week');
 $weekEnd = $weekStart->modify('+7 days');
 $monthStart = $today->modify('first day of this month');
@@ -1100,37 +1120,37 @@ $updatedAt = date('d.m.Y H:i');
 
     <section class="top-panels" aria-label="Priority and deadline orders">
       <div class="panel">
-        <a class="priority-head red" href="<?php echo dashboard_h(dashboard_orders_link(['priority' => '20'])); ?>"
-          title="Open priority orders">
+        <a class="priority-head red" href="<?php echo dashboard_h(dashboard_orders_link(['priority' => '20', 'priority_due' => '1'])); ?>"
+          title="Open priority orders due today or overdue">
           <span>Today&apos;s Priority</span>
-          <span class="badge"><?php echo (int) $priorityBreakdown['total']; ?></span>
+          <span class="badge"><?php echo dashboard_h(dashboard_count_fraction((int) $priorityBreakdown['due_total'], (int) $priorityBreakdown['total'])); ?></span>
         </a>
         <div class="priority-list">
           <?php foreach ($dashboardDepartments as $department): ?>
             <a class="priority-row red"
-              href="<?php echo dashboard_h(dashboard_orders_link(['priority' => '20', 'type' => $department['filter']])); ?>"
-              title="<?php echo dashboard_h($department['label']); ?> priority orders">
+              href="<?php echo dashboard_h(dashboard_orders_link(['priority' => '20', 'priority_due' => '1', 'type' => $department['filter']])); ?>"
+              title="<?php echo dashboard_h($department['label']); ?> priority orders due today or overdue">
               <span><?php echo dashboard_h($department['label']); ?></span>
               <span
-                class="badge red"><?php echo (int) ($priorityBreakdown['departments'][$department['key']] ?? 0); ?></span>
+                class="badge red"><?php echo dashboard_h(dashboard_count_fraction((int) ($priorityBreakdown['due_departments'][$department['key']] ?? 0), (int) ($priorityBreakdown['departments'][$department['key']] ?? 0))); ?></span>
             </a>
           <?php endforeach; ?>
         </div>
       </div>
       <div class="panel">
-        <a class="priority-head cyan" href="<?php echo dashboard_h(dashboard_orders_link(['priority' => '10'])); ?>"
-          title="Open deadline orders">
+        <a class="priority-head cyan" href="<?php echo dashboard_h(dashboard_orders_link(['priority' => '10', 'priority_due' => '1'])); ?>"
+          title="Open deadline orders due today or overdue">
           <span>Today&apos;s Deadline</span>
-          <span class="badge"><?php echo (int) $deadlineBreakdown['total']; ?></span>
+          <span class="badge"><?php echo dashboard_h(dashboard_count_fraction((int) $deadlineBreakdown['due_total'], (int) $deadlineBreakdown['total'])); ?></span>
         </a>
         <div class="priority-list">
           <?php foreach ($dashboardDepartments as $department): ?>
             <a class="priority-row cyan"
-              href="<?php echo dashboard_h(dashboard_orders_link(['priority' => '10', 'type' => $department['filter']])); ?>"
-              title="<?php echo dashboard_h($department['label']); ?> deadline orders">
+              href="<?php echo dashboard_h(dashboard_orders_link(['priority' => '10', 'priority_due' => '1', 'type' => $department['filter']])); ?>"
+              title="<?php echo dashboard_h($department['label']); ?> deadline orders due today or overdue">
               <span><?php echo dashboard_h($department['label']); ?></span>
               <span
-                class="badge cyan"><?php echo (int) ($deadlineBreakdown['departments'][$department['key']] ?? 0); ?></span>
+                class="badge cyan"><?php echo dashboard_h(dashboard_count_fraction((int) ($deadlineBreakdown['due_departments'][$department['key']] ?? 0), (int) ($deadlineBreakdown['departments'][$department['key']] ?? 0))); ?></span>
             </a>
           <?php endforeach; ?>
         </div>

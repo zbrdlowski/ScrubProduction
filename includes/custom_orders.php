@@ -56,17 +56,17 @@ foreach ($customOrderStatusChoiceCodes as $customOrderStatusChoiceCode) {
   }
 }
 $customOrderTabs = [
-  'all' => ['label' => 'All'],
-  'lead' => ['label' => 'Lead', 'status' => 'LEAD'],
-  'open_so' => ['label' => 'Open SO'],
-  'deposit_paid' => ['label' => 'Deposit Paid', 'status' => 'DEPOSIT_PAID'],
-  'dead_order' => ['label' => 'Dead Order', 'status' => 'DEAD'],
+  'all' => ['label' => 'All', 'color' => '#6c757d'],
+  'lead' => ['label' => 'Lead', 'status' => 'LEAD', 'color' => '#6c757d'],
+  'open_so' => ['label' => 'Open SO', 'color' => '#3c8dbc'],
+  'deposit_paid' => ['label' => 'Deposit Paid', 'status' => 'DEPOSIT_PAID', 'color' => '#6c757d'],
+  'dead_order' => ['label' => 'Dead Order', 'status' => 'DEAD', 'color' => '#6c757d'],
   'draft_x' => ['label' => 'Draft ✗', 'status' => 'DRAFT_X', 'color' => '#ff1f1f'],
   'draft_ad_changes' => ['label' => 'Draft Ad.changes', 'status' => 'DRAFT_AD_CHANGES', 'color' => '#d7df00'],
   'draft_ready' => ['label' => 'Draft Ready', 'statuses' => ['DRAFT_READY', 'DRAFT_READY_NOTES'], 'color' => '#d42aff'],
   'draft_sent' => ['label' => 'Draft Sent', 'status' => 'DRAFT_SENT', 'color' => '#24a44f'],
-  'contact_customer' => ['label' => 'Contact Customer', 'status' => 'CONTACT_CUSTOMER'],
-  'customer_contacted' => ['label' => 'Customer Contacted', 'status' => 'CUSTOMER_CONTACTED'],
+  'contact_customer' => ['label' => 'Contact Customer', 'status' => 'CONTACT_CUSTOMER', 'color' => '#6c757d'],
+  'customer_contacted' => ['label' => 'Customer Contacted', 'status' => 'CUSTOMER_CONTACTED', 'color' => '#6c757d'],
 ];
 $customOrderTabSets = [
   ['all', 'lead', 'open_so', 'deposit_paid', 'dead_order'],
@@ -209,7 +209,7 @@ try {
   }
   if ($countryFilter !== '') {
     $safeCountry = $conn->real_escape_string($countryFilter);
-    $filterWhere[] = "UPPER(COALESCE(NULLIF(co.customer_country, ''), NULLIF(co.shipping_country, ''), NULLIF(co.billing_country, ''), '')) = '{$safeCountry}'";
+    $filterWhere[] = "UPPER(COALESCE(NULLIF(co.shipping_country, ''), NULLIF(co.customer_country, ''), NULLIF(co.billing_country, ''), '')) = '{$safeCountry}'";
   }
   if ($sourceFilter !== '') {
     $safeSource = $conn->real_escape_string($sourceFilter);
@@ -323,7 +323,9 @@ try {
   if ($where) {
     $sql .= ' WHERE ' . implode(' AND ', $where);
   }
-  $sql .= ' ORDER BY co.updated_at DESC, co.id DESC LIMIT 300';
+  // Keep the newest 300 records available, but base their stable display order
+  // on the original creation time. Saving an order must not move it in the list.
+  $sql .= ' ORDER BY co.created_at DESC, co.id DESC LIMIT 300';
   $res = $conn->query($sql);
   if (!$res) {
     throw new RuntimeException('Custom orders list query failed: ' . $conn->error);
@@ -1546,6 +1548,107 @@ if (!$customOrdersDetailRequest) {
     border-bottom-color: transparent;
   }
 
+  .custom-orders-status-cell {
+    min-width: 118px;
+  }
+
+  .custom-inline-status {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: flex-start;
+    width: 100%;
+    max-width: 100%;
+    min-height: 28px;
+    padding: 4px 28px 4px 10px;
+    border: 1px solid rgba(158, 214, 255, .38);
+    border-radius: 999px;
+    background: rgba(23, 162, 184, .13);
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .035);
+    color: #f8f9fa;
+    transition: border-color .16s ease, background-color .16s ease, box-shadow .16s ease;
+  }
+
+  .custom-inline-status.is-editable {
+    cursor: pointer;
+  }
+
+  .custom-inline-status.is-editable:hover,
+  .custom-inline-status.is-editable:focus-within {
+    border-color: rgba(158, 214, 255, .85);
+    background: rgba(23, 162, 184, .22);
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .08), 0 0 0 2px rgba(23, 162, 184, .12);
+  }
+
+  .custom-inline-status-label {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-weight: 700;
+    line-height: 1.15;
+  }
+
+  .custom-inline-status-picker {
+    position: absolute;
+    inset: 0;
+    width: auto;
+    height: auto;
+    flex: 0 0 auto;
+    margin-left: 0;
+    border-radius: inherit;
+  }
+
+  .custom-inline-status-picker::after {
+    content: "";
+    position: absolute;
+    right: 10px;
+    top: 50%;
+    width: 0;
+    height: 0;
+    border-left: 4px solid transparent;
+    border-right: 4px solid transparent;
+    border-top: 5px solid #d7e7ef;
+    pointer-events: none;
+    transform: translateY(-35%);
+  }
+
+  .custom-inline-status.is-editable:hover .custom-inline-status-picker::after,
+  .custom-inline-status.is-editable:focus-within .custom-inline-status-picker::after {
+    border-top-color: #fff;
+  }
+
+  .custom-inline-status-select {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    opacity: 0;
+    cursor: inherit;
+  }
+
+  .custom-inline-status-select:disabled {
+    cursor: not-allowed;
+  }
+
+  .custom-inline-status.is-saving .custom-inline-status-picker::after {
+    border-top-color: #ffc107;
+  }
+
+  .custom-inline-status.is-saving {
+    border-color: rgba(255, 193, 7, .85);
+    background: rgba(255, 193, 7, .14);
+  }
+
+  .custom-inline-status.is-error .custom-inline-status-label {
+    color: #ff8080;
+  }
+
+  .custom-inline-status.is-error {
+    border-color: rgba(255, 128, 128, .85);
+    background: rgba(220, 53, 69, .16);
+  }
+
   .custom-order-day-separator-row > td {
     padding: 7px 0 6px !important;
     border-top: 0 !important;
@@ -2249,52 +2352,98 @@ if (!$customOrdersDetailRequest) {
 
   .custom-status-tabs {
     display: flex;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 8px;
-    margin-bottom: 8px;
+    align-items: flex-end;
+    flex-wrap: nowrap;
+    gap: 3px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding: 8px 12px 0;
+    margin-bottom: 0;
+    border-bottom: 2px solid rgba(255, 255, 255, .12);
   }
 
   .custom-status-tab-set {
     display: inline-flex;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 8px;
+    align-items: flex-end;
+    flex: 0 0 auto;
+    flex-wrap: nowrap;
+    gap: 3px;
   }
 
   .custom-status-tab {
     display: inline-flex;
     align-items: center;
-    gap: 8px;
-    padding: 7px 12px;
-    border-radius: 999px;
-    border: 1px solid rgba(255, 255, 255, .12);
-    background: rgba(255, 255, 255, .04);
-    color: #e6edf3;
-    font-size: 13px;
+    gap: 7px;
+    padding: 7px 16px;
+    border: 1px solid rgba(255, 255, 255, .10);
+    border-bottom: none;
+    border-radius: 5px 5px 0 0;
+    background: rgba(255, 255, 255, .05);
+    color: rgba(255, 255, 255, .45);
+    font-size: 12.5px;
+    font-weight: 400;
     text-decoration: none;
+    white-space: nowrap;
+    margin-bottom: -2px;
+    transition: background .15s, color .15s, border-color .15s;
   }
 
   .custom-status-tab:hover {
-    color: #fff;
+    color: rgba(255, 255, 255, .75);
     text-decoration: none;
-    border-color: rgba(255, 255, 255, .24);
-    background: rgba(255, 255, 255, .08);
+    border-color: rgba(255, 255, 255, .18);
+    background: rgba(255, 255, 255, .10);
   }
 
   .custom-status-tab.active {
-    background: rgba(60, 141, 188, .24);
-    border-color: rgba(60, 141, 188, .55);
+    padding-bottom: 9px;
+    border-color: rgba(255, 255, 255, .20);
+    border-bottom: 2px solid var(--status-color, #3f9eff);
+    background: rgba(255, 255, 255, .10);
     color: #fff;
+    font-weight: 600;
   }
 
   .custom-status-tab-count {
-    min-width: 20px;
-    padding: 1px 7px;
-    border-radius: 999px;
-    background: rgba(17, 24, 39, .48);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 18px;
+    height: 18px;
+    padding: 0 5px;
+    border-radius: 9px;
+    background: var(--status-color, #6c757d);
+    color: var(--status-text-color, #fff);
+    font-size: 10px;
     font-weight: 700;
-    text-align: center;
+  }
+
+  .custom-status-tab.is-empty {
+    opacity: .38;
+    filter: saturate(.35);
+  }
+
+  .custom-status-tab.is-empty:hover,
+  .custom-status-tab.is-empty:focus {
+    opacity: .7;
+    filter: saturate(.7);
+  }
+
+  .custom-status-tab.is-empty.active {
+    opacity: .82;
+    filter: saturate(.8);
+  }
+
+  .custom-status-tab.has-orders {
+    color: rgba(255, 255, 255, .88);
+    background: rgba(255, 255, 255, .085);
+    border-color: rgba(255, 255, 255, .17);
+    box-shadow: inset 0 2px 0 color-mix(in srgb, var(--status-color, #6c757d) 60%, transparent);
+  }
+
+  .custom-status-tab.has-orders .custom-status-tab-count {
+    box-shadow: 0 0 0 2px rgba(255, 255, 255, .10),
+                0 0 8px color-mix(in srgb, var(--status-color, #6c757d) 55%, transparent);
   }
 
   .custom-order-section-title {
@@ -2385,28 +2534,35 @@ if (!$customOrdersDetailRequest) {
 
   .custom-status-tabs-divider {
     width: 1px;
-    align-self: stretch;
-    margin: 2px 3px;
+    height: 26px;
+    align-self: center;
+    flex: 0 0 1px;
+    margin: 0 7px;
     background: rgba(255, 255, 255, .16);
   }
 
   .custom-draft-status-tab {
-    border-color: var(--draft-color, #17a2b8);
-    box-shadow: inset 3px 0 0 var(--draft-color, #17a2b8);
+    --status-color: var(--draft-color, #17a2b8);
   }
 
   .custom-draft-status-tab.active {
-    border-color: var(--draft-color, #17a2b8);
-    background: rgba(60, 141, 188, .24);
+    border-color: rgba(255, 255, 255, .20);
+    border-bottom-color: var(--draft-color, #17a2b8);
   }
 
   .custom-draft-tab-prefix {
-    color: #89939d;
-    font-size: 11px;
+    align-self: stretch;
+    display: inline-flex;
+    align-items: center;
+    padding: 0 10px;
+    border-right: 1px solid rgba(255, 255, 255, .12);
+    background: #343a40;
+    color: rgba(255, 255, 255, .58);
+    font-size: 10px;
     font-weight: 700;
-    letter-spacing: .06em;
+    letter-spacing: .08em;
     text-transform: uppercase;
-    align-self: center;
+    white-space: nowrap;
     margin: 0 2px 0 5px;
   }
 
@@ -3585,10 +3741,14 @@ if (!$customOrdersDetailRequest) {
   <div class="custom-status-tabs">
     <div class="custom-status-tab-set">
       <?php foreach ($customOrderTabSets[0] as $tabKey): ?>
-        <?php $tabLabel = (string) ($customOrderTabs[$tabKey]['label'] ?? $tabKey); ?>
+        <?php $tabMeta = $customOrderTabs[$tabKey] ?? ['label' => $tabKey]; ?>
+        <?php $tabLabel = (string) ($tabMeta['label'] ?? $tabKey); ?>
+        <?php $tabColor = (string) ($tabMeta['color'] ?? '#6c757d'); ?>
+        <?php $tabCount = (int) ($tabCounts[$tabKey] ?? 0); ?>
         <a href="<?= h(customOrderBuildUrl(null, ['tab' => $tabKey === 'all' ? null : $tabKey, 'draft_status' => null, 'custom_order_id' => null, 'edit_item_id' => null], false)) ?>"
-          class="custom-status-tab <?= $draftStatusFilter === '' && $tabFilter === $tabKey ? 'active' : '' ?>">
-          <span><?= h($tabLabel) ?></span><span class="custom-status-tab-count"><?= (int) ($tabCounts[$tabKey] ?? 0) ?></span>
+          class="custom-status-tab <?= $draftStatusFilter === '' && $tabFilter === $tabKey ? 'active' : '' ?> <?= $tabCount === 0 ? 'is-empty' : 'has-orders' ?>"
+          style="--status-color:<?= h($tabColor) ?>;--status-text-color:#fff">
+          <span><?= h($tabLabel) ?></span><span class="custom-status-tab-count"><?= $tabCount ?></span>
         </a>
       <?php endforeach; ?>
     </div>
@@ -3599,23 +3759,28 @@ if (!$customOrdersDetailRequest) {
         <?php $tabMeta = $customOrderTabs[$tabKey] ?? ['label' => $tabKey]; ?>
         <?php $tabLabel = (string) ($tabMeta['label'] ?? $tabKey); ?>
         <?php $tabColor = (string) ($tabMeta['color'] ?? '#17a2b8'); ?>
+        <?php $tabCount = (int) ($tabCounts[$tabKey] ?? 0); ?>
         <?php $tabStatuses = !empty($tabMeta['statuses']) && is_array($tabMeta['statuses']) ? $tabMeta['statuses'] : [($tabMeta['status'] ?? '')]; ?>
         <?php $tabStatusTitle = 'Overall status: ' . implode(', ', array_filter(array_map(static function ($status): string { return (string) $status; }, $tabStatuses))); ?>
         <a href="<?= h(customOrderBuildUrl(null, ['tab' => $tabKey, 'draft_status' => null, 'custom_order_id' => null, 'edit_item_id' => null], false)) ?>"
-          class="custom-status-tab custom-draft-status-tab <?= $draftStatusFilter === '' && $tabFilter === $tabKey ? 'active' : '' ?>"
-          style="--draft-color:<?= h($tabColor) ?>"
+          class="custom-status-tab custom-draft-status-tab <?= $draftStatusFilter === '' && $tabFilter === $tabKey ? 'active' : '' ?> <?= $tabCount === 0 ? 'is-empty' : 'has-orders' ?>"
+          style="--draft-color:<?= h($tabColor) ?>;--status-color:<?= h($tabColor) ?>;--status-text-color:#fff"
           title="<?= h($tabStatusTitle) ?>">
-          <span><?= h($tabLabel) ?></span><span class="custom-status-tab-count"><?= (int) ($tabCounts[$tabKey] ?? 0) ?></span>
+          <span><?= h($tabLabel) ?></span><span class="custom-status-tab-count"><?= $tabCount ?></span>
         </a>
       <?php endforeach; ?>
     </div>
     <span class="custom-status-tabs-divider" aria-hidden="true"></span>
     <div class="custom-status-tab-set">
       <?php foreach ($customOrderTabSets[2] as $tabKey): ?>
-        <?php $tabLabel = (string) ($customOrderTabs[$tabKey]['label'] ?? $tabKey); ?>
+        <?php $tabMeta = $customOrderTabs[$tabKey] ?? ['label' => $tabKey]; ?>
+        <?php $tabLabel = (string) ($tabMeta['label'] ?? $tabKey); ?>
+        <?php $tabColor = (string) ($tabMeta['color'] ?? '#6c757d'); ?>
+        <?php $tabCount = (int) ($tabCounts[$tabKey] ?? 0); ?>
         <a href="<?= h(customOrderBuildUrl(null, ['tab' => $tabKey, 'draft_status' => null, 'custom_order_id' => null, 'edit_item_id' => null], false)) ?>"
-          class="custom-status-tab <?= $draftStatusFilter === '' && $tabFilter === $tabKey ? 'active' : '' ?>">
-          <span><?= h($tabLabel) ?></span><span class="custom-status-tab-count"><?= (int) ($tabCounts[$tabKey] ?? 0) ?></span>
+          class="custom-status-tab <?= $draftStatusFilter === '' && $tabFilter === $tabKey ? 'active' : '' ?> <?= $tabCount === 0 ? 'is-empty' : 'has-orders' ?>"
+          style="--status-color:<?= h($tabColor) ?>;--status-text-color:#fff">
+          <span><?= h($tabLabel) ?></span><span class="custom-status-tab-count"><?= $tabCount ?></span>
         </a>
       <?php endforeach; ?>
     </div>
@@ -3797,7 +3962,7 @@ if (!$customOrdersDetailRequest) {
               <div class="custom-summary-row"><strong>Handle</strong><span><?= h($selectedOrder['social_handle'] ?: '-') ?></span></div>
               <div class="custom-summary-row"><strong>Email</strong><span><?= h($selectedOrder['customer_email'] ?: '-') ?></span></div>
               <div class="custom-summary-row"><strong>Phone</strong><span><?= h($selectedOrder['customer_phone'] ?: $selectedOrder['shipping_phone'] ?: $selectedOrder['billing_phone'] ?: '-') ?></span></div>
-              <div class="custom-summary-row"><strong>Country</strong><span><?= h($selectedOrder['customer_country'] ?: $selectedOrder['shipping_country'] ?: '-') ?></span></div>
+              <div class="custom-summary-row"><strong>Country</strong><span><?= h($selectedOrder['shipping_country'] ?: $selectedOrder['customer_country'] ?: $selectedOrder['billing_country'] ?: '-') ?></span></div>
             </div>
           </div>
 
@@ -3911,8 +4076,8 @@ if (!$customOrdersDetailRequest) {
                   <?php foreach ($listRows as $row): ?>
                     <?php
                     $rowUrl = customOrderBuildUrl((int) $row['id'], ['edit_item_id' => null]);
-                    $rowUpdatedAt = (string) ($row['updated_at'] ?? '');
-                    $rowDayTime = $rowUpdatedAt !== '' ? strtotime($rowUpdatedAt) : false;
+                    $rowCreatedAt = (string) ($row['created_at'] ?? '');
+                    $rowDayTime = $rowCreatedAt !== '' ? strtotime($rowCreatedAt) : false;
                     $rowDayKey = $rowDayTime !== false ? date('Y-m-d', $rowDayTime) : 'unknown';
                     $rowDayLabel = $rowDayTime !== false ? date('d.m.Y', $rowDayTime) : 'Unknown date';
                     ?>
@@ -3924,14 +4089,14 @@ if (!$customOrdersDetailRequest) {
                     <?php endif; ?>
                     <tr class="custom-order-table-row" data-order-id="<?= (int) $row['id'] ?>" data-href="<?= h($rowUrl) ?>">
                       <td>
-                        <div><strong><?= h($row['official_order_number'] ?: $row['internal_code']) ?></strong></div>
-                        <div class="custom-order-meta"><?= h($row['official_order_number'] ? $row['internal_code'] : 'No official number yet') ?></div>
+                        <div><strong data-custom-order-number-label><?= h($row['official_order_number'] ?: $row['internal_code']) ?></strong></div>
+                        <div class="custom-order-meta" data-custom-order-number-meta><?= h($row['official_order_number'] ? $row['internal_code'] : 'No official number yet') ?></div>
                       </td>
                       <td><?= h(customOrderCustomerDisplay($row)) ?></td>
                       <td><?= h($row['social_handle'] ?: '-') ?></td>
                       <td>
                         <?php
-                        $rowCountryCode = strtoupper(trim((string) ($row['customer_country'] ?: $row['shipping_country'] ?: '')));
+                        $rowCountryCode = strtoupper(trim((string) ($row['shipping_country'] ?: $row['customer_country'] ?: $row['billing_country'] ?: '')));
                         if ($rowCountryCode === 'UM') {
                           $rowCountryCode = 'US';
                         }
@@ -3942,7 +4107,29 @@ if (!$customOrdersDetailRequest) {
                           -
                         <?php endif; ?>
                       </td>
-                      <td><?= h(selectedText($statuses, (string) $row['status'])) ?></td>
+                      <td class="custom-orders-status-cell">
+                        <?php
+                        $rowStatus = (string) ($row['status'] ?? 'LEAD');
+                        $rowStatusLabel = selectedText($statuses, $rowStatus);
+                        $rowStatusCanEdit = $customOrdersCanUpdateStatus;
+                        ?>
+                        <span class="custom-inline-status<?= $rowStatusCanEdit ? ' is-editable' : '' ?>" data-custom-inline-status-cell data-order-id="<?= (int) $row['id'] ?>">
+                          <span class="custom-inline-status-label" data-custom-inline-status-label><?= h($rowStatusLabel) ?></span>
+                          <?php if ($rowStatusCanEdit): ?>
+                            <span class="custom-inline-status-picker" title="Change status">
+                              <select class="custom-inline-status-select" data-custom-inline-status-select data-order-id="<?= (int) $row['id'] ?>" data-current-status="<?= h($rowStatus) ?>" aria-label="Change status for <?= h($row['official_order_number'] ?: $row['internal_code']) ?>">
+                                <?php foreach ($customOrderStatusChoices as $code => $label): ?>
+                                  <?php $statusOptionDisabled = !$customOrdersCanManage && isset($customOrderCustomerServiceOnlyStatusCodes[$code]); ?>
+                                  <option value="<?= h($code) ?>" <?= $rowStatus === $code ? 'selected' : '' ?> <?= $statusOptionDisabled ? 'disabled' : '' ?>><?= h($label) ?></option>
+                                <?php endforeach; ?>
+                                <?php if ($rowStatus !== '' && !isset($customOrderStatusChoices[$rowStatus])): ?>
+                                  <option value="<?= h($rowStatus) ?>" selected disabled><?= h($rowStatusLabel) ?></option>
+                                <?php endif; ?>
+                              </select>
+                            </span>
+                          <?php endif; ?>
+                        </span>
+                      </td>
                       <?php $rowComplexityLevel = (int) ($row['complexity_level'] ?? 1); ?>
                       <td><span class="custom-complexity-pill" title="<?= h(customOrderComplexityLabel($rowComplexityLevel, $customOrderComplexityOptions)) ?>"><?= h(customOrderComplexityLabel($rowComplexityLevel, $customOrderComplexityOptions)) ?></span></td>
                       <td class="text-center">
@@ -4234,10 +4421,13 @@ if (!$customOrdersDetailRequest) {
                       <input type="hidden" name="dead_order_flag" value="<?= (int) $selectedOrder['dead_order_flag'] ?>">
 
                       <div class="row">
-                        <div class="col-md-6">
+                        <div class="col-md-4">
+                          <div class="form-group custom-twin-header-column-lead"><label>Customer name<?= customOrderHelp('customer_name') ?></label><input name="customer_name" class="form-control form-control-sm" value="<?= h($selectedOrder['customer_name']) ?>" placeholder="Customer name"></div>
+                        </div>
+                        <div class="col-md-4">
                           <div class="form-group custom-twin-header-column-lead"><label>Nick<?= customOrderHelp('social_handle') ?></label><input name="social_handle" class="form-control form-control-sm" value="<?= h($selectedOrder['social_handle']) ?>" placeholder="Nick"></div>
                         </div>
-                        <div class="col-md-6">
+                        <div class="col-md-4">
                           <div class="form-group custom-twin-header-column-lead"><label>Source channel<?= customOrderHelp('source_channel') ?></label><select name="source_channel" class="form-control form-control-sm"><option value="">Select source...</option><?php foreach (customOrderOptionsWithCurrent($customOrderSourceChannels, (string) $selectedOrder['source_channel']) as $sourceChannel): ?><option value="<?= h($sourceChannel) ?>" <?= (string) $selectedOrder['source_channel'] === $sourceChannel ? 'selected' : '' ?>><?= h($sourceChannel) ?></option><?php endforeach; ?></select></div>
                         </div>
                       </div>
@@ -4289,6 +4479,7 @@ if (!$customOrdersDetailRequest) {
               </div>
 
               <div class="col-lg-4 mt-3 mt-lg-0 d-flex flex-column custom-twin-column-stack">
+                <?php $customPaymentLines = is_array($summary['payment_lines'] ?? null) ? $summary['payment_lines'] : []; ?>
                 <div class="custom-order-value-breakdown-card">
                   <div class="custom-order-value-breakdown-row custom-order-value-breakdown-total"><span>Total Order Value:</span><span><?= number_format((float) $summary['gross_total'], 2) ?> <?= h($selectedOrder['currency']) ?></span></div>
                   <?php foreach (['G' => 'Graphics', 'P' => 'Plastics', 'S' => 'Seat Covers', 'F' => 'Fitting', 'T' => 'Accessories', 'M' => 'Other'] as $typeCode => $typeLabel): ?>
@@ -4296,8 +4487,27 @@ if (!$customOrdersDetailRequest) {
                   <?php endforeach; ?>
                   <div class="custom-order-value-breakdown-row"><span>Shipping:</span><span><?= number_format((float) $summary['shipping'], 2) ?> <?= h($selectedOrder['currency']) ?></span></div>
                   <hr style="border-color:rgba(255,255,255,.14);">
-                  <div class="custom-order-value-breakdown-row"><span>Deposits:</span><span><?= number_format((float) $summary['deposit_total'], 2) ?> <?= h($selectedOrder['currency']) ?></span></div>
-                  <div class="custom-order-value-breakdown-row"><span>Paid net:</span><span><?= number_format((float) $summary['payment_net'], 2) ?> <?= h($selectedOrder['currency']) ?></span></div>
+                  <?php if (!empty($customPaymentLines)): ?>
+                    <?php foreach ($customPaymentLines as $customPaymentLine): ?>
+                      <?php
+                      if (!is_array($customPaymentLine)) {
+                        continue;
+                      }
+                      $customPaymentLineLabel = trim((string) ($customPaymentLine['label'] ?? 'Payment'));
+                      $customPaymentLineCurrency = strtoupper(trim((string) ($customPaymentLine['currency'] ?? '')));
+                      if ($customPaymentLineCurrency === '') {
+                        $customPaymentLineCurrency = (string) ($selectedOrder['currency'] ?? 'EUR');
+                      }
+                      ?>
+                      <div class="custom-order-value-breakdown-row"><span><?= h($customPaymentLineLabel !== '' ? $customPaymentLineLabel : 'Payment') ?>:</span><span><?= number_format((float) ($customPaymentLine['amount'] ?? 0), 2) ?> <?= h($customPaymentLineCurrency) ?></span></div>
+                    <?php endforeach; ?>
+                    <?php if (count($customPaymentLines) > 1): ?>
+                      <div class="custom-order-value-breakdown-row"><span>Paid total:</span><span><?= number_format((float) $summary['payment_net'], 2) ?> <?= h($selectedOrder['currency']) ?></span></div>
+                    <?php endif; ?>
+                  <?php else: ?>
+                    <div class="custom-order-value-breakdown-row"><span>Deposits:</span><span><?= number_format((float) $summary['deposit_total'], 2) ?> <?= h($selectedOrder['currency']) ?></span></div>
+                    <div class="custom-order-value-breakdown-row"><span>Paid net:</span><span><?= number_format((float) $summary['payment_net'], 2) ?> <?= h($selectedOrder['currency']) ?></span></div>
+                  <?php endif; ?>
                   <div class="custom-order-value-breakdown-row font-weight-bold"><span>Balance due:</span><span><?= number_format((float) ($summary['gross_total'] - $summary['payment_net']), 2) ?> <?= h($selectedOrder['currency']) ?></span></div>
                 </div>
 
@@ -4350,7 +4560,7 @@ if (!$customOrdersDetailRequest) {
                   class="form-control form-control-sm"><?php foreach ($paymentKinds as $code => $label): ?>
                     <option value="<?= h($code) ?>"><?= h($label) ?></option><?php endforeach; ?>
                 </select></div>
-              <div><label>PayPal tx ID<?= customOrderHelp('paypal_transaction_id') ?></label><input type="text"
+              <div><label>Payment ID<?= customOrderHelp('paypal_transaction_id') ?></label><input type="text"
                   name="paypal_transaction_id" class="form-control form-control-sm"></div>
               <div><label>Amount<?= customOrderHelp('payment_amount') ?></label><input type="number" step="0.01"
                   name="amount" class="form-control form-control-sm" required></div>
@@ -4373,7 +4583,7 @@ if (!$customOrdersDetailRequest) {
                 <th>Kind<?= customOrderHelp('payment_kind') ?></th>
                 <th>Amount<?= customOrderHelp('payment_amount') ?></th>
                 <th>Currency<?= customOrderHelp('payment_currency') ?></th>
-                <th>PayPal<?= customOrderHelp('paypal_transaction_id') ?></th>
+                <th>Payment ID<?= customOrderHelp('paypal_transaction_id') ?></th>
                 <th>Note<?= customOrderHelp('payment_note') ?></th>
                 <th>At<?= customOrderHelp('payment_received_at') ?></th>
                 <th>Invoice<?= customOrderHelp('payment_invoice') ?></th>
@@ -5573,6 +5783,100 @@ if (!$customOrdersDetailRequest) {
               }
               alert(error && error.message ? error.message : String(error));
             });
+          });
+      });
+    }
+
+    function initializeCustomInlineStatusSelects(root) {
+      if (!root) return;
+      root.querySelectorAll('[data-custom-inline-status-select]').forEach(function (select) {
+        if (select.dataset.inlineStatusBound === '1') return;
+        select.dataset.inlineStatusBound = '1';
+        select.addEventListener('change', function (event) {
+          event.preventDefault();
+          event.stopPropagation();
+
+          var orderId = parseInt(select.getAttribute('data-order-id') || '0', 10);
+          var previousStatus = select.getAttribute('data-current-status') || select.defaultValue || '';
+          var nextStatus = select.value || '';
+          if (!orderId || nextStatus === '' || nextStatus === previousStatus) {
+            select.value = previousStatus;
+            return;
+          }
+
+          var cell = select.closest('[data-custom-inline-status-cell]');
+          if (cell) {
+            cell.classList.remove('is-error');
+            cell.classList.add('is-saving');
+          }
+          select.disabled = true;
+
+          var formData = new FormData();
+          formData.append('custom_order_id', String(orderId));
+          formData.append('status', nextStatus);
+
+          fetch('scripts/custom_orders/update_status.php', {
+            method: 'POST',
+            headers: { 'X-Requested-With': 'XMLHttpRequest' },
+            body: formData
+          })
+            .then(function (response) {
+              return response.text().then(function (rawBody) {
+                var payload;
+                try {
+                  payload = JSON.parse(rawBody || '{}');
+                } catch (parseError) {
+                  throw new Error(String(rawBody || 'Invalid server response').trim().substring(0, 400));
+                }
+                if (!response.ok || !payload.ok) {
+                  throw new Error(payload.message || 'Status could not be saved.');
+                }
+                return payload;
+              });
+            })
+            .then(function (payload) {
+              var savedStatus = String(payload.status || nextStatus);
+              var savedLabel = String(payload.label || '');
+              if (savedLabel === '') {
+                var selectedOption = select.options[select.selectedIndex];
+                savedLabel = selectedOption ? selectedOption.textContent : savedStatus;
+              }
+
+              select.setAttribute('data-current-status', savedStatus);
+              select.value = savedStatus;
+              if (cell) {
+                var label = cell.querySelector('[data-custom-inline-status-label]');
+                if (label) label.textContent = savedLabel;
+                cell.classList.remove('is-saving', 'is-error');
+              }
+
+              var row = document.querySelector('.custom-order-table-row[data-order-id="' + orderId + '"]');
+              if (row && payload.official_order_number) {
+                var numberLabel = row.querySelector('[data-custom-order-number-label]');
+                var numberMeta = row.querySelector('[data-custom-order-number-meta]');
+                if (numberLabel) numberLabel.textContent = payload.official_order_number;
+                if (numberMeta && payload.internal_code) numberMeta.textContent = payload.internal_code;
+              }
+
+              var detailForm = document.getElementById('custom-twin-header-form-' + orderId);
+              if (detailForm) {
+                var detailStatus = detailForm.querySelector('select[name="status"]');
+                if (detailStatus) detailStatus.value = savedStatus;
+              }
+            })
+            .catch(function (error) {
+              select.value = previousStatus;
+              select.setAttribute('data-current-status', previousStatus);
+              if (cell) {
+                cell.classList.remove('is-saving');
+                cell.classList.add('is-error');
+                cell.title = error && error.message ? error.message : String(error);
+              }
+              alert(error && error.message ? error.message : String(error));
+            })
+            .finally(function () {
+              select.disabled = false;
+            });
         });
       });
     }
@@ -6500,7 +6804,7 @@ if (!$customOrdersDetailRequest) {
 
     function initializeCustomContactSuggestions(root) {
       var searchableFields = [
-        'social_handle',
+        'customer_name', 'social_handle',
         'billing_name', 'billing_company', 'billing_company_id', 'billing_street',
         'billing_city', 'billing_zip', 'billing_country', 'billing_email', 'billing_phone',
         'shipping_name', 'shipping_company', 'shipping_company_id', 'shipping_street',
@@ -6828,6 +7132,7 @@ if (!$customOrdersDetailRequest) {
       initializeCustomBillingSame(root);
       initializeCustomOfficialNumberEditors(root);
       initializeCustomDetailRefreshForms(root);
+      initializeCustomInlineStatusSelects(root);
       initializeCustomCategoryPicker(root);
       initializeCustomOrderPhotos(root);
       initializeCustomContactSuggestions(root);
@@ -7285,6 +7590,7 @@ if (!$customOrdersDetailRequest) {
     initializeCustomOfficialNumberModal();
     initializeCustomOfficialNumberEditors(document);
     initializeCustomDetailRefreshForms(document);
+    initializeCustomInlineStatusSelects(document);
     applyCustomOrdersAccess(document);
     initializeCustomCollapsiblePanels(document);
     initializeCustomNoteReplies(document);

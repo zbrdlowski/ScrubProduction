@@ -114,6 +114,27 @@ if ($deptCode === 'FITTING') {
 
 $rolePrimary = 'PRIMARY_' . $deptCode;
 
+function takeOrderAssignmentConflictPayload(
+  mysqli $conn,
+  int $orderId,
+  string $deptCode,
+  int $perm,
+  int $userId,
+  string $error,
+  string $conflictCode = '',
+  array $extra = []
+): array {
+  return array_merge([
+    'ok' => false,
+    'error' => $error,
+    'conflict_code' => $conflictCode,
+    'order_id' => $orderId,
+    'dept_code' => $deptCode,
+    'avatars_html' => render_assigned_users_html($conn, $orderId),
+    'take_assign_html' => render_order_take_assign_html($conn, $orderId, $deptCode, $perm, $userId),
+  ], $extra);
+}
+
 try {
   $conn->begin_transaction();
 
@@ -171,29 +192,50 @@ try {
 
     $itemTaken = $conn->prepare("
       SELECT oia.employee_id,
-             CONCAT(e.firstname,' ',e.lastname) AS emp_name
+             CONCAT(e.firstname,' ',e.lastname) AS emp_name,
+             oia.assignment_role
       FROM order_item_assignments oia
       JOIN employees e ON e.id = oia.employee_id
       WHERE oia.item_id = ?
-        AND oia.assignment_role = 'PREPARED'
+        AND oia.assignment_role IN ('PREPARED', 'CHECKED')
         AND oia.removed_at IS NULL
+        AND oia.employee_id <> ?
+      ORDER BY
+        CASE oia.assignment_role
+          WHEN 'PREPARED' THEN 1
+          WHEN 'CHECKED' THEN 2
+          ELSE 3
+        END,
+        oia.id
       LIMIT 1
       FOR UPDATE
     ");
-    $itemTaken->bind_param('i', $itemId);
+    $itemTaken->bind_param('ii', $itemId, $userId);
     $itemTaken->execute();
     $itemTakenRow = $itemTaken->get_result()->fetch_assoc();
     $itemTaken->close();
 
-    if ($itemTakenRow && (int)$itemTakenRow['employee_id'] !== $userId) {
+    if ($itemTakenRow) {
       $conn->rollback();
       http_response_code(409);
-      echo json_encode([
-        'ok'=>false,
-        'error'=>'Item already taken',
-        'taken_by'=>(int)$itemTakenRow['employee_id'],
-        'taken_by_name'=>(string)$itemTakenRow['emp_name']
-      ], JSON_UNESCAPED_UNICODE);
+      $takenByName = trim((string)$itemTakenRow['emp_name']);
+      echo json_encode(takeOrderAssignmentConflictPayload(
+        $conn,
+        $orderId,
+        $deptCode,
+        $perm,
+        $userId,
+        $takenByName !== ''
+          ? 'Túto položku medzitým prevzal(a) ' . $takenByName . '.'
+          : 'Túto položku medzitým prevzal niekto iný.',
+        'ITEM_ALREADY_TAKEN',
+        [
+          'item_id' => $itemId,
+          'taken_by' => (int)$itemTakenRow['employee_id'],
+          'taken_by_name' => $takenByName,
+          'assignment_role' => (string)$itemTakenRow['assignment_role'],
+        ]
+      ), JSON_UNESCAPED_UNICODE);
       exit;
     }
 
@@ -257,12 +299,52 @@ try {
 
   if ($row) {
     $conn->rollback();
-    echo json_encode([
-      'ok'=>false,
-      'error'=>'Already taken',
-      'taken_by'=>(int)$row['employee_id'],
-      'taken_by_name'=>(string)$row['emp_name']
-    ], JSON_UNESCAPED_UNICODE);
+    http_response_code(409);
+    $takenByName = trim((string)$row['emp_name']);
+    echo json_encode(takeOrderAssignmentConflictPayload(
+      $conn,
+      $orderId,
+      $deptCode,
+      $perm,
+      $userId,
+      $takenByName !== ''
+        ? 'Objednávku už prevzal(a) ' . $takenByName . '.'
+        : 'Objednávku už prevzal niekto iný.',
+      'ORDER_ALREADY_TAKEN',
+      [
+        'taken_by' => (int)$row['employee_id'],
+        'taken_by_name' => $takenByName,
+      ]
+    ), JSON_UNESCAPED_UNICODE);
+    exit;
+  }
+
+  $itemAssignmentState = orderItemWorkflowAssignmentState($conn, $orderId, $deptCode, $userId);
+  $blockedItems = $itemAssignmentState['other_items'] ?? [];
+  if ($blockedItems) {
+    $freeItems = $itemAssignmentState['free_items'] ?? [];
+    $firstBlocked = reset($blockedItems);
+    $blockingAssignment = is_array($firstBlocked) ? ($firstBlocked['blocking_assignment'] ?? []) : [];
+    $takenByName = trim((string)($blockingAssignment['employee_name'] ?? ''));
+
+    $conn->rollback();
+    http_response_code(409);
+    echo json_encode(takeOrderAssignmentConflictPayload(
+      $conn,
+      $orderId,
+      $deptCode,
+      $perm,
+      $userId,
+      $freeItems
+        ? 'Objednávku nie je možné prevziať celú. Niektoré položky už niekto vzal; prevezmi jednu z voľných položiek v detaile.'
+        : 'Objednávku nie je možné prevziať. Na položkách už niekto pracuje.',
+      $freeItems ? 'FREE_ITEMS_AVAILABLE' : 'ORDER_ITEMS_ALREADY_TAKEN',
+      [
+        'free_item_count' => count($freeItems),
+        'blocked_item_count' => count($blockedItems),
+        'taken_by_name' => $takenByName,
+      ]
+    ), JSON_UNESCAPED_UNICODE);
     exit;
   }
 
@@ -288,44 +370,9 @@ $rm->close();
   $ins->execute();
   $ins->close();
 
-  $itemTypeMap = [
-  'GRAPHICS' => 'G',
-  'PLASTICS' => 'P',
-  'SEATCOVER' => 'S',
-  'FITTING' => 'F',
-];
-
-$itemType = $itemTypeMap[$deptCode] ?? '';
-
-if ($itemType !== '') {
-$itemTypeCondition = $deptCode === 'PLASTICS'
-  ? "item_type_code IN ('P', 'T', 'M')"
-  : "item_type_code = ?";
-$stmtItems = $conn->prepare("
-  SELECT id
-  FROM order_items
-  WHERE order_id = ?
-    AND deleted_at IS NULL
-    AND {$itemTypeCondition}
-");
-if ($deptCode === 'PLASTICS') {
-  $stmtItems->bind_param('i', $orderId);
-} else {
-  $stmtItems->bind_param('is', $orderId, $itemType);
-}
-$stmtItems->execute();
-$itemsRes = $stmtItems->get_result();
-
-$itemIds = [];
-while ($itemRow = $itemsRes->fetch_assoc()) {
-  $itemIds[] = (int)$itemRow['id'];
-}
-$stmtItems->close();
-
-foreach ($itemIds as $orderItemId) {
-  orderItemSetRoleAssignment($conn, $orderId, $orderItemId, $userId, 'PREPARED');
-}
-}
+  foreach (($itemAssignmentState['items'] ?? []) as $orderItemId => $_itemRow) {
+    orderItemSetRoleAssignment($conn, $orderId, (int)$orderItemId, $userId, 'PREPARED');
+  }
 
   // optional activity log 
 $upd = $conn->prepare("

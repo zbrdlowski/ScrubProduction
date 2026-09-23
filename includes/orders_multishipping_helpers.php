@@ -68,6 +68,67 @@ function ordersMultishippingEnsureSchema(mysqli $conn): void
   $ready = true;
 }
 
+function ordersShippingContainsPlasticsWhereSql(string $orderAlias = 'o'): string
+{
+  if (!preg_match('/^[A-Za-z_][A-Za-z0-9_]*$/', $orderAlias)) {
+    throw new InvalidArgumentException('Invalid order SQL alias.');
+  }
+
+  $directOrderSql = ordersShippingOrderContainsPlasticsWhereSql($orderAlias . '.id');
+  $memberOrderSql = ordersShippingOrderContainsPlasticsWhereSql('osms_member.order_id');
+
+  return "(
+    $directOrderSql
+    OR EXISTS (
+      SELECT 1
+      FROM order_multishipping_orders osms_current
+      JOIN order_multishipping_groups osmsg_scope
+        ON osmsg_scope.id = osms_current.group_id
+        AND osmsg_scope.status <> 'CANCELLED'
+      JOIN order_multishipping_orders osms_member
+        ON osms_member.group_id = osms_current.group_id
+      WHERE osms_current.order_id = {$orderAlias}.id
+        AND $memberOrderSql
+    )
+  )";
+}
+
+function ordersShippingOrderContainsPlasticsWhereSql(string $orderIdSql): string
+{
+  return "(
+    EXISTS (
+      SELECT 1
+      FROM order_categories osc_scope
+      JOIN categories osc_cat ON osc_cat.id = osc_scope.category_id
+      WHERE osc_scope.order_id = $orderIdSql
+        AND UPPER(TRIM(COALESCE(osc_cat.code, ''))) = 'PLASTICS'
+    )
+    OR EXISTS (
+      SELECT 1
+      FROM order_items osi_scope
+      WHERE osi_scope.order_id = $orderIdSql
+        AND osi_scope.deleted_at IS NULL
+        AND (
+          UPPER(TRIM(COALESCE(osi_scope.item_type_code, ''))) LIKE '%P%'
+          OR UPPER(TRIM(COALESCE(osi_scope.item_type_code, ''))) IN ('T', 'M')
+        )
+    )
+  )";
+}
+
+function ordersShippingScopeIsPlastics(int $sessionDept): bool
+{
+  return $sessionDept === 6;
+}
+
+function ordersShippingScopeWhereSql(int $sessionDept, string $orderAlias = 'o'): string
+{
+  $containsPlasticsSql = ordersShippingContainsPlasticsWhereSql($orderAlias);
+  return ordersShippingScopeIsPlastics($sessionDept)
+    ? $containsPlasticsSql
+    : "NOT ($containsPlasticsSql)";
+}
+
 function ordersMultishippingGroupForOrder(mysqli $conn, int $orderId): ?array
 {
   ordersMultishippingEnsureSchema($conn);
@@ -234,4 +295,3 @@ function ordersMultishippingMarkShipped(mysqli $conn, int $groupId, string $trac
   $stmt->execute();
   $stmt->close();
 }
-

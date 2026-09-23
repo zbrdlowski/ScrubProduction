@@ -1,4 +1,138 @@
 console.log("ORDER DETAIL ACTIONS LOADED v-profile-1");
+
+function showOrderActionToast(type, message, title) {
+  message = message || "Action failed";
+  title = title || "";
+
+  if (window.toastr && typeof window.toastr[type] === "function") {
+    window.toastr.options = Object.assign(
+      {
+        closeButton: true,
+        progressBar: true,
+        positionClass: "toast-top-right",
+        timeOut: 5500,
+      },
+      window.toastr.options || {},
+    );
+    window.toastr[type](message, title);
+    return;
+  }
+
+  let container = document.querySelector(".order-action-toast-container");
+  if (!container) {
+    container = document.createElement("div");
+    container.className = "order-action-toast-container";
+    container.style.position = "fixed";
+    container.style.top = "16px";
+    container.style.right = "16px";
+    container.style.zIndex = "1080";
+    container.style.maxWidth = "360px";
+    document.body.appendChild(container);
+  }
+
+  const toast = document.createElement("div");
+  const bootstrapType = type === "error" ? "danger" : type;
+  toast.className =
+    "alert alert-" + bootstrapType + " shadow mb-2 order-action-toast";
+  toast.style.borderRadius = "6px";
+  toast.style.cursor = "pointer";
+  toast.innerHTML =
+    (title ? "<strong>" + escapeOrderActionHtml(title) + "</strong><br>" : "") +
+    escapeOrderActionHtml(message);
+  toast.addEventListener("click", function () {
+    toast.remove();
+  });
+  container.appendChild(toast);
+  setTimeout(function () {
+    toast.remove();
+  }, 6000);
+}
+
+function escapeOrderActionHtml(value) {
+  return String(value ?? "").replace(/[&<>"']/g, function (m) {
+    return {
+      "&": "&amp;",
+      "<": "&lt;",
+      ">": "&gt;",
+      '"': "&quot;",
+      "'": "&#039;",
+    }[m];
+  });
+}
+
+function parseOrderActionError(xhr) {
+  if (xhr && xhr.responseJSON) return xhr.responseJSON;
+  if (xhr && xhr.responseText) {
+    try {
+      return JSON.parse(xhr.responseText);
+    } catch (e) {
+      return null;
+    }
+  }
+  return null;
+}
+
+function orderActionMessage(resp, fallback) {
+  return resp && (resp.error || resp.message)
+    ? resp.error || resp.message
+    : fallback;
+}
+
+function updateOrderAssignmentCells(resp) {
+  if (!resp || !resp.order_id) return;
+
+  if (resp.avatars_html !== undefined) {
+    $('[data-assigned-cell="' + resp.order_id + '"]').html(resp.avatars_html);
+  }
+
+  if (resp.take_assign_html !== undefined) {
+    $('[data-take-assign-cell="' + resp.order_id + '"]').html(
+      resp.take_assign_html,
+    );
+  }
+}
+
+function refreshVisibleOrderDetail(orderId) {
+  orderId = parseInt(orderId, 10) || 0;
+  if (!orderId || typeof window.refreshOrderDetail !== "function") return;
+
+  const $ordersDetail = $("#detail-" + orderId);
+  const $profileDetailRow = $(
+    '.profile-order-detail-row[data-detail-for="' + orderId + '"]',
+  );
+
+  if (
+    ($ordersDetail.length &&
+      ($ordersDetail.is(":visible") || $ordersDetail.data("loaded"))) ||
+    ($profileDetailRow.length && $profileDetailRow.is(":visible"))
+  ) {
+    window.refreshOrderDetail(orderId);
+  }
+}
+
+function handleOrderActionFailure($btn, resp, fallback, fallbackOrderId) {
+  const orderId = (resp && resp.order_id) || fallbackOrderId || 0;
+  const isConflict = !!(resp && resp.conflict_code);
+
+  showOrderActionToast(
+    isConflict ? "warning" : "error",
+    orderActionMessage(resp, fallback),
+    isConflict ? "Obsadené" : "Chyba",
+  );
+  updateOrderAssignmentCells(resp);
+
+  if (typeof window.refreshProfileOrdersList === "function" && orderId) {
+    window.refreshProfileOrdersList(orderId);
+  } else {
+    refreshVisibleOrderDetail(orderId);
+  }
+
+  if ($btn && $btn.length) {
+    const originalText = $btn.data("original-text") || $btn.text() || "TAKE";
+    $btn.prop("disabled", false).text(originalText);
+  }
+}
+
 $(document)
   .off("click.takeOrder", ".btn-take-order")
   .on("click.takeOrder", ".btn-take-order", function (e) {
@@ -11,10 +145,11 @@ $(document)
     const itemId = parseInt($btn.data("item-id"), 10) || 0;
 
     if (!orderId) {
-      alert("Missing order ID");
+      showOrderActionToast("error", "Missing order ID", "Chyba");
       return;
     }
 
+    $btn.data("original-text", $btn.text());
     $btn.prop("disabled", true).text("...");
 
     $.ajax({
@@ -28,8 +163,14 @@ $(document)
       },
       success: function (resp) {
         if (!resp || !resp.ok) {
-          alert("TAKE error: " + (resp && resp.error ? resp.error : "unknown"));
-          $btn.prop("disabled", false).text("TAKE");
+          handleOrderActionFailure(
+            $btn,
+            resp,
+            itemId > 0
+              ? "Položku sa nepodarilo prevziať."
+              : "Objednávku sa nepodarilo prevziať.",
+            orderId,
+          );
           return;
         }
 
@@ -63,8 +204,14 @@ $(document)
       },
       error: function (xhr) {
         console.log(xhr.responseText);
-        alert("TAKE error request failed");
-        $btn.prop("disabled", false).text("TAKE");
+        handleOrderActionFailure(
+          $btn,
+          parseOrderActionError(xhr),
+          itemId > 0
+            ? "Položku sa nepodarilo prevziať."
+            : "Objednávku sa nepodarilo prevziať.",
+          orderId,
+        );
       },
     });
   });
@@ -1373,7 +1520,12 @@ $(document)
         data: { item_id: itemId },
         success: function (resp) {
           if (!resp || !resp.ok) {
-            alert(resp && resp.error ? resp.error : "Assign item failed");
+            handleOrderActionFailure(
+              $btn,
+              resp,
+              "Položku sa nepodarilo priradiť.",
+              findOpenOrderIdFromElement($btn),
+            );
             return;
           }
 
@@ -1381,7 +1533,12 @@ $(document)
         },
         error: function (xhr) {
           console.log(xhr.responseText);
-          alert("Assign item request failed");
+          handleOrderActionFailure(
+            $btn,
+            parseOrderActionError(xhr),
+            "Položku sa nepodarilo priradiť.",
+            findOpenOrderIdFromElement($btn),
+          );
         },
       });
     });
@@ -2729,16 +2886,26 @@ $(document)
           $save.prop("disabled", false).text("Save");
         },
       });
-    })
-    .off("click.deleteFinancialAdjustment", ".btn-delete-financial-adjustment")
-    .on("click.deleteFinancialAdjustment", ".btn-delete-financial-adjustment", function (e) {
+    });
+
+  // The financial card is replaced after every AJAX update. Use a capture listener
+  // so delete keeps working even when another detail handler stops bubbling.
+  if (!window.__orderFinancialDeleteHandlerInstalled) {
+    window.__orderFinancialDeleteHandlerInstalled = true;
+    document.addEventListener("click", function (e) {
+      var button = e.target.closest && e.target.closest(".btn-delete-financial-adjustment");
+      if (!button) return;
+
       e.preventDefault();
       e.stopPropagation();
 
-      var $btn = $(this);
-      var id = parseInt($btn.data("id"), 10) || 0;
-      var orderId = findOpenOrderIdFromElement($btn);
-      if (!id) return;
+      var $btn = $(button);
+      var id = parseInt(button.getAttribute("data-id"), 10) || 0;
+      var orderId = parseInt(button.getAttribute("data-order-id"), 10) || findOpenOrderIdFromElement($btn);
+      if (!id) {
+        alert("Missing financial movement ID");
+        return;
+      }
       if (!confirm("Delete this payment/refund movement?")) return;
 
       $btn.prop("disabled", true);
@@ -2762,7 +2929,8 @@ $(document)
           $btn.prop("disabled", false);
         },
       });
-    });
+    }, true);
+  }
 
   $(document)
     .off("keydown.financialAdjustmentModal")
@@ -2852,6 +3020,7 @@ $(document)
       dataType: "json",
       data: {
         order_id: orderId,
+        customer_name: $panel.find(".edit-customer-name").val(),
         delivery: $panel.find(".edit-delivery").val(),
         payment: $panel.find(".edit-payment").val(),
         customs_identifier: $panel.find(".edit-customs-identifier").val(),

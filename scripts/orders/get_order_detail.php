@@ -733,6 +733,88 @@ function orderDetailLoadCustomItemOptionFallbacks(mysqli $conn, array $sourceMet
   return $fallbacks;
 }
 
+function orderDetailCustomPaymentKindLabel(string $kind): string
+{
+  $kind = strtoupper(trim($kind));
+  $labels = [
+    'DEPOSIT' => 'Deposit',
+    'EXTRA_DEPOSIT' => 'Extra Deposit',
+    'BALANCE' => 'Balance',
+    'REFUND' => 'Refund',
+  ];
+
+  if (isset($labels[$kind])) {
+    return $labels[$kind];
+  }
+
+  return $kind !== '' ? ucwords(strtolower(str_replace('_', ' ', $kind))) : 'Payment';
+}
+
+function orderDetailCustomPaymentDateLabel(?string $receivedAt): string
+{
+  $receivedAt = trim((string) $receivedAt);
+  if ($receivedAt === '') {
+    return '';
+  }
+
+  $timestamp = strtotime($receivedAt);
+  return $timestamp !== false ? date('d.m.Y', $timestamp) : '';
+}
+
+function orderDetailNormalizeCustomPaymentLines(array $lines): array
+{
+  $normalized = [];
+  foreach ($lines as $line) {
+    if (!is_array($line)) {
+      continue;
+    }
+
+    $amount = orderDetailMoneyValue($line['amount'] ?? null);
+    if ($amount === null || abs($amount) < 0.005) {
+      continue;
+    }
+
+    $kind = strtoupper(trim((string) ($line['kind'] ?? $line['payment_kind'] ?? '')));
+    if ($kind === 'REFUND') {
+      $amount = -abs($amount);
+    }
+
+    $receivedAt = trim((string) ($line['received_at'] ?? ''));
+    $label = trim((string) ($line['label'] ?? ''));
+    if ($label === '') {
+      $label = orderDetailCustomPaymentKindLabel($kind);
+      $dateLabel = orderDetailCustomPaymentDateLabel($receivedAt);
+      if ($dateLabel !== '') {
+        $label .= ' ' . $dateLabel;
+      }
+    }
+
+    $normalized[] = [
+      'id' => (int) ($line['id'] ?? 0),
+      'kind' => $kind !== '' ? $kind : 'PAYMENT',
+      'label' => $label,
+      'amount' => $amount,
+      'currency' => strtoupper(trim((string) ($line['currency'] ?? ''))),
+      'received_at' => $receivedAt,
+      'invoice_number' => trim((string) ($line['invoice_number'] ?? '')),
+      'paypal_transaction_id' => trim((string) ($line['paypal_transaction_id'] ?? '')),
+    ];
+  }
+
+  usort($normalized, static function (array $a, array $b): int {
+    $timeA = trim((string) ($a['received_at'] ?? '')) !== '' ? strtotime((string) $a['received_at']) : false;
+    $timeB = trim((string) ($b['received_at'] ?? '')) !== '' ? strtotime((string) $b['received_at']) : false;
+    $sortA = $timeA !== false ? $timeA : PHP_INT_MAX;
+    $sortB = $timeB !== false ? $timeB : PHP_INT_MAX;
+    if ($sortA === $sortB) {
+      return ((int) ($a['id'] ?? 0)) <=> ((int) ($b['id'] ?? 0));
+    }
+    return $sortA <=> $sortB;
+  });
+
+  return $normalized;
+}
+
 function orderDetailNormalizeCustomFinancialBreakdown(array $breakdown): array
 {
   $keys = [
@@ -758,6 +840,12 @@ function orderDetailNormalizeCustomFinancialBreakdown(array $breakdown): array
   $currency = strtoupper(trim((string) ($breakdown['currency'] ?? '')));
   if ($currency !== '') {
     $normalized['currency'] = $currency;
+  }
+  if (is_array($breakdown['payment_lines'] ?? null)) {
+    $paymentLines = orderDetailNormalizeCustomPaymentLines($breakdown['payment_lines']);
+    if (!empty($paymentLines)) {
+      $normalized['payment_lines'] = $paymentLines;
+    }
   }
 
   return $normalized;
@@ -828,6 +916,24 @@ function orderDetailLoadCustomFinancialBreakdownFallback(mysqli $conn, array $so
     + (float) ($row['other_total'] ?? 0)
     + (float) ($row['shipping'] ?? 0);
   $paidNet = (float) ($row['paid_net'] ?? 0);
+  $paymentLines = [];
+  $paymentStmt = $conn->prepare("
+    SELECT id, payment_kind, amount, currency, received_at, invoice_number, paypal_transaction_id
+    FROM custom_order_payments
+    WHERE custom_order_id = ?
+    ORDER BY received_at ASC, id ASC
+  ");
+  if ($paymentStmt) {
+    $paymentStmt->bind_param('i', $customOrderId);
+    $paymentStmt->execute();
+    $paymentRes = $paymentStmt->get_result();
+    $rawPaymentLines = [];
+    while ($paymentRow = $paymentRes->fetch_assoc()) {
+      $rawPaymentLines[] = $paymentRow;
+    }
+    $paymentStmt->close();
+    $paymentLines = orderDetailNormalizeCustomPaymentLines($rawPaymentLines);
+  }
 
   return [
     'currency' => strtoupper(trim((string) ($row['currency'] ?? ''))),
@@ -842,6 +948,7 @@ function orderDetailLoadCustomFinancialBreakdownFallback(mysqli $conn, array $so
     'deposits' => (float) ($row['deposits'] ?? 0),
     'paid_net' => $paidNet,
     'balance_due' => $total - $paidNet,
+    'payment_lines' => $paymentLines,
   ];
 }
 
@@ -1340,8 +1447,20 @@ if ($isCustomOrder) {
   if (is_array($sourceMeta['financial_breakdown'] ?? null)) {
     $customFinancialBreakdown = orderDetailNormalizeCustomFinancialBreakdown($sourceMeta['financial_breakdown']);
   }
-  if (empty($customFinancialBreakdown)) {
-    $customFinancialBreakdown = orderDetailLoadCustomFinancialBreakdownFallback($conn, $sourceMeta);
+  if (empty($customFinancialBreakdown) || empty($customFinancialBreakdown['payment_lines'])) {
+    $customFinancialBreakdownFallback = orderDetailLoadCustomFinancialBreakdownFallback($conn, $sourceMeta);
+    if (empty($customFinancialBreakdown)) {
+      $customFinancialBreakdown = $customFinancialBreakdownFallback;
+    } elseif (!empty($customFinancialBreakdownFallback)) {
+      foreach (['deposits', 'paid_net', 'balance_due'] as $paymentSummaryKey) {
+        if (array_key_exists($paymentSummaryKey, $customFinancialBreakdownFallback)) {
+          $customFinancialBreakdown[$paymentSummaryKey] = $customFinancialBreakdownFallback[$paymentSummaryKey];
+        }
+      }
+      if (!empty($customFinancialBreakdownFallback['payment_lines'])) {
+        $customFinancialBreakdown['payment_lines'] = $customFinancialBreakdownFallback['payment_lines'];
+      }
+    }
   }
   if (!isset($sourceMeta['shipping_price']) && isset($customFinancialBreakdown['shipping'])) {
     $sourceMeta['shipping_price'] = $customFinancialBreakdown['shipping'];
@@ -4408,6 +4527,14 @@ ob_start();
                   <input type="hidden" class="edit-order-id" value="<?php echo (int) $orderId; ?>">
 
                   <div class="form-row">
+                    <div class="form-group col-md-12">
+                      <label>Customer name</label>
+                      <input class="form-control form-control-sm edit-customer-name"
+                        value="<?php echo h($order['customer_name'] ?? ''); ?>">
+                    </div>
+                  </div>
+
+                  <div class="form-row">
                     <div class="form-group col-md-6">
                       <label>Payment</label>
                       <input class="form-control form-control-sm edit-payment"
@@ -4791,8 +4918,10 @@ ob_start();
                       </span>
                       <?php if ($financialCanEdit): ?>
                         <button type="button" class="btn btn-xs btn-outline-danger ml-2 btn-delete-financial-adjustment"
-                          data-id="<?php echo (int) ($financialAdjustment['id'] ?? 0); ?>">
-                          ×
+                          data-id="<?php echo (int) ($financialAdjustment['id'] ?? 0); ?>"
+                          data-order-id="<?php echo (int) $orderId; ?>"
+                          title="Delete payment/refund" aria-label="Delete payment/refund">
+                          <i class="fas fa-times" aria-hidden="true"></i>
                         </button>
                       <?php endif; ?>
                     </div>
@@ -4864,16 +4993,46 @@ ob_start();
               <?php endif; ?>
             <?php endif; ?>
             <?php if (!empty($customFinancialBreakdown)): ?>
-              <?php $customPaidNet = (float) ($customFinancialBreakdown['paid_net'] ?? 0.0); ?>
+              <?php
+              $customPaidNet = (float) ($customFinancialBreakdown['paid_net'] ?? 0.0);
+              $customPaymentLines = is_array($customFinancialBreakdown['payment_lines'] ?? null)
+                ? orderDetailNormalizeCustomPaymentLines($customFinancialBreakdown['payment_lines'])
+                : [];
+              ?>
               <hr style="border-color:rgba(255,255,255,.14);">
-              <div class="order-value-breakdown-row">
-                <span>Deposits:</span>
-                <span><?php echo number_format((float) ($customFinancialBreakdown['deposits'] ?? 0.0), 2, '.', ''); ?><?php echo h($orderCurrencySuffix); ?></span>
-              </div>
-              <div class="order-value-breakdown-row">
-                <span>Paid net:</span>
-                <span><?php echo number_format($customPaidNet, 2, '.', ''); ?><?php echo h($orderCurrencySuffix); ?></span>
-              </div>
+              <?php if (!empty($customPaymentLines)): ?>
+                <?php foreach ($customPaymentLines as $customPaymentLine): ?>
+                  <?php
+                  if (!is_array($customPaymentLine)) {
+                    continue;
+                  }
+                  $customPaymentLineLabel = trim((string) ($customPaymentLine['label'] ?? 'Payment'));
+                  $customPaymentLineCurrency = strtoupper(trim((string) ($customPaymentLine['currency'] ?? '')));
+                  $customPaymentLineCurrencySuffix = $customPaymentLineCurrency !== ''
+                    ? order_financial_currency_suffix($customPaymentLineCurrency)
+                    : $orderCurrencySuffix;
+                  ?>
+                  <div class="order-value-breakdown-row">
+                    <span><?php echo h($customPaymentLineLabel !== '' ? $customPaymentLineLabel : 'Payment'); ?>:</span>
+                    <span><?php echo number_format((float) ($customPaymentLine['amount'] ?? 0.0), 2, '.', ''); ?><?php echo h($customPaymentLineCurrencySuffix); ?></span>
+                  </div>
+                <?php endforeach; ?>
+                <?php if (count($customPaymentLines) > 1): ?>
+                  <div class="order-value-breakdown-row">
+                    <span>Paid total:</span>
+                    <span><?php echo number_format($customPaidNet, 2, '.', ''); ?><?php echo h($orderCurrencySuffix); ?></span>
+                  </div>
+                <?php endif; ?>
+              <?php else: ?>
+                <div class="order-value-breakdown-row">
+                  <span>Deposits:</span>
+                  <span><?php echo number_format((float) ($customFinancialBreakdown['deposits'] ?? 0.0), 2, '.', ''); ?><?php echo h($orderCurrencySuffix); ?></span>
+                </div>
+                <div class="order-value-breakdown-row">
+                  <span>Paid net:</span>
+                  <span><?php echo number_format($customPaidNet, 2, '.', ''); ?><?php echo h($orderCurrencySuffix); ?></span>
+                </div>
+              <?php endif; ?>
               <div class="order-value-breakdown-row font-weight-bold">
                 <span>Balance due:</span>
                 <span><?php echo number_format((float) $orderValueBreakdown['total'] - $customPaidNet, 2, '.', ''); ?><?php echo h($orderCurrencySuffix); ?></span>
@@ -6250,11 +6409,14 @@ ob_start();
         oa.payload,
         oa.note,
         oa.created_at,
-        COALESCE(
-        NULLIF(TRIM(CONCAT(e.firstname, ' ', e.lastname)), ''),
-        NULLIF(TRIM(CONCAT(ec.firstname, ' ', ec.lastname)), ''),
-        CONCAT('Employee #', COALESCE(oa.actor_employee_id, JSON_UNQUOTE(JSON_EXTRACT(oa.payload, '$.created_by'))))
-      ) AS actor_name
+        CASE
+          WHEN oa.action = 'fedex_delivered' THEN 'FedEx Tracking API'
+          ELSE COALESCE(
+            NULLIF(TRIM(CONCAT_WS(' ', e.firstname, e.lastname)), ''),
+            NULLIF(TRIM(CONCAT_WS(' ', ec.firstname, ec.lastname)), ''),
+            CONCAT('Employee #', COALESCE(oa.actor_employee_id, JSON_UNQUOTE(JSON_EXTRACT(oa.payload, '$.created_by'))))
+          )
+        END AS actor_name
       FROM order_activity oa
       LEFT JOIN employees e ON e.id = oa.actor_employee_id
       LEFT JOIN employees ec ON ec.id = CAST(JSON_UNQUOTE(JSON_EXTRACT(oa.payload, '$.created_by')) AS UNSIGNED)

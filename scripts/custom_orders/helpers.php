@@ -21,16 +21,106 @@ function customOrdersTakeFlash(): ?array
   return $flash;
 }
 
+function customOrdersRedirectContextParams(): array
+{
+  $preservedKeys = [
+    'tab',
+    'draft_status',
+    'q',
+    'difficulty',
+    'owner',
+    'country',
+    'source',
+    'payment',
+    'shipping',
+    'item_type',
+    'date_from',
+    'date_to',
+    'help_lang',
+  ];
+
+  $sources = [];
+  $refererQuery = parse_url((string) ($_SERVER['HTTP_REFERER'] ?? ''), PHP_URL_QUERY);
+  if (is_string($refererQuery) && $refererQuery !== '') {
+    $refererParams = [];
+    parse_str($refererQuery, $refererParams);
+    if (is_array($refererParams)) {
+      $sources[] = $refererParams;
+    }
+  }
+  $sources[] = $_GET;
+  $sources[] = $_POST;
+
+  $params = [];
+  foreach ($sources as $source) {
+    if (!is_array($source)) {
+      continue;
+    }
+    foreach ($preservedKeys as $key) {
+      if (!array_key_exists($key, $source) || is_array($source[$key])) {
+        continue;
+      }
+      $value = trim((string) $source[$key]);
+      if ($value === '') {
+        unset($params[$key]);
+        continue;
+      }
+
+      switch ($key) {
+        case 'tab':
+          $value = strtolower($value);
+          if ($value === 'all' || !preg_match('/^[a-z0-9_]+$/', $value)) {
+            unset($params[$key]);
+            continue 2;
+          }
+          break;
+        case 'difficulty':
+        case 'owner':
+          $value = (string) max(0, (int) $value);
+          if ($value === '0') {
+            unset($params[$key]);
+            continue 2;
+          }
+          break;
+        case 'country':
+        case 'item_type':
+        case 'draft_status':
+          $value = strtoupper($value);
+          break;
+        case 'date_from':
+        case 'date_to':
+          if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $value)) {
+            unset($params[$key]);
+            continue 2;
+          }
+          break;
+        case 'help_lang':
+          $value = strtolower($value);
+          if (!in_array($value, ['sk', 'en'], true)) {
+            unset($params[$key]);
+            continue 2;
+          }
+          break;
+      }
+
+      $params[$key] = $value;
+    }
+  }
+
+  return $params;
+}
+
 function customOrdersRedirect(int $orderId = 0, int $focusNoteId = 0): void
 {
-  $location = '../../index.php?page=custom_orders';
+  $params = ['page' => 'custom_orders'] + customOrdersRedirectContextParams();
   if ($orderId > 0) {
-    $location .= '&custom_order_id=' . $orderId;
+    $params['custom_order_id'] = (string) $orderId;
   }
   if ($orderId > 0 && $focusNoteId > 0) {
-    $location .= '&focus_note_id=' . $focusNoteId;
+    $params['focus_note_id'] = (string) $focusNoteId;
   }
-  header('Location: ' . $location);
+
+  header('Location: ../../index.php?' . http_build_query($params));
   exit;
 }
 
@@ -533,6 +623,15 @@ function customOrdersEnsureSchema(mysqli $conn): void
     }
   }
 
+  if (customOrdersTableExists($conn, 'custom_order_payments')) {
+    $paymentColumns = customOrdersTableColumns($conn, 'custom_order_payments');
+    if ($paymentColumns && !isset($paymentColumns['invoice_number'])) {
+      if ($conn->query("ALTER TABLE `custom_order_payments` ADD COLUMN `invoice_number` varchar(128) DEFAULT NULL AFTER `received_at`")) {
+        customOrdersTableColumns($conn, 'custom_order_payments', true);
+      }
+    }
+  }
+
   $columns = customOrdersTableColumns($conn, 'custom_orders');
   if (!$columns) {
     $done = true;
@@ -720,6 +819,76 @@ function customOrdersActivityFieldLabels(): array
   ];
 }
 
+function customOrdersPaymentKindLabel(string $kind): string
+{
+  $kind = strtoupper(trim($kind));
+  $labels = customOrdersPaymentKinds();
+  if (isset($labels[$kind])) {
+    return $labels[$kind];
+  }
+
+  return $kind !== '' ? ucwords(strtolower(str_replace('_', ' ', $kind))) : 'Payment';
+}
+
+function customOrdersPaymentLineDateLabel(?string $receivedAt): string
+{
+  $receivedAt = trim((string) $receivedAt);
+  if ($receivedAt === '') {
+    return '';
+  }
+
+  $timestamp = strtotime($receivedAt);
+  return $timestamp !== false ? date('d.m.Y', $timestamp) : '';
+}
+
+function customOrdersPaymentBreakdownLines(array $payments): array
+{
+  $lines = [];
+  foreach ($payments as $payment) {
+    if (!is_array($payment)) {
+      continue;
+    }
+
+    $amount = (float) ($payment['amount'] ?? 0);
+    if (abs($amount) < 0.005) {
+      continue;
+    }
+
+    $kind = strtoupper(trim((string) ($payment['payment_kind'] ?? $payment['kind'] ?? '')));
+    $signedAmount = $kind === 'REFUND' ? -abs($amount) : $amount;
+    $receivedAt = trim((string) ($payment['received_at'] ?? ''));
+    $dateLabel = customOrdersPaymentLineDateLabel($receivedAt);
+    $label = customOrdersPaymentKindLabel($kind);
+    if ($dateLabel !== '') {
+      $label .= ' ' . $dateLabel;
+    }
+
+    $lines[] = [
+      'id' => (int) ($payment['id'] ?? 0),
+      'kind' => $kind !== '' ? $kind : 'PAYMENT',
+      'label' => $label,
+      'amount' => $signedAmount,
+      'currency' => strtoupper(trim((string) ($payment['currency'] ?? ''))),
+      'received_at' => $receivedAt,
+      'invoice_number' => trim((string) ($payment['invoice_number'] ?? '')),
+      'paypal_transaction_id' => trim((string) ($payment['paypal_transaction_id'] ?? '')),
+    ];
+  }
+
+  usort($lines, static function (array $a, array $b): int {
+    $timeA = trim((string) ($a['received_at'] ?? '')) !== '' ? strtotime((string) $a['received_at']) : false;
+    $timeB = trim((string) ($b['received_at'] ?? '')) !== '' ? strtotime((string) $b['received_at']) : false;
+    $sortA = $timeA !== false ? $timeA : PHP_INT_MAX;
+    $sortB = $timeB !== false ? $timeB : PHP_INT_MAX;
+    if ($sortA === $sortB) {
+      return ((int) ($a['id'] ?? 0)) <=> ((int) ($b['id'] ?? 0));
+    }
+    return $sortA <=> $sortB;
+  });
+
+  return $lines;
+}
+
 function customOrdersActivityNormalizeValue($value): string
 {
   if ($value === null) {
@@ -842,6 +1011,9 @@ function customOrdersActivityDetail(array $activity): string
     if (isset($payload['amount'])) {
       $parts[] = number_format((float) $payload['amount'], 2, '.', '') . ' ' . trim((string) ($payload['currency'] ?? ''));
     }
+    if (!empty($payload['invoice_number'])) {
+      $parts[] = 'Invoice: ' . trim((string) $payload['invoice_number']);
+    }
     if (!empty($payload['note'])) {
       $parts[] = trim((string) $payload['note']);
     }
@@ -857,6 +1029,9 @@ function customOrdersActivityDetail(array $activity): string
     }
     if (isset($payload['amount'])) {
       $parts[] = number_format((float) $payload['amount'], 2, '.', '') . ' ' . trim((string) ($payload['currency'] ?? ''));
+    }
+    if (!empty($payload['invoice_number'])) {
+      $parts[] = 'Invoice: ' . trim((string) $payload['invoice_number']);
     }
     if (!empty($payload['note'])) {
       $parts[] = trim((string) $payload['note']);
@@ -1797,13 +1972,19 @@ function customOrdersComputeSummary(array $order): array
 {
   $itemSubtotal = 0.0;
   $upsellSubtotal = 0.0;
+  $typeTotals = ['G' => 0.0, 'P' => 0.0, 'S' => 0.0, 'F' => 0.0, 'T' => 0.0, 'M' => 0.0];
   $types = [];
   foreach ((array) ($order['items'] ?? []) as $item) {
     $line = (float) ($item['qty'] ?? 0) * (float) ($item['unit_price'] ?? 0);
     $itemSubtotal += $line;
-    $type = strtoupper(trim((string) ($item['item_type_code'] ?? '')));
-    if ($type !== '') {
-      $types[] = $type;
+    $rawType = strtoupper(trim((string) ($item['item_type_code'] ?? '')));
+    $breakdownType = $rawType !== '' ? $rawType : 'M';
+    if (!array_key_exists($breakdownType, $typeTotals)) {
+      $breakdownType = 'M';
+    }
+    $typeTotals[$breakdownType] += $line;
+    if ($rawType !== '') {
+      $types[] = $rawType;
     }
     if ((int) ($item['is_upsell'] ?? 0) === 1) {
       $upsellSubtotal += $line;
@@ -1824,6 +2005,7 @@ function customOrdersComputeSummary(array $order): array
       $paymentNet += $amount;
     }
   }
+  $paymentLines = customOrdersPaymentBreakdownLines((array) ($order['payments'] ?? []));
 
   $shipping = (float) ($order['shipping_price'] ?? 0);
   $grossTotal = $itemSubtotal + $shipping;
@@ -1834,9 +2016,36 @@ function customOrdersComputeSummary(array $order): array
     'gross_total' => $grossTotal,
     'deposit_total' => $depositTotal,
     'payment_net' => $paymentNet,
-    'balance_due' => $grossTotal - $depositTotal,
+    'balance_due' => $grossTotal - $paymentNet,
+    'payment_lines' => $paymentLines,
     'upsell_subtotal' => $upsellSubtotal,
     'types' => customOrdersDepartmentOrder(implode('', array_unique($types))),
+    'type_totals' => $typeTotals,
+  ];
+}
+
+function customOrdersFinancialBreakdownSnapshot(array $order, ?array $summary = null): array
+{
+  $summary = $summary ?? customOrdersComputeSummary($order);
+  $typeTotals = $summary['type_totals'] ?? ['G' => 0.0, 'P' => 0.0, 'S' => 0.0, 'F' => 0.0, 'T' => 0.0, 'M' => 0.0];
+  $grossTotal = (float) ($summary['gross_total'] ?? 0);
+  $paymentNet = (float) ($summary['payment_net'] ?? 0);
+
+  return [
+    'source' => 'custom_orders',
+    'currency' => (string) ($order['currency'] ?? 'EUR'),
+    'total' => $grossTotal,
+    'graphics' => (float) ($typeTotals['G'] ?? 0),
+    'plastics' => (float) ($typeTotals['P'] ?? 0),
+    'seat_covers' => (float) ($typeTotals['S'] ?? 0),
+    'fitting' => (float) ($typeTotals['F'] ?? 0),
+    'accessories' => (float) ($typeTotals['T'] ?? 0),
+    'other' => (float) ($typeTotals['M'] ?? 0),
+    'shipping' => (float) ($summary['shipping'] ?? 0),
+    'deposits' => (float) ($summary['deposit_total'] ?? 0),
+    'paid_net' => $paymentNet,
+    'balance_due' => $grossTotal - $paymentNet,
+    'payment_lines' => (array) ($summary['payment_lines'] ?? customOrdersPaymentBreakdownLines((array) ($order['payments'] ?? []))),
   ];
 }
 
@@ -1851,6 +2060,56 @@ function customOrdersFormatOfficialNumber(string $prefix, int $sequenceValue): s
   }
 
   return $prefix . str_pad((string) $sequenceValue, 5, '0', STR_PAD_LEFT);
+}
+
+function customOrdersParseOfficialNumberInput(string $selectedPrefix, string $rawValue): array
+{
+  $selectedPrefix = strtoupper(trim($selectedPrefix));
+  if (!in_array($selectedPrefix, ['SO', 'GO', 'SC'], true)) {
+    throw new RuntimeException('Invalid official prefix');
+  }
+
+  $value = strtoupper((string) preg_replace('/\s+/', '', trim($rawValue)));
+  if ($value === '') {
+    throw new RuntimeException('Enter an official number, for example 20930, 20930-3, or SO20930-3.');
+  }
+
+  $prefix = $selectedPrefix;
+  $sequenceRaw = '';
+  $suffix = '';
+  if (preg_match('/^([A-Z]{2})(\d+)(-\d+)?$/', $value, $matches)) {
+    $prefix = $matches[1];
+    $sequenceRaw = $matches[2];
+    $suffix = $matches[3] ?? '';
+  } elseif (preg_match('/^(\d+)(-\d+)?$/', $value, $matches)) {
+    $sequenceRaw = $matches[1];
+    $suffix = $matches[2] ?? '';
+  } else {
+    throw new RuntimeException('Enter an official number, for example 20930, 20930-3, or SO20930-3.');
+  }
+
+  if (!in_array($prefix, ['SO', 'GO', 'SC'], true)) {
+    throw new RuntimeException('Invalid official prefix');
+  }
+  if ($prefix !== $selectedPrefix) {
+    throw new RuntimeException('Typed number prefix does not match the selected number branch.');
+  }
+  if (!ctype_digit($sequenceRaw) || (int) $sequenceRaw <= 0 || (int) $sequenceRaw > 2147483647) {
+    throw new RuntimeException('Enter a whole number between 1 and 2147483647.');
+  }
+  if ($suffix !== '' && ((int) substr($suffix, 1) <= 0 || (int) substr($suffix, 1) > 2147483647)) {
+    throw new RuntimeException('Enter a suffix like -1, -2, or -3.');
+  }
+
+  $sequenceValue = (int) $sequenceRaw;
+  $number = customOrdersFormatOfficialNumber($prefix, $sequenceValue) . $suffix;
+
+  return [
+    'prefix' => $prefix,
+    'sequence_value' => $sequenceValue,
+    'suffix' => $suffix,
+    'official_number' => $number,
+  ];
 }
 
 function customOrdersOfficialNumberExists(mysqli $conn, string $number, int $excludeCustomOrderId = 0): bool
@@ -1899,11 +2158,17 @@ function customOrdersOfficialNumberExists(mysqli $conn, string $number, int $exc
   return $exists;
 }
 
-function customOrdersAssignOfficialNumber(mysqli $conn, int $orderId, string $prefix, int $userId, ?int $requestedSequenceValue = null): string
+function customOrdersAssignOfficialNumber(mysqli $conn, int $orderId, string $prefix, int $userId, ?int $requestedSequenceValue = null, string $requestedSuffix = ''): string
 {
   $prefix = strtoupper(trim($prefix));
   if (!in_array($prefix, ['SO', 'GO', 'SC'], true)) {
     throw new RuntimeException('Invalid official prefix');
+  }
+  $requestedSuffix = trim($requestedSuffix);
+  if ($requestedSuffix !== '') {
+    if ($requestedSequenceValue === null || !preg_match('/^-\d+$/', $requestedSuffix) || (int) substr($requestedSuffix, 1) <= 0 || (int) substr($requestedSuffix, 1) > 2147483647) {
+      throw new RuntimeException('Enter a suffix like -1, -2, or -3.');
+    }
   }
 
   $conn->begin_transaction();
@@ -1932,7 +2197,7 @@ function customOrdersAssignOfficialNumber(mysqli $conn, int $orderId, string $pr
 
     $currentValue = (int) $sequenceRow['current_value'];
     $sequenceValue = $requestedSequenceValue ?? ($currentValue + 1);
-    $number = customOrdersFormatOfficialNumber($prefix, $sequenceValue);
+    $number = customOrdersFormatOfficialNumber($prefix, $sequenceValue) . $requestedSuffix;
     while ($requestedSequenceValue === null && customOrdersOfficialNumberExists($conn, $number, $orderId)) {
       ++$sequenceValue;
       $number = customOrdersFormatOfficialNumber($prefix, $sequenceValue);
@@ -2255,9 +2520,18 @@ function customOrdersExportValidation(array $order): array
 
 function customOrdersUpsertCustomer(mysqli $conn, array $order): ?int
 {
-  $name = trim((string) ($order['customer_name'] ?? $order['shipping_name'] ?? ''));
-  $email = trim((string) ($order['customer_email'] ?? $order['shipping_email'] ?? ''));
-  $phone = trim((string) ($order['customer_phone'] ?? $order['shipping_phone'] ?? ''));
+  $name = trim((string) ($order['customer_name'] ?? ''));
+  if ($name === '') {
+    $name = trim((string) (($order['shipping_name'] ?? '') ?: ($order['billing_name'] ?? '')));
+  }
+  $email = trim((string) ($order['customer_email'] ?? ''));
+  if ($email === '') {
+    $email = trim((string) (($order['shipping_email'] ?? '') ?: ($order['billing_email'] ?? '')));
+  }
+  $phone = trim((string) ($order['customer_phone'] ?? ''));
+  if ($phone === '') {
+    $phone = trim((string) (($order['shipping_phone'] ?? '') ?: ($order['billing_phone'] ?? '')));
+  }
   if ($name === '' && $email === '' && $phone === '') {
     return null;
   }
@@ -2269,7 +2543,18 @@ function customOrdersUpsertCustomer(mysqli $conn, array $order): ?int
     $row = $stmt->get_result()->fetch_assoc();
     $stmt->close();
     if ($row) {
-      return (int) $row['id'];
+      $customerId = (int) $row['id'];
+      $stmt = $conn->prepare('
+        UPDATE customers
+        SET name = COALESCE(NULLIF(?, \'\'), name),
+            email = COALESCE(NULLIF(?, \'\'), email),
+            phone = COALESCE(NULLIF(?, \'\'), phone)
+        WHERE id = ?
+      ');
+      $stmt->bind_param('sssi', $name, $email, $phone, $customerId);
+      $stmt->execute();
+      $stmt->close();
+      return $customerId;
     }
   }
 
@@ -2279,6 +2564,217 @@ function customOrdersUpsertCustomer(mysqli $conn, array $order): ?int
   $customerId = (int) $stmt->insert_id;
   $stmt->close();
   return $customerId;
+}
+
+function customOrdersUpsertProductionAddress(mysqli $conn, int $productionOrderId, string $type, array $address): void
+{
+  $type = strtoupper(trim($type));
+  if ($productionOrderId <= 0 || !in_array($type, ['BILLING', 'SHIPPING'], true)) {
+    return;
+  }
+
+  $columns = customOrdersTableColumns($conn, 'order_addresses');
+  $hasState = isset($columns['state']);
+
+  $name = trim((string) ($address['name'] ?? ''));
+  $company = trim((string) ($address['company'] ?? ''));
+  $companyId = trim((string) ($address['company_id'] ?? ''));
+  $street = trim((string) ($address['street'] ?? ''));
+  $city = trim((string) ($address['city'] ?? ''));
+  $zip = trim((string) ($address['zip'] ?? ''));
+  $country = (string) customOrdersNormalizeCountry((string) ($address['country'] ?? ''));
+  $state = (string) customOrdersNormalizeState((string) ($address['state'] ?? ''));
+  $email = trim((string) ($address['email'] ?? ''));
+  $phone = trim((string) ($address['phone'] ?? ''));
+
+  $check = $conn->prepare('
+    SELECT id
+    FROM order_addresses
+    WHERE order_id = ? AND type = ?
+    LIMIT 1
+  ');
+  $check->bind_param('is', $productionOrderId, $type);
+  $check->execute();
+  $existing = $check->get_result()->fetch_assoc();
+  $check->close();
+
+  if ($existing) {
+    $addressId = (int) $existing['id'];
+    if ($hasState) {
+      $stmt = $conn->prepare('
+        UPDATE order_addresses
+        SET name = ?, company = ?, company_id = ?, street = ?, city = ?, zip = ?, country = ?, state = ?, email = ?, phone = ?
+        WHERE id = ?
+        LIMIT 1
+      ');
+      $stmt->bind_param('ssssssssssi', $name, $company, $companyId, $street, $city, $zip, $country, $state, $email, $phone, $addressId);
+    } else {
+      $stmt = $conn->prepare('
+        UPDATE order_addresses
+        SET name = ?, company = ?, company_id = ?, street = ?, city = ?, zip = ?, country = ?, email = ?, phone = ?
+        WHERE id = ?
+        LIMIT 1
+      ');
+      $stmt->bind_param('sssssssssi', $name, $company, $companyId, $street, $city, $zip, $country, $email, $phone, $addressId);
+    }
+    $stmt->execute();
+    $stmt->close();
+    return;
+  }
+
+  if ($hasState) {
+    $stmt = $conn->prepare('
+      INSERT INTO order_addresses (order_id, type, name, company, company_id, street, city, zip, country, state, email, phone)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ');
+    $stmt->bind_param('isssssssssss', $productionOrderId, $type, $name, $company, $companyId, $street, $city, $zip, $country, $state, $email, $phone);
+  } else {
+    $stmt = $conn->prepare('
+      INSERT INTO order_addresses (order_id, type, name, company, company_id, street, city, zip, country, email, phone)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ');
+    $stmt->bind_param('issssssssss', $productionOrderId, $type, $name, $company, $companyId, $street, $city, $zip, $country, $email, $phone);
+  }
+  $stmt->execute();
+  $stmt->close();
+}
+
+function customOrdersSyncProductionHeader(mysqli $conn, int $customOrderId, int $productionOrderId, array $orderData, int $userId): void
+{
+  if ($customOrderId <= 0 || $productionOrderId <= 0) {
+    return;
+  }
+
+  $stmt = $conn->prepare('
+    SELECT customer_id, source_meta
+    FROM orders
+    WHERE id = ?
+    LIMIT 1
+    FOR UPDATE
+  ');
+  if (!$stmt) {
+    throw new RuntimeException('Production order lookup could not be prepared.');
+  }
+  $stmt->bind_param('i', $productionOrderId);
+  $stmt->execute();
+  $productionOrder = $stmt->get_result()->fetch_assoc();
+  $stmt->close();
+  if (!$productionOrder) {
+    return;
+  }
+
+  $customerName = trim((string) ($orderData['customer_name'] ?? ''));
+  if ($customerName === '') {
+    $customerName = trim((string) (($orderData['shipping_name'] ?? '') ?: ($orderData['billing_name'] ?? '')));
+  }
+  $customerEmail = trim((string) ($orderData['customer_email'] ?? ''));
+  if ($customerEmail === '') {
+    $customerEmail = trim((string) (($orderData['shipping_email'] ?? '') ?: ($orderData['billing_email'] ?? '')));
+  }
+  $customerPhone = trim((string) ($orderData['customer_phone'] ?? ''));
+  if ($customerPhone === '') {
+    $customerPhone = trim((string) (($orderData['shipping_phone'] ?? '') ?: ($orderData['billing_phone'] ?? '')));
+  }
+
+  $customerId = (int) ($productionOrder['customer_id'] ?? 0);
+  if ($customerId > 0) {
+    $stmt = $conn->prepare('
+      UPDATE customers
+      SET name = ?,
+          email = COALESCE(NULLIF(?, \'\'), email),
+          phone = COALESCE(NULLIF(?, \'\'), phone)
+      WHERE id = ?
+    ');
+    if (!$stmt) {
+      throw new RuntimeException('Production customer update could not be prepared.');
+    }
+    $stmt->bind_param('sssi', $customerName, $customerEmail, $customerPhone, $customerId);
+    $stmt->execute();
+    $stmt->close();
+  } elseif ($customerName !== '' || $customerEmail !== '' || $customerPhone !== '') {
+    $customerId = customOrdersUpsertCustomer($conn, [
+      'customer_name' => $customerName,
+      'customer_email' => $customerEmail,
+      'customer_phone' => $customerPhone,
+    ]) ?? 0;
+  }
+
+  $sourceMeta = json_decode((string) ($productionOrder['source_meta'] ?? ''), true);
+  if (!is_array($sourceMeta)) {
+    $sourceMeta = [];
+  }
+  $sourceMeta['custom_order_id'] = $customOrderId;
+  $sourceMeta['source_channel'] = (string) ($orderData['source_channel'] ?? '');
+  $sourceMeta['social_platform'] = (string) ($orderData['social_platform'] ?? '');
+  $sourceMeta['social_handle'] = (string) ($orderData['social_handle'] ?? '');
+  $sourceMeta['bike_photo_urls'] = (string) ($orderData['bike_photo_urls'] ?? '');
+  $sourceMeta['reference_urls'] = (string) ($orderData['reference_urls'] ?? '');
+  $sourceMetaJson = json_encode($sourceMeta, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE);
+  if ($sourceMetaJson === false) {
+    $sourceMetaJson = '{}';
+  }
+
+  $shippingMethod = trim((string) ($orderData['shipping_method'] ?? ''));
+  $paymentMethod = trim((string) ($orderData['payment_method'] ?? ''));
+  $note = trim((string) ($orderData['customer_notes'] ?? ''));
+
+  $stmt = $conn->prepare('
+    UPDATE orders
+    SET shipping_method = ?,
+        payment_method = ?,
+        note = ?,
+        source_meta = ?,
+        customer_id = CASE WHEN ? > 0 THEN ? ELSE customer_id END
+    WHERE id = ?
+    LIMIT 1
+  ');
+  if (!$stmt) {
+    throw new RuntimeException('Production order header sync could not be prepared.');
+  }
+  $stmt->bind_param('ssssiii', $shippingMethod, $paymentMethod, $note, $sourceMetaJson, $customerId, $customerId, $productionOrderId);
+  $stmt->execute();
+  $stmt->close();
+
+  customOrdersUpsertProductionAddress($conn, $productionOrderId, 'BILLING', [
+    'name' => (string) (($orderData['billing_name'] ?? '') ?: ($orderData['customer_name'] ?? '') ?: ($orderData['shipping_name'] ?? '')),
+    'company' => (string) ($orderData['billing_company'] ?? ''),
+    'company_id' => (string) ($orderData['billing_company_id'] ?? ''),
+    'street' => (string) (($orderData['billing_street'] ?? '') ?: ($orderData['shipping_street'] ?? '')),
+    'city' => (string) (($orderData['billing_city'] ?? '') ?: ($orderData['shipping_city'] ?? '')),
+    'zip' => (string) (($orderData['billing_zip'] ?? '') ?: ($orderData['shipping_zip'] ?? '')),
+    'country' => (string) (($orderData['billing_country'] ?? '') ?: ($orderData['shipping_country'] ?? '')),
+    'state' => (string) (($orderData['billing_state'] ?? '') ?: ($orderData['shipping_state'] ?? '')),
+    'email' => (string) (($orderData['billing_email'] ?? '') ?: ($orderData['customer_email'] ?? '') ?: ($orderData['shipping_email'] ?? '')),
+    'phone' => (string) (($orderData['billing_phone'] ?? '') ?: ($orderData['customer_phone'] ?? '') ?: ($orderData['shipping_phone'] ?? '')),
+  ]);
+
+  customOrdersUpsertProductionAddress($conn, $productionOrderId, 'SHIPPING', [
+    'name' => (string) ($orderData['shipping_name'] ?? ''),
+    'company' => (string) ($orderData['shipping_company'] ?? ''),
+    'company_id' => (string) ($orderData['shipping_company_id'] ?? ''),
+    'street' => (string) ($orderData['shipping_street'] ?? ''),
+    'city' => (string) ($orderData['shipping_city'] ?? ''),
+    'zip' => (string) ($orderData['shipping_zip'] ?? ''),
+    'country' => (string) ($orderData['shipping_country'] ?? ''),
+    'state' => (string) ($orderData['shipping_state'] ?? ''),
+    'email' => (string) (($orderData['shipping_email'] ?? '') ?: ($orderData['customer_email'] ?? '')),
+    'phone' => (string) (($orderData['shipping_phone'] ?? '') ?: ($orderData['customer_phone'] ?? '')),
+  ]);
+
+  log_order_activity(
+    $conn,
+    $productionOrderId,
+    $userId,
+    'custom_order_header_synced',
+    'custom_order',
+    $customOrderId,
+    [
+      'custom_order_id' => $customOrderId,
+      'customer_name' => $customerName,
+      'social_handle' => (string) ($orderData['social_handle'] ?? ''),
+    ],
+    'Custom order header synchronized'
+  );
 }
 
 function customOrdersExportToProduction(mysqli $conn, int $customOrderId, int $userId): int
@@ -2313,6 +2809,8 @@ function customOrdersExportToProduction(mysqli $conn, int $customOrderId, int $u
     'deposit_revision_used' => (int) $order['deposit_revision_used'],
     'deposit_total' => (float) $summary['deposit_total'],
     'upsell_subtotal' => (float) $summary['upsell_subtotal'],
+    'shipping_price' => (float) ($summary['shipping'] ?? 0),
+    'financial_breakdown' => customOrdersFinancialBreakdownSnapshot($order, $summary),
     'bike_photo_urls' => $order['bike_photo_urls'],
     'reference_urls' => $order['reference_urls'],
   ];
@@ -2336,6 +2834,31 @@ function customOrdersExportToProduction(mysqli $conn, int $customOrderId, int $u
     $stmt->execute();
     $productionOrderId = (int) $stmt->insert_id;
     $stmt->close();
+
+    $invoiceNumbers = [];
+    foreach ((array) ($order['payments'] ?? []) as $payment) {
+      $invoiceNumber = trim((string) ($payment['invoice_number'] ?? ''));
+      if ($invoiceNumber !== '') {
+        $invoiceNumbers[$invoiceNumber] = $invoiceNumber;
+      }
+    }
+    if ($invoiceNumbers) {
+      if (!customOrdersTableExists($conn, 'order_invoices')) {
+        throw new RuntimeException('Production invoices table is missing.');
+      }
+      $stmt = $conn->prepare('
+        INSERT INTO order_invoices (order_id, invoice_number, created_by)
+        VALUES (?, ?, ?)
+      ');
+      if (!$stmt) {
+        throw new RuntimeException('Production invoices could not be prepared for export.');
+      }
+      foreach ($invoiceNumbers as $invoiceNumber) {
+        $stmt->bind_param('isi', $productionOrderId, $invoiceNumber, $userId);
+        $stmt->execute();
+      }
+      $stmt->close();
+    }
 
     $stmt = $conn->prepare('
       INSERT INTO order_addresses (order_id, type, name, company, company_id, street, city, zip, country, state, email, phone)

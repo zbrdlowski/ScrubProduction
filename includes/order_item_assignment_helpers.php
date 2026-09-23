@@ -22,6 +22,144 @@ function orderItemDepartmentCode(string $itemType): string
     return $map[strtoupper(trim($itemType))] ?? '';
 }
 
+function orderItemDepartmentTypeCodes(string $departmentCode): array
+{
+    $map = [
+        'GRAPHICS' => ['G'],
+        'PLASTICS' => ['P', 'T', 'M'],
+        'SEATCOVER' => ['S'],
+        'FITTING' => ['F'],
+    ];
+
+    return $map[strtoupper(trim($departmentCode))] ?? [];
+}
+
+function orderItemWorkflowAssignmentState(
+    mysqli $conn,
+    int $orderId,
+    string $departmentCode,
+    int $employeeId = 0
+): array {
+    $typeCodes = orderItemDepartmentTypeCodes($departmentCode);
+    if (!$typeCodes) {
+        return [
+            'items' => [],
+            'free_items' => [],
+            'own_items' => [],
+            'other_items' => [],
+            'assignments_by_item' => [],
+        ];
+    }
+
+    $typePlaceholders = implode(',', array_fill(0, count($typeCodes), '?'));
+    $types = 'i' . str_repeat('s', count($typeCodes));
+    $params = array_merge([$orderId], $typeCodes);
+
+    $stmt = $conn->prepare("
+        SELECT id, item_type_code, sku, title
+        FROM order_items
+        WHERE order_id = ?
+          AND deleted_at IS NULL
+          AND UPPER(item_type_code) IN ($typePlaceholders)
+        ORDER BY COALESCE(line_no, 999999), id
+        FOR UPDATE
+    ");
+    $stmt->bind_param($types, ...$params);
+    $stmt->execute();
+    $res = $stmt->get_result();
+
+    $items = [];
+    $itemIds = [];
+    while ($row = $res->fetch_assoc()) {
+        $itemId = (int) ($row['id'] ?? 0);
+        if ($itemId <= 0) {
+            continue;
+        }
+        $row['id'] = $itemId;
+        $items[$itemId] = $row;
+        $itemIds[] = $itemId;
+    }
+    $stmt->close();
+
+    $assignmentsByItem = [];
+    if ($itemIds) {
+        $itemPlaceholders = implode(',', array_fill(0, count($itemIds), '?'));
+        $itemTypes = str_repeat('i', count($itemIds));
+
+        $stmt = $conn->prepare("
+            SELECT
+                oia.item_id,
+                oia.employee_id,
+                COALESCE(oia.assignment_role, 'WORKER') AS assignment_role,
+                TRIM(CONCAT(e.firstname, ' ', e.lastname)) AS emp_name
+            FROM order_item_assignments oia
+            JOIN employees e ON e.id = oia.employee_id
+            WHERE oia.item_id IN ($itemPlaceholders)
+              AND oia.assignment_role IN ('PREPARED', 'CHECKED')
+              AND oia.removed_at IS NULL
+            ORDER BY
+                CASE oia.assignment_role
+                    WHEN 'PREPARED' THEN 1
+                    WHEN 'CHECKED' THEN 2
+                    ELSE 3
+                END,
+                oia.id
+            FOR UPDATE
+        ");
+        $stmt->bind_param($itemTypes, ...$itemIds);
+        $stmt->execute();
+        $assignmentRes = $stmt->get_result();
+        while ($row = $assignmentRes->fetch_assoc()) {
+            $assignmentItemId = (int) ($row['item_id'] ?? 0);
+            if ($assignmentItemId <= 0) {
+                continue;
+            }
+            $assignmentsByItem[$assignmentItemId][] = [
+                'employee_id' => (int) ($row['employee_id'] ?? 0),
+                'employee_name' => trim((string) ($row['emp_name'] ?? '')),
+                'assignment_role' => strtoupper((string) ($row['assignment_role'] ?? 'WORKER')),
+            ];
+        }
+        $stmt->close();
+    }
+
+    $freeItems = [];
+    $ownItems = [];
+    $otherItems = [];
+
+    foreach ($items as $itemId => $item) {
+        $assignments = $assignmentsByItem[$itemId] ?? [];
+        if (!$assignments) {
+            $freeItems[$itemId] = $item;
+            continue;
+        }
+
+        $otherAssignment = null;
+        foreach ($assignments as $assignment) {
+            if ($employeeId <= 0 || (int) $assignment['employee_id'] !== $employeeId) {
+                $otherAssignment = $assignment;
+                break;
+            }
+        }
+
+        if ($otherAssignment !== null) {
+            $item['blocking_assignment'] = $otherAssignment;
+            $otherItems[$itemId] = $item;
+            continue;
+        }
+
+        $ownItems[$itemId] = $item;
+    }
+
+    return [
+        'items' => $items,
+        'free_items' => $freeItems,
+        'own_items' => $ownItems,
+        'other_items' => $otherItems,
+        'assignments_by_item' => $assignmentsByItem,
+    ];
+}
+
 /**
  * Creates the department PRIMARY assignment only when the department has not
  * already been taken. Returns true when a row was inserted or reactivated.

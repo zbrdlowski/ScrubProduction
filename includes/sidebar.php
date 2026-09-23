@@ -15,7 +15,7 @@ $currentPage = $_GET['page'] ?? '';
 $sidebarPermission = intval($_SESSION['permission'] ?? 0);
 $sidebarUserId = intval($_SESSION['user_id'] ?? 0);
 $canSeeFullOrdersSection = $sidebarPermission >= 300;
-$canSeeRestrictedAdminItems = $sidebarPermission === 900 || in_array($sidebarUserId, [3, 5], true);
+$canSeeRestrictedAdminItems = $sidebarPermission === 900 || in_array($sidebarUserId, [3, 5, 37], true);
 $canSeeStandardAdminItems = $sidebarPermission > 300;
 $canSeeOrderExportReset = in_array($sidebarUserId, [1], true);
 $adminMenuPages = [];

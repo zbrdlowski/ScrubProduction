@@ -177,7 +177,7 @@ if (isset($conn) && $conn instanceof mysqli) {
     </ul>
   </nav>
   <style>
-    .chat-toast-container {
+    .chat-navbar-toast-container {
       position: fixed;
       top: 1rem;
       right: 1rem;
@@ -187,7 +187,7 @@ if (isset($conn) && $conn instanceof mysqli) {
       
     }
 
-    .chat-toast-container .toast {
+    .chat-navbar-toast-container .toast {
       margin-bottom: .75rem;
     }
 
@@ -204,6 +204,7 @@ if (isset($conn) && $conn instanceof mysqli) {
   <script>
 let chatNotifInitialized = false;
 let seenChatNotificationKeys = new Set();
+let chatNotificationPermissionRequested = false;
 
 function escapeHtmlNav(text) {
     const div = document.createElement('div');
@@ -240,16 +241,86 @@ function isSameOpenChatThread(threadId) {
     return page === 'chat' && String(currentThreadId) === String(threadId) && document.visibilityState === 'visible';
 }
 
-function showChatToast(item) {
-    if (isSameOpenChatThread(item.thread_id)) {
+function isChatPageOpen() {
+    const params = new URLSearchParams(window.location.search);
+    return (params.get('page') || '') === 'chat';
+}
+
+function supportsChatBrowserNotifications() {
+    return 'Notification' in window && (
+        window.isSecureContext ||
+        Notification.permission === 'granted' ||
+        /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?/i.test(window.location.origin)
+    );
+}
+
+function requestChatBrowserNotificationPermission() {
+    if (
+        !supportsChatBrowserNotifications() ||
+        chatNotificationPermissionRequested ||
+        Notification.permission !== 'default'
+    ) {
         return;
     }
 
-    let container = $('#chatToastContainer');
+    chatNotificationPermissionRequested = true;
+
+    try {
+        const permissionRequest = Notification.requestPermission();
+        if (permissionRequest && typeof permissionRequest.catch === 'function') {
+            permissionRequest.catch(function () { });
+        }
+    } catch (e) {
+        Notification.requestPermission(function () { });
+    }
+}
+
+function showChatBrowserNotification(item) {
+    if (!item || isChatPageOpen() || isSameOpenChatThread(item.thread_id)) {
+        return;
+    }
+
+    if (!supportsChatBrowserNotifications() || Notification.permission !== 'granted') {
+        return;
+    }
+
+    const threadId = item.thread_id || 0;
+    const senderName = item.name || 'Nová správa';
+    const text = item.message_text || 'Poslal(a) ti novú správu';
+    const shortText = text.length > 140 ? text.substring(0, 140) + '...' : text;
+    const photo = item.photo ? ('images/' + item.photo) : 'images/profile.jpg';
+    const threadUrl = '?page=chat&thread_id=' + encodeURIComponent(threadId);
+    const tag = 'chat-navbar-' + getChatNotificationKey(item);
+
+    try {
+        const notification = new Notification('Nová správa od ' + senderName, {
+            body: shortText,
+            icon: photo,
+            tag: tag,
+            requireInteraction: true
+        });
+
+        notification.onclick = function () {
+            window.focus();
+            window.location.href = threadUrl;
+            notification.close();
+        };
+
+    } catch (e) {
+        // Browser notifications are best-effort only.
+    }
+}
+
+function showChatToast(item) {
+    if (isChatPageOpen() || isSameOpenChatThread(item.thread_id)) {
+        return false;
+    }
+
+    let container = $('#chatNavbarToastContainer');
 
     if (!container.length) {
-        $('body').append('<div id="chatToastContainer" class="chat-toast-container"></div>');
-        container = $('#chatToastContainer');
+        $('body').append('<div id="chatNavbarToastContainer" class="chat-navbar-toast-container"></div>');
+        container = $('#chatNavbarToastContainer');
     }
 
     const photo = item.photo ? ('images/' + item.photo) : 'images/profile.jpg';
@@ -300,6 +371,7 @@ function showChatToast(item) {
     });
 
     toast.toast('show');
+    return true;
 }
 
 function loadChatNotifications() {
@@ -335,6 +407,7 @@ function loadChatNotifications() {
 
                     if (chatNotifInitialized && !seenChatNotificationKeys.has(key)) {
                         showChatToast(item);
+                        showChatBrowserNotification(item);
                     }
 
                     let photo = item.photo ? ('images/' + item.photo) : 'images/profile.jpg';
@@ -370,6 +443,10 @@ function loadChatNotifications() {
 }
 
 $(document).ready(function() {
+    $(document).on('click.chatNavbarNotifications keydown.chatNavbarNotifications mousedown.chatNavbarNotifications', function () {
+        requestChatBrowserNotificationPermission();
+    });
+
     loadChatNotifications();
     setInterval(loadChatNotifications, 10000);
 });

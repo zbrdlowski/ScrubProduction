@@ -227,7 +227,15 @@ function ordersDepartmentWorkflowStatus(mysqli $conn, string $department, array 
     }
 
     if ($matchedActiveStatuses) {
-        arsort($matchedActiveStatuses, SORT_NUMERIC);
+        // Chceme "bottleneck" status - ten NAJMENEJ pokrocily spomedzi
+        // polozok (najnizsi sort_order), pretoze prave ten este blokuje
+        // department od READY. arsort (zostupne) + array_key_first tu
+        // predtym vratal presny opak - najviac pokrocily status (napr.
+        // READY namiesto RTP_✗, ked bola v departmente zmiesana jedna
+        // hotova a jedna nehotova polozka) - preto sa department
+        // nespravne vyhodnocoval ako READY aj ked nie vsetky polozky boli
+        // hotove.
+        asort($matchedActiveStatuses, SORT_NUMERIC);
         return (string) array_key_first($matchedActiveStatuses);
     }
 

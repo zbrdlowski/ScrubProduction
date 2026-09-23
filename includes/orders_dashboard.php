@@ -163,9 +163,18 @@ $blockedRows = dash_rows($conn, "SELECT
 ");
 
 $countryMapRows = dash_rows($conn, "SELECT
-    COALESCE(oa_ship.country, oa_bill.country, '??') AS country,
+    COALESCE(
+      NULLIF(UPPER(TRIM(oa_ship.country)), ''),
+      NULLIF(UPPER(TRIM(oa_bill.country)), ''),
+      '??'
+    ) AS country,
+    COUNT(DISTINCT CASE WHEN os.code = 'CUSTOM' THEN o.id END) AS custom_cnt,
+    COUNT(DISTINCT CASE WHEN os.code = 'SHOPTET' THEN o.id END) AS shoptet_cnt,
+    COUNT(DISTINCT CASE WHEN os.code = 'EBAY' THEN o.id END) AS ebay_cnt,
+    COUNT(DISTINCT CASE WHEN os.code = 'MX_LOCKER' THEN o.id END) AS mxlocker_cnt,
     COUNT(DISTINCT o.id) AS cnt
   FROM orders o
+  INNER JOIN order_sources os ON os.id = o.source_id
   LEFT JOIN order_addresses oa_ship
     ON oa_ship.order_id = o.id AND UPPER(oa_ship.type) = 'SHIPPING'
   LEFT JOIN order_addresses oa_bill
@@ -189,11 +198,11 @@ foreach ($countryMapRows as $countryMapRow) {
   }
 }
 
-$dailyRows = dash_rows($conn, "SELECT DATE(order_date) AS d, COUNT(*) AS cnt
+$dailyRows = dash_rows($conn, "SELECT DATE(imported_at) AS d, COUNT(*) AS cnt
   FROM orders
-  WHERE order_date >= DATE_SUB(CURDATE(), INTERVAL 14 DAY)
+  WHERE imported_at >= DATE_SUB(CURDATE(), INTERVAL 14 DAY)
     AND COALESCE(UPPER(status), '') <> 'DELIVERED'
-  GROUP BY DATE(order_date)
+  GROUP BY DATE(imported_at)
   ORDER BY d ASC
 ");
 
@@ -335,6 +344,8 @@ function dashboardFlag(string $code): string
     $code = 'GB';
   if ($code === 'UM')
     $code = 'US';
+  if (!preg_match('/^[A-Z]{2}$/', $code))
+    return '<span style="white-space:nowrap;">' . htmlspecialchars($code) . '</span>';
 
   $lower = strtolower($code);
 
@@ -344,6 +355,12 @@ function dashboardFlag(string $code): string
          style="margin-right:5px; vertical-align:-1px;">
     ' . htmlspecialchars($code) . '
   </span>';
+}
+
+function dashboardCountOrBlank($value): string
+{
+  $count = (int) $value;
+  return $count > 0 ? (string) $count : '';
 }
 
 function dashboardInfoIcon(string $tooltip): string
@@ -512,11 +529,66 @@ function dashboardInfoIcon(string $tooltip): string
 
   .orders-world-map {
     position: relative;
+    flex: 1 1 360px;
     width: 100%;
-    height: 360px;
+    min-height: 360px;
+    height: auto;
     border: 1px solid rgba(255, 255, 255, .08);
     border-radius: 6px;
     background: #252f36;
+  }
+
+  .orders-countries-card .card-body {
+    padding: 0;
+  }
+
+  .orders-countries-table {
+    min-width: 460px;
+    margin-bottom: 0;
+    color: #d8dee3;
+    font-size: 12px;
+    table-layout: fixed;
+  }
+
+  .orders-countries-table th,
+  .orders-countries-table td {
+    padding: .45rem .55rem;
+    border-color: rgba(255, 255, 255, .08) !important;
+    vertical-align: middle;
+    white-space: nowrap;
+  }
+
+  .orders-countries-table thead th {
+    border-top: 0;
+    background: rgba(0, 0, 0, .08);
+    color: #adb5bd;
+    font-size: 11px;
+    font-weight: 700;
+  }
+
+  .orders-countries-table th:not(:first-child),
+  .orders-countries-table td:not(:first-child) {
+    text-align: right;
+  }
+
+  .orders-countries-table th:first-child,
+  .orders-countries-table td:first-child {
+    width: 94px;
+  }
+
+  .orders-countries-table tbody tr:last-child td {
+    border-bottom: 0;
+  }
+
+  .orders-country-total {
+    color: #fff;
+    font-weight: 700;
+  }
+
+  .orders-map-card .card-body {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
   }
 
   .jqvmap-label {
@@ -569,7 +641,8 @@ function dashboardInfoIcon(string $tooltip): string
     }
 
     .orders-world-map {
-      height: 280px;
+      flex-basis: 280px;
+      min-height: 280px;
     }
   }
 </style>
@@ -939,25 +1012,51 @@ function dashboardInfoIcon(string $tooltip): string
   </div>
 
   <div class="row align-items-stretch">
-    <div class="col-md-4 d-flex">
-      <div class="card card-info flex-fill">
+    <div class="col-lg-5 d-flex">
+      <div class="card card-info flex-fill orders-countries-card">
         <div class="card-header">
           <h3 class="card-title">Top Countries 30d</h3>
         </div>
 
         <div class="card-body">
-          <?php foreach ($countryRows as $r): ?>
-            <div class="d-flex justify-content-between align-items-center border-bottom py-1">
-              <span><?= dashboardFlag((string) $r['country']) ?></span>
-              <b><?= (int) $r['cnt'] ?></b>
-            </div>
-          <?php endforeach; ?>
+          <div class="table-responsive">
+            <table class="table table-sm orders-countries-table">
+              <thead>
+                <tr>
+                  <th scope="col">Country</th>
+                  <th scope="col">Custom</th>
+                  <th scope="col">Scrub Web</th>
+                  <th scope="col">Ebay</th>
+                  <th scope="col">MXLocker</th>
+                  <th scope="col">Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                <?php if (empty($countryRows)): ?>
+                  <tr>
+                    <td colspan="6" class="text-muted text-center py-3">No orders in the last 30 days.</td>
+                  </tr>
+                <?php else: ?>
+                  <?php foreach ($countryRows as $r): ?>
+                    <tr>
+                      <td><?= dashboardFlag((string) $r['country']) ?></td>
+                      <td><?= dashboardCountOrBlank($r['custom_cnt'] ?? 0) ?></td>
+                      <td><?= dashboardCountOrBlank($r['shoptet_cnt'] ?? 0) ?></td>
+                      <td><?= dashboardCountOrBlank($r['ebay_cnt'] ?? 0) ?></td>
+                      <td><?= dashboardCountOrBlank($r['mxlocker_cnt'] ?? 0) ?></td>
+                      <td class="orders-country-total"><?= dashboardCountOrBlank($r['cnt'] ?? 0) ?></td>
+                    </tr>
+                  <?php endforeach; ?>
+                <?php endif; ?>
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
     </div>
 
-    <div class="col-md-8 d-flex">
-      <div class="card card-success flex-fill">
+    <div class="col-lg-7 d-flex">
+      <div class="card card-success flex-fill orders-map-card">
         <div class="card-header">
           <h3 class="card-title">Orders by Country — Last 30 Days</h3>
         </div>

@@ -90,6 +90,24 @@ $postFloat = static function (string $key, array $existing): float {
   return array_key_exists($key, $_POST) ? (float) ($_POST[$key] ?? 0) : (float) ($existing[$key] ?? 0);
 };
 
+$bindSaveParams = static function (mysqli_stmt $stmt, string $types, array &$values): void {
+  $refs = [$types];
+  foreach ($values as &$value) {
+    $refs[] = &$value;
+  }
+  call_user_func_array([$stmt, 'bind_param'], $refs);
+};
+
+$saveParamType = static function ($value): string {
+  if (is_int($value)) {
+    return 'i';
+  }
+  if (is_float($value)) {
+    return 'd';
+  }
+  return 's';
+};
+
 $data = [
   'status' => $postString('status', $existing) ?: 'LEAD',
   'complexity_level' => $postInt('complexity_level', $existing, 1, 7),
@@ -159,6 +177,14 @@ if ($data['customer_email'] === '') {
 if ($data['customer_phone'] === '') {
   $data['customer_phone'] = trim((string) ($data['shipping_phone'] ?: $data['billing_phone']));
 }
+
+$postedCustomerCountry = $posted('customer_country');
+$addressCountry = $data['shipping_country'] ?: $data['billing_country'];
+if (!$postedCustomerCountry) {
+  $data['customer_country'] = $addressCountry;
+} elseif ($data['customer_country'] === null || $data['customer_country'] === '') {
+  $data['customer_country'] = $addressCountry;
+}
 if ($data['customer_country'] === null || $data['customer_country'] === '') {
   $data['customer_country'] = $data['shipping_country'] ?: $data['billing_country'];
 }
@@ -190,49 +216,82 @@ if ($data['status'] === 'DRAFT_X' && trim((string) ($existing['official_order_nu
   $autoAssignedOfficialNumber = customOrdersAssignOfficialNumber($conn, $orderId, 'SO', $userId);
 }
 
-$contactId = customOrdersUpsertContactDirectory($conn, $data);
+try {
+  $conn->begin_transaction();
 
-$availableColumns = customOrdersTableColumns($conn, 'custom_orders');
-$updateValues = $data;
-$updateValues['contact_directory_id'] = $contactId;
-$updateValues['updated_by'] = $userId;
+  $contactId = customOrdersUpsertContactDirectory($conn, $data);
 
-$assignments = [];
-$params = [':id' => $orderId];
-foreach ($updateValues as $column => $value) {
-  if (!isset($availableColumns[$column])) {
-    continue;
+  $availableColumns = customOrdersTableColumns($conn, 'custom_orders');
+  $updateValues = $data;
+  $updateValues['contact_directory_id'] = $contactId;
+  $updateValues['updated_by'] = $userId;
+
+  $assignments = [];
+  $types = '';
+  $values = [];
+  foreach ($updateValues as $column => $value) {
+    if (!isset($availableColumns[$column])) {
+      continue;
+    }
+    $assignments[] = '`' . $column . '` = ?';
+    $types .= $saveParamType($value);
+    $values[] = $value;
   }
-  $assignments[] = $column . ' = :' . $column;
-  $params[':' . $column] = $value;
-}
 
-if (!$assignments) {
-  throw new RuntimeException('No compatible custom_orders columns found for header save.');
-}
+  if (isset($availableColumns['updated_at'])) {
+    $assignments[] = 'updated_at = NOW()';
+  }
 
-$stmt = $pdo->prepare('UPDATE custom_orders SET ' . implode(",\n      ", $assignments) . ' WHERE id = :id');
-$saved = $stmt->execute($params);
-if (!$saved) {
-  throw new RuntimeException('Failed to save custom order header.');
-}
+  if (!$assignments) {
+    throw new RuntimeException('No compatible custom_orders columns found for header save.');
+  }
 
-$trackedFields = array_keys($data);
-$changes = customOrdersActivityCollectChanges($existing, $data, $trackedFields);
-customOrdersLog(
-  $conn,
-  $orderId,
-  'header_updated',
-  $userId,
-  [
-    'status' => $data['status'],
-    'changes' => $changes,
-  ],
-  $changes ? ('Updated ' . count($changes) . ' field(s)') : 'No visible field changes'
-);
-$flashMessage = 'Custom order saved.';
-if ($autoAssignedOfficialNumber !== '') {
-  $flashMessage .= ' Official SO assigned: ' . $autoAssignedOfficialNumber . '.';
+  $types .= 'i';
+  $values[] = $orderId;
+
+  $stmt = $conn->prepare('UPDATE custom_orders SET ' . implode(",\n      ", $assignments) . ' WHERE id = ? LIMIT 1');
+  if (!$stmt) {
+    throw new RuntimeException('Could not prepare custom order header save: ' . $conn->error);
+  }
+  $bindSaveParams($stmt, $types, $values);
+  if (!$stmt->execute()) {
+    $error = $stmt->error ?: $conn->error;
+    $stmt->close();
+    throw new RuntimeException('Failed to save custom order header: ' . $error);
+  }
+  $stmt->close();
+
+  if ($orderAlreadyExported) {
+    customOrdersSyncProductionHeader($conn, $orderId, (int) $existing['production_order_id'], $data, $userId);
+  }
+
+  $trackedFields = array_keys($data);
+  $changes = customOrdersActivityCollectChanges($existing, $data, $trackedFields);
+  customOrdersLog(
+    $conn,
+    $orderId,
+    'header_updated',
+    $userId,
+    [
+      'status' => $data['status'],
+      'changes' => $changes,
+      'production_synced' => $orderAlreadyExported,
+    ],
+    $changes ? ('Updated ' . count($changes) . ' field(s)') : 'No visible field changes'
+  );
+
+  $conn->commit();
+
+  $flashMessage = 'Custom order saved.';
+  if ($orderAlreadyExported) {
+    $flashMessage .= ' Production header synced.';
+  }
+  if ($autoAssignedOfficialNumber !== '') {
+    $flashMessage .= ' Official SO assigned: ' . $autoAssignedOfficialNumber . '.';
+  }
+  customOrdersFlash('success', $flashMessage);
+} catch (Throwable $e) {
+  $conn->rollback();
+  customOrdersFlash('danger', 'Custom order header was not saved: ' . $e->getMessage());
 }
-customOrdersFlash('success', $flashMessage);
 customOrdersRedirect($orderId);

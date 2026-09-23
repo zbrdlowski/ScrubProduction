@@ -23,12 +23,15 @@ if (!isset($conn) || !$conn instanceof mysqli) {
 }
 
 // ---------------------------------------------------------------------
-// Department ACL - 1:1 skopirovane z orders.php, aby export ukazoval
-// presne tie objednavky, ktore by dany pouzivatel videl aj v zozname.
+// Department ACL pre starsie linky/modal ponechavame nacitany, ale FedEx CSV
+// pre READY_TO_SHIP sa zamerne neriadi dropdownom zo zoznamu. Zoznam moze
+// vidiet vsetko; CSV sa deli striktne podla pracoviska prihlaseneho usera:
+// dpt=6 => Plastics/P, ostatni => Production/non-P.
 //
-// dept=-1  => "All Orders" - vedome obchadza ACL pre kohokolvek
+// dept=-1  => "All Orders" - vedome obchadza department ACL pre kohokolvek
 //             (napr. telefonat od zakaznika mimo vlastneho oddelenia,
-//             alebo hromadny export pre cely tim).
+//             alebo hromadny export pre cely tim). Shipping split Production
+//             vs Plastics stale plati podla session dpt.
 // dept=0   => Auto, podla vlastneho oddelenia pouzivatela
 // dept=N   => konkretne oddelenie - respektuje sa pre kohokolvek (rovnako ako
 //             v orders.php), kedze detail objednavky uz tiez nie je blokovany
@@ -36,16 +39,17 @@ if (!isset($conn) || !$conn instanceof mysqli) {
 // ---------------------------------------------------------------------
 $dpt = (int) ($_SESSION['dpt'] ?? 0);
 $allAccess = in_array($dpt, [1, 3, 4, 5, 7], true);
+$exportShippingDept = $dpt;
 
-if (isset($_GET['dept'])) {
-  // Explicitny parameter (najspolahlivejsi zdroj) - toto by mal posielat JS modal.
-  $fDept = (int) $_GET['dept'];
+if (isset($_GET['dept']) || isset($_POST['dept'])) {
+  // Explicitny parameter (najspolahlivejsi zdroj) - posiela ho JS modal aj POST formular.
+  $fDept = (int) ($_GET['dept'] ?? $_POST['dept']);
 } else {
-  // FALLBACK: ?dept= nebolo poslane (JS modal ho zatial neposiela).
+  // FALLBACK: ?dept= nebolo poslane.
   // Skusime ho vytiahnut z Referer hlavicky - teda z URL zoznamu objednavok,
   // odkial sa export otvoril (napr. .../index.php?page=orders&status=READY_TO_SHIP&dept=-1).
   // Pozor: Referer nemusi byt vzdy dostupny (blokovany prehliadacom/rozsirenim),
-  // takze toto je len docasna berlicka - spravne riesenie je poslat dept explicitne z JS.
+  // takze toto je len zalozny zdroj.
   $fDept = 0;
   $referer = $_SERVER['HTTP_REFERER'] ?? '';
   if ($referer !== '') {
@@ -59,27 +63,9 @@ if (isset($_GET['dept'])) {
   }
 }
 
-$deptFilter = [
-  2 => ['GRAPHICS'],
-  6 => ['PLASTICS'],
-  8 => ['SEATCOVER'],
-];
-$deptTypeFilter = [
-  9 => ['F'],
-];
-
-$effectiveDept = ($fDept !== 0) ? $fDept : $dpt;
-
-if ($fDept === -1) {
-  $aclCats = [];
-  $aclTypes = [];
-} elseif ($fDept > 0) {
-  $aclCats = $deptFilter[$fDept] ?? [];
-  $aclTypes = $deptTypeFilter[$fDept] ?? [];
-} else {
-  $aclCats = $deptFilter[$dpt] ?? [];
-  $aclTypes = $deptTypeFilter[$dpt] ?? [];
-}
+$effectiveDept = $dpt;
+$aclCats = [];
+$aclTypes = [];
 
 // Debug: otvor export_fedex_ready_to_ship.php?debug_acl=1 (pripadne aj &dept=-1)
 // - vypise, co presne skript vyhodnotil, bez generovania CSV. Uzitocne na overenie,
@@ -97,6 +83,8 @@ if (isset($_GET['debug_acl'])) {
   echo "Referer: " . ($_SERVER['HTTP_REFERER'] ?? '(ziadny)') . "\n";
   echo "resolved fDept: $fDept\n";
   echo "effectiveDept: $effectiveDept\n";
+  echo "exportShippingDept: $exportShippingDept\n";
+  echo "shippingScope: " . (ordersShippingScopeIsPlastics($exportShippingDept) ? 'PLASTICS_WITH_P' : 'PRODUCTION_WITHOUT_P') . "\n";
   echo "aclCats: " . json_encode($aclCats) . "\n";
   echo "aclTypes: " . json_encode($aclTypes) . "\n";
   $conn->close();
@@ -289,13 +277,16 @@ function resolveUsState(array $row): string
   return '';
 }
 
-function fetchReadyToShipOrders(mysqli $conn, array $aclCats, array $aclTypes, string $fitWhere, bool $lockRows = false): array
+function fetchReadyToShipOrders(mysqli $conn, array $aclCats, array $aclTypes, string $fitWhere, string $shippingScopeWhere, bool $lockRows = false): array
 {
   [$aclClauses, $aclTypesStr, $aclParams] = buildAclWhere($conn, $aclCats, $aclTypes, $fitWhere);
 
   $where = ["o.status = 'READY_TO_SHIP'"];
   foreach ($aclClauses as $c) {
     $where[] = $c;
+  }
+  if ($shippingScopeWhere !== '') {
+    $where[] = $shippingScopeWhere;
   }
   $whereSql = implode(' AND ', $where);
 
@@ -633,7 +624,8 @@ try {
     $conn->begin_transaction();
     $exportTransaction = true;
   }
-  $orders = fetchReadyToShipOrders($conn, $aclCats, $aclTypes, $fitWhere, !$isPreview);
+  $shippingScopeWhere = ordersShippingScopeWhereSql($exportShippingDept, 'o');
+  $orders = fetchReadyToShipOrders($conn, $aclCats, $aclTypes, $fitWhere, $shippingScopeWhere, !$isPreview);
   $orders = applyMultishippingAggregates($conn, $orders);
   $defaultRows = buildExportRows($orders, $MATERIAL_MAP, $MATERIAL_DEFAULT, $WEIGHT_MAP, $WEIGHT_DEFAULT);
 } catch (Throwable $e) {

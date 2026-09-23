@@ -249,9 +249,55 @@ function ordersPlasticsGateConfirmedStatuses(mysqli $conn): array
     return array_keys($statuses);
 }
 
+function ordersPlasticsGateOptionIsPositive($value): bool
+{
+    if (is_array($value) || is_object($value) || $value === null) {
+        return false;
+    }
+
+    $value = trim((string)$value);
+    if ($value === '') {
+        return false;
+    }
+
+    $negativeValues = ['no', 'nie', 'ne', 'nein', 'non', 'false', '0', 'n/a', '-', 'x'];
+    return !in_array(mb_strtolower($value, 'UTF-8'), $negativeValues, true);
+}
+
+function ordersPlasticsGateIsDraftOptionKey(string $key): bool
+{
+    $normalized = mb_strtolower(trim($key), 'UTF-8');
+    $normalized = preg_replace('/[\s_]+/u', '-', $normalized);
+    $normalized = preg_replace('/-+/', '-', (string)$normalized);
+
+    return in_array($normalized, ['draft', 'draft-before-production'], true);
+}
+
+function ordersPlasticsGateItemHasDraftBeforeProduction(array $item): bool
+{
+    $options = json_decode((string)($item['options_json'] ?? ''), true);
+    if (!is_array($options)) {
+        return false;
+    }
+
+    foreach ($options as $key => $value) {
+        if (!is_string($key) || !ordersPlasticsGateIsDraftOptionKey($key)) {
+            continue;
+        }
+
+        return ordersPlasticsGateOptionIsPositive($value);
+    }
+
+    return false;
+}
+
 function ordersPlasticsGateDefaultStatusForItem(mysqli $conn, array $item): string
 {
     $department = ordersNormalizeDepartmentCode((string)($item['item_type_code'] ?? ''));
+    if ($department === 'G' && ordersPlasticsGateItemHasDraftBeforeProduction($item)) {
+        return 'DRAFT_✗';
+    }
+
     $ignored = ordersPlasticsGateIgnoredDefaultStatusMap($conn);
     $policyStatuses = ordersPlasticsGateNewPolicyStatuses($conn, $department);
     $policyStatusMap = array_fill_keys($policyStatuses, true);
