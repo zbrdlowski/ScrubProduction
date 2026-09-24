@@ -238,6 +238,22 @@ function dashboard_is_positive_option($value): bool
     return false;
   return in_array($normalized[0], ['y', 'a', 'o', 'j', 's', '1'], true);
 }
+function dashboard_seat_cover_option_is_filled($value): bool
+{
+  if (is_array($value) || is_object($value) || $value === null)
+    return false;
+  $normalized = mb_strtolower(trim((string) $value), 'UTF-8');
+  if ($normalized === '')
+    return false;
+  return !in_array($normalized, ['no', 'nie', 'nein', 'non', 'false', '0', 'n/a', '-', 'x'], true);
+}
+function dashboard_seat_cover_has_waterproof_seams(?string $optionsJson): bool
+{
+  $options = json_decode((string) $optionsJson, true);
+  if (!is_array($options))
+    return false;
+  return dashboard_seat_cover_option_is_filled($options['waterproof-seams'] ?? null);
+}
 function dashboard_options_indicate_fitting(?string $optionsJson): bool
 {
   $options = json_decode((string) $optionsJson, true);
@@ -401,14 +417,18 @@ function dashboard_department_status_blocks(mysqli $conn, array $departments, ar
 {
   $blocks = [];
   foreach ($departments as $department => $_meta)
-    $blocks[$department] = ['total' => 0, 'statuses' => [], 'ready' => 0];
-  $rows = dashboard_rows($conn, "SELECT o.id AS order_id, oi.item_type_code, oi.status, oi.sku, oi.custom_label, oi.options_json FROM orders o INNER JOIN order_items oi ON oi.order_id = o.id AND oi.deleted_at IS NULL WHERE " . dashboard_active_order_where());
+    $blocks[$department] = ['total' => 0, 'statuses' => [], 'ready' => 0, 'waterproof_seams' => 0];
+  $rows = dashboard_rows($conn, "SELECT o.id AS order_id, oi.item_type_code, oi.status, oi.sku, oi.custom_label, oi.options_json, oi.qty FROM orders o INNER JOIN order_items oi ON oi.order_id = o.id AND oi.deleted_at IS NULL WHERE " . dashboard_active_order_where());
   $itemsByOrderDepartment = [];
   foreach ($rows as $row) {
     $orderId = (int) ($row['order_id'] ?? 0);
     if ($orderId <= 0)
       continue;
-    foreach (dashboard_item_departments_for_status($row) as $department) {
+    $rowDepartments = dashboard_item_departments_for_status($row);
+    if (in_array('S', $rowDepartments, true) && dashboard_seat_cover_has_waterproof_seams((string) ($row['options_json'] ?? ''))) {
+      $blocks['S']['waterproof_seams'] += max(1, (int) ($row['qty'] ?? 1));
+    }
+    foreach ($rowDepartments as $department) {
       if (!isset($blocks[$department]))
         continue;
       $itemsByOrderDepartment[$orderId][$department][] = ['status' => strtoupper(trim((string) ($row['status'] ?? 'NEW'))) ?: 'NEW'];
@@ -540,7 +560,7 @@ $updatedAt = date('d.m.Y H:i');
       --text: #f4f7f8;
       --muted: #cbd2d6;
       --green: #10e015;
-      --green-deep: #10e015;
+      --green-deep: #0b8f3a;
       --cyan: #2ed1d2;
       --cyan-deep: #149096;
       --deadline: #b48607;
@@ -548,7 +568,7 @@ $updatedAt = date('d.m.Y H:i');
       --red: #ff1010;
       --red-deep: #9a160c;
       --yellow: #b4a90b;
-      --yellow-deep: #b4a90b;
+      --yellow-deep: #756f06;
     }
 
     * {
@@ -932,10 +952,10 @@ $updatedAt = date('d.m.Y H:i');
     }
 
     .performance-list {
-      display: flex;
-      flex-direction: column;
-      justify-content: space-evenly;
-      gap: clamp(4px, .35vw, 7px);
+      display: grid;
+      grid-template-rows: repeat(4, minmax(0, 1fr));
+      align-items: stretch;
+      gap: clamp(3px, .25vw, 5px);
       min-height: 0;
       overflow: hidden;
       padding-top: 0;
@@ -947,6 +967,7 @@ $updatedAt = date('d.m.Y H:i');
       gap: clamp(7px, .7vw, 13px);
       min-width: 0;
       min-height: 0;
+      height: 100%;
       flex-wrap: nowrap;
     }
 
@@ -970,7 +991,7 @@ $updatedAt = date('d.m.Y H:i');
 
     .bar {
       flex: 1 1 auto;
-      height: clamp(15px, 1.15vw, 22px);
+      height: min(100%, clamp(28px, 2.65vw, 46px));
       display: flex;
       background: rgba(255, 255, 255, .05);
       min-width: 100px;
@@ -1020,6 +1041,7 @@ $updatedAt = date('d.m.Y H:i');
 
     .bar .active {
       flex: 0 0 var(--active);
+      box-shadow: inset 2px 0 0 rgba(0, 0, 0, .22);
     }
 
     .bar span:last-child {
@@ -1179,6 +1201,12 @@ $updatedAt = date('d.m.Y H:i');
               <?php endforeach; ?>
             <?php else: ?>
               <div class="empty">No active orders</div>
+            <?php endif; ?>
+            <?php if ($department['key'] === 'S'): ?>
+              <div class="status-row">
+                <span class="status-name">Waterproof Seams</span>
+                <span class="status-count"><?php echo (int) ($block['waterproof_seams'] ?? 0); ?></span>
+              </div>
             <?php endif; ?>
           </div>
           <div class="ready-row">

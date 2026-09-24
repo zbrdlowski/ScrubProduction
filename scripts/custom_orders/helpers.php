@@ -37,6 +37,7 @@ function customOrdersRedirectContextParams(): array
     'date_from',
     'date_to',
     'help_lang',
+    'detail',
   ];
 
   $sources = [];
@@ -101,6 +102,14 @@ function customOrdersRedirectContextParams(): array
             continue 2;
           }
           break;
+        case 'detail':
+          $value = strtolower($value);
+          if (!in_array($value, ['1', 'true', 'yes', 'full'], true)) {
+            unset($params[$key]);
+            continue 2;
+          }
+          $value = '1';
+          break;
       }
 
       $params[$key] = $value;
@@ -110,14 +119,21 @@ function customOrdersRedirectContextParams(): array
   return $params;
 }
 
-function customOrdersRedirect(int $orderId = 0, int $focusNoteId = 0): void
+function customOrdersRedirect(int $orderId = 0, int $focusNoteId = 0, array $extraParams = [], bool $preserveContext = true): void
 {
-  $params = ['page' => 'custom_orders'] + customOrdersRedirectContextParams();
+  $params = ['page' => 'custom_orders'] + ($preserveContext ? customOrdersRedirectContextParams() : []);
   if ($orderId > 0) {
     $params['custom_order_id'] = (string) $orderId;
   }
   if ($orderId > 0 && $focusNoteId > 0) {
     $params['focus_note_id'] = (string) $focusNoteId;
+  }
+  foreach ($extraParams as $key => $value) {
+    if ($value === null || $value === '') {
+      unset($params[$key]);
+      continue;
+    }
+    $params[$key] = (string) $value;
   }
 
   header('Location: ../../index.php?' . http_build_query($params));

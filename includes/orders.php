@@ -1324,6 +1324,29 @@ if ($fItemFeature === 'grip') {
 
 $whereSql = $where ? ('WHERE ' . implode(' AND ', $where)) : '';
 
+$ordersFilteredTotal = null;
+$ordersCountSql = "SELECT COUNT(DISTINCT o.id) AS result_count
+FROM orders o
+JOIN order_sources os ON os.id = o.source_id
+LEFT JOIN customers cu ON cu.id = o.customer_id
+LEFT JOIN order_addresses oa_ship
+  ON oa_ship.order_id = o.id AND UPPER(oa_ship.type) = 'SHIPPING'
+LEFT JOIN order_addresses oa_bill
+  ON oa_bill.order_id = o.id AND UPPER(oa_bill.type) = 'BILLING'
+$whereSql";
+
+$ordersCountStmt = $conn->prepare($ordersCountSql);
+if ($ordersCountStmt) {
+  if ($types !== '') {
+    $ordersCountStmt->bind_param($types, ...$params);
+  }
+  if ($ordersCountStmt->execute()) {
+    $ordersCountRow = $ordersCountStmt->get_result()->fetch_assoc();
+    $ordersFilteredTotal = (int) ($ordersCountRow['result_count'] ?? 0);
+  }
+  $ordersCountStmt->close();
+}
+
 $sql = " SELECT
   o.id,
   o.customer_id,
@@ -1560,6 +1583,9 @@ $orderIds = [];
 while ($row = $res->fetch_assoc()) {
   $orderRows[] = $row;
   $orderIds[] = (int) ($row['id'] ?? 0);
+}
+if ($ordersFilteredTotal === null) {
+  $ordersFilteredTotal = count($orderRows);
 }
 
 try {
@@ -2839,6 +2865,13 @@ $deptOptions = [
       .active-filter-pill .pill-value {
         font-weight: 600;
       }
+
+      .active-filter-pill.pill-results {
+        background: rgba(23, 162, 184, .15);
+        border-color: rgba(23, 162, 184, .5);
+        color: #7ddff0;
+      }
+
       .active-filter-pill.pill-action {
   background: rgba(40, 167, 69, .15);
   border: 1px solid rgba(40, 167, 69, .5);
@@ -3044,6 +3077,10 @@ $deptOptions = [
               <span class="pill-value">Import EOD</span>
             </button>
           <?php endif; ?>
+          <span class="active-filter-pill pill-results" title="Total matching orders">
+            <span class="pill-label">Results:</span>
+            <span class="pill-value"><?= number_format((int) $ordersFilteredTotal, 0, '.', ' ') ?></span>
+          </span>
         <?php else: ?>
           <span class="text-muted small">No filters active</span>
         <?php endif; ?>

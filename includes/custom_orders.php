@@ -161,6 +161,11 @@ if ($dateToFilter !== '' && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $dateToFilter))
 $selectedOrderId = (int) ($_GET['custom_order_id'] ?? 0);
 $editItemId = (int) ($_GET['edit_item_id'] ?? 0);
 $focusNoteId = max(0, (int) ($_GET['focus_note_id'] ?? 0));
+$customOrdersFullDetailRequested = in_array(
+  strtolower(trim((string) ($_GET['detail'] ?? ''))),
+  ['1', 'true', 'yes', 'full'],
+  true
+);
 $builderType = strtoupper(trim((string) ($_GET['builder_type'] ?? '')));
 
 $listRows = [];
@@ -620,7 +625,7 @@ function customOrderOptionsWithCurrent(array $options, ?string $currentValue): a
 
 function customOrderBuildUrl(?int $orderId = null, array $extraParams = [], bool $includeOrder = true): string
 {
-  global $tabFilter, $draftStatusFilter, $query, $customOrderHelpLang, $editItemId, $difficultyFilter, $ownerFilter, $countryFilter, $sourceFilter, $paymentFilter, $shippingFilter, $itemTypeFilter, $dateFromFilter, $dateToFilter;
+  global $tabFilter, $draftStatusFilter, $query, $customOrderHelpLang, $editItemId, $difficultyFilter, $ownerFilter, $countryFilter, $sourceFilter, $paymentFilter, $shippingFilter, $itemTypeFilter, $dateFromFilter, $dateToFilter, $customOrdersFullDetailRequested;
 
   $params = ['page' => 'custom_orders'];
   if ($tabFilter !== 'all') {
@@ -661,6 +666,9 @@ function customOrderBuildUrl(?int $orderId = null, array $extraParams = [], bool
   }
   if ($customOrderHelpLang !== '') {
     $params['help_lang'] = $customOrderHelpLang;
+  }
+  if (!empty($customOrdersFullDetailRequested)) {
+    $params['detail'] = '1';
   }
   if ($includeOrder && $orderId !== null && $orderId > 0) {
     $params['custom_order_id'] = $orderId;
@@ -1307,15 +1315,16 @@ if (!isset(customOrdersAllowedItemTypes()[$builderType])) {
   $builderType = $editItem ? strtoupper((string) ($editItem['item_type_code'] ?? '')) : '';
 }
 
-// The regular page always stays in list mode. A selected id is opened below its
-// table row through scripts/custom_orders/get_order_detail.php, just like Orders.
+// Regular browsing stays in list mode. A selected id is opened below its table
+// row unless detail=1 explicitly asks for the full-page editor.
 $customOrdersDetailRequest = defined('CUSTOM_ORDERS_DETAIL_REQUEST') && CUSTOM_ORDERS_DETAIL_REQUEST;
-$customOrdersAutoOpenId = (!$customOrdersDetailRequest && $selectedOrder)
+$customOrdersFullPageDetail = !$customOrdersDetailRequest && $customOrdersFullDetailRequested && $selectedOrder !== null;
+$customOrdersAutoOpenId = (!$customOrdersDetailRequest && !$customOrdersFullPageDetail && $selectedOrder)
   ? (int) ($selectedOrder['id'] ?? 0)
   : 0;
 $customOrdersAutoEditItemId = !$customOrdersDetailRequest ? $editItemId : 0;
 $customOrdersAutoFocusNoteId = !$customOrdersDetailRequest ? $focusNoteId : 0;
-if (!$customOrdersDetailRequest) {
+if (!$customOrdersDetailRequest && !$customOrdersFullPageDetail) {
   $selectedOrder = null;
   $editItem = null;
 }
@@ -3670,8 +3679,8 @@ if (!$customOrdersDetailRequest) {
             <input type="file" name="email_file" accept=".eml,message/rfc822,text/plain" class="custom-order-email-import-input" onchange="if (this.files && this.files.length) this.form.submit();">
           </label>
         </form>
-        <form method="post" action="scripts/custom_orders/create_order.php" class="mb-0">
-          <button type="submit" class="btn btn-success">New Custom Lead</button>
+        <form method="post" action="scripts/custom_orders/create_order.php" class="mb-0" data-new-custom-lead-form>
+          <button type="submit" class="btn btn-success" data-new-custom-lead-button>New Custom Lead</button>
         </form>
       </div>
     <?php else: ?>
@@ -4404,9 +4413,15 @@ if (!$customOrdersDetailRequest) {
                   <i class="fas fa-save mr-1"></i>Status
                 </button>
               <?php endif; ?>
-              <button type="button" class="btn btn-outline-light btn-sm btn-close-custom-order-detail" data-order-id="<?= (int) $selectedOrder['id'] ?>">
-                <i class="fas fa-times"></i>
-              </button>
+              <?php if ($customOrdersDetailRequest): ?>
+                <button type="button" class="btn btn-outline-light btn-sm btn-close-custom-order-detail" data-order-id="<?= (int) $selectedOrder['id'] ?>">
+                  <i class="fas fa-times"></i>
+                </button>
+              <?php else: ?>
+                <a href="<?= h(customOrderBuildUrl(null, ['custom_order_id' => null, 'edit_item_id' => null, 'focus_note_id' => null, 'detail' => null], false)) ?>" class="btn btn-outline-light btn-sm" title="Back to list">
+                  <i class="fas fa-times"></i>
+                </a>
+              <?php endif; ?>
             </div>
           </div>
 
@@ -5482,6 +5497,29 @@ if (!$customOrdersDetailRequest) {
     var customOrdersCanManage = <?= $customOrdersCanManage ? 'true' : 'false' ?>;
     var customItemWorkflowStatusEnabled = false;
     var customOrdersHelpLang = <?= json_encode($customOrderHelpLang === 'en' ? 'en' : 'sk', JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
+
+    function initializeNewCustomLeadGuard(root) {
+      (root || document).querySelectorAll('form[data-new-custom-lead-form]').forEach(function (form) {
+        if (form.dataset.newCustomLeadGuardBound === '1') return;
+        form.dataset.newCustomLeadGuardBound = '1';
+        form.addEventListener('submit', function (event) {
+          if (form.dataset.submitting === '1') {
+            event.preventDefault();
+            return false;
+          }
+
+          form.dataset.submitting = '1';
+          var button = form.querySelector('[data-new-custom-lead-button]') || form.querySelector('button[type="submit"]');
+          if (button) {
+            button.disabled = true;
+            button.classList.remove('btn-success');
+            button.classList.add('btn-warning');
+            button.innerHTML = '<span class="spinner-border spinner-border-sm mr-1" role="status" aria-hidden="true"></span>Opening new lead...';
+          }
+          return true;
+        });
+      });
+    }
 
     function confirmCustomOrderProductionExport(form) {
       var orderNumber = String(form.getAttribute('data-export-order-number') || 'this custom order').trim();
@@ -7343,7 +7381,7 @@ if (!$customOrdersDetailRequest) {
       });
     }
 
-    function openCustomOrderDetail(orderId, editItemId, focusNoteId) {
+    function openCustomOrderDetail(orderId, editItemId, focusNoteId, shouldScroll) {
       var row = document.querySelector('.custom-order-table-row[data-order-id="' + orderId + '"]');
       var wrap = document.getElementById('custom-detail-' + orderId);
       if (!row || !wrap) return;
@@ -7359,6 +7397,7 @@ if (!$customOrdersDetailRequest) {
         if (loadedTable) loadedTable.classList.add('table-has-open');
         if (window.jQuery) window.jQuery(wrap).stop(true, true).slideDown(120);
         else wrap.style.display = 'block';
+        if (shouldScroll) row.scrollIntoView({ behavior: 'smooth', block: 'center' });
         if (focusNoteId) {
           var loadedNotesPanel = wrap.querySelector('#custom-order-notes-panel');
           if (loadedNotesPanel) loadedNotesPanel.setAttribute('data-focus-note-id', String(focusNoteId));
@@ -7403,6 +7442,7 @@ if (!$customOrdersDetailRequest) {
           wrap.dataset.loaded = '1';
           initializeInjectedDetail(wrap);
           wrap.style.minHeight = '';
+          if (shouldScroll) wrap.scrollIntoView({ behavior: 'smooth', block: 'start' });
         })
         .catch(function (error) {
           wrap.style.minHeight = '';
@@ -7529,7 +7569,7 @@ if (!$customOrdersDetailRequest) {
     var autoEditItemId = <?= (int) $customOrdersAutoEditItemId ?>;
     var autoFocusNoteId = <?= (int) $customOrdersAutoFocusNoteId ?>;
     if (autoOpenOrderId > 0) {
-      window.setTimeout(function () { openCustomOrderDetail(autoOpenOrderId, autoEditItemId, autoFocusNoteId); }, 0);
+      window.setTimeout(function () { openCustomOrderDetail(autoOpenOrderId, autoEditItemId, autoFocusNoteId, true); }, 0);
     }
 
     document.querySelectorAll('form[action="scripts/custom_orders/save_item.php"]').forEach(function (form) {
@@ -7591,6 +7631,7 @@ if (!$customOrdersDetailRequest) {
     initializeCustomOfficialNumberEditors(document);
     initializeCustomDetailRefreshForms(document);
     initializeCustomInlineStatusSelects(document);
+    initializeNewCustomLeadGuard(document);
     applyCustomOrdersAccess(document);
     initializeCustomCollapsiblePanels(document);
     initializeCustomNoteReplies(document);

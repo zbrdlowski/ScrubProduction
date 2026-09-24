@@ -952,6 +952,181 @@ function orderDetailLoadCustomFinancialBreakdownFallback(mysqli $conn, array $so
   ];
 }
 
+function orderDetailFetchCustomOrderIdByInt(mysqli $conn, string $sql, int $value): int
+{
+  $stmt = $conn->prepare($sql);
+  if (!$stmt) {
+    return 0;
+  }
+
+  $stmt->bind_param('i', $value);
+  $stmt->execute();
+  $row = $stmt->get_result()->fetch_assoc();
+  $stmt->close();
+
+  return $row ? (int) ($row['id'] ?? 0) : 0;
+}
+
+function orderDetailFetchCustomOrderIdByString(mysqli $conn, string $sql, string $value): int
+{
+  $value = trim($value);
+  if ($value === '') {
+    return 0;
+  }
+
+  $stmt = $conn->prepare($sql);
+  if (!$stmt) {
+    return 0;
+  }
+
+  $stmt->bind_param('s', $value);
+  $stmt->execute();
+  $row = $stmt->get_result()->fetch_assoc();
+  $stmt->close();
+
+  return $row ? (int) ($row['id'] ?? 0) : 0;
+}
+
+function orderDetailResolveCustomOrderId(mysqli $conn, array $order, int $productionOrderId, array $sourceMeta): int
+{
+  $columns = orderDetailTableColumns($conn, 'custom_orders');
+  if (!$columns || !in_array('id', $columns, true)) {
+    return 0;
+  }
+
+  $sourceCode = strtoupper(trim((string) ($order['source_code'] ?? '')));
+  $sourceMetaCustomId = (int) ($sourceMeta['custom_order_id'] ?? 0);
+  if ($sourceMetaCustomId > 0) {
+    $customOrderId = orderDetailFetchCustomOrderIdByInt(
+      $conn,
+      'SELECT id FROM custom_orders WHERE id = ? LIMIT 1',
+      $sourceMetaCustomId
+    );
+    if ($customOrderId > 0) {
+      return $customOrderId;
+    }
+  }
+
+  if ($productionOrderId > 0 && in_array('production_order_id', $columns, true)) {
+    $customOrderId = orderDetailFetchCustomOrderIdByInt(
+      $conn,
+      'SELECT id FROM custom_orders WHERE production_order_id = ? ORDER BY id DESC LIMIT 1',
+      $productionOrderId
+    );
+    if ($customOrderId > 0) {
+      return $customOrderId;
+    }
+  }
+
+  $orderNumber = trim((string) ($order['order_number'] ?? ''));
+  if ($sourceCode === 'CUSTOM' && $orderNumber !== '' && in_array('official_order_number', $columns, true)) {
+    $customOrderId = orderDetailFetchCustomOrderIdByString(
+      $conn,
+      'SELECT id FROM custom_orders WHERE UPPER(TRIM(official_order_number)) = UPPER(TRIM(?)) ORDER BY id DESC LIMIT 1',
+      $orderNumber
+    );
+    if ($customOrderId > 0) {
+      return $customOrderId;
+    }
+  }
+
+  $externalOrderId = trim((string) ($order['external_order_id'] ?? ''));
+  if ($sourceCode === 'CUSTOM' && $externalOrderId !== '' && in_array('internal_code', $columns, true)) {
+    $customOrderId = orderDetailFetchCustomOrderIdByString(
+      $conn,
+      'SELECT id FROM custom_orders WHERE UPPER(TRIM(internal_code)) = UPPER(TRIM(?)) ORDER BY id DESC LIMIT 1',
+      $externalOrderId
+    );
+    if ($customOrderId > 0) {
+      return $customOrderId;
+    }
+  }
+
+  return 0;
+}
+
+function orderDetailLoadCustomOrderNotes(mysqli $conn, int $customOrderId): array
+{
+  if ($customOrderId <= 0) {
+    return [];
+  }
+
+  $columns = orderDetailTableColumns($conn, 'custom_order_notes');
+  if (!$columns || !in_array('id', $columns, true) || !in_array('custom_order_id', $columns, true) || !in_array('note_body', $columns, true)) {
+    return [];
+  }
+
+  $hasCreatedBy = in_array('created_by', $columns, true);
+  $hasCreatedAt = in_array('created_at', $columns, true);
+  $select = [
+    'con.id',
+    'con.custom_order_id',
+    in_array('parent_note_id', $columns, true) ? 'con.parent_note_id' : 'NULL AS parent_note_id',
+    in_array('note_type', $columns, true) ? 'con.note_type' : "'INTERNAL' AS note_type",
+    'con.note_body',
+    $hasCreatedBy ? 'con.created_by' : 'NULL AS created_by',
+    $hasCreatedAt ? 'con.created_at' : 'NULL AS created_at',
+    in_array('updated_by', $columns, true) ? 'con.updated_by' : 'NULL AS updated_by',
+    in_array('updated_at', $columns, true) ? 'con.updated_at' : 'NULL AS updated_at',
+    in_array('deleted_by', $columns, true) ? 'con.deleted_by' : 'NULL AS deleted_by',
+    in_array('deleted_at', $columns, true) ? 'con.deleted_at' : 'NULL AS deleted_at',
+    $hasCreatedBy ? "TRIM(CONCAT_WS(' ', e.firstname, e.lastname)) AS author_name" : "'' AS author_name",
+    $hasCreatedBy ? 'e.photo AS author_photo' : "'' AS author_photo",
+  ];
+
+  $join = $hasCreatedBy ? 'LEFT JOIN employees e ON e.id = con.created_by' : '';
+  $orderBy = $hasCreatedAt ? 'con.created_at ASC, con.id ASC' : 'con.id ASC';
+  $sql = '
+    SELECT ' . implode(",\n      ", $select) . "
+    FROM custom_order_notes con
+    {$join}
+    WHERE con.custom_order_id = ?
+    ORDER BY {$orderBy}
+  ";
+
+  $stmt = $conn->prepare($sql);
+  if (!$stmt) {
+    return [];
+  }
+
+  $stmt->bind_param('i', $customOrderId);
+  $stmt->execute();
+  $res = $stmt->get_result();
+  $notes = [];
+  while ($row = $res->fetch_assoc()) {
+    $notes[] = $row;
+  }
+  $stmt->close();
+
+  return $notes;
+}
+
+function orderDetailNoteAuthorAvatar(array $note): string
+{
+  $authorName = trim((string) ($note['author_name'] ?? ''));
+  if ($authorName === '') {
+    $createdBy = (int) ($note['created_by'] ?? 0);
+    $authorName = $createdBy > 0 ? ('Employee #' . $createdBy) : 'System';
+  }
+
+  $photo = trim((string) ($note['author_photo'] ?? $note['photo'] ?? ''));
+  if ($photo !== '') {
+    return '<img src="images/' . h($photo) . '" class="custom-note-author-avatar" alt="' . h($authorName) . '" title="' . h($authorName) . '">';
+  }
+
+  $initials = '';
+  foreach (preg_split('/\\s+/u', $authorName) ?: [] as $namePart) {
+    if ($namePart !== '') {
+      $initials .= mb_strtoupper(mb_substr($namePart, 0, 1));
+    }
+    if (mb_strlen($initials) >= 2) {
+      break;
+    }
+  }
+
+  return '<span class="custom-note-author-avatar custom-note-author-fallback" title="' . h($authorName) . '">' . h($initials !== '' ? $initials : '?') . '</span>';
+}
+
 function orderDetailCustomItemFallbackForItem(array $fallbacks, array $item): array
 {
   $lineNo = (int) ($item['line_no'] ?? 0);
@@ -1442,6 +1617,18 @@ if (!is_array($sourceMeta)) {
 }
 
 $isCustomOrder = strtoupper(trim((string) ($order['source_code'] ?? ''))) === 'CUSTOM';
+$linkedCustomOrderId = $isCustomOrder ? orderDetailResolveCustomOrderId($conn, $order, $orderId, $sourceMeta) : 0;
+$customOrderAppendOnlyNotes = orderDetailLoadCustomOrderNotes($conn, $linkedCustomOrderId);
+$customOrderNoteAuditViewerEmployeeIds = [3, 5];
+$canViewCustomOrderNoteAudit = (int) ($_SESSION['permission'] ?? 0) >= 900
+  || in_array((int) ($_SESSION['user_id'] ?? 0), $customOrderNoteAuditViewerEmployeeIds, true);
+$visibleCustomOrderNotes = array_values(array_filter(
+  $customOrderAppendOnlyNotes,
+  static function (array $note) use ($canViewCustomOrderNoteAudit): bool {
+    return $canViewCustomOrderNoteAudit || empty($note['deleted_at']);
+  }
+));
+$appendOnlyNotesMessageCount = count($visibleCustomOrderNotes);
 $customFinancialBreakdown = [];
 if ($isCustomOrder) {
   if (is_array($sourceMeta['financial_breakdown'] ?? null)) {
@@ -4095,6 +4282,242 @@ ob_start();
     font-size: 12px;
   }
 
+  .custom-orders-panel {
+    border: 1px solid #495057;
+    border-radius: 8px;
+    background: #20252b;
+  }
+
+  .custom-orders-panel .panel-body {
+    padding: 14px;
+  }
+
+  .custom-collapsible-panel {
+    overflow: hidden;
+  }
+
+  .custom-collapsible-toggle {
+    display: flex;
+    width: 100%;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    padding: 12px 14px;
+    border: 0;
+    background: rgba(60, 141, 188, .08);
+    color: #f1f4f7;
+    text-align: left;
+    cursor: pointer;
+  }
+
+  .custom-collapsible-toggle:hover,
+  .custom-collapsible-toggle:focus {
+    outline: none;
+    background: rgba(60, 141, 188, .16);
+  }
+
+  .custom-collapsible-toggle-title,
+  .custom-collapsible-toggle-meta {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .custom-collapsible-toggle-title {
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: .05em;
+    text-transform: uppercase;
+  }
+
+  .custom-collapsible-toggle-meta {
+    margin-left: auto;
+    color: #aeb8c2;
+    font-size: 12px;
+  }
+
+  .custom-collapsible-toggle-chevron {
+    transition: transform .18s ease;
+  }
+
+  .custom-collapsible-toggle[aria-expanded="true"] .custom-collapsible-toggle-chevron {
+    transform: rotate(180deg);
+  }
+
+  .custom-collapsible-panel.is-expanded .custom-collapsible-toggle {
+    border-bottom: 1px solid rgba(255, 255, 255, .10);
+  }
+
+  .custom-collapsible-body[hidden] {
+    display: none !important;
+  }
+
+  .order-production-notes-panel {
+    margin: 14px 0 16px;
+  }
+
+  .order-production-notes-panel .production-note-box {
+    border: 0;
+    background: transparent;
+  }
+
+  .order-production-notes-panel .production-note-thread {
+    display: grid;
+    gap: 10px;
+    max-height: 320px;
+    overflow-y: auto;
+    padding-right: 2px;
+  }
+
+  .order-production-notes-section-title {
+    margin: 0 0 10px;
+    color: #aeb8c2;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: .05em;
+    text-transform: uppercase;
+  }
+
+  .custom-notes-timeline {
+    display: grid;
+    gap: 16px;
+  }
+
+  .custom-note-thread {
+    display: grid;
+    gap: 8px;
+  }
+
+  .custom-note-entry {
+    display: grid;
+    grid-template-columns: 38px minmax(0, 1fr);
+    gap: 10px;
+    width: calc(100% - 70px);
+    border-left: 3px solid rgba(60, 141, 188, .65);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, .03);
+    padding: 10px 12px;
+  }
+
+  .custom-note-author-avatar {
+    width: 34px;
+    height: 34px;
+    border: 2px solid rgba(60, 141, 188, .72);
+    border-radius: 50%;
+    object-fit: cover;
+    background: #20262c;
+  }
+
+  .custom-note-author-fallback {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: #e8edf2;
+    font-size: 11px;
+    font-weight: 700;
+  }
+
+  .custom-note-entry-content {
+    min-width: 0;
+  }
+
+  .custom-note-entry-meta {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 6px;
+    color: #adb5bd;
+    font-size: 12px;
+  }
+
+  .custom-note-entry-actions {
+    display: inline-flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 5px;
+  }
+
+  .custom-note-entry.is-deleted {
+    border-left-color: rgba(220, 53, 69, .82);
+    background: rgba(220, 53, 69, .06);
+  }
+
+  .custom-note-audit-badge {
+    padding: 2px 6px;
+    border: 1px solid rgba(255, 193, 7, .45);
+    border-radius: 10px;
+    color: #ffd75e;
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+  }
+
+  .custom-note-audit-badge.is-deleted {
+    border-color: rgba(220, 53, 69, .62);
+    color: #ff8e99;
+  }
+
+  .custom-note-entry-body {
+    color: #f8f9fa;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    line-height: 1.45;
+  }
+
+  .custom-note-replies {
+    display: grid;
+    gap: 8px;
+    margin-left: 64px;
+  }
+
+  .custom-note-reply-wrap {
+    position: relative;
+    padding-left: 34px;
+  }
+
+  .custom-note-reply-wrap::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: -9px;
+    width: 28px;
+    height: 32px;
+    border-left: 2px solid rgba(93, 173, 226, .52);
+    border-bottom: 2px solid rgba(93, 173, 226, .52);
+    border-radius: 0 0 0 5px;
+  }
+
+  .custom-note-entry.is-reply {
+    width: 100%;
+    border-left-color: rgba(255, 193, 7, .78);
+    background: rgba(255, 193, 7, .045);
+  }
+
+  .custom-note-compose {
+    margin-top: 16px;
+    padding-top: 14px;
+    border-top: 1px solid rgba(255, 255, 255, .10);
+  }
+
+  .custom-note-compose-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 7px;
+    margin-top: 7px;
+  }
+
+  @media (max-width: 900px) {
+    .custom-note-entry {
+      width: 100%;
+    }
+
+    .custom-note-replies {
+      margin-left: 24px;
+    }
+  }
+
   .order-photos-span-col {
     min-height: 0;
   }
@@ -5046,6 +5469,27 @@ ob_start();
       <?php
       $showFollowupPanel = (int) ($_SESSION['permission'] ?? 0) >= 300 && !empty($items);
       $productionNoteColClass = $showFollowupPanel ? 'col-lg-4' : 'col-lg-8';
+      $productionNotePanelDefaultExpanded = false;
+      $rootCustomNotes = [];
+      $customNoteReplies = [];
+      foreach ($visibleCustomOrderNotes as $customNote) {
+        $customNoteId = (int) ($customNote['id'] ?? 0);
+        $customParentId = (int) ($customNote['parent_note_id'] ?? 0);
+        if ($customParentId > 0) {
+          $customNoteReplies[$customParentId][] = $customNote;
+        } else {
+          $rootCustomNotes[$customNoteId] = $customNote;
+        }
+      }
+      foreach ($customNoteReplies as $customParentId => $orphanReplies) {
+        if (!isset($rootCustomNotes[$customParentId])) {
+          foreach ($orphanReplies as $orphanReply) {
+            $rootCustomNotes[(int) ($orphanReply['id'] ?? 0)] = $orphanReply;
+          }
+          unset($customNoteReplies[$customParentId]);
+        }
+      }
+      $showCustomAppendOnlyNotesPanel = $isCustomOrder && !empty($rootCustomNotes);
       ?>
 
       <div class="row order-detail-secondary-row align-items-stretch mb-3">
@@ -6393,7 +6837,80 @@ ob_start();
               </div>
             </div>
           </div>
-          <hr />
+        <?php endif; ?>
+
+        <?php if ($showCustomAppendOnlyNotesPanel): ?>
+          <div id="order-production-notes-panel"
+            data-order-production-notes-panel
+            data-custom-collapsible-panel
+            data-section-key="production-notes"
+            data-order-id="<?php echo (int) $orderId; ?>"
+            data-default-expanded="<?php echo $productionNotePanelDefaultExpanded ? '1' : '0'; ?>"
+            class="custom-orders-panel custom-collapsible-panel order-production-notes-panel<?php echo $productionNotePanelDefaultExpanded ? ' is-expanded' : ''; ?>">
+            <button type="button" class="custom-collapsible-toggle" data-custom-collapsible-toggle aria-expanded="<?php echo $productionNotePanelDefaultExpanded ? 'true' : 'false'; ?>">
+              <span class="custom-collapsible-toggle-title"><i class="fas fa-comment-alt" aria-hidden="true"></i>Production Notes</span>
+              <span class="custom-collapsible-toggle-meta">
+                <span class="badge badge-info"><?php echo (int) $appendOnlyNotesMessageCount; ?></span>
+                <span>messages</span>
+                <i class="fas fa-chevron-down custom-collapsible-toggle-chevron" aria-hidden="true"></i>
+              </span>
+            </button>
+            <div class="panel-body custom-collapsible-body" data-custom-collapsible-body <?php echo $productionNotePanelDefaultExpanded ? '' : 'hidden'; ?>>
+              <div class="order-production-notes-section-title">Append-Only Notes</div>
+              <div class="custom-notes-timeline">
+                <?php foreach ($rootCustomNotes as $customNoteId => $customNote): ?>
+                  <?php
+                  $customNoteDeleted = !empty($customNote['deleted_at']);
+                  $customNoteHasReply = !empty($customNoteReplies[$customNoteId]);
+                  ?>
+                  <div class="custom-note-thread">
+                    <article id="order-custom-note-<?php echo (int) $customNoteId; ?>" class="custom-note-entry<?php echo $customNoteDeleted ? ' is-deleted' : ''; ?>">
+                      <div><?php echo orderDetailNoteAuthorAvatar($customNote); ?></div>
+                      <div class="custom-note-entry-content">
+                        <div class="custom-note-entry-meta">
+                          <span><?php echo h((string) ($customNote['created_at'] ?? '')); ?></span>
+                          <span class="custom-note-entry-actions">
+                            <?php if (!empty($customNote['updated_at'])): ?><span class="custom-note-audit-badge">Edited</span><?php endif; ?>
+                            <?php if ($customNoteDeleted): ?><span class="custom-note-audit-badge is-deleted">Deleted</span><?php endif; ?>
+                          </span>
+                        </div>
+                        <div class="custom-note-entry-body"><?php echo h($customNoteDeleted && !$canViewCustomOrderNoteAudit ? 'This note was deleted.' : (string) ($customNote['note_body'] ?? '')); ?></div>
+                      </div>
+                    </article>
+
+                    <?php if ($customNoteHasReply): ?>
+                      <div class="custom-note-replies">
+                        <?php foreach ($customNoteReplies[$customNoteId] as $customReply): ?>
+                          <?php
+                          $customReplyId = (int) ($customReply['id'] ?? 0);
+                          $customReplyDeleted = !empty($customReply['deleted_at']);
+                          ?>
+                          <div class="custom-note-reply-wrap">
+                            <article id="order-custom-note-<?php echo (int) $customReplyId; ?>" class="custom-note-entry is-reply<?php echo $customReplyDeleted ? ' is-deleted' : ''; ?>">
+                              <div><?php echo orderDetailNoteAuthorAvatar($customReply); ?></div>
+                              <div class="custom-note-entry-content">
+                                <div class="custom-note-entry-meta">
+                                  <span><?php echo h((string) ($customReply['created_at'] ?? '')); ?></span>
+                                  <span class="custom-note-entry-actions">
+                                    <?php if (!empty($customReply['updated_at'])): ?><span class="custom-note-audit-badge">Edited</span><?php endif; ?>
+                                    <?php if ($customReplyDeleted): ?><span class="custom-note-audit-badge is-deleted">Deleted</span><?php endif; ?>
+                                  </span>
+                                </div>
+                                <div class="custom-note-entry-body"><?php echo h($customReplyDeleted && !$canViewCustomOrderNoteAudit ? 'This reply was deleted.' : (string) ($customReply['note_body'] ?? '')); ?></div>
+                              </div>
+                            </article>
+                          </div>
+                        <?php endforeach; ?>
+                      </div>
+                    <?php endif; ?>
+                  </div>
+                <?php endforeach; ?>
+              </div>
+            </div>
+          </div>
+        <?php endif; ?>
+
+        <hr />
           <button type="button" class="btn btn-sm btn-outline-info btn-toggle-activity"
             data-order-id="<?php echo (int) $orderId; ?>">
             Activity log
@@ -6459,7 +6976,6 @@ ob_start();
               Load older
             </button>
           </div>
-        <?php endif; ?>
       </div>
 
     </div>
@@ -6467,6 +6983,67 @@ ob_start();
 </div>
 
 <script>
+  (function () {
+    function initializeOrderProductionNotesPanels(root) {
+      root.querySelectorAll('[data-order-production-notes-panel]').forEach(function (panel) {
+        var toggle = panel.querySelector('[data-custom-collapsible-toggle]');
+        var body = panel.querySelector('[data-custom-collapsible-body]');
+        if (!toggle || !body) return;
+
+        var orderId = panel.getAttribute('data-order-id') || '0';
+        var storageKey = 'order-production-notes-expanded:' + orderId;
+
+        function setExpanded(expanded, remember) {
+          toggle.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+          panel.classList.toggle('is-expanded', expanded);
+
+          if (remember && window.jQuery) {
+            var $body = window.jQuery(body);
+            $body.stop(true, true);
+            if (expanded) {
+              body.hidden = false;
+              $body.hide().slideDown(140);
+            } else {
+              $body.slideUp(140, function () {
+                body.hidden = true;
+                body.style.display = '';
+              });
+            }
+          } else {
+            body.hidden = !expanded;
+            body.style.display = '';
+          }
+
+          if (remember) {
+            try {
+              window.sessionStorage.setItem(storageKey, expanded ? '1' : '0');
+            } catch (storageError) {
+            }
+          }
+        }
+
+        var initiallyExpanded = panel.getAttribute('data-default-expanded') === '1';
+        try {
+          var storedState = window.sessionStorage.getItem(storageKey);
+          if (storedState === '1' || storedState === '0') {
+            initiallyExpanded = storedState === '1';
+          }
+        } catch (storageError) {
+        }
+
+        setExpanded(initiallyExpanded, false);
+
+        if (toggle.dataset.orderProductionNotesBound === '1') return;
+        toggle.dataset.orderProductionNotesBound = '1';
+        toggle.addEventListener('click', function () {
+          setExpanded(toggle.getAttribute('aria-expanded') !== 'true', true);
+        });
+      });
+    }
+
+    initializeOrderProductionNotesPanels(document);
+  })();
+
   /* ── Printing Settings: Autocomplete + Save-on-Enter ─────────────────────── */
   (function () {
     'use strict';

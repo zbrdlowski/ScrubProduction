@@ -10,8 +10,8 @@ function out(array $payload): void {
   exit;
 }
 
-if ((int)($_SESSION['permission'] ?? 0) < 400) {
-  out(['ok' => false, 'error' => 'No permission']);
+if (!isset($_SESSION['permission'])) {
+  out(['ok' => false, 'error' => 'Not logged in']);
 }
 
 function h($s): string {
@@ -35,7 +35,10 @@ $stmt = $conn->prepare("SELECT
     oa.payload,
     oa.note,
     oa.created_at,
-    CONCAT(e.firstname, ' ', e.lastname) AS actor_name
+    CASE
+      WHEN oa.action = 'fedex_delivered' THEN 'FedEx Tracking API'
+      ELSE NULLIF(TRIM(CONCAT_WS(' ', e.firstname, e.lastname)), '')
+    END AS actor_name
   FROM order_activity oa
   LEFT JOIN employees e ON e.id = oa.actor_employee_id
   WHERE oa.order_id = ?

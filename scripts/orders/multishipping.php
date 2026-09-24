@@ -96,7 +96,7 @@ if ($action === 'fetch') {
   $customerEmail = trim((string) ($base['customer_email'] ?? ''));
   $customerName = trim((string) ($base['customer_name'] ?? ''));
 
-  $clauses = ["o.status = 'READY_TO_SHIP'", ordersShippingScopeWhereSql($sessionDept, 'o')];
+  $clauses = ["o.status = 'READY_TO_SHIP'"];
   $types = '';
   $params = [];
   $identityClauses = [];
@@ -250,8 +250,8 @@ if ($action === 'save') {
       $scopeRows[(int) $scopeRow['id']] = true;
     }
     $scopeStmt->close();
-    if (count($scopeRows) !== count($orderIds)) {
-      throw new RuntimeException('Selected orders include an order from the other shipping workplace.');
+    if (!$scopeRows) {
+      throw new RuntimeException('Selected orders must include at least one order from this shipping workplace.');
     }
 
     $customerIds = array_values(array_unique(array_filter(array_map(
