@@ -89,6 +89,10 @@ if (empty($_FILES['photos']) || !is_array($_FILES['photos']['tmp_name'])) {
   customPhotoOut(400, ['ok' => false, 'error' => 'No photos uploaded.']);
 }
 
+if (!extension_loaded('gd') || !function_exists('imagecreatetruecolor')) {
+  customPhotoOut(500, ['ok' => false, 'error' => 'PHP GD extension is not enabled. Enable extension=gd in php.ini and restart Apache.']);
+}
+
 $base = dirname(__DIR__, 2);
 $uploadRoot = $base . '/uploads/order_photos/custom-' . $customOrderId;
 $publicRoot = 'uploads/order_photos/custom-' . $customOrderId;

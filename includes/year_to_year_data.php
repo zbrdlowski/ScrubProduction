@@ -380,7 +380,21 @@ function ytyAverage(array $values): ?int
   return (int) round(array_sum($values) / count($values));
 }
 
-function ytyBuildReportData(mysqli $conn): array
+function ytyBuildDailyAverages(array $dailyRows): array
+{
+  $dailyProductValues = array_map(static fn($row) => $row['products_without_fitting'], $dailyRows);
+  $dailyAfterWeekendValues = array_map(static fn($row) => $row['after_weekend_count'] ?? null, $dailyRows);
+  $dailyWithFittingValues = array_map(static fn($row) => $row['products_with_fitting'], $dailyRows);
+
+  return [
+    'after_weekend' => ytyAverage($dailyAfterWeekendValues),
+    'products_without_fitting' => ytyAverage($dailyProductValues),
+    'products_with_fitting' => ytyAverage($dailyWithFittingValues),
+    'import_days' => count($dailyRows),
+  ];
+}
+
+function ytyBuildReportData(mysqli $conn, ?int $requestedYear = null): array
 {
   $bootstrap = ytyBootstrap($conn);
   $stored = ytyFetchStoredStats($conn);
@@ -396,6 +410,10 @@ function ytyBuildReportData(mysqli $conn): array
     [$currentYear]
   )));
   rsort($years, SORT_NUMERIC);
+  $selectedYear = $requestedYear;
+  if ($selectedYear === null || !in_array($selectedYear, $years, true)) {
+    $selectedYear = (int) ($years[0] ?? $currentYear);
+  }
 
   $maxWeek = 52;
   foreach ([$stored, $live] as $sourceRows) {
@@ -456,15 +474,14 @@ function ytyBuildReportData(mysqli $conn): array
     $averages[$year] = ytyAverage($series[$year]);
   }
 
-  $dailyRows = ytyBuildDailyStats($conn, $currentYear);
-  $dailyProductValues = array_map(static fn($row) => $row['products_without_fitting'], $dailyRows);
-  $dailyAfterWeekendValues = array_map(static fn($row) => $row['after_weekend_count'] ?? null, $dailyRows);
-  $dailyWithFittingValues = array_map(static fn($row) => $row['products_with_fitting'], $dailyRows);
+  $dailyRows = ytyBuildDailyStats($conn, $selectedYear);
+  $dailyAverages = ytyBuildDailyAverages($dailyRows);
   $transitionLiveProducts = (int) ($live[YTY_TRANSITION_YEAR][YTY_TRANSITION_WEEK]['value'] ?? 0);
 
   return [
     'bootstrap' => $bootstrap,
     'years' => $years,
+    'selected_year' => $selectedYear,
     'labels' => range(1, $maxWeek),
     'series' => $series,
     'sources' => $sources,
@@ -473,11 +490,8 @@ function ytyBuildReportData(mysqli $conn): array
     'averages' => $averages,
     'live' => $live,
     'daily_rows' => $dailyRows,
-    'daily_averages' => [
-      'after_weekend' => ytyAverage($dailyAfterWeekendValues),
-      'products_without_fitting' => ytyAverage($dailyProductValues),
-      'products_with_fitting' => ytyAverage($dailyWithFittingValues),
-    ],
+    'daily_averages' => $dailyAverages,
+    'daily_year' => $selectedYear,
     'transition' => [
       'year' => YTY_TRANSITION_YEAR,
       'week' => YTY_TRANSITION_WEEK,

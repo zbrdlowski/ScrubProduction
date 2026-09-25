@@ -16,6 +16,7 @@ if (!isset($_SESSION['permission'])) {
 require_once __DIR__ . '/includes/conn.php';
 require_once __DIR__ . '/scripts/orders/financial_helpers.php';
 require_once __DIR__ . '/includes/orders_multishipping_helpers.php';
+require_once __DIR__ . '/includes/shipping_methods.php';
 
 if (!isset($conn) || !$conn instanceof mysqli) {
   http_response_code(500);
@@ -308,7 +309,11 @@ function fetchReadyToShipOrders(mysqli $conn, array $aclCats, array $aclTypes, s
     o.id,
     o.order_number,
     o.external_order_id,
+    o.shipping_method,
     o.total AS order_total,
+    o.currency,
+    os.code AS source_code,
+    o.source_meta,
     msg.id AS multishipping_group_id,
     msm.position AS multishipping_position,
     {$financialTotalSelect}
@@ -343,6 +348,7 @@ function fetchReadyToShipOrders(mysqli $conn, array $aclCats, array $aclTypes, s
     ) AS invoice_number
 
   FROM orders o
+  JOIN order_sources os ON os.id = o.source_id
   LEFT JOIN customers cu ON cu.id = o.customer_id
   LEFT JOIN order_addresses oa_ship
     ON oa_ship.order_id = o.id AND UPPER(oa_ship.type) = 'SHIPPING'
@@ -409,12 +415,14 @@ function applyMultishippingAggregates(mysqli $conn, array $orders): array
   $groupIds = array_keys($groupIndexes);
   $placeholders = implode(',', array_fill(0, count($groupIds), '?'));
   $types = str_repeat('i', count($groupIds));
-  $sql = "SELECT m.group_id, m.order_id, o.total AS order_total,
+  $sql = "SELECT m.group_id, m.order_id, o.total AS order_total, o.currency, os.code AS source_code, o.source_meta,
+      o.order_number, o.external_order_id,
       {$financialTotalSelect}, {$adjustmentSelect},
       (SELECT GROUP_CONCAT(DISTINCT oi.item_type_code ORDER BY oi.item_type_code SEPARATOR '')
        FROM order_items oi WHERE oi.order_id = o.id AND oi.item_type_code IS NOT NULL AND oi.item_type_code <> '') AS item_types
     FROM order_multishipping_orders m
     JOIN orders o ON o.id = m.order_id
+    JOIN order_sources os ON os.id = o.source_id
     {$adjustmentJoin}
     WHERE m.group_id IN ($placeholders)
     ORDER BY m.group_id, m.position";
@@ -428,10 +436,8 @@ function applyMultishippingAggregates(mysqli $conn, array $orders): array
     if (!isset($aggregate[$groupId])) {
       $aggregate[$groupId] = ['total' => 0.0, 'types' => [], 'member_types' => [], 'count' => 0];
     }
-    $override = order_financial_money_value($row['financial_total_value'] ?? null);
-    $base = order_financial_money_value($row['order_total'] ?? null) ?? 0.0;
-    $adjustments = order_financial_money_value($row['financial_adjustments_total'] ?? null) ?? 0.0;
-    $aggregate[$groupId]['total'] += $override !== null ? $override : ($base + $adjustments);
+    $financialInfo = order_financial_effective_totals($conn, $row);
+    $aggregate[$groupId]['total'] += (float) ($financialInfo['customs_effective_total'] ?? $financialInfo['effective_total']);
     $memberTypes = normalizeTypesOrder((string) ($row['item_types'] ?? ''));
     $aggregate[$groupId]['member_types'][] = $memberTypes;
     foreach (str_split($memberTypes) as $type) {
@@ -454,19 +460,15 @@ function applyMultishippingAggregates(mysqli $conn, array $orders): array
   return $orders;
 }
 
-function buildExportRows(array $orders, array $materialMap, string $materialDefault, array $weightMap, float $weightDefault): array
+function buildExportRows(mysqli $conn, array $orders, array $materialMap, string $materialDefault, array $weightMap, float $weightDefault): array
 {
   $exportRows = [];
 
   foreach ($orders as $row) {
     $typesRaw = (string) ($row['item_types'] ?? '');
     $typesNorm = normalizeTypesOrder($typesRaw);
-    $financialOverride = order_financial_money_value($row['financial_total_value'] ?? null);
-    $orderBaseTotal = order_financial_money_value($row['order_total'] ?? null) ?? 0.0;
-    $financialAdjustmentsTotal = order_financial_money_value($row['financial_adjustments_total'] ?? null) ?? 0.0;
-    $orderTotal = $financialOverride !== null
-      ? $financialOverride
-      : ($orderBaseTotal + $financialAdjustmentsTotal);
+    $financialInfo = order_financial_effective_totals($conn, $row);
+    $orderTotal = (float) ($financialInfo['customs_effective_total'] ?? $financialInfo['effective_total']);
     $orderTotal = max(0.0, round($orderTotal, 2));
 
     $orderNumber = trim((string) ($row['order_number'] ?? ''));
@@ -515,7 +517,7 @@ function buildExportRows(array $orders, array $materialMap, string $materialDefa
       'ref_number' => $refNumber,
       'invoice_name' => $invoiceName,
       'customs_value' => number_format($orderTotal, 2, '.', ''),
-      'service' => 'economy',
+      'service' => darkscrubFedexStratusServiceForShipping($row['shipping_method'] ?? ''),
       'duty_payer' => '2',
       'insured_value' => number_format(calcInsuredValue($orderTotal), 2, '.', ''),
       'hs_code' => HS_CODE,
@@ -627,7 +629,7 @@ try {
   $shippingScopeWhere = ordersShippingScopeWhereSql($exportShippingDept, 'o');
   $orders = fetchReadyToShipOrders($conn, $aclCats, $aclTypes, $fitWhere, $shippingScopeWhere, !$isPreview);
   $orders = applyMultishippingAggregates($conn, $orders);
-  $defaultRows = buildExportRows($orders, $MATERIAL_MAP, $MATERIAL_DEFAULT, $WEIGHT_MAP, $WEIGHT_DEFAULT);
+  $defaultRows = buildExportRows($conn, $orders, $MATERIAL_MAP, $MATERIAL_DEFAULT, $WEIGHT_MAP, $WEIGHT_DEFAULT);
 } catch (Throwable $e) {
   if ($exportTransaction) {
     $conn->rollback();

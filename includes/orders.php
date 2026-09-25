@@ -7,6 +7,7 @@ require_once __DIR__ . '/orders_status_helpers.php';
 require_once __DIR__ . '/orders_workflow_helpers.php';
 require_once __DIR__ . '/orders_customs_helpers.php';
 require_once __DIR__ . '/orders_multishipping_helpers.php';
+require_once __DIR__ . '/shipping_methods.php';
 
 if (!isset($conn) || !$conn instanceof mysqli) {
   echo '<div class="alert alert-danger">Database connection error.</div>';
@@ -3288,8 +3289,9 @@ $deptOptions = [
                 <option value="">— All —</option>
                 <?php foreach ([
                   'FedEx Economy' => 'FedEx Economy',
-                  'FedEx Express' => 'FedEx Express',
                   'FedEx International Economy' => 'FedEx Intl Economy',
+                  'FedEx Express' => 'FedEx Express',
+                  'Drop Ship' => 'Drop Ship',
                   'DHL Express Worldwide' => 'DHL Express WW',
                   'DHL Paket International' => 'DHL Paket Intl',
                   'GLS Paket' => 'GLS Paket',

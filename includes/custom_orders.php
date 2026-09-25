@@ -34,7 +34,7 @@ $paymentKinds = customOrdersPaymentKinds();
 // CUSTOM ORDERS: Ak treba pridaj novy sposob platby, napr. Card, Bank Transfer, Cash, PayPal, Stripe.
 $customOrderPaymentMethods = ['PayPal', 'Bank Transfer', 'Cash'];
 // CUSTOM ORDERS: Ak treba pridaj novy sposob dopravy, napr. DHL, GLS, FedEx Economy, FedEx Express, Post, Pick Up.
-$customOrderShippingMethods = ['FedEx Economy', 'FedEx Express', 'GLS', 'Post', 'Pick Up'];
+$customOrderShippingMethods = ['FedEx Economy', 'FedEx International Economy', 'FedEx Express', 'GLS', 'Post', 'Pick Up', 'Drop Ship'];
 // CUSTOM ORDERS: Konzistentne zdroje leadu pre hlavicky custom objednavky.
 $customOrderSourceChannels = ['Email', 'WhatsApp', 'Instagram', 'Messenger', 'Phone call'];
 $customOrderStatusChoiceCodes = [

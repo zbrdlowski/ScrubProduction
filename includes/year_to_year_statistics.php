@@ -35,12 +35,10 @@ function ytyDailyLimitClass(?int $value): string
   return 'yty-daily-limit-high';
 }
 
-$report = ytyBuildReportData($conn);
+$requestedYear = isset($_GET['year']) ? (int) $_GET['year'] : null;
+$report = ytyBuildReportData($conn, $requestedYear);
 $years = $report['years'];
-$selectedYear = isset($_GET['year']) ? (int) $_GET['year'] : (int) ($years[0] ?? $report['current_year']);
-if (!in_array($selectedYear, $years, true)) {
-  $selectedYear = (int) ($years[0] ?? $report['current_year']);
-}
+$selectedYear = (int) ($report['selected_year'] ?? ($years[0] ?? $report['current_year']));
 
 $labels = $report['labels'];
 $series = $report['series'];
@@ -49,6 +47,8 @@ $latest = $report['latest'];
 $averages = $report['averages'];
 $dailyRows = $report['daily_rows'];
 $dailyAverages = $report['daily_averages'];
+$dailyYear = (int) ($report['daily_year'] ?? $selectedYear);
+$dailyImportDays = (int) ($dailyAverages['import_days'] ?? count($dailyRows));
 $transition = $report['transition'];
 $currentYear = (int) $report['current_year'];
 $currentWeek = (int) $report['current_week'];
@@ -254,7 +254,7 @@ $chartPayload = [
       <div class="small-box bg-secondary yty-stat-card">
         <div class="inner">
           <h3><?= ytyNum($dailyAverages['products_with_fitting'] ?? null) ?></h3>
-          <p>AVG / Day <?= (int) $currentYear ?> (G+F+P+S)</p>
+          <p>AVG / Day <?= (int) $dailyYear ?> (G+F+P+S)</p>
         </div>
         <div class="icon"><i class="fas fa-calendar-day"></i></div>
       </div>
@@ -291,9 +291,9 @@ $chartPayload = [
 
   <div class="card card-dark">
     <div class="card-header d-flex align-items-center justify-content-between flex-wrap">
-      <h3 class="card-title mb-0">Daily Values: <?= (int) $currentYear ?></h3>
+      <h3 class="card-title mb-0">Daily Values: <?= (int) $dailyYear ?> (<?= ytyNum($dailyImportDays) ?> import days)</h3>
       <span class="yty-muted-note">
-        Daily values use import date. AVG / Day uses G+F+P+S / day. Historical rows come from WeeklyStat.xlsx; Darkscrub continues from <?= ytyH(date('d.m.Y', strtotime((string) $transition['start_date']))) ?>.
+        Daily values use import date. AVG / Day divides G+F+P+S by displayed import days, not calendar days. Historical rows come from WeeklyStat.xlsx; Darkscrub continues from <?= ytyH(date('d.m.Y', strtotime((string) $transition['start_date']))) ?>.
       </span>
     </div>
     <div class="card-body table-responsive p-0">
@@ -312,7 +312,7 @@ $chartPayload = [
         <tbody>
           <?php if (!$dailyRows): ?>
             <tr>
-              <td colspan="7" class="text-muted py-4">No Darkscrub daily data for <?= (int) $currentYear ?> yet.</td>
+              <td colspan="7" class="text-muted py-4">No daily data for <?= (int) $dailyYear ?> yet.</td>
             </tr>
           <?php endif; ?>
           <?php foreach ($dailyRows as $row): ?>

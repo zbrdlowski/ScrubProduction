@@ -761,7 +761,7 @@ function orderDetailCustomPaymentDateLabel(?string $receivedAt): string
   return $timestamp !== false ? date('d.m.Y', $timestamp) : '';
 }
 
-function orderDetailNormalizeCustomPaymentLines(array $lines): array
+function orderDetailNormalizeCustomPaymentLines(array $lines, bool $skipZeroAmounts = true): array
 {
   $normalized = [];
   foreach ($lines as $line) {
@@ -770,7 +770,10 @@ function orderDetailNormalizeCustomPaymentLines(array $lines): array
     }
 
     $amount = orderDetailMoneyValue($line['amount'] ?? null);
-    if ($amount === null || abs($amount) < 0.005) {
+    if ($amount === null) {
+      continue;
+    }
+    if ($skipZeroAmounts && abs($amount) < 0.005) {
       continue;
     }
 
@@ -798,6 +801,7 @@ function orderDetailNormalizeCustomPaymentLines(array $lines): array
       'received_at' => $receivedAt,
       'invoice_number' => trim((string) ($line['invoice_number'] ?? '')),
       'paypal_transaction_id' => trim((string) ($line['paypal_transaction_id'] ?? '')),
+      'note' => trim((string) ($line['note'] ?? '')),
     ];
   }
 
@@ -813,6 +817,42 @@ function orderDetailNormalizeCustomPaymentLines(array $lines): array
   });
 
   return $normalized;
+}
+
+function orderDetailLoadCustomPaymentRows(mysqli $conn, int $customOrderId): array
+{
+  if ($customOrderId <= 0) {
+    return [];
+  }
+
+  $columns = orderDetailTableColumns($conn, 'custom_order_payments');
+  if (!$columns || !in_array('custom_order_id', $columns, true)) {
+    return [];
+  }
+
+  $invoiceSelect = in_array('invoice_number', $columns, true) ? 'invoice_number' : "'' AS invoice_number";
+  $paypalSelect = in_array('paypal_transaction_id', $columns, true) ? 'paypal_transaction_id' : "'' AS paypal_transaction_id";
+  $noteSelect = in_array('note', $columns, true) ? 'note' : "'' AS note";
+  $stmt = $conn->prepare("
+    SELECT id, payment_kind, amount, currency, received_at, $invoiceSelect, $paypalSelect, $noteSelect
+    FROM custom_order_payments
+    WHERE custom_order_id = ?
+    ORDER BY received_at ASC, id ASC
+  ");
+  if (!$stmt) {
+    return [];
+  }
+
+  $stmt->bind_param('i', $customOrderId);
+  $stmt->execute();
+  $res = $stmt->get_result();
+  $rows = [];
+  while ($row = $res->fetch_assoc()) {
+    $rows[] = $row;
+  }
+  $stmt->close();
+
+  return orderDetailNormalizeCustomPaymentLines($rows, false);
 }
 
 function orderDetailNormalizeCustomFinancialBreakdown(array $breakdown): array
@@ -1197,6 +1237,7 @@ require_once $connFile;
 require_once $base . '/includes/orders_status_helpers.php';
 require_once $base . '/includes/orders_customs_helpers.php';
 require_once $base . '/includes/get_order_detail_product_spec_selects.php';
+require_once $base . '/includes/shipping_methods.php';
 require_once __DIR__ . '/department_config.php';
 require_once __DIR__ . '/manual_item_builder_helper.php';
 require_once __DIR__ . '/financial_helpers.php';
@@ -1238,6 +1279,16 @@ $allAccess = in_array($dpt, [1, 3, 4, 5, 7], true);
 function h($s): string
 {
   return htmlspecialchars((string) $s, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+}
+
+function orderDetailIsFedexShipping(?string $shippingMethod): bool
+{
+  return stripos(trim((string) $shippingMethod), 'fedex') !== false;
+}
+
+function orderDetailFedexTrackingUrl(string $trackingNumber): string
+{
+  return 'https://www.fedex.com/fedextrack/?trknbr=' . rawurlencode($trackingNumber);
 }
 
 // Generuje HTML obrázok s vlajkou krajiny podľa kódu
@@ -1653,14 +1704,34 @@ if ($isCustomOrder) {
     $sourceMeta['shipping_price'] = $customFinancialBreakdown['shipping'];
   }
 }
+$customProductionPaymentLines = [];
+if ($isCustomOrder) {
+  $customProductionPaymentLines = orderDetailLoadCustomPaymentRows($conn, $linkedCustomOrderId);
+  if (empty($customProductionPaymentLines) && is_array($customFinancialBreakdown['payment_lines'] ?? null)) {
+    $customProductionPaymentLines = orderDetailNormalizeCustomPaymentLines($customFinancialBreakdown['payment_lines'], false);
+  }
+}
+$showCustomPaymentsPanel = $isCustomOrder && !empty($customProductionPaymentLines);
+$customPaymentsPanelDefaultExpanded = false;
+$showCustomPaymentsNoteColumn = false;
+foreach ($customProductionPaymentLines as $customProductionPaymentLine) {
+  if (trim((string) ($customProductionPaymentLine['note'] ?? '')) !== '') {
+    $showCustomPaymentsNoteColumn = true;
+    break;
+  }
+}
 
 $financialInfo = order_financial_effective_totals($conn, $order, $sourceMeta);
 $financialAdjustmentRows = order_financial_fetch_adjustments($conn, $orderId);
 $financialBaseTotal = (float) $financialInfo['base_total'];
 $financialAdjustmentsTotal = (float) $financialInfo['adjustments_total'];
 $financialCalculatedTotal = (float) $financialInfo['calculated_total'];
+$financialCustomDepositsTotal = (float) ($financialInfo['custom_deposits_total'] ?? 0.0);
+$financialCustomsCalculatedTotal = (float) ($financialInfo['customs_calculated_total'] ?? $financialCalculatedTotal);
 $financialTotalOverrideActive = (bool) $financialInfo['override_active'];
 $financialEffectiveTotal = (float) $financialInfo['effective_total'];
+$financialCustomsTotal = (float) ($financialInfo['customs_effective_total'] ?? $financialEffectiveTotal);
+$financialBreakdownTotal = $isCustomOrder ? $financialCalculatedTotal : $financialEffectiveTotal;
 $financialSourceCurrency = (string) $financialInfo['source_currency'];
 $financialEffectiveCurrency = (string) $financialInfo['effective_currency'];
 $financialOverrideCurrency = (string) $financialInfo['override_currency'];
@@ -2083,7 +2154,7 @@ foreach ($items as $breakdownItem) {
   }
 }
 $orderValueBreakdown['shipping'] = orderDetailMoneyValue($sourceMeta['shipping_price'] ?? null) ?? 0.0;
-$orderValueBreakdown['total'] = $financialEffectiveTotal;
+$orderValueBreakdown['total'] = $financialBreakdownTotal;
 
 if (!empty($customFinancialBreakdown)) {
   foreach (['graphics', 'plastics', 'seat_covers', 'fitting', 'accessories', 'other', 'shipping'] as $breakdownKey) {
@@ -2218,8 +2289,8 @@ if ($activePercentageBreakdown !== null) {
     + $orderValueBreakdown['fitting']
     + $orderValueBreakdown['accessories']
     + $orderValueBreakdown['other'];
-  $percentageTotal = $financialEffectiveTotal > 0
-    ? $financialEffectiveTotal
+  $percentageTotal = $financialBreakdownTotal > 0
+    ? $financialBreakdownTotal
     : ($pricedItemsTotal > 0 ? $pricedItemsTotal : $orderValueBreakdown['total']);
   $totalCents       = (int) round($percentageTotal * 100);
   $allocatedCents   = 0;
@@ -2245,7 +2316,7 @@ if ($activePercentageBreakdown !== null) {
   $orderValueBreakdown['total'] = $totalCents / 100;
 }
 
-$orderValueBreakdown['total'] = $financialEffectiveTotal;
+$orderValueBreakdown['total'] = $financialBreakdownTotal;
 $financialBreakdownAdjustment = 0.0;
 
 if ($activePercentageBreakdown === null) {
@@ -2264,7 +2335,7 @@ if ($activePercentageBreakdown === null) {
       + $orderValueBreakdown['other'];
   }
 
-  $financialBreakdownAdjustment = round($financialEffectiveTotal - $listedBreakdownTotal, 2);
+  $financialBreakdownAdjustment = round($financialBreakdownTotal - $listedBreakdownTotal, 2);
 }
 
 if ($isShoptetOrder && abs($financialBreakdownAdjustment) >= 0.005) {
@@ -2293,6 +2364,7 @@ $priorityOptions = [
   10 => 'Deadline',
   20 => 'Priority',
 ];
+$shippingMethodOptions = darkscrubShippingMethodOptionsWithCurrent((string) ($order['shipping_method'] ?? ''));
 $currentPriority = (int) ($order['priority'] ?? 0);
 if (!isset($priorityOptions[$currentPriority])) {
   $currentPriority = 0;
@@ -3584,6 +3656,33 @@ ob_start();
     box-shadow: 0 0 0 .2rem rgba(220, 53, 69, .16);
   }
 
+  .print-setting-field-grip.product-spec-state-attention,
+  .print-setting-field-swingarms.product-spec-state-attention {
+    border-color: #ff233d;
+    background: linear-gradient(180deg, rgba(255, 35, 61, .88) 0%, rgba(190, 15, 34, .78) 100%);
+    box-shadow:
+      inset 0 0 0 1px rgba(255, 255, 255, .18),
+      0 0 14px rgba(220, 53, 69, .55);
+  }
+
+  .print-setting-field-grip.product-spec-state-attention .product-spec-label-title,
+  .print-setting-field-swingarms.product-spec-state-attention .product-spec-label-title {
+    color: #fff;
+  }
+
+  .print-setting-field-grip.product-spec-state-attention .item-print-grip,
+  .print-setting-field-swingarms.product-spec-state-attention .item-print-tr-swingarms {
+    border-color: rgba(255, 255, 255, .65);
+    background-color: rgba(83, 8, 18, .96);
+    color: #fff;
+  }
+
+  .print-setting-field-grip.product-spec-state-attention .item-print-grip:focus,
+  .print-setting-field-swingarms.product-spec-state-attention .item-print-tr-swingarms:focus {
+    border-color: #fff;
+    box-shadow: 0 0 0 .2rem rgba(255, 35, 61, .28);
+  }
+
   .seat-op-code {
     line-height: 1;
   }
@@ -4253,6 +4352,16 @@ ob_start();
     overflow-wrap: normal;
   }
 
+  .tracking-number-link {
+    color: #8fd3ff;
+    text-decoration: none;
+  }
+
+  .tracking-number-link:hover {
+    color: #bde6ff;
+    text-decoration: underline;
+  }
+
   .tracking-carrier-label {
     min-width: 0;
     overflow: hidden;
@@ -4354,6 +4463,180 @@ ob_start();
 
   .order-production-notes-panel {
     margin: 14px 0 16px;
+  }
+
+  .order-production-payments-panel {
+    margin: 14px 0 16px;
+    border-color: rgba(23, 162, 184, .35);
+  }
+
+  .order-production-payments-panel .panel-body {
+    background: linear-gradient(180deg, rgba(23, 162, 184, .045), rgba(0, 0, 0, .04));
+  }
+
+  .order-production-payments-list {
+    display: grid;
+    gap: 10px;
+  }
+
+  .order-production-payment-card {
+    display: grid;
+    gap: 10px;
+    border: 1px solid rgba(255, 255, 255, .10);
+    border-left: 4px solid rgba(40, 167, 69, .78);
+    border-radius: 7px;
+    background: rgba(255, 255, 255, .035);
+    padding: 11px 12px;
+  }
+
+  .order-production-payment-card.is-refund {
+    border-left-color: rgba(255, 193, 7, .82);
+  }
+
+  .order-production-payment-main {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 14px;
+  }
+
+  .order-production-payment-kind {
+    display: grid;
+    gap: 2px;
+    min-width: 0;
+  }
+
+  .order-production-payment-kind-title {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    color: #f8f9fa;
+    font-size: 13px;
+    font-weight: 700;
+  }
+
+  .order-production-payment-kind small {
+    color: #9faab5;
+    font-size: 11px;
+  }
+
+  .order-production-payment-amount {
+    flex: 0 0 auto;
+    min-width: 118px;
+    border: 1px solid rgba(40, 167, 69, .34);
+    border-radius: 7px;
+    background: rgba(40, 167, 69, .10);
+    padding: 5px 9px;
+    text-align: right;
+    font-size: 15px;
+    font-weight: 800;
+    line-height: 1.15;
+  }
+
+  .order-production-payment-card.is-refund .order-production-payment-amount {
+    border-color: rgba(255, 193, 7, .36);
+    background: rgba(255, 193, 7, .10);
+  }
+
+  .order-production-payment-amount span {
+    display: block;
+    margin-top: 2px;
+    color: #aeb8c2;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: .04em;
+  }
+
+  .order-production-payment-meta-grid {
+    display: grid;
+    grid-template-columns: minmax(260px, 1.5fr) minmax(150px, .8fr);
+    gap: 8px;
+  }
+
+  .order-production-payment-meta-grid.has-note {
+    grid-template-columns: minmax(260px, 1.35fr) minmax(150px, .7fr) minmax(180px, 1fr);
+  }
+
+  .order-production-payment-meta {
+    min-width: 0;
+    border: 1px solid rgba(255, 255, 255, .08);
+    border-radius: 6px;
+    background: rgba(0, 0, 0, .14);
+    padding: 7px 9px;
+  }
+
+  .order-production-payment-meta-label {
+    display: block;
+    margin-bottom: 3px;
+    color: #8f9ca8;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: .05em;
+    text-transform: uppercase;
+  }
+
+  .order-production-payment-meta-value {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+    min-width: 0;
+    color: #eef3f8;
+    font-size: 12px;
+    line-height: 1.35;
+    overflow-wrap: anywhere;
+  }
+
+  .order-production-payment-meta-value>span {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .order-production-payment-meta-value.is-empty {
+    color: #75818d;
+  }
+
+  .order-production-payment-id {
+    min-width: 0;
+  }
+
+  .order-production-payment-id code {
+    display: inline-block;
+    max-width: 100%;
+    border-radius: 4px;
+    background: rgba(23, 162, 184, .12);
+    color: #d6f3ff;
+    font-size: 11px;
+    line-height: 1.35;
+    padding: 2px 5px;
+    overflow-wrap: anywhere;
+  }
+
+  .order-production-payment-copy {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    padding: 0;
+  }
+
+  @media (max-width: 900px) {
+    .order-production-payment-main,
+    .order-production-payment-meta-grid,
+    .order-production-payment-meta-grid.has-note {
+      grid-template-columns: 1fr;
+    }
+
+    .order-production-payment-main {
+      display: grid;
+    }
+
+    .order-production-payment-amount {
+      width: 100%;
+      text-align: left;
+    }
   }
 
   .order-production-notes-panel .production-note-box {
@@ -4966,8 +5249,14 @@ ob_start();
 
                     <div class="form-group col-md-6">
                       <label>Shipping</label>
-                      <input class="form-control form-control-sm edit-delivery"
-                        value="<?php echo h($order['shipping_method'] ?? ''); ?>">
+                      <select class="form-control form-control-sm edit-delivery">
+                        <option value="">Select shipping...</option>
+                        <?php foreach ($shippingMethodOptions as $shippingMethod): ?>
+                          <option value="<?php echo h($shippingMethod); ?>" <?php echo (string) ($order['shipping_method'] ?? '') === $shippingMethod ? 'selected' : ''; ?>>
+                            <?php echo h($shippingMethod); ?>
+                          </option>
+                        <?php endforeach; ?>
+                      </select>
                     </div>
                   </div>
 
@@ -5215,12 +5504,21 @@ ob_start();
                   <?php
                   $trackingNumber = trim((string) ($t['tracking_number'] ?? ''));
                   $trackingCarrier = trim((string) ($t['carrier'] ?? ''));
+                  $trackingFedexUrl = orderDetailIsFedexShipping((string) ($order['shipping_method'] ?? '')) && $trackingNumber !== ''
+                    ? orderDetailFedexTrackingUrl($trackingNumber)
+                    : '';
                   $trackingShippedTs = !empty($t['created_at']) ? strtotime((string) $t['created_at']) : false;
                   $trackingDeliveredTs = !empty($t['delivered_at']) ? strtotime((string) $t['delivered_at']) : false;
                   ?>
                   <div class="small mb-1 tracking-copy-row">
                     <span class="tracking-copy-main">
-                      <b class="order-header-copy-value"><?php echo h($trackingNumber); ?></b>
+                      <?php if ($trackingFedexUrl !== ''): ?>
+                        <a class="order-header-copy-value tracking-number-link" href="<?php echo h($trackingFedexUrl); ?>" target="_blank" rel="noopener noreferrer" title="Open FedEx tracking">
+                          <b><?php echo h($trackingNumber); ?></b>
+                        </a>
+                      <?php else: ?>
+                        <b class="order-header-copy-value"><?php echo h($trackingNumber); ?></b>
+                      <?php endif; ?>
                       <button type="button" class="btn btn-xs btn-copy-inline" data-copy="<?php echo h($trackingNumber); ?>" title="Copy tracking number">📋</button>
                     </span>
                     <span class="tracking-carrier-label" title="<?php echo h($trackingCarrier); ?>"><?php echo h($trackingCarrier !== '' ? $trackingCarrier : '-'); ?></span>
@@ -5276,12 +5574,12 @@ ob_start();
             </div>
 
             <div class="order-financial-total-editor">
-              <label>Total value</label>
+              <label>Invoice/customs value (deposits deducted)</label>
               <?php if ($financialCanEdit): ?>
                 <div class="input-group input-group-sm">
                   <input type="text" class="form-control bg-dark text-light border-info order-financial-total-input"
-                    value="<?php echo h(number_format($financialEffectiveTotal, 2, '.', '')); ?>"
-                    data-original-value="<?php echo h(number_format($financialEffectiveTotal, 2, '.', '')); ?>">
+                    value="<?php echo h(number_format($financialCustomsTotal, 2, '.', '')); ?>"
+                    data-original-value="<?php echo h(number_format($financialCustomsTotal, 2, '.', '')); ?>">
                   <div class="input-group-append">
                     <span class="input-group-text bg-info border-info text-white">EUR</span>
                     <button type="button" class="btn btn-info btn-save-financial-total"
@@ -5298,8 +5596,8 @@ ob_start();
                 </div>
               <?php else: ?>
                 <div class="order-value-breakdown-row order-value-breakdown-total mb-1">
-                  <span>Total Order Value:</span>
-                  <span><?php echo number_format($orderValueBreakdown['total'], 2, '.', ''); ?><?php echo h($orderCurrencySuffix); ?></span>
+                  <span>Invoice/customs value:</span>
+                  <span><?php echo number_format($financialCustomsTotal, 2, '.', ''); ?><?php echo h($orderCurrencySuffix); ?></span>
                 </div>
               <?php endif; ?>
               <div class="order-financial-meta mt-1">
@@ -5308,8 +5606,12 @@ ob_start();
                   · Movements: <?php echo ($financialAdjustmentsTotal > 0 ? '+' : ''); ?><?php echo number_format($financialAdjustmentsTotal, 2, '.', ''); ?> €
                   · Calculated: <?php echo number_format($financialCalculatedTotal, 2, '.', ''); ?> €
                 <?php endif; ?>
+                <?php if ($financialCustomDepositsTotal > 0.0): ?>
+                  · Deposits deducted: -<?php echo number_format($financialCustomDepositsTotal, 2, '.', ''); ?> €
+                  · Customs: <?php echo number_format($financialCustomsCalculatedTotal, 2, '.', ''); ?> €
+                <?php endif; ?>
                 <?php if ($financialTotalOverrideActive): ?>
-                  · Manual total
+                  · Manual invoice/customs value
                 <?php endif; ?>
               </div>
             </div>
@@ -5464,6 +5766,103 @@ ob_start();
           </div>
         </div>
       </div>
+
+      <?php if ($showCustomPaymentsPanel): ?>
+        <div id="order-production-payments-panel"
+          data-order-production-payments-panel
+          data-custom-collapsible-panel
+          data-section-key="production-payments"
+          data-order-id="<?php echo (int) $orderId; ?>"
+          data-default-expanded="<?php echo $customPaymentsPanelDefaultExpanded ? '1' : '0'; ?>"
+          class="custom-orders-panel custom-collapsible-panel order-production-payments-panel<?php echo $customPaymentsPanelDefaultExpanded ? ' is-expanded' : ''; ?>">
+          <button type="button" class="custom-collapsible-toggle" data-custom-collapsible-toggle aria-expanded="<?php echo $customPaymentsPanelDefaultExpanded ? 'true' : 'false'; ?>">
+            <span class="custom-collapsible-toggle-title"><i class="fas fa-wallet" aria-hidden="true"></i>Payments And Deposits</span>
+            <span class="custom-collapsible-toggle-meta">
+              <span class="badge badge-info"><?php echo count($customProductionPaymentLines); ?></span>
+              <span>records</span>
+              <i class="fas fa-chevron-down custom-collapsible-toggle-chevron" aria-hidden="true"></i>
+            </span>
+          </button>
+          <div class="panel-body custom-collapsible-body" data-custom-collapsible-body <?php echo $customPaymentsPanelDefaultExpanded ? '' : 'hidden'; ?>>
+            <div class="order-production-payments-list">
+              <?php foreach ($customProductionPaymentLines as $customProductionPaymentLine): ?>
+                <?php
+                $paymentKind = (string) ($customProductionPaymentLine['kind'] ?? $customProductionPaymentLine['payment_kind'] ?? '');
+                $paymentKindLabel = orderDetailCustomPaymentKindLabel($paymentKind);
+                $paymentAmount = (float) ($customProductionPaymentLine['amount'] ?? 0);
+                $paymentAmountClass = $paymentAmount < 0 ? 'text-warning' : 'text-success';
+                $paymentCardClass = $paymentAmount < 0 ? ' is-refund' : '';
+                $paymentCurrency = strtoupper(trim((string) ($customProductionPaymentLine['currency'] ?? '')));
+                $paymentCurrencyDisplay = $paymentCurrency !== '' ? $paymentCurrency : $orderCurrency;
+                $paymentTransactionId = trim((string) ($customProductionPaymentLine['paypal_transaction_id'] ?? ''));
+                $paymentInvoice = trim((string) ($customProductionPaymentLine['invoice_number'] ?? ''));
+                $paymentNote = trim((string) ($customProductionPaymentLine['note'] ?? ''));
+                $paymentReceivedAt = trim((string) ($customProductionPaymentLine['received_at'] ?? ''));
+                $paymentReceivedAtDisplay = $paymentReceivedAt;
+                if ($paymentReceivedAt !== '') {
+                  $paymentReceivedTs = strtotime($paymentReceivedAt);
+                  if ($paymentReceivedTs !== false) {
+                    $paymentReceivedAtDisplay = date('d.m.Y H:i', $paymentReceivedTs);
+                  }
+                }
+                ?>
+                <article class="order-production-payment-card<?php echo h($paymentCardClass); ?>">
+                  <div class="order-production-payment-main">
+                    <div class="order-production-payment-kind">
+                      <span class="order-production-payment-kind-title">
+                        <i class="fas <?php echo $paymentAmount < 0 ? 'fa-undo-alt text-warning' : 'fa-money-check-alt text-success'; ?>" aria-hidden="true"></i>
+                        <?php echo h($paymentKindLabel); ?>
+                      </span>
+                      <small><?php echo $paymentReceivedAtDisplay !== '' ? 'Received ' . h($paymentReceivedAtDisplay) : 'Received date missing'; ?></small>
+                    </div>
+                    <div class="order-production-payment-amount <?php echo h($paymentAmountClass); ?>">
+                      <?php echo ($paymentAmount > 0 ? '+' : ''); ?><?php echo number_format($paymentAmount, 2, '.', ''); ?>
+                      <span><?php echo h($paymentCurrencyDisplay); ?></span>
+                    </div>
+                  </div>
+
+                  <div class="order-production-payment-meta-grid<?php echo $showCustomPaymentsNoteColumn ? ' has-note' : ''; ?>">
+                    <div class="order-production-payment-meta">
+                      <span class="order-production-payment-meta-label">Payment ID</span>
+                      <?php if ($paymentTransactionId !== ''): ?>
+                        <span class="order-production-payment-meta-value order-production-payment-id">
+                          <code><?php echo h($paymentTransactionId); ?></code>
+                          <button type="button" class="btn btn-xs btn-outline-info btn-copy-inline order-production-payment-copy" data-copy="<?php echo h($paymentTransactionId); ?>" title="Copy payment ID" aria-label="Copy payment ID">
+                            <i class="fas fa-copy" aria-hidden="true"></i>
+                          </button>
+                        </span>
+                      <?php else: ?>
+                        <span class="order-production-payment-meta-value is-empty">No payment ID</span>
+                      <?php endif; ?>
+                    </div>
+
+                    <div class="order-production-payment-meta">
+                      <span class="order-production-payment-meta-label">Invoice</span>
+                      <?php if ($paymentInvoice !== ''): ?>
+                        <span class="order-production-payment-meta-value">
+                          <span><?php echo h($paymentInvoice); ?></span>
+                          <button type="button" class="btn btn-xs btn-outline-info btn-copy-inline order-production-payment-copy" data-copy="<?php echo h($paymentInvoice); ?>" title="Copy invoice number" aria-label="Copy invoice number">
+                            <i class="fas fa-copy" aria-hidden="true"></i>
+                          </button>
+                        </span>
+                      <?php else: ?>
+                        <span class="order-production-payment-meta-value is-empty">No invoice</span>
+                      <?php endif; ?>
+                    </div>
+
+                    <?php if ($showCustomPaymentsNoteColumn): ?>
+                      <div class="order-production-payment-meta">
+                        <span class="order-production-payment-meta-label">Note</span>
+                        <span class="order-production-payment-meta-value<?php echo $paymentNote === '' ? ' is-empty' : ''; ?>"><?php echo $paymentNote !== '' ? h($paymentNote) : 'No note'; ?></span>
+                      </div>
+                    <?php endif; ?>
+                  </div>
+                </article>
+              <?php endforeach; ?>
+            </div>
+          </div>
+        </div>
+      <?php endif; ?>
 
       <hr />
       <?php
@@ -5667,7 +6066,7 @@ ob_start();
               <div>
                 <i class="fas fa-cloud-upload-alt d-block mb-1"></i>
                 <b>Drag & drop photos</b>
-                <div class="small text-muted">alebo klikni pre výber · resize na max 1500 px</div>
+                <div class="small text-muted">or click to select · resize to max 1500 px</div>
               </div>
             </div>
             <div class="order-photo-upload-progress mt-2"><span></span></div>
@@ -5688,7 +6087,7 @@ ob_start();
                 </div>
               <?php endforeach; ?>
             <?php else: ?>
-              <div class="text-muted small order-photo-empty">Žiadne fotky.</div>
+              <div class="text-muted small order-photo-empty">No photos yet.</div>
             <?php endif; ?>
               </div>
             </div>
@@ -6496,7 +6895,21 @@ ob_start();
 
                 $renderProductSpecFieldsRow = function (array $fieldsForRow) use ($conn, $it): void {
                   foreach ($fieldsForRow as $itemSpecField): ?>
-                    <label class="<?= h($itemSpecField['wrapper_class']) ?>">
+                    <?php
+                    $fieldWrapperClass = (string) ($itemSpecField['wrapper_class'] ?? '');
+                    $fieldRole = productSpecFieldRole($itemSpecField);
+                    $isGraphicsItem = strtoupper(trim((string) ($it['item_type_code'] ?? ''))) === 'G';
+                    $fieldCurrentValue = strtolower(trim((string) ($itemSpecField['current_value'] ?? '')));
+                    if (
+                      $isGraphicsItem
+                      && in_array($fieldRole, ['grip', 'tr_swingarms'], true)
+                      && $fieldCurrentValue !== ''
+                      && !in_array($fieldCurrentValue, ['select', 'select...'], true)
+                    ) {
+                      $fieldWrapperClass .= ' product-spec-state-attention';
+                    }
+                    ?>
+                    <label class="<?= h($fieldWrapperClass) ?>">
                       <span class="product-spec-label-title"><?= h($itemSpecField['label']) ?></span>
                       <?php
                       $fieldSourceKeyNormalized = productSpecNormalizeKey((string) ($itemSpecField['source_key'] ?? ''));
@@ -6583,7 +6996,7 @@ ob_start();
           </tbody>
         </table>
         <?php if ((int) ($_SESSION['permission'] ?? 0) >= 300): ?>
-          <h6 class="text-muted mb-2 mt-3">Položky</h6>
+          <h6 class="text-muted mb-2 mt-3">Items</h6>
           <?php
           $manualAllowedTypes = [
             'G' => 'Graphics',
@@ -6984,14 +7397,15 @@ ob_start();
 
 <script>
   (function () {
-    function initializeOrderProductionNotesPanels(root) {
-      root.querySelectorAll('[data-order-production-notes-panel]').forEach(function (panel) {
+    function initializeOrderCustomCollapsiblePanels(root) {
+      root.querySelectorAll('[data-order-production-notes-panel], [data-order-production-payments-panel]').forEach(function (panel) {
         var toggle = panel.querySelector('[data-custom-collapsible-toggle]');
         var body = panel.querySelector('[data-custom-collapsible-body]');
         if (!toggle || !body) return;
 
         var orderId = panel.getAttribute('data-order-id') || '0';
-        var storageKey = 'order-production-notes-expanded:' + orderId;
+        var sectionKey = panel.getAttribute('data-section-key') || 'production-notes';
+        var storageKey = 'order-' + sectionKey + '-expanded:' + orderId;
 
         function setExpanded(expanded, remember) {
           toggle.setAttribute('aria-expanded', expanded ? 'true' : 'false');
@@ -7033,15 +7447,15 @@ ob_start();
 
         setExpanded(initiallyExpanded, false);
 
-        if (toggle.dataset.orderProductionNotesBound === '1') return;
-        toggle.dataset.orderProductionNotesBound = '1';
+        if (toggle.dataset.orderCustomCollapsibleBound === '1') return;
+        toggle.dataset.orderCustomCollapsibleBound = '1';
         toggle.addEventListener('click', function () {
           setExpanded(toggle.getAttribute('aria-expanded') !== 'true', true);
         });
       });
     }
 
-    initializeOrderProductionNotesPanels(document);
+    initializeOrderCustomCollapsiblePanels(document);
   })();
 
   /* ── Printing Settings: Autocomplete + Save-on-Enter ─────────────────────── */
@@ -7317,53 +7731,37 @@ ob_start();
       });
     });
     // Input events — autocomplete
-    function getBinaryProductSpecState($select) {
+    function hasSelectedProductSpecValue($select) {
       var value = $.trim(String($select.val() || '')).toLowerCase();
-      var text = $.trim(String($select.find('option:selected').text() || '')).toLowerCase();
 
-      if (text.indexOf('✓') !== -1 || value === '1' || value === 'yes' || value === 'true') {
-        return 'yes';
+      return value !== '' && value !== 'select' && value !== 'select...';
+    }
+
+    function applyProductSpecAttentionState($select, labelSelector) {
+      var $label = $select.closest(labelSelector);
+
+      if (!$label.length) {
+        return;
       }
 
-      if (text.indexOf('✗') !== -1 || value === '0' || value === 'no' || value === 'false') {
-        return 'no';
+      var $row = $select.closest('tr.g-item-options-row');
+      $label.removeClass('product-spec-state-yes product-spec-state-no product-spec-state-attention');
+
+      if ($row.length && !$row.hasClass('item-type-G')) {
+        return;
       }
 
-      return '';
+      if (hasSelectedProductSpecValue($select)) {
+        $label.addClass('product-spec-state-attention');
+      }
     }
 
     function applyGripState($select) {
-      var $label = $select.closest('.print-setting-field-grip');
-      var state = getBinaryProductSpecState($select);
-
-      if (!$label.length) {
-        return;
-      }
-
-      $label.removeClass('product-spec-state-yes product-spec-state-no');
-
-      if (state === 'yes') {
-        $label.addClass('product-spec-state-yes');
-      } else if (state === 'no') {
-        $label.addClass('product-spec-state-no');
-      }
+      applyProductSpecAttentionState($select, '.print-setting-field-grip');
     }
 
     function applySwingarmsState($select) {
-      var $label = $select.closest('.print-setting-field-swingarms');
-      var state = getBinaryProductSpecState($select);
-
-      if (!$label.length) {
-        return;
-      }
-
-      $label.removeClass('product-spec-state-yes product-spec-state-no');
-
-      if (state === 'yes') {
-        $label.addClass('product-spec-state-yes');
-      } else if (state === 'no') {
-        $label.addClass('product-spec-state-no');
-      }
+      applyProductSpecAttentionState($select, '.print-setting-field-swingarms');
     }
 
     $(document).on('input.printSettings', '.print-ac-input', function () {
@@ -7738,7 +8136,7 @@ ob_start();
     });
 
     $(document).on('click.orderPhotos', '.btn-delete-order-photo', function () {
-      if (!confirm('Zmazať fotku z objednávky?')) return;
+      if (!confirm('Delete this photo from the order?')) return;
 
       var $btn = $(this);
       var $card = $btn.closest('.order-photos-card');
@@ -7754,7 +8152,7 @@ ob_start();
 
         $btn.closest('.order-photo-thumb-wrap').remove();
         if (!$card.find('.order-photo-thumb-wrap').length) {
-          $card.find('.order-photo-thumb-grid').html('<div class="text-muted small order-photo-empty">Žiadne fotky.</div>');
+          $card.find('.order-photo-thumb-grid').html('<div class="text-muted small order-photo-empty">No photos yet.</div>');
         }
       }, 'json').fail(function (xhr) {
         alert('Delete failed:\n' + xhr.status + '\n' + xhr.responseText);

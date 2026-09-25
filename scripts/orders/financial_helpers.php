@@ -79,12 +79,160 @@ function order_financial_base_total_from_order(array $order, array $sourceMeta =
     return round($sourceTotal, 2);
   }
 
-  $orderTotal = order_financial_money_value($order['total'] ?? null);
+  $orderTotal = order_financial_money_value($order['total'] ?? ($order['order_total'] ?? null));
   if ($orderTotal !== null) {
     return round($orderTotal, 2);
   }
 
   return 0.0;
+}
+
+function order_financial_decode_source_meta(array $order): array
+{
+  $sourceMeta = json_decode((string) ($order['source_meta'] ?? ''), true);
+  return is_array($sourceMeta) ? $sourceMeta : [];
+}
+
+function order_financial_fetch_custom_order_id_by_int(mysqli $conn, string $sql, int $value): int
+{
+  if ($value <= 0) {
+    return 0;
+  }
+
+  $stmt = $conn->prepare($sql);
+  if (!$stmt) {
+    return 0;
+  }
+
+  $stmt->bind_param('i', $value);
+  $stmt->execute();
+  $row = $stmt->get_result()->fetch_assoc();
+  $stmt->close();
+
+  return $row ? (int) ($row['id'] ?? 0) : 0;
+}
+
+function order_financial_fetch_custom_order_id_by_string(mysqli $conn, string $sql, string $value): int
+{
+  $value = trim($value);
+  if ($value === '') {
+    return 0;
+  }
+
+  $stmt = $conn->prepare($sql);
+  if (!$stmt) {
+    return 0;
+  }
+
+  $stmt->bind_param('s', $value);
+  $stmt->execute();
+  $row = $stmt->get_result()->fetch_assoc();
+  $stmt->close();
+
+  return $row ? (int) ($row['id'] ?? 0) : 0;
+}
+
+function order_financial_resolve_custom_order_id(mysqli $conn, array $order, ?array $sourceMeta = null): int
+{
+  if (!order_financial_table_exists($conn, 'custom_orders')) {
+    return 0;
+  }
+
+  $sourceMeta = $sourceMeta ?? order_financial_decode_source_meta($order);
+  $sourceCode = strtoupper(trim((string) ($order['source_code'] ?? '')));
+  $sourceMetaCustomId = (int) ($sourceMeta['custom_order_id'] ?? 0);
+  $hasCustomOrderSignal = $sourceCode === 'CUSTOM' || $sourceMetaCustomId > 0;
+  if ($sourceMetaCustomId > 0) {
+    $customOrderId = order_financial_fetch_custom_order_id_by_int(
+      $conn,
+      'SELECT id FROM custom_orders WHERE id = ? LIMIT 1',
+      $sourceMetaCustomId
+    );
+    if ($customOrderId > 0) {
+      return $customOrderId;
+    }
+  }
+
+  $productionOrderId = (int) ($order['id'] ?? ($order['order_id'] ?? 0));
+  if ($hasCustomOrderSignal && $productionOrderId > 0 && order_financial_column_exists($conn, 'custom_orders', 'production_order_id')) {
+    $customOrderId = order_financial_fetch_custom_order_id_by_int(
+      $conn,
+      'SELECT id FROM custom_orders WHERE production_order_id = ? ORDER BY id DESC LIMIT 1',
+      $productionOrderId
+    );
+    if ($customOrderId > 0) {
+      return $customOrderId;
+    }
+  }
+
+  $orderNumber = trim((string) ($order['order_number'] ?? ''));
+  if ($sourceCode === 'CUSTOM' && $orderNumber !== '' && order_financial_column_exists($conn, 'custom_orders', 'official_order_number')) {
+    $customOrderId = order_financial_fetch_custom_order_id_by_string(
+      $conn,
+      'SELECT id FROM custom_orders WHERE UPPER(TRIM(official_order_number)) = UPPER(TRIM(?)) ORDER BY id DESC LIMIT 1',
+      $orderNumber
+    );
+    if ($customOrderId > 0) {
+      return $customOrderId;
+    }
+  }
+
+  $externalOrderId = trim((string) ($order['external_order_id'] ?? ''));
+  if ($sourceCode === 'CUSTOM' && $externalOrderId !== '' && order_financial_column_exists($conn, 'custom_orders', 'internal_code')) {
+    $customOrderId = order_financial_fetch_custom_order_id_by_string(
+      $conn,
+      'SELECT id FROM custom_orders WHERE UPPER(TRIM(internal_code)) = UPPER(TRIM(?)) ORDER BY id DESC LIMIT 1',
+      $externalOrderId
+    );
+    if ($customOrderId > 0) {
+      return $customOrderId;
+    }
+  }
+
+  return 0;
+}
+
+function order_financial_custom_deposit_total(mysqli $conn, array $order, ?array $sourceMeta = null): float
+{
+  $sourceMeta = $sourceMeta ?? order_financial_decode_source_meta($order);
+  $sourceFinancialBreakdown = is_array($sourceMeta['financial_breakdown'] ?? null)
+    ? $sourceMeta['financial_breakdown']
+    : [];
+  $sourceMetaDeposits = order_financial_money_value($sourceFinancialBreakdown['deposits'] ?? null);
+  $fallbackDeposits = $sourceMetaDeposits !== null ? max(0.0, round($sourceMetaDeposits, 2)) : 0.0;
+
+  $customOrderId = order_financial_resolve_custom_order_id($conn, $order, $sourceMeta);
+  if (
+    $customOrderId <= 0
+    || !order_financial_table_exists($conn, 'custom_order_payments')
+    || !order_financial_column_exists($conn, 'custom_order_payments', 'custom_order_id')
+    || !order_financial_column_exists($conn, 'custom_order_payments', 'payment_kind')
+    || !order_financial_column_exists($conn, 'custom_order_payments', 'amount')
+  ) {
+    return $fallbackDeposits;
+  }
+
+  $deletedFilter = order_financial_column_exists($conn, 'custom_order_payments', 'deleted_at')
+    ? ' AND deleted_at IS NULL'
+    : '';
+  $stmt = $conn->prepare("
+    SELECT COALESCE(SUM(amount), 0) AS total
+    FROM custom_order_payments
+    WHERE custom_order_id = ?
+      AND UPPER(TRIM(payment_kind)) IN ('DEPOSIT', 'EXTRA_DEPOSIT')
+      {$deletedFilter}
+  ");
+
+  if (!$stmt) {
+    return $fallbackDeposits;
+  }
+
+  $stmt->bind_param('i', $customOrderId);
+  $stmt->execute();
+  $row = $stmt->get_result()->fetch_assoc() ?: [];
+  $stmt->close();
+
+  return max(0.0, round((float) ($row['total'] ?? 0), 2));
 }
 
 function order_financial_fetch_adjustments(mysqli $conn, int $orderId): array
@@ -166,8 +314,14 @@ function order_financial_effective_totals(mysqli $conn, array $order, ?array $so
   }
 
   $baseTotal = order_financial_base_total_from_order($order, $sourceMeta);
-  $adjustmentsTotal = order_financial_adjustment_total($conn, (int) ($order['id'] ?? 0));
+  $providedAdjustmentsTotal = order_financial_money_value($order['financial_adjustments_total'] ?? null);
+  $orderId = (int) ($order['id'] ?? ($order['order_id'] ?? 0));
+  $adjustmentsTotal = $providedAdjustmentsTotal !== null
+    ? round($providedAdjustmentsTotal, 2)
+    : order_financial_adjustment_total($conn, $orderId);
   $calculatedTotal = max(0.0, round($baseTotal + $adjustmentsTotal, 2));
+  $customDepositsTotal = order_financial_custom_deposit_total($conn, $order, $sourceMeta);
+  $customsCalculatedTotal = max(0.0, round($calculatedTotal - $customDepositsTotal, 2));
 
   $overrideValue = order_financial_money_value($order['financial_total_value'] ?? null);
   $overrideActive = $overrideValue !== null;
@@ -178,6 +332,7 @@ function order_financial_effective_totals(mysqli $conn, array $order, ?array $so
   }
 
   $effectiveTotal = $overrideActive ? max(0.0, round((float) $overrideValue, 2)) : $calculatedTotal;
+  $customsEffectiveTotal = $overrideActive ? max(0.0, round((float) $overrideValue, 2)) : $customsCalculatedTotal;
   $effectiveCurrency = ($overrideActive || abs($adjustmentsTotal) >= 0.005) ? $overrideCurrency : $sourceCurrency;
 
   return [
@@ -185,10 +340,13 @@ function order_financial_effective_totals(mysqli $conn, array $order, ?array $so
     'source_currency' => $sourceCurrency,
     'adjustments_total' => $adjustmentsTotal,
     'calculated_total' => $calculatedTotal,
+    'custom_deposits_total' => $customDepositsTotal,
+    'customs_calculated_total' => $customsCalculatedTotal,
     'override_active' => $overrideActive,
     'override_value' => $overrideActive ? round((float) $overrideValue, 2) : null,
     'override_currency' => $overrideCurrency,
     'effective_total' => $effectiveTotal,
+    'customs_effective_total' => $customsEffectiveTotal,
     'effective_currency' => $effectiveCurrency,
   ];
 }
