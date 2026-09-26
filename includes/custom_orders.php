@@ -4070,8 +4070,8 @@ if (!$customOrdersDetailRequest && !$customOrdersFullPageDetail) {
                     <th>Customer<?= customOrderHelp('list_customer') ?></th>
                     <th>Nick<?= customOrderHelp('list_nick') ?></th>
                     <th>Country<?= customOrderHelp('list_country') ?></th>
-                    <th>Status<?= customOrderHelp('status') ?></th>
-                    <th>Complexity<?= customOrderHelp('complexity_level') ?></th>
+                    <th class="text-center">Status<?= customOrderHelp('status') ?></th>
+                    <th class="text-center">Complexity<?= customOrderHelp('complexity_level') ?></th>
                     <th class="text-center">Traffic<?= customOrderHelp('list_traffic') ?></th>
                     <th class="text-center">Assigned</th>
                     <th>Owner<?= customOrderHelp('list_owner') ?></th>
@@ -4116,7 +4116,7 @@ if (!$customOrdersDetailRequest && !$customOrdersFullPageDetail) {
                           -
                         <?php endif; ?>
                       </td>
-                      <td class="custom-orders-status-cell">
+                      <td class="custom-orders-status-cell text-center">
                         <?php
                         $rowStatus = (string) ($row['status'] ?? 'LEAD');
                         $rowStatusLabel = selectedText($statuses, $rowStatus);
@@ -4140,7 +4140,7 @@ if (!$customOrdersDetailRequest && !$customOrdersFullPageDetail) {
                         </span>
                       </td>
                       <?php $rowComplexityLevel = (int) ($row['complexity_level'] ?? 1); ?>
-                      <td><span class="custom-complexity-pill" title="<?= h(customOrderComplexityLabel($rowComplexityLevel, $customOrderComplexityOptions)) ?>"><?= h(customOrderComplexityLabel($rowComplexityLevel, $customOrderComplexityOptions)) ?></span></td>
+                      <td class="text-center"><span class="custom-complexity-pill" title="<?= h(customOrderComplexityLabel($rowComplexityLevel, $customOrderComplexityOptions)) ?>"><?= h(customOrderComplexityLabel($rowComplexityLevel, $customOrderComplexityOptions)) ?></span></td>
                       <td class="text-center">
                         <?php
                         $rowProductionOrderId = (int) ($row['production_order_id'] ?? 0);

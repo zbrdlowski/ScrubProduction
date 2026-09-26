@@ -17,7 +17,10 @@ function multishippingJson(array $payload, int $status = 200): void
   exit;
 }
 
-if ((int) ($_SESSION['permission'] ?? 0) < 1) {
+$permission = (int) ($_SESSION['permission'] ?? 0);
+$isSuperAdmin = $permission >= 900;
+
+if ($permission < 1) {
   multishippingJson(['ok' => false, 'error' => 'No permission.'], 403);
 }
 
@@ -79,7 +82,7 @@ if ($action === 'fetch') {
   if (!$base) {
     multishippingJson(['ok' => false, 'error' => 'Order not found.'], 404);
   }
-  if (!multishippingOrderMatchesShippingScope($conn, $orderId, $sessionDept)) {
+  if (!$isSuperAdmin && !multishippingOrderMatchesShippingScope($conn, $orderId, $sessionDept)) {
     multishippingJson(['ok' => false, 'error' => 'This order belongs to the other shipping workplace.'], 403);
   }
 

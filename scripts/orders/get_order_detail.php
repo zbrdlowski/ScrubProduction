@@ -5168,11 +5168,6 @@ ob_start();
             </div>
 
             <div class="order-summary-meta-item">
-              <span class="order-summary-label">Shipping</span>
-              <div class="order-summary-value"><?php echo h($order['shipping_method'] ?? '-'); ?></div>
-            </div>
-
-            <div class="order-summary-meta-item">
               <span class="order-summary-label">Payment</span>
               <div class="order-summary-value"><?php echo h($order['payment_method'] ?? '-'); ?></div>
               <?php if ($followupLabel !== ''): ?>
@@ -5183,6 +5178,11 @@ ob_start();
                   <?php endif; ?>
                 </div>
               <?php endif; ?>
+            </div>
+
+            <div class="order-summary-meta-item">
+              <span class="order-summary-label">Shipping</span>
+              <div class="order-summary-value"><?php echo h($order['shipping_method'] ?? '-'); ?></div>
             </div>
 
             <div class="order-summary-meta-item">
