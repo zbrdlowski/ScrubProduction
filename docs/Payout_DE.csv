@@ -1,0 +1,13 @@
+﻿--,--,--,--,--,--,--,--,--,--,--,--,--
+"Hinweise"
+"Transaktionsbetrag inkl. Kosten: Die Gesamtzahlung für eine Transaktion, vor Gebühren oder Gutschriften."
+"Alle Transaktionsbeträge (inkl. Kosten) und Gebühren werden in der Transaktionswährung angegeben. Alle Nettobeträge werden in der Auszahlungswährung angegeben."
+"Alle aufgeführten Gebühren enthalten Steuern."
+""
+"Transaktionsbericht"
+"Dieser Bericht beinhaltet den Transaktionstyp";"bestellung, rückerstattung, fall, zahlungsstreitfall, versandetikett, belastung, überweisung, einbehalten, andere gebühr, anpassung, kauf, auszahlung, sekundäre auszahlung, einbehaltene steuer, rücklage "
+"Verkäufer";"scrubdesignzde"
+"Betrag";"223,14 EUR"
+"Datum der Transaktionserstellung";"Typ";"Bestellnummer";"Alte Bestellnummer";"Nutzername des Käufers";"Name des Käufers";"Versandziel - Ort";"Versand nach Provinz/Region/Bundesland";"Versandziel - PLZ";"Versandziel - Land";"Betrag abzügl. Kosten";"Auszahlungswährung";"Auszahlungsdatum";"Auszahlung Nr.";"Auszahlungsmethode";"Auszahlungsstatus";"Grund für Einbehalt";"Artikelnr.";"Transaktionsnummer";"Angebotstitel";"Bestandseinheit";"Stückzahl";"Zwischensumme Artikel";"Verpackung und Versand";"Vom Verkäufer eingezogene Steuer";"Von eBay eingezogene Steuer";"Vom Verkäufer angegebener MwSt.-Satz";"Fixer Anteil der Verkaufsprovision";"Variabler Anteil der Verkaufsprovision";"Gebühr für gesetzliche Betriebskosten";"Gebühr für sehr hohe Quote an „nicht wie beschriebenen Artikeln“";"Gebühr für unterdurchschnittlichen Servicestatus";"Internationale Gebühr";"Transaktionsbetrag (inkl. Kosten)";"Transaktionswährung";"Wechselkurs";"Referenznummer";"Beschreibung"
+"23. Sept. 2026";"Bestellung";"08-15208-33958";"08-15208-33958";"kadibo_34";"Kalle Dibowsky";"Waren (müritz)";"Mecklenburg-Vorpommern";"17192";"DE";"52,17";"EUR";"25. Sept. 2026";"7763777436";"Ceskoslovenská obchodná banka, a.s *7326";"Betrag überwiesen";"--";"116635844227";"10084167519908";"Sitzbankbezug Beta RR Motard Enduro 125R 2T 50 125LC 2021-2026";"S_Snap-Elite_V4 (Stock cover SC64 7.1.26)";"1";"59,8";"0";"--";"--";"0%";"-0,45";"-7,18";"--";"--";"--";"-0";"59,8";"EUR";"--";"--";"--"
+"23. Sept. 2026";"Bestellung";"18-15189-76856";"18-15189-76856";"johasan_56";"Johannes Sander";"Barnstedt";"--";"21406";"DE";"170,97";"EUR";"25. Sept. 2026";"7763777436";"Ceskoslovenská obchodná banka, a.s *7326";"Betrag überwiesen";"--";"116618956653";"10088090757418";"KTM EXC EXC-F 2008 2009 2010 2011 125 200 250 300 400 450 530R Plastik satz";"P_ KT00949 KT00152 KT00460";"1";"174,9";"19,9";"--";"--";"0%";"-0,45";"-23,38";"--";"--";"--";"-0";"194,8";"EUR";"--";"--";"--"

@@ -15,7 +15,7 @@ $currentPage = $_GET['page'] ?? '';
 $sidebarPermission = intval($_SESSION['permission'] ?? 0);
 $sidebarUserId = intval($_SESSION['user_id'] ?? 0);
 $sidebarDepartmentId = intval($_SESSION['dpt'] ?? 0);
-$canSeeAccounting = $sidebarPermission === 900 || in_array($sidebarDepartmentId, [1, 3], true);
+$canSeeAccountingPayouts = $sidebarPermission === 900 || in_array($sidebarDepartmentId, [1, 3], true);
 $canSeeFullOrdersSection = $sidebarPermission >= 300;
 $canSeeRestrictedAdminItems = $sidebarPermission === 900 || in_array($sidebarUserId, [3, 5, 37], true);
 $canSeeStandardAdminItems = $sidebarPermission > 300;
@@ -216,24 +216,12 @@ function isMenuOpen($pages = [])
             //echo ' </ul>';      
           }
           ?>
-        <?php if ($canSeeAccounting): ?>
-        <li class="nav-item <?= isMenuOpen(['accounting_payouts', 'accounting_omega']) ? 'menu-open' : '' ?>">
-          <a href="#" class="nav-link" style="background-color:#2a3036;">
+        <?php if ($canSeeAccountingPayouts): ?>
+        <li class="nav-item">
+          <a href="<?= basename($_SERVER['PHP_SELF']) ?>?page=accounting_payouts" class="nav-link <?= isActive('accounting_payouts') ?>">
             <i class="nav-icon fas fa-calculator" style="color:#20c997;"></i>
-            <p>Accounting<i class="right fas fa-angle-left"></i></p>
+            <p>Accounting</p>
           </a>
-          <ul class="nav nav-treeview">
-            <li class="nav-item">
-              <a href="<?= basename($_SERVER['PHP_SELF']) ?>?page=accounting_payouts" class="nav-link <?= isActive('accounting_payouts') ?>">
-                <i class="fa fa-caret-right nav-icon"></i><p>eBay Payouts</p>
-              </a>
-            </li>
-            <li class="nav-item">
-              <a href="<?= basename($_SERVER['PHP_SELF']) ?>?page=accounting_omega" class="nav-link <?= isActive('accounting_omega') ?>">
-                <i class="fa fa-caret-right nav-icon"></i><p>OMEGA Invoices</p>
-              </a>
-            </li>
-          </ul>
         </li>
         <?php endif; ?>
         <li class="nav-item">

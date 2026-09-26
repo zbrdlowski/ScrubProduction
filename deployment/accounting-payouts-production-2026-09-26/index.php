@@ -70,7 +70,6 @@ $pageLabels = [
   'product_listing_catalog' => 'Product Listing Catalog',
   'vykaz_prace' => 'Activity Report',
   'accounting_payouts' => 'eBay Payouts',
-  'accounting_omega' => 'OMEGA Invoices',
 
   // Add more as needed
 ];
