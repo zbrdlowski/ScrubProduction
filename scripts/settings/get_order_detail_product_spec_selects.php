@@ -407,18 +407,6 @@ function trafficTypesStringFromOrder(array $order, array $items = []): string
     $orderTypes = ['G', 'F', 'P', 'S'];
     $out = '';
 
-    if (is_array($summary)) {
-        foreach ($orderTypes as $type) {
-            if (array_key_exists($type, $summary)) {
-                $out .= $type;
-            }
-        }
-    }
-
-    if ($out !== '') {
-        return $out;
-    }
-
     foreach ($items as $item) {
         $type = strtoupper(trim((string)($item['item_type_code'] ?? '')));
 
@@ -428,6 +416,18 @@ function trafficTypesStringFromOrder(array $order, array $items = []): string
 
         if (in_array($type, $orderTypes, true) && strpos($out, $type) === false) {
             $out .= $type;
+        }
+    }
+
+    if ($out !== '') {
+        return $out;
+    }
+
+    if (is_array($summary)) {
+        foreach ($orderTypes as $type) {
+            if (array_key_exists($type, $summary)) {
+                $out .= $type;
+            }
         }
     }
 

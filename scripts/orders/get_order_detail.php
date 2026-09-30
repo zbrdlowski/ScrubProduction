@@ -299,6 +299,13 @@ function productSpecFieldRoleFromParts(string $specKey, string $sourceKey, strin
       return 'tr_swingarms';
     }
 
+    if (
+      in_array($candidate, ['waterproof-seams', 'seat-waterproof-seams'], true)
+      || preg_match('/(?:^|-)waterproof-seams$/', $candidate)
+    ) {
+      return 'waterproof_seams';
+    }
+
     if ($candidate === 'printer' || preg_match('/(?:^|-)printer$/', $candidate)) {
       return 'printer';
     }
@@ -426,6 +433,9 @@ function productSpecFieldMeta(array $definition): array
     productSpecAddControlClass($meta, 'item-print-grip');
   } elseif ($fieldRole === 'tr_swingarms') {
     productSpecAddControlClass($meta, 'item-print-tr-swingarms');
+  } elseif ($fieldRole === 'waterproof_seams') {
+    productSpecAddControlClass($meta, 'item-print-waterproof-seams');
+    $meta['wrapper_class'] .= ' print-setting-field-waterproof-seams';
   } elseif ($fieldRole === 'printer') {
     productSpecAddControlClass($meta, 'item-print-printer');
   }
@@ -1234,6 +1244,7 @@ if (!is_file($connFile)) {
   out(500, ['ok' => false, 'error' => 'conn.php not found: ' . $connFile]);
 }
 require_once $connFile;
+require_once __DIR__ . '/access.php';
 require_once $base . '/includes/orders_status_helpers.php';
 require_once $base . '/includes/orders_customs_helpers.php';
 require_once $base . '/includes/get_order_detail_product_spec_selects.php';
@@ -1241,6 +1252,10 @@ require_once $base . '/includes/shipping_methods.php';
 require_once __DIR__ . '/department_config.php';
 require_once __DIR__ . '/manual_item_builder_helper.php';
 require_once __DIR__ . '/financial_helpers.php';
+
+$ordersCanManage = auth_can('orders.manage');
+$ordersCanManageFinancials = auth_can('orders.financial');
+$ordersCanAdminister = auth_can('orders.admin');
 
 $orderId = (int) ($_POST['order_id'] ?? 0);
 if ($orderId <= 0)
@@ -1585,18 +1600,6 @@ function trafficTypesStringFromOrder(array $order, array $items = []): string
   $orderTypes = ['G', 'F', 'P', 'S'];
   $out = '';
 
-  if (is_array($summary)) {
-    foreach ($orderTypes as $type) {
-      if (array_key_exists($type, $summary)) {
-        $out .= $type;
-      }
-    }
-  }
-
-  if ($out !== '') {
-    return $out;
-  }
-
   foreach ($items as $item) {
     $type = strtoupper(trim((string) ($item['item_type_code'] ?? '')));
 
@@ -1606,6 +1609,18 @@ function trafficTypesStringFromOrder(array $order, array $items = []): string
 
     if (in_array($type, $orderTypes, true) && strpos($out, $type) === false) {
       $out .= $type;
+    }
+  }
+
+  if ($out !== '') {
+    return $out;
+  }
+
+  if (is_array($summary)) {
+    foreach ($orderTypes as $type) {
+      if (array_key_exists($type, $summary)) {
+        $out .= $type;
+      }
     }
   }
 
@@ -1671,7 +1686,7 @@ $isCustomOrder = strtoupper(trim((string) ($order['source_code'] ?? ''))) === 'C
 $linkedCustomOrderId = $isCustomOrder ? orderDetailResolveCustomOrderId($conn, $order, $orderId, $sourceMeta) : 0;
 $customOrderAppendOnlyNotes = orderDetailLoadCustomOrderNotes($conn, $linkedCustomOrderId);
 $customOrderNoteAuditViewerEmployeeIds = [3, 5];
-$canViewCustomOrderNoteAudit = (int) ($_SESSION['permission'] ?? 0) >= 900
+$canViewCustomOrderNoteAudit = $ordersCanAdminister
   || in_array((int) ($_SESSION['user_id'] ?? 0), $customOrderNoteAuditViewerEmployeeIds, true);
 $visibleCustomOrderNotes = array_values(array_filter(
   $customOrderAppendOnlyNotes,
@@ -1735,7 +1750,7 @@ $financialBreakdownTotal = $isCustomOrder ? $financialCalculatedTotal : $financi
 $financialSourceCurrency = (string) $financialInfo['source_currency'];
 $financialEffectiveCurrency = (string) $financialInfo['effective_currency'];
 $financialOverrideCurrency = (string) $financialInfo['override_currency'];
-$financialCanEdit = (int) ($_SESSION['permission'] ?? 0) >= 400;
+$financialCanEdit = $ordersCanManageFinancials;
 
 $followupMeta = is_array($sourceMeta['_followup'] ?? null) ? $sourceMeta['_followup'] : [];
 $followupTypeLabels = [
@@ -3657,7 +3672,8 @@ ob_start();
   }
 
   .print-setting-field-grip.product-spec-state-attention,
-  .print-setting-field-swingarms.product-spec-state-attention {
+  .print-setting-field-swingarms.product-spec-state-attention,
+  .print-setting-field-waterproof-seams.product-spec-state-attention {
     border-color: #ff233d;
     background: linear-gradient(180deg, rgba(255, 35, 61, .88) 0%, rgba(190, 15, 34, .78) 100%);
     box-shadow:
@@ -3666,19 +3682,22 @@ ob_start();
   }
 
   .print-setting-field-grip.product-spec-state-attention .product-spec-label-title,
-  .print-setting-field-swingarms.product-spec-state-attention .product-spec-label-title {
+  .print-setting-field-swingarms.product-spec-state-attention .product-spec-label-title,
+  .print-setting-field-waterproof-seams.product-spec-state-attention .product-spec-label-title {
     color: #fff;
   }
 
   .print-setting-field-grip.product-spec-state-attention .item-print-grip,
-  .print-setting-field-swingarms.product-spec-state-attention .item-print-tr-swingarms {
+  .print-setting-field-swingarms.product-spec-state-attention .item-print-tr-swingarms,
+  .print-setting-field-waterproof-seams.product-spec-state-attention .item-print-waterproof-seams {
     border-color: rgba(255, 255, 255, .65);
     background-color: rgba(83, 8, 18, .96);
     color: #fff;
   }
 
   .print-setting-field-grip.product-spec-state-attention .item-print-grip:focus,
-  .print-setting-field-swingarms.product-spec-state-attention .item-print-tr-swingarms:focus {
+  .print-setting-field-swingarms.product-spec-state-attention .item-print-tr-swingarms:focus,
+  .print-setting-field-waterproof-seams.product-spec-state-attention .item-print-waterproof-seams:focus {
     border-color: #fff;
     box-shadow: 0 0 0 .2rem rgba(255, 35, 61, .28);
   }
@@ -5022,7 +5041,7 @@ ob_start();
             data-copy="<?php echo h($order['order_number'] ?? $order['external_order_id'] ?? $orderId); ?>"
             title="Click to copy order number"
             style="cursor:pointer;">#<?php echo h($order['order_number'] ?? $order['external_order_id'] ?? $orderId); ?></b>
-          <?php if ((int) ($_SESSION['permission'] ?? 0) >= 300): ?>
+          <?php if ($ordersCanManage): ?>
             <button type="button" class="btn btn-sm btn-light btn-edit-order-header"
               data-order-id="<?php echo (int) $orderId; ?>" data-mode="edit">
               ✏️ Edit header
@@ -5075,7 +5094,7 @@ ob_start();
 
             </select>
 
-            <?php if ($isPendingStatus && (int) ($_SESSION['permission'] ?? 0) >= 400): ?>
+            <?php if ($isPendingStatus && $ordersCanManageFinancials): ?>
               <button type="button" class="btn btn-sm btn-success btn-confirm-order-payment"
                 data-order-id="<?php echo (int) $orderId; ?>"
                 data-expected-amount="<?php echo h(number_format($orderValueBreakdown['total'], 2, '.', '')); ?>"
@@ -5089,7 +5108,7 @@ ob_start();
                 title="Item status changes are still saved, but they cannot change the overall order status until automatic workflow is resumed.">
                 <i class="fas fa-lock mr-1"></i>Manual status – workflow paused
               </span>
-              <?php if (!$isFinalStatus && !$isPendingStatus && (int) ($_SESSION['permission'] ?? 0) >= 400): ?>
+              <?php if (!$isFinalStatus && !$isPendingStatus && $ordersCanManageFinancials): ?>
                 <button type="button" class="btn btn-sm btn-outline-warning btn-resume-order-workflow"
                   data-order-id="<?php echo (int) $orderId; ?>">
                   <i class="fas fa-unlock-alt mr-1"></i>Resume automatic workflow
@@ -5119,7 +5138,7 @@ ob_start();
             ];
             ?>
 
-            <?php if ((int) ($_SESSION['permission'] ?? 0) === 900): ?>
+            <?php if ($ordersCanAdminister): ?>
               <select class="form-control form-control-sm order-types-select"
                 data-order-id="<?php echo (int) $orderId; ?>">
                 <?php foreach ($typeOptions as $val => $label): ?>
@@ -5221,7 +5240,7 @@ ob_start();
             </div>
           <?php endif; ?>
 
-          <?php if ((int) ($_SESSION['permission'] ?? 0) >= 300): ?>
+          <?php if ($ordersCanManage): ?>
             <div class="order-header-edit mt-3" style="display:none;"
               data-customs-country-labels="<?php echo h((string) json_encode($customsCountryLabels, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)); ?>">
               <div class="card bg-dark border-warning">
@@ -5423,7 +5442,7 @@ ob_start();
                 <div class="order-summary-country">
                   <?php if (!empty($s['country'])): ?><?php echo countryFlag($s['country']); ?><?php endif; ?>
                   <span class="order-country-display"><?php echo h($orderCountry ?: '-'); ?></span>
-                  <?php if ((int) ($_SESSION['permission'] ?? 0) >= 300): ?>
+                  <?php if ($ordersCanManage): ?>
                     <button type="button" class="btn btn-xs btn-outline-warning btn-edit-country ml-1"
                       data-order-id="<?php echo (int) $orderId; ?>" data-country="<?php echo h($orderCountry); ?>">Edit</button>
                   <?php endif; ?>
@@ -5442,7 +5461,7 @@ ob_start();
 
           </div>
 
-          <?php $orderOperationsCanEdit = (int) ($_SESSION['permission'] ?? 0) >= 300; ?>
+          <?php $orderOperationsCanEdit = $ordersCanManage; ?>
           <div class="order-header-summary order-header-operations">
             <div class="order-header-operations-card">
               <div class="order-header-operations-title">Invoices</div>
@@ -5622,8 +5641,17 @@ ob_start();
                   <?php
                   $financialAdjustmentAmount = (float) ($financialAdjustment['amount'] ?? 0);
                   $financialAdjustmentClass = $financialAdjustmentAmount < 0 ? 'text-warning' : 'text-info';
+                  $financialAdjustmentGateway = trim((string) ($financialAdjustment['gateway'] ?? ''));
                   $financialAdjustmentReference = trim((string) ($financialAdjustment['reference'] ?? ''));
                   $financialAdjustmentPurpose = trim((string) ($financialAdjustment['purpose'] ?? ''));
+                  $financialAdjustmentMetaParts = [];
+                  if ($financialAdjustmentGateway !== '') {
+                    $financialAdjustmentMetaParts[] = $financialAdjustmentGateway;
+                  }
+                  $financialAdjustmentMetaParts[] = $financialAdjustmentReference !== '' ? $financialAdjustmentReference : 'No reference';
+                  if (!empty($financialAdjustment['created_at'])) {
+                    $financialAdjustmentMetaParts[] = date('d.m.Y H:i', strtotime((string) $financialAdjustment['created_at']));
+                  }
                   ?>
                   <div class="order-financial-adjustment-row">
                     <div class="order-financial-adjustment-main">
@@ -5631,10 +5659,7 @@ ob_start();
                         <?php echo h($financialAdjustmentPurpose !== '' ? $financialAdjustmentPurpose : ($financialAdjustmentAmount < 0 ? 'Refund' : 'Payment')); ?>
                       </div>
                       <div class="order-financial-adjustment-meta">
-                        <?php echo h($financialAdjustmentReference !== '' ? $financialAdjustmentReference : 'No reference'); ?>
-                        <?php if (!empty($financialAdjustment['created_at'])): ?>
-                          · <?php echo h(date('d.m.Y H:i', strtotime((string) $financialAdjustment['created_at']))); ?>
-                        <?php endif; ?>
+                        <?php echo h(implode(' · ', $financialAdjustmentMetaParts)); ?>
                       </div>
                     </div>
                     <div class="d-flex align-items-center">
@@ -5866,7 +5891,7 @@ ob_start();
 
       <hr />
       <?php
-      $showFollowupPanel = (int) ($_SESSION['permission'] ?? 0) >= 300 && !empty($items);
+      $showFollowupPanel = $ordersCanManage && !empty($items);
       $productionNoteColClass = $showFollowupPanel ? 'col-lg-4' : 'col-lg-8';
       $productionNotePanelDefaultExpanded = false;
       $rootCustomNotes = [];
@@ -6058,9 +6083,9 @@ ob_start();
         <div class="col-lg-4">
           <div class="order-photos-panel w-100">
             <div
-              class="order-photos-card <?php echo ((int) ($_SESSION['permission'] ?? 0) > 300) ? 'order-photos-card-admin' : 'order-photos-card-user'; ?>"
+              class="order-photos-card <?php echo $ordersCanManage ? 'order-photos-card-admin' : 'order-photos-card-user'; ?>"
               data-order-id="<?php echo (int) $orderId; ?>">
-          <?php if ((int) ($_SESSION['permission'] ?? 0) > 300): ?>
+          <?php if ($ordersCanManage): ?>
             <div class="order-photo-dropzone" data-order-id="<?php echo (int) $orderId; ?>">
               <input type="file" class="order-photo-input d-none" accept="image/jpeg,image/png,image/webp,image/gif" multiple>
               <div>
@@ -6080,7 +6105,7 @@ ob_start();
                   <img src="<?php echo h($photoUrl); ?>" class="order-photo-thumb"
                     data-full-src="<?php echo h($photoUrl); ?>"
                     alt="<?php echo h($photo['original_name'] ?? 'Order photo'); ?>">
-                  <?php if ((int) ($_SESSION['permission'] ?? 0) > 300): ?>
+                  <?php if ($ordersCanManage): ?>
                     <button type="button" class="btn btn-xs btn-danger btn-delete-order-photo"
                       data-photo-id="<?php echo (int) $photo['id']; ?>" title="Delete photo">×</button>
                   <?php endif; ?>
@@ -6120,7 +6145,7 @@ ob_start();
                 <th>Type</th>
                 <th class="text-center">Názov</th>
                 <th>Qty</th>
-                <?php if ((int) ($_SESSION['permission'] ?? 0) >= 300): ?>
+                <?php if ($ordersCanManage): ?>
                   <th>Price</th>
                 <?php endif; ?>
 
@@ -6130,7 +6155,7 @@ ob_start();
                 <th class="text-center">Detail</th>
                 <th>Action</th>
                 <th>Waiting</th>
-                <?php if ((int) ($_SESSION['permission'] ?? 0) >= 300): ?>
+                <?php if ($ordersCanManage): ?>
                   <th class="text-center">Save</th>
                   <th class="text-center">Delete</th>
                 <?php endif; ?>
@@ -6238,10 +6263,9 @@ ob_start();
                   ];
 
                   $canAssignThisItem = false;
-                  $perm = (int) ($_SESSION['permission'] ?? 0);
 
                   if (isset($dptItemMap[$userDpt]) && $dptItemMap[$userDpt] === $itemType) {
-                    if ($perm >= 400) {
+                    if ($ordersCanManage) {
                       $canAssignThisItem = true;
                     } else {
                       $deptRoleMap = [
@@ -6294,7 +6318,7 @@ ob_start();
                   $canTakeOrderFromDetail = (
                     $currentDeptPrimaryRole !== ''
                     && (
-                      ((int) ($_SESSION['permission'] ?? 0) >= 400)
+                      $ordersCanManageFinancials
                       || ($itemType === 'F' && $currentUserCanPersonalOrders)
                       || (isset($dptItemMap[$userDpt]) && $dptItemMap[$userDpt] === $itemType)
                     )
@@ -6328,7 +6352,7 @@ ob_start();
                       $canRemoveThisAssignment = (
                         ($removeAssignmentId > 0 || $removeOrderAssignmentId > 0)
                         && (
-                          (int) ($_SESSION['permission'] ?? 0) >= 300
+                          $ordersCanManage
                           || (int) $a['id'] === $currentUserId
                         )
                       );
@@ -6384,31 +6408,45 @@ ob_start();
                 </td>
 
                 <td style="min-width:180px;">
-                  <?php if ((int) ($_SESSION['permission'] ?? 0) >= 300): ?>
+                  <?php if ($ordersCanManage): ?>
                     <input class="form-control form-control-sm item-title mb-1"
                       value="<?php echo h($it['title'] ?? ''); ?>">
                   <?php else: ?>
                     <?php echo h($it['title'] ?? ''); ?>
                   <?php endif; ?>
-                  <input type="hidden" class="item-sku" value="<?php echo h($it['sku'] ?? ''); ?>">
                   <input type="hidden" class="item-label" value="<?php echo h($it['custom_label'] ?? ''); ?>">
                   <?php
                   $displaySku = trim((string) ($it['sku'] ?? ''));
                   $displayLabel = trim((string) ($it['custom_label'] ?? ''));
+                  $displayMetaParts = [];
+                  if (!$ordersCanManage && $displaySku !== '') {
+                    $displayMetaParts[] = $displaySku;
+                  }
+                  if ($displayLabel !== '' && ($displaySku === '' || strcasecmp($displaySku, $displayLabel) !== 0)) {
+                    $displayMetaParts[] = $displayLabel;
+                  }
                   ?>
-                  <?php if ($displaySku !== '' || $displayLabel !== ''): ?>
+                  <?php if ($ordersCanManage): ?>
+                    <div class="input-group input-group-sm mt-1">
+                      <div class="input-group-prepend">
+                        <span class="input-group-text bg-secondary border-secondary text-light">SKU</span>
+                      </div>
+                      <input type="text" class="form-control form-control-sm item-sku"
+                        value="<?php echo h($displaySku); ?>" placeholder="SKU">
+                    </div>
+                  <?php else: ?>
+                    <input type="hidden" class="item-sku" value="<?php echo h($displaySku); ?>">
+                  <?php endif; ?>
+                  <?php if (!empty($displayMetaParts)): ?>
                     <div class="small text-muted">
-                      <?= h($displaySku); ?>
-                      <?php if ($displaySku !== '' && $displayLabel !== '' && strcasecmp($displaySku, $displayLabel) !== 0): ?>
-                        | <?= h($displayLabel); ?><?php endif; ?>
-                      <?php if ($displaySku === '' && $displayLabel !== ''): ?>       <?= h($displayLabel); ?>     <?php endif; ?>
+                      <?= h(implode(' | ', $displayMetaParts)); ?>
                     </div>
                   <?php endif; ?>
                 </td>
 
 
                 <td style="width:80px;">
-                  <?php if ((int) ($_SESSION['permission'] ?? 0) >= 300): ?>
+                  <?php if ($ordersCanManage): ?>
                     <input type="number" class="form-control form-control-sm item-qty"
                       value="<?php echo (int) $it['qty']; ?>" min="1">
                   <?php else: ?>
@@ -6416,9 +6454,9 @@ ob_start();
                   <?php endif; ?>
                 </td>
 
-                <?php if ((int) ($_SESSION['permission'] ?? 0) >= 300): ?>
-                  <td style="width:90px;<?= ((int) ($_SESSION['permission'] ?? 0) >= 300) ? '' : ' display:none;' ?>">
-                    <?php if ((int) ($_SESSION['permission'] ?? 0) >= 300): ?>
+                <?php if ($ordersCanManage): ?>
+                  <td style="width:90px;<?= $ordersCanManage ? '' : ' display:none;' ?>">
+                    <?php if ($ordersCanManage): ?>
                       <div class="input-group input-group-sm">
                         <input type="number" class="form-control form-control-sm item-unit-price"
                           value="<?php echo $it['unit_price'] !== null ? number_format((float) $it['unit_price'], 2, '.', '') : ''; ?>"
@@ -6517,7 +6555,7 @@ ob_start();
                   $itemSubcat = 'SEAT_PATCH';
                 }
                 // editaciu môže urobiť ktokoľvek z grafiky alebo admin, aby sa dali nastaviť tlačiarne aj pre iné oddelenia.
-                $canEditPrint = ((int) ($_SESSION['permission'] ?? 0) >= 0);
+                $canEditPrint = auth_can('orders.work');
                 $itemSpecDepartment = productSpecDepartmentForItem($it);
                 $itemProductSpecFields = [];
                 $showItemProductSpecRow = false;
@@ -6746,15 +6784,30 @@ ob_start();
 
                 <td class="text-center">
                   <?php if ($productUrl !== ''): ?>
-                    <a href="<?= h($productUrl) ?>" target="_blank" rel="noopener" class="btn btn-sm btn-outline-info"
-                      title="<?= h($productUrl) ?>">
-                      <i class="fas fa-external-link-alt mr-1"></i>
-                    </a>
-                  <?php else: ?>
+                    <div class="btn-group btn-group-sm" role="group" aria-label="Product URL actions">
+                      <a href="<?= h($productUrl) ?>" target="_blank" rel="noopener" class="btn btn-sm btn-outline-info"
+                        title="<?= h($productUrl) ?>">
+                        <i class="fas fa-external-link-alt" aria-hidden="true"></i>
+                      </a>
+                      <?php if ($ordersCanManage): ?>
+                        <button type="button" class="btn btn-sm btn-outline-secondary btn-edit-product-url"
+                          data-item-id="<?= (int) $it['id'] ?>" data-order-id="<?= (int) $orderId ?>"
+                          data-current-url="<?= h($productUrl) ?>"
+                          title="Edit product URL. Leave empty to use auto-generated SKU link."
+                          aria-label="Edit product URL">
+                          <i class="fas fa-pencil-alt" aria-hidden="true"></i>
+                        </button>
+                      <?php endif; ?>
+                    </div>
+                  <?php elseif ($ordersCanManage): ?>
                     <button type="button" class="btn btn-sm btn-outline-warning btn-set-product-url"
-                      data-item-id="<?= (int) $it['id'] ?>">
+                      data-item-id="<?= (int) $it['id'] ?>" data-order-id="<?= (int) $orderId ?>"
+                      data-current-url=""
+                      title="Set product URL">
                       Set URL
                     </button>
+                  <?php else: ?>
+                    <span class="text-muted" style="font-size:11px;">-</span>
                   <?php endif; ?>
                 </td>
 
@@ -6785,7 +6838,7 @@ ob_start();
                     data-item-id="<?= (int) $it['id'] ?>" data-options="<?= h($formattedOptions) ?>"
                     data-options-raw="<?= h($editableOptions) ?>"
                     data-option-labels="<?= h($optionLabels) ?>"
-                    data-can-edit-options="<?= ((int) ($_SESSION['permission'] ?? 0) >= 300 ? '1' : '0') ?>"
+                    data-can-edit-options="<?= ($ordersCanManage ? '1' : '0') ?>"
                     data-internal-options="<?= h($internalOptions) ?>"
                     data-detail-title="<?= h($isPatchItem ? 'Patch Detail' : 'Product Detail') ?>"
                     data-source-code="<?= h((string) ($order['source_code'] ?? '')) ?>"
@@ -6858,7 +6911,7 @@ ob_start();
                   <?php endif; ?>
                 </td>
 
-                <?php if ((int) ($_SESSION['permission'] ?? 0) >= 300): ?>
+                <?php if ($ordersCanManage): ?>
                   <td class="text-center" style="width:40px;">
                     <button type="button" class="btn btn-xs btn-outline-success btn-save-item"
                       data-id="<?php echo (int) $it['id']; ?>" data-order-id="<?php echo (int) $orderId; ?>">
@@ -6893,16 +6946,19 @@ ob_start();
                   }
                 }
 
-                $renderProductSpecFieldsRow = function (array $fieldsForRow) use ($conn, $it): void {
+                $renderProductSpecFieldsRow = function (array $fieldsForRow) use ($conn, $it, $ordersCanManage): void {
                   foreach ($fieldsForRow as $itemSpecField): ?>
                     <?php
                     $fieldWrapperClass = (string) ($itemSpecField['wrapper_class'] ?? '');
                     $fieldRole = productSpecFieldRole($itemSpecField);
                     $isGraphicsItem = strtoupper(trim((string) ($it['item_type_code'] ?? ''))) === 'G';
+                    $isSeatCoverItem = strtoupper(trim((string) ($it['item_type_code'] ?? ''))) === 'S';
                     $fieldCurrentValue = strtolower(trim((string) ($itemSpecField['current_value'] ?? '')));
                     if (
-                      $isGraphicsItem
-                      && in_array($fieldRole, ['grip', 'tr_swingarms'], true)
+                      (
+                        ($isGraphicsItem && in_array($fieldRole, ['grip', 'tr_swingarms'], true))
+                        || ($isSeatCoverItem && $fieldRole === 'waterproof_seams')
+                      )
                       && $fieldCurrentValue !== ''
                       && !in_array($fieldCurrentValue, ['select', 'select...'], true)
                     ) {
@@ -6921,7 +6977,7 @@ ob_start();
 
                       $isAdminTextEditor = (
                         $itemSpecField['field_type'] === 'text'
-                        && ((int) ($_SESSION['permission'] ?? 0) >= 300 || $isUserEditableTextField)
+                        && ($ordersCanManage || $isUserEditableTextField)
                       );
 
                       $isUserTextBlock = (
@@ -6995,7 +7051,7 @@ ob_start();
             <?php endforeach; ?>
           </tbody>
         </table>
-        <?php if ((int) ($_SESSION['permission'] ?? 0) >= 300): ?>
+        <?php if ($ordersCanManage): ?>
           <h6 class="text-muted mb-2 mt-3">Items</h6>
           <?php
           $manualAllowedTypes = [
@@ -7737,8 +7793,9 @@ ob_start();
       return value !== '' && value !== 'select' && value !== 'select...';
     }
 
-    function applyProductSpecAttentionState($select, labelSelector) {
+    function applyProductSpecAttentionState($select, labelSelector, itemTypeClass) {
       var $label = $select.closest(labelSelector);
+      itemTypeClass = itemTypeClass || 'item-type-G';
 
       if (!$label.length) {
         return;
@@ -7747,7 +7804,7 @@ ob_start();
       var $row = $select.closest('tr.g-item-options-row');
       $label.removeClass('product-spec-state-yes product-spec-state-no product-spec-state-attention');
 
-      if ($row.length && !$row.hasClass('item-type-G')) {
+      if ($row.length && itemTypeClass && !$row.hasClass(itemTypeClass)) {
         return;
       }
 
@@ -7762,6 +7819,10 @@ ob_start();
 
     function applySwingarmsState($select) {
       applyProductSpecAttentionState($select, '.print-setting-field-swingarms');
+    }
+
+    function applyWaterproofSeamsState($select) {
+      applyProductSpecAttentionState($select, '.print-setting-field-waterproof-seams', 'item-type-S');
     }
 
     $(document).on('input.printSettings', '.print-ac-input', function () {
@@ -7821,6 +7882,9 @@ ob_start();
       if ($field.is('.item-print-tr-swingarms')) {
         applySwingarmsState($field);
       }
+      if ($field.is('.item-print-waterproof-seams')) {
+        applyWaterproofSeamsState($field);
+      }
       savePrintSettings($tr, itemId, orderId);
     });
 
@@ -7851,6 +7915,10 @@ ob_start();
 
     $('.item-print-tr-swingarms').each(function () {
       applySwingarmsState($(this));
+    });
+
+    $('.item-print-waterproof-seams').each(function () {
+      applyWaterproofSeamsState($(this));
     });
 
     // ── Modal: show Printing Settings block ─────────────────────────────────

@@ -76,11 +76,12 @@ if (!isset($conn) || !$conn instanceof mysqli) {
 
 $conn->set_charset('utf8mb4');
 const DASHBOARD_EXCLUDE_QUERY = 'CANCELLED,PENDING,SHIPPED,DELIVERED';
+const DASHBOARD_ITEM_STATUS_EXCLUDE_QUERY = 'SHIPPED,CANCELLED,PENDING';
 
 $dashboardDepartments = [
   'G' => ['key' => 'G', 'label' => 'Graphic kits', 'legendLabel' => 'Graphics kit', 'type' => 'G', 'filter' => 'G', 'color' => '#17e01f', 'dark' => '#0b8f3a', 'colorClass' => 'green'],
   'P' => ['key' => 'P', 'label' => 'Plastic kits', 'legendLabel' => 'Plastics kit', 'type' => 'P', 'filter' => 'P', 'color' => '#2dd4d7', 'dark' => '#148f9d', 'colorClass' => 'cyan'],
-  'F' => ['key' => 'F', 'label' => 'GFP', 'legendLabel' => 'GFP', 'type' => 'F', 'filter' => 'F', 'color' => '#ff1616', 'dark' => '#a91010', 'colorClass' => 'red'],
+  'F' => ['key' => 'F', 'label' => 'Fitting', 'legendLabel' => 'Fitting', 'type' => 'F', 'filter' => 'F', 'color' => '#ff1616', 'dark' => '#a91010', 'colorClass' => 'red'],
   'S' => ['key' => 'S', 'label' => 'Seat covers', 'legendLabel' => 'Seat covers', 'type' => 'S', 'filter' => 'S', 'color' => '#f5f20a', 'dark' => '#a39c05', 'colorClass' => 'yellow'],
 ];
 
@@ -327,11 +328,14 @@ function dashboard_visible_status_rows(string $department, array $rawCounts, arr
     if ($label === '')
       continue;
     $count = 0;
+    $statusCode = '';
     foreach (($definition['codes'] ?? []) as $code) {
       $normalized = strtoupper(trim((string) $code));
+      if ($statusCode === '' && $normalized !== '')
+        $statusCode = $normalized;
       $count += (int) ($rawCounts[$normalized] ?? 0);
     }
-    $rows[$label] = $count;
+    $rows[] = ['label' => $label, 'code' => $statusCode, 'count' => $count];
   }
   return $rows;
 }
@@ -372,6 +376,15 @@ function dashboard_orders_link(array $params = []): string
 {
   $query = array_merge(['page' => 'orders', 'exclude_status' => DASHBOARD_EXCLUDE_QUERY], $params);
   return 'index.php?' . http_build_query($query, '', '&', PHP_QUERY_RFC3986);
+}
+function dashboard_status_orders_link(string $department, string $status): string
+{
+  return 'index.php?' . http_build_query([
+    'page' => 'orders',
+    'item_department' => dashboard_normalize_department($department),
+    'item_status' => strtoupper(trim($status)),
+    'exclude_status' => DASHBOARD_ITEM_STATUS_EXCLUDE_QUERY,
+  ], '', '&', PHP_QUERY_RFC3986);
 }
 function dashboard_priority_breakdown(mysqli $conn, int $priority, array $departments, DateTimeInterface $today): array
 {
@@ -777,13 +790,18 @@ $updatedAt = date('d.m.Y H:i');
 
     .priority-row:hover,
     .priority-head:hover,
+    .department-head:hover,
+    .status-row:hover,
+    .ready-row:hover,
     .department-card:hover {
       filter: brightness(1.08);
     }
 
     .priority-row:focus-visible,
     .priority-head:focus-visible,
-    .department-card:focus-visible {
+    .department-head:focus-visible,
+    .status-row:focus-visible,
+    .ready-row:focus-visible {
       outline: 3px solid #fff;
       outline-offset: 3px;
     }
@@ -819,6 +837,7 @@ $updatedAt = date('d.m.Y H:i');
       gap: 10px;
       border-bottom: 2px solid var(--line);
       padding-bottom: clamp(4px, .3vw, 7px);
+      border-radius: 6px;
     }
 
     .department-title {
@@ -859,6 +878,7 @@ $updatedAt = date('d.m.Y H:i');
       align-items: baseline;
       gap: 10px;
       min-height: 0;
+      border-radius: 4px;
     }
 
     .status-name {
@@ -1184,20 +1204,28 @@ $updatedAt = date('d.m.Y H:i');
       <?php foreach ($dashboardDepartments as $department):
         $block = $departmentBlocks[$department['key']];
         ?>
-        <a class="department-card"
-          href="<?php echo dashboard_h(dashboard_orders_link(['type' => $department['filter']])); ?>"
-          title="Open <?php echo dashboard_h($department['label']); ?> orders">
-          <div class="department-head">
+        <div class="department-card" role="group" aria-label="<?php echo dashboard_h($department['label']); ?> active orders">
+          <a class="department-head"
+            href="<?php echo dashboard_h(dashboard_orders_link(['type' => $department['filter']])); ?>"
+            title="Open <?php echo dashboard_h($department['label']); ?> orders">
             <div class="department-title"><?php echo dashboard_h($department['label']); ?></div>
             <div class="department-count red"><?php echo (int) $block['total']; ?></div>
-          </div>
+          </a>
           <div class="status-list">
             <?php if (!empty($block['statuses'])): ?>
-              <?php foreach ($block['statuses'] as $statusLabel => $count): ?>
-                <div class="status-row">
+              <?php foreach ($block['statuses'] as $statusRow):
+                $statusLabel = (string) ($statusRow['label'] ?? '');
+                $statusCode = (string) ($statusRow['code'] ?? '');
+                $count = (int) ($statusRow['count'] ?? 0);
+                if ($statusCode === '')
+                  continue;
+                ?>
+                <a class="status-row"
+                  href="<?php echo dashboard_h(dashboard_status_orders_link($department['key'], $statusCode)); ?>"
+                  title="Open <?php echo dashboard_h($department['label']); ?> orders with status <?php echo dashboard_h($statusLabel); ?>">
                   <span class="status-name"><?php echo dashboard_h($statusLabel); ?></span>
-                  <span class="status-count"><?php echo (int) $count; ?></span>
-                </div>
+                  <span class="status-count"><?php echo $count; ?></span>
+                </a>
               <?php endforeach; ?>
             <?php else: ?>
               <div class="empty">No active orders</div>
@@ -1209,11 +1237,13 @@ $updatedAt = date('d.m.Y H:i');
               </div>
             <?php endif; ?>
           </div>
-          <div class="ready-row">
+          <a class="ready-row"
+            href="<?php echo dashboard_h(dashboard_status_orders_link($department['key'], 'READY')); ?>"
+            title="Open <?php echo dashboard_h($department['label']); ?> orders with status READY">
             <span>READY</span>
             <span><?php echo (int) $block['ready']; ?></span>
-          </div>
-        </a>
+          </a>
+        </div>
       <?php endforeach; ?>
     </section>
 

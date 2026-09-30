@@ -1,14 +1,18 @@
 <?php
 declare(strict_types=1);
 
+require_once __DIR__ . '/auth.php';
+if (!auth_can('custom_orders.view')) {
+  echo '<div class="alert alert-danger">Na Custom Orders nemáte oprávnenie.</div>';
+  return;
+}
 require_once __DIR__ . '/conn.php';
 require_once dirname(__DIR__) . '/scripts/custom_orders/helpers.php';
 require_once __DIR__ . '/orders_workflow_helpers.php';
 
-$customOrdersPermission = (int) ($_SESSION['permission'] ?? 0);
-$customOrdersCanManage = $customOrdersPermission >= 300;
-$customOrdersCanContribute = $customOrdersPermission >= 1;
-$customOrdersCanUpdateStatus = $customOrdersCanContribute;
+$customOrdersCanManage = auth_can('custom_orders.manage');
+$customOrdersCanContribute = auth_can('custom_orders.work');
+$customOrdersCanUpdateStatus = auth_can('custom_orders.work');
 $customOrderCustomerServiceOnlyStatusCodes = array_fill_keys(customOrdersCustomerServiceOnlyStatusCodes(), true);
 $customOrdersCurrentUserId = (int) ($_SESSION['user_id'] ?? 0);
 // CUSTOM ORDERS NOTE AUDIT: Sem dopln employee ID konatela alebo dalsich ludi,
@@ -17,8 +21,7 @@ $customOrdersCurrentUserId = (int) ($_SESSION['user_id'] ?? 0);
 $customOrderNoteAuditViewerEmployeeIds = [
   3,5
 ];
-$customOrdersCanViewNoteAudit = $customOrdersPermission >= 900
-  || in_array($customOrdersCurrentUserId, $customOrderNoteAuditViewerEmployeeIds, true);
+$customOrdersCanViewNoteAudit = auth_can('custom_orders.audit');
 if (!$customOrdersCanContribute) {
   http_response_code(403);
   echo '<div class="alert alert-danger">No permission to view Custom Orders.</div>';
@@ -353,7 +356,7 @@ try {
     $customOrdersProductionPlaceholders = implode(',', array_fill(0, count($customOrdersProductionOrderIds), '?'));
     $customOrdersProductionTypes = str_repeat('i', count($customOrdersProductionOrderIds));
     $stmtCustomOrdersDeptStatuses = $conn->prepare("
-      SELECT order_id, item_type_code, status, options_json, internal_options_json
+      SELECT order_id, item_type_code, status, sku, custom_label, options_json, internal_options_json
       FROM order_items
       WHERE deleted_at IS NULL
         AND order_id IN ($customOrdersProductionPlaceholders)
@@ -385,6 +388,8 @@ try {
 
         $customOrdersGroupsByProductionOrder[$customOrdersProductionOrderId][$customOrdersItemType][] = [
           'status' => strtoupper((string) ($customOrdersDeptRow['status'] ?? 'NEW')),
+          'sku' => $customOrdersDeptRow['sku'] ?? null,
+          'custom_label' => $customOrdersDeptRow['custom_label'] ?? null,
           'options_json' => $customOrdersDeptRow['options_json'] ?? null,
           'internal_options_json' => $customOrdersDeptRow['internal_options_json'] ?? null,
         ];
@@ -5777,6 +5782,11 @@ if (!$customOrdersDetailRequest && !$customOrdersFullPageDetail) {
         detailWrap.style.minHeight = detailWrap.offsetHeight + 'px';
         detailWrap.dataset.loaded = '0';
         openCustomOrderDetail(orderId);
+        return;
+      }
+      if (orderId > 0) {
+        rememberCustomOrdersScroll(form);
+        window.location.reload();
       }
     }
 
@@ -6215,7 +6225,11 @@ if (!$customOrdersDetailRequest && !$customOrdersFullPageDetail) {
     }
 
     document.querySelectorAll('form[action^="scripts/custom_orders/"]').forEach(function (form) {
-      form.addEventListener('submit', function () {
+      form.addEventListener('submit', function (event) {
+        if (form.classList.contains('custom-export-production-form') && !confirmCustomOrderProductionExport(form)) {
+          event.preventDefault();
+          return;
+        }
         rememberCustomOrdersScroll(form);
       });
     });
@@ -6517,7 +6531,12 @@ if (!$customOrdersDetailRequest && !$customOrdersFullPageDetail) {
       function reloadPhotoDetail(card) {
         var orderId = parseInt(card.getAttribute('data-order-id') || '0', 10);
         var detailWrap = card.closest('.custom-order-detail-wrap');
-        if (!detailWrap || !orderId) return;
+        if (!orderId) return;
+        if (!detailWrap) {
+          rememberCustomOrdersScroll(card);
+          window.location.reload();
+          return;
+        }
         detailWrap.style.minHeight = detailWrap.offsetHeight + 'px';
         detailWrap.dataset.loaded = '0';
         openCustomOrderDetail(orderId);
@@ -6643,7 +6662,7 @@ if (!$customOrdersDetailRequest && !$customOrdersFullPageDetail) {
 
     var CUSTOM_ORDER_COUNTRY_CODES = ['AF','AX','AL','DZ','AS','AD','AO','AI','AQ','AG','AR','AM','AW','AU','AT','AZ','BS','BH','BD','BB','BY','BE','BZ','BJ','BM','BT','BO','BQ','BA','BW','BV','BR','IO','BN','BG','BF','BI','CV','KH','CM','CA','KY','CF','TD','CL','CN','CX','CC','CO','KM','CG','CD','CK','CR','CI','HR','CU','CW','CY','CZ','DK','DJ','DM','DO','EC','EG','SV','GQ','ER','EE','SZ','ET','FK','FO','FJ','FI','FR','GF','PF','TF','GA','GM','GE','DE','GH','GI','GR','GL','GD','GP','GU','GT','GG','GN','GW','GY','HT','HM','VA','HN','HK','HU','IS','IN','ID','IR','IQ','IE','IM','IL','IT','JM','JP','JE','JO','KZ','KE','KI','KP','KR','KW','KG','LA','LV','LB','LS','LR','LY','LI','LT','LU','MO','MG','MW','MY','MV','ML','MT','MH','MQ','MR','MU','YT','MX','FM','MD','MC','MN','ME','MS','MA','MZ','MM','NA','NR','NP','NL','NC','NZ','NI','NE','NG','NU','NF','MK','MP','NO','OM','PK','PW','PS','PA','PG','PY','PE','PH','PN','PL','PT','PR','QA','RE','RO','RU','RW','BL','SH','KN','LC','MF','PM','VC','WS','SM','ST','SA','SN','RS','SC','SL','SG','SX','SK','SI','SB','SO','ZA','GS','SS','ES','LK','SD','SR','SJ','SE','CH','SY','TW','TJ','TZ','TH','TL','TG','TK','TO','TT','TN','TR','TM','TC','TV','UG','UA','AE','GB','US','UM','UY','UZ','VU','VE','VN','VG','VI','WF','EH','YE','ZM','ZW','XK'];
     var CUSTOM_ORDER_STATE_OPTIONS = {
-      US: [['AL','Alabama'],['AK','Alaska'],['AZ','Arizona'],['AR','Arkansas'],['CA','California'],['CO','Colorado'],['CT','Connecticut'],['DE','Delaware'],['DC','District of Columbia'],['FL','Florida'],['GA','Georgia'],['HI','Hawaii'],['ID','Idaho'],['IL','Illinois'],['IN','Indiana'],['IA','Iowa'],['KS','Kansas'],['KY','Kentucky'],['LA','Louisiana'],['ME','Maine'],['MD','Maryland'],['MA','Massachusetts'],['MI','Michigan'],['MN','Minnesota'],['MS','Mississippi'],['MO','Missouri'],['MT','Montana'],['NE','Nebraska'],['NV','Nevada'],['NH','New Hampshire'],['NJ','New Jersey'],['NM','New Mexico'],['NY','New York'],['NC','North Carolina'],['ND','North Dakota'],['OH','Ohio'],['OK','Oklahoma'],['OR','Oregon'],['PA','Pennsylvania'],['RI','Rhode Island'],['SC','South Carolina'],['SD','South Dakota'],['TN','Tennessee'],['TX','Texas'],['UT','Utah'],['VT','Vermont'],['VA','Virginia'],['WA','Washington'],['WV','West Virginia'],['WI','Wisconsin'],['WY','Wyoming']],
+      US: [['AL','Alabama'],['AK','Alaska'],['AZ','Arizona'],['AR','Arkansas'],['CA','California'],['CO','Colorado'],['CT','Connecticut'],['DE','Delaware'],['DC','District of Columbia'],['FL','Florida'],['GA','Georgia'],['HI','Hawaii'],['ID','Idaho'],['IL','Illinois'],['IN','Indiana'],['IA','Iowa'],['KS','Kansas'],['KY','Kentucky'],['LA','Louisiana'],['ME','Maine'],['MD','Maryland'],['MA','Massachusetts'],['MI','Michigan'],['MN','Minnesota'],['MS','Mississippi'],['MO','Missouri'],['MT','Montana'],['NE','Nebraska'],['NV','Nevada'],['NH','New Hampshire'],['NJ','New Jersey'],['NM','New Mexico'],['NY','New York'],['NC','North Carolina'],['ND','North Dakota'],['OH','Ohio'],['OK','Oklahoma'],['OR','Oregon'],['PA','Pennsylvania'],['PR','Puerto Rico'],['RI','Rhode Island'],['SC','South Carolina'],['SD','South Dakota'],['TN','Tennessee'],['TX','Texas'],['UT','Utah'],['VT','Vermont'],['VA','Virginia'],['WA','Washington'],['WV','West Virginia'],['WI','Wisconsin'],['WY','Wyoming']],
       CA: [['AB','Alberta'],['BC','British Columbia'],['MB','Manitoba'],['NB','New Brunswick'],['NL','Newfoundland and Labrador'],['NS','Nova Scotia'],['NT','Northwest Territories'],['NU','Nunavut'],['ON','Ontario'],['PE','Prince Edward Island'],['QC','Quebec'],['SK','Saskatchewan'],['YT','Yukon']],
       AU: [['ACT','Australian Capital Territory'],['NSW','New South Wales'],['NT','Northern Territory'],['QLD','Queensland'],['SA','South Australia'],['TAS','Tasmania'],['VIC','Victoria'],['WA','Western Australia']]
     };
@@ -7162,6 +7181,77 @@ if (!$customOrdersDetailRequest && !$customOrdersFullPageDetail) {
       }
     }
 
+    function initializeCustomInlineItemEditForms(root) {
+      if (!root) return;
+
+      root.querySelectorAll('form.custom-inline-item-edit-form').forEach(function (form) {
+        if (form.dataset.inlineSaveBound === '1') return;
+        form.dataset.inlineSaveBound = '1';
+        form.addEventListener('submit', function (event) {
+          event.preventDefault();
+          if (!confirmCustomOrderMissingCategoryInfo(form)) return;
+          var saveButton = form.querySelector('button[type="submit"]');
+          var originalText = saveButton ? saveButton.textContent : 'Save';
+          if (saveButton) {
+            saveButton.disabled = true;
+            saveButton.textContent = 'Saving…';
+          }
+
+          fetch(form.action, {
+            method: 'POST',
+            headers: { 'X-Requested-With': 'XMLHttpRequest' },
+            body: new FormData(form)
+          })
+            .then(function (response) {
+              return response.text().then(function (rawBody) {
+                var payload;
+                try {
+                  payload = JSON.parse(rawBody);
+                } catch (parseError) {
+                  throw new Error(String(rawBody || 'Invalid server response').trim().substring(0, 400));
+                }
+                if (!response.ok || !payload.ok) throw new Error(payload.message || 'Item could not be saved.');
+                return payload;
+              });
+            })
+            .then(function () {
+              var refreshedOrderIdInput = form.querySelector('input[name="custom_order_id"]');
+              var refreshedOrderId = refreshedOrderIdInput ? parseInt(refreshedOrderIdInput.value || '0', 10) : 0;
+              var refreshedDetailWrap = form.closest('.custom-order-detail-wrap');
+              if (refreshedDetailWrap && refreshedOrderId > 0) {
+                refreshedDetailWrap.style.minHeight = refreshedDetailWrap.offsetHeight + 'px';
+                refreshedDetailWrap.dataset.loaded = '0';
+                openCustomOrderDetail(refreshedOrderId);
+                return;
+              }
+              if (refreshedOrderId > 0) {
+                rememberCustomOrdersScroll(form);
+                window.location.reload();
+                return;
+              }
+              if (!saveButton) return;
+              saveButton.classList.remove('btn-outline-success', 'btn-outline-danger');
+              saveButton.classList.add('btn-success');
+              saveButton.textContent = 'Saved';
+              window.setTimeout(function () {
+                saveButton.classList.remove('btn-success');
+                saveButton.classList.add('btn-outline-success');
+                saveButton.textContent = originalText;
+                saveButton.disabled = false;
+              }, 1200);
+            })
+            .catch(function (error) {
+              if (!saveButton) return;
+              saveButton.classList.remove('btn-outline-success', 'btn-success');
+              saveButton.classList.add('btn-outline-danger');
+              saveButton.textContent = 'Error';
+              saveButton.title = error && error.message ? error.message : String(error);
+              saveButton.disabled = false;
+            });
+        });
+      });
+    }
+
     function initializeInjectedDetail(root) {
       if (!root) return;
 
@@ -7253,78 +7343,7 @@ if (!$customOrdersDetailRequest && !$customOrdersFullPageDetail) {
         });
       });
 
-      root.querySelectorAll('form.custom-inline-item-edit-form').forEach(function (form) {
-        if (form.dataset.inlineSaveBound === '1') return;
-        form.dataset.inlineSaveBound = '1';
-        form.addEventListener('submit', function (event) {
-          event.preventDefault();
-          if (!confirmCustomOrderMissingCategoryInfo(form)) return;
-          var saveButton = form.querySelector('button[type="submit"]');
-          var originalText = saveButton ? saveButton.textContent : 'Save';
-          if (saveButton) {
-            saveButton.disabled = true;
-            saveButton.textContent = 'Saving…';
-          }
-
-          fetch(form.action, {
-            method: 'POST',
-            headers: { 'X-Requested-With': 'XMLHttpRequest' },
-            body: new FormData(form)
-          })
-            .then(function (response) {
-              return response.text().then(function (rawBody) {
-                var payload;
-                try {
-                  payload = JSON.parse(rawBody);
-                } catch (parseError) {
-                  throw new Error(String(rawBody || 'Invalid server response').trim().substring(0, 400));
-                }
-                if (!response.ok || !payload.ok) throw new Error(payload.message || 'Item could not be saved.');
-                return payload;
-              });
-            })
-            .then(function (payload) {
-              var refreshedOrderIdInput = form.querySelector('input[name="custom_order_id"]');
-              var refreshedOrderId = refreshedOrderIdInput ? parseInt(refreshedOrderIdInput.value || '0', 10) : 0;
-              var refreshedDetailWrap = form.closest('.custom-order-detail-wrap');
-              if (refreshedDetailWrap && refreshedOrderId > 0) {
-                refreshedDetailWrap.style.minHeight = refreshedDetailWrap.offsetHeight + 'px';
-                refreshedDetailWrap.dataset.loaded = '0';
-                openCustomOrderDetail(refreshedOrderId);
-                return;
-              }
-              if (form.classList.contains('custom-add-item-form')) {
-                var orderIdInput = form.querySelector('input[name="custom_order_id"]');
-                var orderId = orderIdInput ? parseInt(orderIdInput.value || '0', 10) : 0;
-                var detailWrap = form.closest('.custom-order-detail-wrap');
-                if (detailWrap && orderId > 0) {
-                  detailWrap.style.minHeight = detailWrap.offsetHeight + 'px';
-                  detailWrap.dataset.loaded = '0';
-                  openCustomOrderDetail(orderId);
-                }
-                return;
-              }
-              if (!saveButton) return;
-              saveButton.classList.remove('btn-outline-success', 'btn-outline-danger');
-              saveButton.classList.add('btn-success');
-              saveButton.textContent = 'Saved';
-              window.setTimeout(function () {
-                saveButton.classList.remove('btn-success');
-                saveButton.classList.add('btn-outline-success');
-                saveButton.textContent = originalText;
-                saveButton.disabled = false;
-              }, 1200);
-            })
-            .catch(function (error) {
-              if (!saveButton) return;
-              saveButton.classList.remove('btn-outline-success', 'btn-success');
-              saveButton.classList.add('btn-outline-danger');
-              saveButton.textContent = 'Error';
-              saveButton.title = error && error.message ? error.message : String(error);
-              saveButton.disabled = false;
-            });
-        });
-      });
+      initializeCustomInlineItemEditForms(root);
 
       root.querySelectorAll('form[action="scripts/custom_orders/save_item.php"]').forEach(function (form) {
         if (form.dataset.customBuilderBound === '1') return;
@@ -7627,14 +7646,20 @@ if (!$customOrdersDetailRequest && !$customOrdersFullPageDetail) {
     });
 
     initializeCustomCountryState(document);
+    initializeCustomBillingSame(document);
     initializeCustomOfficialNumberModal();
     initializeCustomOfficialNumberEditors(document);
     initializeCustomDetailRefreshForms(document);
     initializeCustomInlineStatusSelects(document);
+    initializeCustomInlineItemEditForms(document);
+    initializeCustomCategoryPicker(document);
+    initializeCustomOrderPhotos(document);
+    initializeCustomContactSuggestions(document);
     initializeNewCustomLeadGuard(document);
     applyCustomOrdersAccess(document);
     initializeCustomCollapsiblePanels(document);
     initializeCustomNoteReplies(document);
+    focusCustomOrderNote(document);
     alignCustomHelpIcons(document);
     var helpAlignmentFrame = 0;
     window.addEventListener('resize', function () {

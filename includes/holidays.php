@@ -258,7 +258,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $holidayHasTable) {
   if ($action === 'create_holiday_request') {
     $employeeId = $holidayCanManage ? (intval($_POST['employee_id'] ?? 0) ?: $holidayEmpId) : $holidayEmpId;
     $type = $_POST['request_type'] ?? 'holiday';
-    $allowedTypes = ['holiday', 'toil', 'doctor', 'sick', 'other'];
+    $allowedTypes = $holidayCanManage
+      ? ['holiday', 'toil', 'doctor', 'sick', 'other']
+      : ['holiday', 'toil', 'doctor', 'other'];
     if (!in_array($type, $allowedTypes, true)) {
       $type = 'holiday';
     }
@@ -282,11 +284,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $holidayHasTable) {
       if (!empty($validDates)) {
         $normalizedStart = reset($validDates);
         $normalizedEnd = end($validDates);
+        $requestStatus = $type === 'doctor' ? 'approved' : 'pending';
 
         $stmt = $conn->prepare("INSERT INTO holiday_requests
             (employee_id, request_type, status, start_date, end_date, note, requested_by)
-            VALUES (?, ?, 'pending', ?, ?, ?, ?)");
-        $stmt->bind_param('issssi', $employeeId, $type, $normalizedStart, $normalizedEnd, $note, $holidayEmpId);
+            VALUES (?, ?, ?, ?, ?, ?, ?)");
+        $stmt->bind_param('isssssi', $employeeId, $type, $requestStatus, $normalizedStart, $normalizedEnd, $note, $holidayEmpId);
         $stmt->execute();
         $stmt->close();
       }
@@ -647,6 +650,11 @@ for ($i = 0; $i < 6; $i++) {
     color: #e4e6eb;
   }
 
+  .holiday-grid tbody tr:not(.holiday-dept-row) td:not(.holiday-employee-col) {
+    padding: 0 !important;
+    overflow: hidden;
+  }
+
   .holiday-grid .holiday-employee-col {
     padding-left: 8px !important;
     position: sticky;
@@ -708,6 +716,29 @@ for ($i = 0; $i < 6; $i++) {
     font-size: 11px;
     font-weight: 700;
     border: 1px solid rgba(255, 255, 255, .28);
+    box-sizing: border-box;
+  }
+
+  .holiday-cell-badges {
+    display: flex;
+    align-items: stretch;
+    justify-content: stretch;
+    width: 100%;
+    height: 100%;
+    min-height: 34px;
+  }
+
+  .holiday-cell-badges .holiday-pill,
+  .holiday-cell-badges .holiday-delete-day-form {
+    flex: 1 1 0;
+    min-width: 0;
+  }
+
+  .holiday-cell-badges .holiday-pill {
+    width: 100%;
+    height: auto;
+    min-height: 34px;
+    border-radius: 0;
   }
 
   .holiday-delete-day-form {
@@ -715,9 +746,17 @@ for ($i = 0; $i < 6; $i++) {
     margin: 0;
   }
 
+  .holiday-cell-badges .holiday-delete-day-form {
+    display: flex;
+  }
+
   .holiday-delete-day {
     cursor: pointer;
     padding: 0 3px;
+  }
+
+  .holiday-cell-badges .holiday-delete-day {
+    padding: 0;
   }
 
   .holiday-delete-day:hover {
@@ -916,54 +955,56 @@ for ($i = 0; $i < 6; $i++) {
                     }
                     ?>
                     <td class="<?= htmlspecialchars(implode(' ', $cellClasses)) ?>" data-date="<?= htmlspecialchars($date) ?>">
-                      <?php foreach ($cellRequests as $request): ?>
-                        <?php
-                        $pillClass = $request['status'] === 'pending' ? 'holiday-pill-pending' : 'holiday-pill-approved';
-                        if ($request['request_type'] === 'doctor') {
-                          $pillClass = 'holiday-pill-doctor';
-                        } elseif ($request['request_type'] === 'sick') {
-                          $pillClass = 'holiday-pill-sick';
-                        }
-                        $tooltipParts = [];
+                      <div class="holiday-cell-badges">
+                        <?php foreach ($cellRequests as $request): ?>
+                          <?php
+                          $pillClass = $request['status'] === 'pending' ? 'holiday-pill-pending' : 'holiday-pill-approved';
+                          if ($request['request_type'] === 'doctor') {
+                            $pillClass = 'holiday-pill-doctor';
+                          } elseif ($request['request_type'] === 'sick') {
+                            $pillClass = 'holiday-pill-sick';
+                          }
+                          $tooltipParts = [];
 
-                        if (!empty($request['note'])) {
-                          $tooltipParts[] = 'Note: ' . $request['note'];
-                        }
+                          if (!empty($request['note'])) {
+                            $tooltipParts[] = 'Note: ' . $request['note'];
+                          }
 
-                        if ($request['status'] === 'approved' && !empty($request['reviewed_name'])) {
-                          $tooltipParts[] = 'Approved by: ' . $request['reviewed_name'];
-                        }
+                          if ($request['status'] === 'approved' && !empty($request['reviewed_name'])) {
+                            $tooltipParts[] = 'Approved by: ' . $request['reviewed_name'];
+                          }
 
-                        if ($request['status'] === 'approved' && !empty($request['admin_note'])) {
-                          $tooltipParts[] = 'Admin note: ' . $request['admin_note'];
-                        }
+                          if ($request['status'] === 'approved' && !empty($request['admin_note'])) {
+                            $tooltipParts[] = 'Admin note: ' . $request['admin_note'];
+                          }
 
-                        $title = !empty($tooltipParts)
-                          ? implode(' | ', $tooltipParts)
-                          : holidayTypeLabel($request['request_type']) . ' - ' . $request['status'];
-                        ?>
-                        <?php if ($holidayCanManage && $request['status'] === 'approved'): ?>
-                          <form method="POST" class="holiday-delete-day-form"
-                            onsubmit="return confirm('Delete this approved day?');">
-                            <input type="hidden" name="action" value="delete_approved_holiday_day">
-                            <input type="hidden" name="request_id" value="<?= intval($request['id']) ?>">
-                            <input type="hidden" name="delete_date" value="<?= htmlspecialchars($date) ?>">
-                            <input type="hidden" name="return_start"
-                              value="<?= htmlspecialchars($windowStart->format('Y-m-01')) ?>">
-                            <button type="submit" class="holiday-pill <?= $pillClass ?> holiday-delete-day"
-                              title="<?= htmlspecialchars($title . ' | Delete this approved day', ENT_QUOTES, 'UTF-8') ?>"
-                              data-toggle="tooltip">
-                              <?= htmlspecialchars(holidayCellCode($request['request_type'], $request['status'])) ?><span
-                                class="holiday-delete-mark">&times;</span>
-                            </button>
-                          </form>
-                        <?php else: ?>
-                          <span class="holiday-pill <?= $pillClass ?>"
-                            title="<?= htmlspecialchars($title, ENT_QUOTES, 'UTF-8') ?>" data-toggle="tooltip">
-                            <?= htmlspecialchars(holidayCellCode($request['request_type'], $request['status'])) ?>
-                          </span>
-                        <?php endif; ?>
-                      <?php endforeach; ?>
+                          $title = !empty($tooltipParts)
+                            ? implode(' | ', $tooltipParts)
+                            : holidayTypeLabel($request['request_type']) . ' - ' . $request['status'];
+                          ?>
+                          <?php if ($holidayCanManage && $request['status'] === 'approved'): ?>
+                            <form method="POST" class="holiday-delete-day-form"
+                              onsubmit="return confirm('Delete this approved day?');">
+                              <input type="hidden" name="action" value="delete_approved_holiday_day">
+                              <input type="hidden" name="request_id" value="<?= intval($request['id']) ?>">
+                              <input type="hidden" name="delete_date" value="<?= htmlspecialchars($date) ?>">
+                              <input type="hidden" name="return_start"
+                                value="<?= htmlspecialchars($windowStart->format('Y-m-01')) ?>">
+                              <button type="submit" class="holiday-pill <?= $pillClass ?> holiday-delete-day"
+                                title="<?= htmlspecialchars($title . ' | Delete this approved day', ENT_QUOTES, 'UTF-8') ?>"
+                                data-toggle="tooltip">
+                                <?= htmlspecialchars(holidayCellCode($request['request_type'], $request['status'])) ?><span
+                                  class="holiday-delete-mark">&times;</span>
+                              </button>
+                            </form>
+                          <?php else: ?>
+                            <span class="holiday-pill <?= $pillClass ?>"
+                              title="<?= htmlspecialchars($title, ENT_QUOTES, 'UTF-8') ?>" data-toggle="tooltip">
+                              <?= htmlspecialchars(holidayCellCode($request['request_type'], $request['status'])) ?>
+                            </span>
+                          <?php endif; ?>
+                        <?php endforeach; ?>
+                      </div>
                     </td>
                   <?php endforeach; ?>
                 </tr>
@@ -1072,7 +1113,9 @@ for ($i = 0; $i < 6; $i++) {
               <option value="holiday">Holiday</option>
               <option value="toil">Nahradne volno</option>
               <option value="doctor">Doctor</option>
-              <option value="sick">Sick</option>
+              <?php if ($holidayCanManage): ?>
+                <option value="sick">Sick</option>
+              <?php endif; ?>
               <option value="other">Other</option>
             </select>
           </div>

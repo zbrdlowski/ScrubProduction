@@ -35,6 +35,29 @@ function ytyDailyLimitClass(?int $value): string
   return 'yty-daily-limit-high';
 }
 
+function ytyChartScaleMax(array $series): int
+{
+  $maxValue = 0;
+  foreach ($series as $yearSeries) {
+    if (!is_array($yearSeries)) {
+      continue;
+    }
+    foreach ($yearSeries as $value) {
+      if ($value === null) {
+        continue;
+      }
+      $maxValue = max($maxValue, (int) $value);
+    }
+  }
+
+  if ($maxValue <= 0) {
+    return 0;
+  }
+
+  $step = $maxValue <= 100 ? 10 : ($maxValue <= 500 ? 50 : 100);
+  return (int) (ceil($maxValue / $step) * $step);
+}
+
 $requestedYear = isset($_GET['year']) ? (int) $_GET['year'] : null;
 $report = ytyBuildReportData($conn, $requestedYear);
 $years = $report['years'];
@@ -86,6 +109,7 @@ $chartPayload = [
     array_map('strval', array_keys($chartColors)),
     array_values($chartColors)
   ),
+  'weeklyScaleMax' => ytyChartScaleMax($series),
 ];
 ?>
 
@@ -386,6 +410,15 @@ $chartPayload = [
     var ytyData = <?= json_encode($chartPayload, JSON_UNESCAPED_SLASHES) ?>;
     var gridColor = 'rgba(255,255,255,.10)';
     var tickColor = '#ced4da';
+    var weeklyScaleMax = Number(ytyData.weeklyScaleMax || 0);
+
+    function weeklyYAxisTicks() {
+      var ticks = { beginAtZero: true, fontColor: tickColor };
+      if (weeklyScaleMax > 0) {
+        ticks.max = weeklyScaleMax;
+      }
+      return ticks;
+    }
 
     function valuesFor(year) {
       return (ytyData.series[String(year)] || []).map(function (value) {
@@ -418,7 +451,7 @@ $chartPayload = [
           tooltips: { mode: 'index', intersect: false },
           scales: {
             xAxes: [{ gridLines: { display: false }, ticks: { fontColor: tickColor, maxRotation: 0, autoSkip: true } }],
-            yAxes: [{ gridLines: { color: gridColor }, ticks: { beginAtZero: true, fontColor: tickColor } }]
+            yAxes: [{ gridLines: { color: gridColor }, ticks: weeklyYAxisTicks() }]
           }
         }
       });
@@ -458,7 +491,7 @@ $chartPayload = [
           hover: { mode: 'nearest', intersect: true },
           scales: {
             xAxes: [{ gridLines: { color: 'rgba(255,255,255,.04)' }, ticks: { fontColor: tickColor, maxRotation: 0, autoSkip: true } }],
-            yAxes: [{ gridLines: { color: gridColor }, ticks: { beginAtZero: true, fontColor: tickColor } }]
+            yAxes: [{ gridLines: { color: gridColor }, ticks: weeklyYAxisTicks() }]
           }
         }
       });

@@ -13,7 +13,7 @@ function out(array $payload): void
   exit;
 }
 
-if ((int) ($_SESSION['permission'] ?? 0) < 400) {
+if (!auth_can('orders.financial')) {
   http_response_code(403);
   out(['ok' => false, 'error' => 'No permission']);
 }
@@ -28,8 +28,12 @@ if ($id <= 0) {
 try {
   order_financial_require_schema($conn);
 
+  $gatewaySelect = order_financial_adjustments_gateway_ready($conn)
+    ? 'gateway'
+    : "'' AS gateway";
+
   $stmt = $conn->prepare("
-    SELECT id, order_id, type, reference, purpose, amount, currency
+    SELECT id, order_id, type, {$gatewaySelect}, reference, purpose, amount, currency
     FROM order_financial_adjustments
     WHERE id = ?
       AND deleted_at IS NULL
@@ -60,6 +64,9 @@ try {
   $stmt->execute();
   $stmt->close();
 
+  $gatewayForMessage = trim((string) ($adjustment['gateway'] ?? ''));
+  $gatewayMessagePart = $gatewayForMessage !== '' ? ', ' . $gatewayForMessage : '';
+
   log_order_activity(
     $conn,
     (int) $adjustment['order_id'],
@@ -69,12 +76,13 @@ try {
     $id,
     [
       'type' => $adjustment['type'],
+      'gateway' => $adjustment['gateway'],
       'reference' => $adjustment['reference'],
       'purpose' => $adjustment['purpose'],
       'amount' => (float) $adjustment['amount'],
       'currency' => $adjustment['currency'],
     ],
-    ((string) $adjustment['type'] === 'REFUND' ? 'Refund' : 'Payment') . ' deleted: ' . (string) $adjustment['purpose'] . ' (' . ((float) $adjustment['amount'] > 0 ? '+' : '') . number_format((float) $adjustment['amount'], 2, '.', '') . ' EUR), ref. ' . (string) $adjustment['reference']
+    ((string) $adjustment['type'] === 'REFUND' ? 'Refund' : 'Payment') . ' deleted: ' . (string) $adjustment['purpose'] . ' (' . ((float) $adjustment['amount'] > 0 ? '+' : '') . number_format((float) $adjustment['amount'], 2, '.', '') . ' EUR)' . $gatewayMessagePart . ', ref. ' . (string) $adjustment['reference']
   );
 
   out(['ok' => true, 'order_id' => (int) $adjustment['order_id']]);

@@ -18,6 +18,7 @@ if (!isset($_SESSION['permission'])) {
   header('location:login.php');
 }
 include 'includes/conn.php';
+require_once 'includes/auth.php';
 
 // Page title mapping - user-friendly names for breadcrumb
 $pageLabels = [
@@ -58,6 +59,8 @@ $pageLabels = [
   'logs' => 'System Logs',
   'calendar' => 'Dochádzka',
   'attendance_databases' => 'Databázy dochádzky',
+  'staff_attendance' => 'Staff Attendance',
+  'staff_attendance_detail' => 'Staff Attendance Detail',
   'orders_dashboard' => 'Orders Dashboard',
   'year_to_year_statistics' => 'Year to Year Statistics',
   'custom_orders' => 'Custom Orders',
@@ -71,6 +74,7 @@ $pageLabels = [
   'vykaz_prace' => 'Activity Report',
   'accounting_payouts' => 'eBay Payouts',
   'accounting_omega' => 'OMEGA Invoices',
+  'access_admin' => 'User Permissions',
   'accounting_omega_export' => 'OMEGA TXT Export',
 
   // Add more as needed
@@ -202,7 +206,20 @@ $pageLabels = [
           <div class="card-body">
             <?
             if (!empty($_GET['page'])) {
-              include 'includes/' . $_GET['page'] . '.php';
+              $requestedPage = (string) $_GET['page'];
+              $pageFile = __DIR__ . '/includes/' . $requestedPage . '.php';
+              if (!preg_match('/^[a-zA-Z0-9_-]+$/', $requestedPage) || !is_file($pageFile)) {
+                http_response_code(404);
+                echo '<div class="alert alert-danger">Stránka neexistuje.</div>';
+              } else {
+                $requiredPermission = auth_page_permission($requestedPage);
+                if ($requiredPermission !== null && !auth_can($requiredPermission)) {
+                http_response_code(403);
+                echo '<div class="alert alert-danger">Na túto stránku nemáte oprávnenie.</div>';
+                } else {
+                  include $pageFile;
+                }
+              }
             } else {
               ?>
               <div class="container-fluid">

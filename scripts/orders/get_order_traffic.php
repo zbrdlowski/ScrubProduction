@@ -16,6 +16,8 @@ if (!isset($_SESSION['permission'])) {
 
 $base = dirname(__DIR__, 2);
 require_once $base . '/includes/conn.php';
+require_once __DIR__ . '/access.php';
+require_once $base . '/includes/orders_workflow_helpers.php';
 
 $orderId = (int)($_POST['order_id'] ?? 0);
 if ($orderId <= 0) {
@@ -60,12 +62,9 @@ if (!is_array($summary) || empty($summary)) {
   $fallbackStmt->close();
 }
 
-// Prepočítame semafor na základe skutočných statusov položiek
-// GREEN = všetky READY/PRINTED/CUT/DONE/COMPLETED
-// ORANGE = niektoré v progress (PRINT_QUEUE, PROCESSING, RTP...)
-// RED = niektoré stále NEW alebo WAITING
+// Prepočítame semafor rovnakým workflow helperom ako orders.php.
 $typeStatusStmt = $conn->prepare("
-  SELECT item_type_code, status
+  SELECT item_type_code, status, sku, custom_label, options_json, internal_options_json
   FROM order_items
   WHERE order_id = ? AND deleted_at IS NULL
     AND item_type_code IS NOT NULL AND item_type_code <> ''
@@ -74,45 +73,24 @@ $typeStatusStmt->bind_param('i', $orderId);
 $typeStatusStmt->execute();
 $tsRes = $typeStatusStmt->get_result();
 
-$typeStatuses = []; // type => [status, status, ...]
+$typeStatuses = []; // type => item rows
 while ($ts = $tsRes->fetch_assoc()) {
-  $t = strtoupper((string)$ts['item_type_code']);
-  $s = strtoupper((string)($ts['status'] ?? 'NEW'));
-
-  // T a M mapujeme na G a P pre semafor
-  if ($t === 'T' || $t === 'M') {
-    $typeStatuses['G'][] = $s;
-    $typeStatuses['P'][] = $s;
-  } elseif (in_array($t, ['G', 'F', 'P', 'S'], true)) {
-    $typeStatuses[$t][] = $s;
+  $t = ordersNormalizeDepartmentCode((string)($ts['item_type_code'] ?? ''));
+  if (in_array($t, ['G', 'F', 'P', 'S'], true)) {
+    $typeStatuses[$t][] = [
+      'status' => strtoupper((string)($ts['status'] ?? 'NEW')),
+      'sku' => $ts['sku'] ?? null,
+      'custom_label' => $ts['custom_label'] ?? null,
+      'options_json' => $ts['options_json'] ?? null,
+      'internal_options_json' => $ts['internal_options_json'] ?? null,
+    ];
   }
 }
 $typeStatusStmt->close();
 
-$greenStatuses  = ['READY', 'PRINTED', 'CUT', 'DONE', 'COMPLETED', 'SHIPPED'];
-$orangeStatuses = ['RTP', 'PRINT_QUEUE', 'PROCESSING', 'WAITING'];
-
 $computed = [];
-foreach ($typeStatuses as $type => $statuses) {
-  $allGreen  = true;
-  $anyOrange = false;
-
-  foreach ($statuses as $s) {
-    if (!in_array($s, $greenStatuses, true)) {
-      $allGreen = false;
-    }
-    if (in_array($s, $orangeStatuses, true)) {
-      $anyOrange = true;
-    }
-  }
-
-  if ($allGreen) {
-    $computed[$type] = 'GREEN';
-  } elseif ($anyOrange) {
-    $computed[$type] = 'ORANGE';
-  } else {
-    $computed[$type] = 'RED';
-  }
+foreach ($typeStatuses as $type => $items) {
+  $computed[$type] = itemTrafficState($conn, $type, $items);
 }
 
 // Ak sa podarilo vypočítať, uložíme späť do DB

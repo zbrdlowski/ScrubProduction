@@ -13,7 +13,7 @@ function out(array $payload): void
   exit;
 }
 
-if ((int) ($_SESSION['permission'] ?? 0) < 400) {
+if (!auth_can('orders.financial')) {
   http_response_code(403);
   out(['ok' => false, 'error' => 'No permission']);
 }
@@ -21,6 +21,7 @@ if ((int) ($_SESSION['permission'] ?? 0) < 400) {
 $orderId = (int) ($_POST['order_id'] ?? 0);
 $userId = (int) ($_SESSION['user_id'] ?? 0);
 $type = strtoupper(trim((string) ($_POST['type'] ?? 'PAYMENT')));
+$gateway = order_financial_normalize_gateway((string) ($_POST['gateway'] ?? ''));
 $reference = trim((string) ($_POST['reference'] ?? ''));
 $purpose = trim((string) ($_POST['purpose'] ?? ''));
 $amountRaw = trim((string) ($_POST['amount'] ?? ''));
@@ -31,6 +32,10 @@ if ($orderId <= 0) {
 
 if (!in_array($type, ['PAYMENT', 'REFUND'], true)) {
   out(['ok' => false, 'error' => 'Invalid movement type']);
+}
+
+if ($gateway === '') {
+  out(['ok' => false, 'error' => 'Select payment gateway']);
 }
 
 if ($reference === '') {
@@ -61,6 +66,9 @@ $currency = 'EUR';
 
 try {
   order_financial_require_schema($conn);
+  if (!order_financial_adjustments_gateway_ready($conn)) {
+    throw new RuntimeException('Financial gateway DB migration is not installed. Run db/orders/add_financial_breakdown_overrides.sql first.');
+  }
 
   $stmt = $conn->prepare('SELECT id FROM orders WHERE id = ? LIMIT 1');
   if (!$stmt) {
@@ -77,14 +85,14 @@ try {
 
   $stmt = $conn->prepare("
     INSERT INTO order_financial_adjustments
-      (order_id, type, reference, purpose, amount, currency, created_by)
+      (order_id, type, gateway, reference, purpose, amount, currency, created_by)
     VALUES
-      (?, ?, ?, ?, ?, ?, ?)
+      (?, ?, ?, ?, ?, ?, ?, ?)
   ");
   if (!$stmt) {
     throw new RuntimeException($conn->error);
   }
-  $stmt->bind_param('isssdsi', $orderId, $type, $reference, $purpose, $amount, $currency, $userId);
+  $stmt->bind_param('issssdsi', $orderId, $type, $gateway, $reference, $purpose, $amount, $currency, $userId);
   $stmt->execute();
   $adjustmentId = (int) $conn->insert_id;
   $stmt->close();
@@ -98,12 +106,13 @@ try {
     $adjustmentId,
     [
       'type' => $type,
+      'gateway' => $gateway,
       'reference' => $reference,
       'purpose' => $purpose,
       'amount' => $amount,
       'currency' => $currency,
     ],
-    ($type === 'REFUND' ? 'Refund' : 'Payment') . ' added: ' . $purpose . ' (' . ($amount > 0 ? '+' : '') . number_format($amount, 2, '.', '') . ' EUR), ref. ' . $reference
+    ($type === 'REFUND' ? 'Refund' : 'Payment') . ' added: ' . $purpose . ' (' . ($amount > 0 ? '+' : '') . number_format($amount, 2, '.', '') . ' EUR), ' . $gateway . ', ref. ' . $reference
   );
 
   out(['ok' => true, 'order_id' => $orderId, 'id' => $adjustmentId]);

@@ -65,6 +65,29 @@ function order_financial_adjustments_ready(mysqli $conn): bool
   return order_financial_table_exists($conn, 'order_financial_adjustments');
 }
 
+function order_financial_adjustments_gateway_ready(mysqli $conn): bool
+{
+  return order_financial_adjustments_ready($conn)
+    && order_financial_column_exists($conn, 'order_financial_adjustments', 'gateway');
+}
+
+function order_financial_gateway_options(): array
+{
+  return ['PayPal', 'Bank Transfer', 'Credit Card', 'Cash'];
+}
+
+function order_financial_normalize_gateway(string $gateway): string
+{
+  $gateway = trim($gateway);
+  foreach (order_financial_gateway_options() as $option) {
+    if (strcasecmp($gateway, $option) === 0) {
+      return $option;
+    }
+  }
+
+  return '';
+}
+
 function order_financial_require_schema(mysqli $conn): void
 {
   if (!order_financial_order_columns_ready($conn) || !order_financial_adjustments_ready($conn)) {
@@ -241,11 +264,16 @@ function order_financial_fetch_adjustments(mysqli $conn, int $orderId): array
     return [];
   }
 
+  $gatewaySelect = order_financial_adjustments_gateway_ready($conn)
+    ? 'ofa.gateway'
+    : "'' AS gateway";
+
   $stmt = $conn->prepare("
     SELECT
       ofa.id,
       ofa.order_id,
       ofa.type,
+      {$gatewaySelect},
       ofa.reference,
       ofa.purpose,
       ofa.amount,

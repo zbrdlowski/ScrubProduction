@@ -38,6 +38,58 @@ if (isset($conn) && $conn instanceof mysqli) {
       margin-top: 0;
     }
   }
+
+  @keyframes navbarAlertBounce {
+    0%, 72%, 100% {
+      transform: translateY(0) scale(1);
+    }
+    12% {
+      transform: translateY(-5px) scale(1.08);
+    }
+    24% {
+      transform: translateY(0) scale(.98);
+    }
+    36% {
+      transform: translateY(-3px) scale(1.04);
+    }
+    48% {
+      transform: translateY(0) scale(1);
+    }
+  }
+
+  @keyframes navbarAlertBadgePulse {
+    0%, 72%, 100% {
+      transform: scale(1);
+    }
+    14%, 38% {
+      transform: scale(1.22);
+    }
+  }
+
+  .navbar-alert-bounce i {
+    display: inline-block;
+    transform-origin: center bottom;
+    animation: navbarAlertBounce 1.6s ease-in-out infinite;
+  }
+
+  .navbar-alert-bounce .navbar-badge {
+    transform-origin: center;
+    animation: navbarAlertBadgePulse 1.6s ease-in-out infinite;
+  }
+
+  .navbar-alert-bounce:hover i,
+  .navbar-alert-bounce:focus i,
+  .navbar-alert-bounce:hover .navbar-badge,
+  .navbar-alert-bounce:focus .navbar-badge {
+    animation-play-state: paused;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .navbar-alert-bounce i,
+    .navbar-alert-bounce .navbar-badge {
+      animation: none;
+    }
+  }
 </style>
 <nav class="main-header navbar navbar-expand navbar-dark">
     <!-- Left navbar links -->
@@ -85,15 +137,19 @@ if (isset($conn) && $conn instanceof mysqli) {
     </ul>
     <!-- Right navbar links -->
     <ul class="navbar-nav ml-auto">
+       <!--
       <li class="nav-item d-none d-sm-inline-block">
         <a href="?page=chat" class="nav-link">Chat</a>
       </li>
+      -->
       <li class="nav-item d-none d-sm-inline-block">
         <a href="?page=profile" class="nav-link">Attendance</a>
       </li>
       <li class="nav-item d-none d-sm-inline-block">
         <a href="?page=holidays" class="nav-link">Holidays</a>
       </li>
+      <!-- Zablokované, lebo sa im to nelúbilo -->
+      <!--
           <li class="nav-item dropdown">
         <a class="nav-link" data-toggle="dropdown" href="#" id="chatNotifToggle">
           <i class="far fa-comments"></i>
@@ -111,11 +167,11 @@ if (isset($conn) && $conn instanceof mysqli) {
           <a href="?page=chat" class="dropdown-item dropdown-footer">Otvoriť chat</a>
         </div>
       </li>
-
+    -->
       <!-- Len Žbrdlo a admini z managementu -->
       <?php if ($holidayCanManage): ?>
       <li class="nav-item dropdown">
-        <a class="nav-link" data-toggle="dropdown" href="#" id="holidayNotifToggle" title="Holiday requests">
+        <a class="nav-link<?= $holidayNotifCount > 0 ? ' navbar-alert-bounce' : '' ?>" data-toggle="dropdown" href="#" id="holidayNotifToggle" title="Holiday requests">
           <i class="far fa-calendar-check"></i>
           <?php if ($holidayNotifCount > 0): ?>
             <span class="badge badge-warning navbar-badge"><?= intval($holidayNotifCount) ?></span>
@@ -390,9 +446,11 @@ function loadChatNotifications() {
 
             if (count > 0) {
                 $('#chatUnreadBadge').text(count).show();
+                $('#chatNotifToggle').addClass('navbar-alert-bounce');
                 $('#chatNotifHeader').text(count + ' ' + getChatMessageLabel(count));
             } else {
                 $('#chatUnreadBadge').hide();
+                $('#chatNotifToggle').removeClass('navbar-alert-bounce');
                 $('#chatNotifHeader').text('Žiadne nové správy');
             }
 

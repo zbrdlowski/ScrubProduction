@@ -29,6 +29,10 @@ function fedexApiBaseUrl(): string
 
 function fedexHttpRequest(string $method, string $url, array $headers, ?string $body = null, int $timeout = 35): array
 {
+  $connectTimeout = max(5, min(120, (int) fedexConfigValue('FEDEX_CONNECT_TIMEOUT', '20')));
+  $requestTimeout = max($connectTimeout + 5, min(300, (int) fedexConfigValue('FEDEX_HTTP_TIMEOUT', (string) $timeout)));
+  $forceIpv4 = in_array(strtolower(fedexConfigValue('FEDEX_FORCE_IPV4', '1')), ['1', 'true', 'yes', 'on'], true);
+
   if (function_exists('curl_init')) {
     $ch = curl_init($url);
     if ($ch === false) {
@@ -37,10 +41,13 @@ function fedexHttpRequest(string $method, string $url, array $headers, ?string $
 
     curl_setopt($ch, CURLOPT_CUSTOMREQUEST, strtoupper($method));
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-    curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 10);
-    curl_setopt($ch, CURLOPT_TIMEOUT, $timeout);
+    curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, $connectTimeout);
+    curl_setopt($ch, CURLOPT_TIMEOUT, $requestTimeout);
     curl_setopt($ch, CURLOPT_ENCODING, '');
     curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
+    if ($forceIpv4 && defined('CURL_IPRESOLVE_V4')) {
+      curl_setopt($ch, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4);
+    }
 
     if ($body !== null) {
       curl_setopt($ch, CURLOPT_POSTFIELDS, $body);
@@ -63,7 +70,7 @@ function fedexHttpRequest(string $method, string $url, array $headers, ?string $
       'method' => strtoupper($method),
       'header' => implode("\r\n", $headers),
       'content' => $body ?? '',
-      'timeout' => $timeout,
+      'timeout' => $requestTimeout,
       'ignore_errors' => true,
     ],
   ]);

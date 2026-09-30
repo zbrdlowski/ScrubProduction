@@ -936,6 +936,57 @@ $(document)
   }
   window.refreshOrderDetail = refreshOrderDetail;
 
+  $(document)
+    .off("click.orderProductUrl", ".btn-set-product-url, .btn-edit-product-url")
+    .on("click.orderProductUrl", ".btn-set-product-url, .btn-edit-product-url", function (e) {
+      e.preventDefault();
+      e.stopPropagation();
+
+      var $btn = $(this);
+      var itemId = $btn.data("item-id");
+      var orderId = parseInt($btn.data("order-id"), 10) || findOpenOrderIdFromElement($btn);
+      var currentUrl = String($btn.data("current-url") || "");
+      var url = prompt("Paste product URL. Leave empty to use the auto-generated SKU link.", currentUrl);
+
+      if (url === null) return;
+
+      $.ajax({
+        url: "scripts/orders/update_item_product_url.php",
+        method: "POST",
+        dataType: "json",
+        data: {
+          item_id: itemId,
+          product_url: url,
+        },
+        success: function (resp) {
+          if (!resp || !resp.ok) {
+            alert(resp && resp.error ? resp.error : "Product URL save failed");
+            return;
+          }
+
+          var resolvedOrderId = orderId || parseInt(resp.order_id, 10) || 0;
+          if (resolvedOrderId) {
+            if (typeof window.reloadOrderDetail === "function") {
+              window.reloadOrderDetail(resolvedOrderId);
+            } else {
+              refreshOrderDetail(resolvedOrderId);
+            }
+            return;
+          }
+
+          location.reload();
+        },
+        error: function (xhr) {
+          console.log(xhr.responseText);
+          var message =
+            (xhr.responseJSON && xhr.responseJSON.error) ||
+            (xhr.responseJSON && xhr.responseJSON.message) ||
+            "Product URL request failed";
+          alert(message);
+        },
+      });
+    });
+
   function findInlineActionRow($el, primarySelector) {
     return $el.closest(primarySelector + ", .form-row");
   }
@@ -2649,7 +2700,17 @@ $(document)
                   '<option value="REFUND">Refund</option>' +
                 '</select>' +
               '</div>' +
-              '<div class="form-group col-md-8">' +
+              '<div class="form-group col-md-4">' +
+                '<label>Gateway</label>' +
+                '<select class="form-control form-control-sm bg-dark text-light border-secondary order-financial-adjustment-gateway">' +
+                  '<option value="">Select gateway</option>' +
+                  '<option value="PayPal">PayPal</option>' +
+                  '<option value="Bank Transfer">Bank Transfer</option>' +
+                  '<option value="Credit Card">Credit Card</option>' +
+                  '<option value="Cash">Cash</option>' +
+                '</select>' +
+              '</div>' +
+              '<div class="form-group col-md-4">' +
                 '<label>Reference</label>' +
                 '<input type="text" class="form-control form-control-sm bg-dark text-light border-secondary order-financial-adjustment-reference" placeholder="Payment reference">' +
               '</div>' +
@@ -2808,6 +2869,7 @@ $(document)
       var $modal = ensureFinancialAdjustmentModal();
       $modal.find(".order-financial-adjustment-order-id").val(orderId);
       $modal.find(".order-financial-adjustment-type").val("PAYMENT");
+      $modal.find(".order-financial-adjustment-gateway").val("");
       $modal.find(".order-financial-adjustment-reference").val("");
       $modal.find(".order-financial-adjustment-purpose").val("");
       $modal.find(".order-financial-adjustment-amount").val("");
@@ -2815,7 +2877,7 @@ $(document)
       $modal.find(".order-financial-adjustment-save").prop("disabled", false).text("Save");
       $modal.addClass("is-open").attr("aria-hidden", "false");
       setTimeout(function () {
-        $modal.find(".order-financial-adjustment-reference").trigger("focus");
+        $modal.find(".order-financial-adjustment-gateway").trigger("focus");
       }, 0);
     })
     .off("change.financialAdjustmentType", ".order-financial-adjustment-type")
@@ -2837,10 +2899,16 @@ $(document)
       var $error = $modal.find(".order-financial-adjustment-error");
       var orderId = $modal.find(".order-financial-adjustment-order-id").val();
       var type = $modal.find(".order-financial-adjustment-type").val();
+      var gateway = String($modal.find(".order-financial-adjustment-gateway").val() || "").trim();
       var reference = String($modal.find(".order-financial-adjustment-reference").val() || "").trim();
       var purpose = String($modal.find(".order-financial-adjustment-purpose").val() || "").trim();
       var amount = String($modal.find(".order-financial-adjustment-amount").val() || "").trim();
 
+      if (!gateway) {
+        $error.text("Select payment gateway.").show();
+        $modal.find(".order-financial-adjustment-gateway").trigger("focus");
+        return;
+      }
       if (!reference) {
         $error.text("Payment reference is required.").show();
         $modal.find(".order-financial-adjustment-reference").trigger("focus");
@@ -2866,6 +2934,7 @@ $(document)
         data: {
           order_id: orderId,
           type: type,
+          gateway: gateway,
           reference: reference,
           purpose: purpose,
           amount: amount,

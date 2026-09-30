@@ -312,7 +312,7 @@ $departmentColors = [];
 $departmentLabels = [];
 
 $deptStmt = $pdo->prepare("
-    SELECT item_type_code, status, options_json, internal_options_json
+    SELECT item_type_code, status, sku, custom_label, options_json, internal_options_json
     FROM order_items
     WHERE order_id = ?
       AND deleted_at IS NULL
@@ -334,6 +334,8 @@ while ($deptItem = $deptStmt->fetch(PDO::FETCH_ASSOC)) {
 
     $deptGroups[$itemDept][] = [
         'status' => strtoupper((string)($deptItem['status'] ?? 'NEW')),
+        'sku' => $deptItem['sku'] ?? null,
+        'custom_label' => $deptItem['custom_label'] ?? null,
         'options_json' => $deptItem['options_json'] ?? null,
         'internal_options_json' => $deptItem['internal_options_json'] ?? null,
     ];
@@ -346,6 +348,9 @@ foreach ($departmentStatuses as $department => $statusCode) {
 }
 
 $permission = (int) ($_SESSION['permission'] ?? 0);
+if (auth_can('orders.manage')) {
+    $permission = max($permission, 400);
+}
 $avatarsHtml = render_assigned_users_html($conn, $orderId);
 $takeAssignHtml = $departmentCode !== ''
     ? render_order_take_assign_html($conn, $orderId, $departmentCode, $permission, $userId)

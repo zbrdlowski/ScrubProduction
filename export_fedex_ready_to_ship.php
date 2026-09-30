@@ -14,6 +14,7 @@ if (!isset($_SESSION['permission'])) {
 }
 
 require_once __DIR__ . '/includes/conn.php';
+require_once __DIR__ . '/includes/auth.php';
 require_once __DIR__ . '/scripts/orders/financial_helpers.php';
 require_once __DIR__ . '/includes/orders_multishipping_helpers.php';
 require_once __DIR__ . '/includes/shipping_methods.php';
@@ -25,22 +26,30 @@ if (!isset($conn) || !$conn instanceof mysqli) {
 
 // ---------------------------------------------------------------------
 // Department ACL pre starsie linky/modal ponechavame nacitany, ale FedEx CSV
-// pre READY_TO_SHIP sa zamerne neriadi dropdownom zo zoznamu. Zoznam moze
-// vidiet vsetko; CSV sa deli striktne podla pracoviska prihlaseneho usera:
+// pre READY_TO_SHIP sa deli striktne podla shipping pracoviska:
+// plastics => objednavky s Plastics/P, production => ostatne READY_TO_SHIP.
+// Pouzivatel s orders.shipping moze scope zvolit explicitne. Bez tohto
+// opravnenia ostava export viazany na vlastne pracovisko prihlaseneho usera:
 // dpt=6 => Plastics/P, ostatni => Production/non-P.
 //
 // dept=-1  => "All Orders" - vedome obchadza department ACL pre kohokolvek
 //             (napr. telefonat od zakaznika mimo vlastneho oddelenia,
 //             alebo hromadny export pre cely tim). Shipping split Production
-//             vs Plastics stale plati podla session dpt.
+//             vs Plastics stale plati podla shipping_scope/session dpt.
 // dept=0   => Auto, podla vlastneho oddelenia pouzivatela
 // dept=N   => konkretne oddelenie - respektuje sa pre kohokolvek (rovnako ako
 //             v orders.php), kedze detail objednavky uz tiez nie je blokovany
 //             podla oddelenia.
 // ---------------------------------------------------------------------
+$canChooseFedexShippingScope = auth_can('orders.shipping') || auth_can('orders.admin');
+if (!auth_can('orders.work') && !$canChooseFedexShippingScope) {
+  http_response_code(403);
+  die('No permission for FedEx export.');
+}
+
 $dpt = (int) ($_SESSION['dpt'] ?? 0);
 $allAccess = in_array($dpt, [1, 3, 4, 5, 7], true);
-$exportShippingDept = $dpt;
+$sessionShippingScope = ordersShippingScopeFromDepartment($dpt);
 
 if (isset($_GET['dept']) || isset($_POST['dept'])) {
   // Explicitny parameter (najspolahlivejsi zdroj) - posiela ho JS modal aj POST formular.
@@ -67,6 +76,18 @@ if (isset($_GET['dept']) || isset($_POST['dept'])) {
 $effectiveDept = $dpt;
 $aclCats = [];
 $aclTypes = [];
+$requestedShippingScope = trim((string) ($_GET['shipping_scope'] ?? $_POST['shipping_scope'] ?? ''));
+if ($requestedShippingScope === '' && (isset($_GET['dept']) || isset($_POST['dept']))) {
+  $requestedDept = (int) ($_GET['dept'] ?? $_POST['dept']);
+  if ($requestedDept === 6) {
+    $requestedShippingScope = 'plastics';
+  } elseif ($requestedDept > 0) {
+    $requestedShippingScope = 'production';
+  }
+}
+$exportShippingScope = $canChooseFedexShippingScope
+  ? ordersShippingNormalizeScope($requestedShippingScope !== '' ? $requestedShippingScope : $sessionShippingScope)
+  : $sessionShippingScope;
 
 // Debug: otvor export_fedex_ready_to_ship.php?debug_acl=1 (pripadne aj &dept=-1)
 // - vypise, co presne skript vyhodnotil, bez generovania CSV. Uzitocne na overenie,
@@ -79,13 +100,16 @@ if (isset($_GET['debug_acl'])) {
   }
   header('Content-Type: text/plain; charset=utf-8');
   echo "session dpt: $dpt\n";
+  echo "session shipping scope: $sessionShippingScope\n";
+  echo "canChooseFedexShippingScope: " . ($canChooseFedexShippingScope ? 'true' : 'false') . "\n";
   echo "allAccess: " . ($allAccess ? 'true' : 'false') . "\n";
   echo "GET dept: " . (isset($_GET['dept']) ? $_GET['dept'] : '(nenastavene)') . "\n";
+  echo "requested shipping_scope: " . ($requestedShippingScope !== '' ? $requestedShippingScope : '(nenastavene)') . "\n";
   echo "Referer: " . ($_SERVER['HTTP_REFERER'] ?? '(ziadny)') . "\n";
   echo "resolved fDept: $fDept\n";
   echo "effectiveDept: $effectiveDept\n";
-  echo "exportShippingDept: $exportShippingDept\n";
-  echo "shippingScope: " . (ordersShippingScopeIsPlastics($exportShippingDept) ? 'PLASTICS_WITH_P' : 'PRODUCTION_WITHOUT_P') . "\n";
+  echo "exportShippingScope: $exportShippingScope\n";
+  echo "shippingScope: " . ($exportShippingScope === 'plastics' ? 'PLASTICS_WITH_P' : 'PRODUCTION_WITHOUT_P') . "\n";
   echo "aclCats: " . json_encode($aclCats) . "\n";
   echo "aclTypes: " . json_encode($aclTypes) . "\n";
   $conn->close();
@@ -556,14 +580,16 @@ function applyOverrides(array $defaultRows, array $submittedRows): array
   return $rows;
 }
 
-function renderPreviewRows(array $rows): void
+function renderPreviewRows(array $rows, string $shippingScope): void
 {
   if (!$rows) {
-    echo '<div class="alert alert-warning mb-0">No READY_TO_SHIP orders found.</div>';
+    echo '<div class="alert alert-warning mb-0">No READY_TO_SHIP orders found for '
+      . htmlspecialchars(ordersShippingScopeLabel($shippingScope), ENT_QUOTES, 'UTF-8') . '.</div>';
     return;
   }
 
   echo '<div class="alert alert-info py-2 px-3 mb-3">';
+  echo '<strong>' . htmlspecialchars(ordersShippingScopeLabel($shippingScope), ENT_QUOTES, 'UTF-8') . '</strong> shipping department. ';
   echo 'Uprav hodnoty podla potreby a potom klikni na <strong>Generate CSV</strong>.';
   echo '</div>';
   echo '<div class="table-responsive">';
@@ -626,7 +652,7 @@ try {
     $conn->begin_transaction();
     $exportTransaction = true;
   }
-  $shippingScopeWhere = ordersShippingScopeWhereSql($exportShippingDept, 'o');
+  $shippingScopeWhere = ordersShippingScopeWhereSqlForScope($exportShippingScope, 'o');
   $orders = fetchReadyToShipOrders($conn, $aclCats, $aclTypes, $fitWhere, $shippingScopeWhere, !$isPreview);
   $orders = applyMultishippingAggregates($conn, $orders);
   $defaultRows = buildExportRows($conn, $orders, $MATERIAL_MAP, $MATERIAL_DEFAULT, $WEIGHT_MAP, $WEIGHT_DEFAULT);
@@ -639,7 +665,7 @@ try {
 }
 
 if ($isPreview) {
-  renderPreviewRows($defaultRows);
+  renderPreviewRows($defaultRows, $exportShippingScope);
   $conn->close();
   exit;
 }
@@ -674,7 +700,7 @@ function ansiRow(array $fields): array
   return array_map('toAnsi', $fields);
 }
 
-$filename = 'fedex_export_' . date('Y-m-d_His') . '.csv';
+$filename = 'fedex_export_' . $exportShippingScope . '_' . date('Y-m-d_His') . '.csv';
 header('Content-Type: text/csv; charset=windows-1252');
 header('Content-Disposition: attachment; filename="' . $filename . '"');
 

@@ -5,13 +5,14 @@ header('Content-Type: application/json; charset=utf-8');
 
 require_once dirname(__DIR__, 2) . '/includes/conn.php';
 require_once __DIR__ . '/activity_helper.php';
+require_once dirname(__DIR__, 2) . '/includes/orders_workflow_helpers.php';
 
 function out(array $payload): void {
   echo json_encode($payload, JSON_UNESCAPED_UNICODE);
   exit;
 }
 
-if ((int)($_SESSION['permission'] ?? 0) < 300) {
+if (!auth_can('orders.manage')) {
   out(['ok' => false, 'error' => 'No permission']);
 }
 
@@ -66,6 +67,8 @@ if (!$stmt) {
 $stmt->bind_param('sii', $newDbValue, $userId, $orderId);
 $stmt->execute();
 $stmt->close();
+
+refreshOrderTrafficSummary($conn, $orderId);
 
 log_order_activity(
   $conn,

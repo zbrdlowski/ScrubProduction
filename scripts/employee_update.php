@@ -1,6 +1,7 @@
 <?php
 session_start();
 include '../includes/conn.php';
+require_once '../includes/auth.php';
 
 $return_to = $_POST['return_to'] ?? '';
 
@@ -22,6 +23,8 @@ if (!isset($_SESSION['permission'])) {
 }
 
 $editor_permission = (int)$_SESSION['permission'];
+$central_auth_ready = isset($pdo) && $pdo instanceof PDO && auth_schema_ready($pdo);
+$can_manage_access = auth_can('access.manage');
 
 if ($editor_permission < 300) {
     $_SESSION['error'] = 'You do not have permission to edit employee';
@@ -90,6 +93,9 @@ if ($editor_permission == 500 && $permission > 500) {
 }
 if ($editor_permission >= 900 && $permission > 900) {
     $permission = 900;
+}
+if ($central_auth_ready && !$can_manage_access) {
+    $permission = (int)$current['permission'];
 }
 
 if ($editor_permission == 300) {

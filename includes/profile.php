@@ -230,14 +230,27 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == '1') {
       $stmt = $conn->prepare("
   SELECT COUNT(DISTINCT o.id) AS cnt
   FROM orders o
-  JOIN order_assignments oa ON oa.order_id = o.id
-  WHERE oa.employee_id = ?
-    AND oa.removed_at IS NULL
-    AND UPPER(o.status) != 'SHIPPED'
+  LEFT JOIN order_assignments oa
+    ON oa.order_id = o.id
+   AND oa.employee_id = ?
+   AND oa.removed_at IS NULL
+  WHERE (
+      oa.id IS NOT NULL
+      OR EXISTS (
+        SELECT 1
+        FROM order_item_assignments oia_me
+        JOIN order_items oi_me ON oi_me.id = oia_me.item_id
+        WHERE oi_me.order_id = o.id
+          AND oi_me.deleted_at IS NULL
+          AND oia_me.employee_id = ?
+          AND oia_me.removed_at IS NULL
+      )
+    )
+    AND UPPER(TRIM(COALESCE(o.status, ''))) NOT IN ('SHIPPED', 'DELIVERED')
 ");
 
       if ($stmt) {
-        $stmt->bind_param('i', $profileUserId);
+        $stmt->bind_param('ii', $profileUserId, $profileUserId);
         $stmt->execute();
         $row = $stmt->get_result()->fetch_assoc();
         $profileOrdersCount = intval($row['cnt'] ?? 0);

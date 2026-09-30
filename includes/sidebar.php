@@ -11,18 +11,32 @@
   }
 </style>
 <?php
+require_once __DIR__ . '/auth.php';
 $currentPage = $_GET['page'] ?? '';
 $sidebarPermission = intval($_SESSION['permission'] ?? 0);
 $sidebarUserId = intval($_SESSION['user_id'] ?? 0);
 $sidebarDepartmentId = intval($_SESSION['dpt'] ?? 0);
-$canSeeAccounting = $sidebarPermission === 900 || in_array($sidebarDepartmentId, [1, 3], true);
-$canSeeFullOrdersSection = $sidebarPermission >= 300;
+$canSeeAccounting = auth_can('accounting.view');
+$canManageAccess = auth_can('access.manage');
+$canSeeOrders = auth_can('orders.view');
+$canSeeCustomOrders = auth_can('custom_orders.view');
+$canSeeStaffAttendance = auth_can('attendance.view_all');
+$canSeePlastics = auth_can('plastics.view');
+$canWorkPlastics = auth_can('plastics.work');
+$canPurchasePlastics = auth_can('plastics.purchase');
+$canReceivePlastics = auth_can('plastics.receive');
+$canManagePlastics = auth_can('plastics.manage');
+$canSeePlasticsReports = auth_can('plastics.reports');
+$canSeePlasticsSection = $canSeePlastics || $canWorkPlastics || $canPurchasePlastics || $canReceivePlastics || $canManagePlastics || $canSeePlasticsReports;
 $canSeeRestrictedAdminItems = $sidebarPermission === 900 || in_array($sidebarUserId, [3, 5, 37], true);
 $canSeeStandardAdminItems = $sidebarPermission > 300;
-$canSeeOrderExportReset = in_array($sidebarUserId, [1], true);
+$canSeeOrderExportReset = auth_can('orders.export_reset');
 $adminMenuPages = [];
 if ($canSeeRestrictedAdminItems) {
   $adminMenuPages = array_merge($adminMenuPages, ['employee', 'calendar', 'attendance_databases', 'vykaz_prace']);
+}
+if ($canSeeStaffAttendance) {
+  $adminMenuPages[] = 'staff_attendance';
 }
 if ($canSeeStandardAdminItems) {
   $adminMenuPages = array_merge($adminMenuPages, ['controlls', 'import_orders', 'shoptet_order_download', 'status_policies']);
@@ -30,17 +44,18 @@ if ($canSeeStandardAdminItems) {
 if ($canSeeOrderExportReset) {
   $adminMenuPages[] = 'order_export_reset';
 }
-$ordersSectionPages = ['kit_diss'];
-if ($canSeeFullOrdersSection) {
-  $ordersSectionPages = [
-    'kit_diss',
-    'plastics_orders_active',
-    'receive_supply',
-    'plastics_orders_sent',
-    'plastics_orders_all',
-    'order_prepare',
-    'intake_print'
-  ];
+if ($canManageAccess) {
+  $adminMenuPages[] = 'access_admin';
+}
+$ordersSectionPages = [];
+if ($canWorkPlastics) {
+  $ordersSectionPages[] = 'kit_diss';
+}
+if ($canPurchasePlastics) {
+  $ordersSectionPages = array_merge($ordersSectionPages, ['plastics_orders_active', 'plastics_orders_sent', 'plastics_orders_all', 'order_prepare']);
+}
+if ($canReceivePlastics) {
+  $ordersSectionPages = array_merge($ordersSectionPages, ['receive_supply', 'intake_print']);
 }
 function isActive($page)
 {
@@ -117,7 +132,7 @@ function isMenuOpen($pages = [])
           'import_orders'
         ]) ? 'menu-open' : '' ?>">
           <?
-          if ($canSeeRestrictedAdminItems || $canSeeStandardAdminItems || $canSeeOrderExportReset) {
+          if ($canSeeRestrictedAdminItems || $canSeeStaffAttendance || $canSeeStandardAdminItems || $canSeeOrderExportReset || $canManageAccess) {
             ?>
           <li class="nav-item <?= isMenuOpen($adminMenuPages) ? 'menu-open' : '' ?>">
             <?
@@ -151,6 +166,16 @@ function isMenuOpen($pages = [])
             echo '<i class="nav-icon fas fa-database"></i>';
             echo '<p>';
             echo 'Attendance DBs';
+            echo '</p>';
+            echo '</a>';
+            echo '</li>';
+            }
+            if ($canSeeStaffAttendance) {
+            echo '<li class="nav-item">';
+            echo '<a href="' . basename($_SERVER['PHP_SELF']) . '?page=staff_attendance" class="nav-link  ' . isActive('staff_attendance') . '">';
+            echo '<i class="nav-icon fas fa-calendar-check"></i>';
+            echo '<p>';
+            echo 'Staff Attendance';
             echo '</p>';
             echo '</a>';
             echo '</li>';
@@ -208,6 +233,14 @@ function isMenuOpen($pages = [])
             echo '<p>';
             echo 'Job Reports';
             echo '</p>';
+            echo '</a>';
+            echo '</li>';
+            }
+            if ($canManageAccess) {
+            echo '<li class="nav-item active">';
+            echo '<a href="' . basename($_SERVER['PHP_SELF']) . '?page=access_admin" class="nav-link  ' . isActive('access_admin') . '">';
+            echo '<i class="fas fa-user-shield nav-icon"></i>';
+            echo '<p>User Permissions</p>';
             echo '</a>';
             echo '</li>';
             }
@@ -314,6 +347,7 @@ function isMenuOpen($pages = [])
             <p>Scrub Orders<i class="right fas fa-angle-left"></i></p>
           </a>
           <ul class="nav nav-treeview">
+            <?php if ($canSeeOrders): ?>
             <li class="nav-item"><a href="index.php?page=orders_dashboard"
                 class="nav-link <?= ($_GET['page'] ?? '') === 'orders_dashboard' ? 'active' : '' ?>"><i
                   class="nav-icon fas fa-chart-line"></i>DASHBOARD</a></li>
@@ -326,22 +360,26 @@ function isMenuOpen($pages = [])
                 class="far fa fa-caret-right nav-icon"></i>
               <p>Open Orders</p></a>
             </li>
+            <?php endif; ?>
+            <?php if ($canSeeCustomOrders): ?>
             <li class="nav-item"><a href="<? echo basename($_SERVER['PHP_SELF']); ?>?page=custom_orders"
                 class="nav-link <?= isActive('custom_orders') ?>"><i class="far fa fa-caret-right nav-icon"></i>
                 <p>Custom Orders</p>
               </a></li>
+            <?php endif; ?>
 
 
         </li>
       </ul>
 
-      <?php if ((isset($_SESSION['permission']) && intval($_SESSION['permission']) >= 500) || (isset($_SESSION['dpt']) && intval($_SESSION['dpt']) == 6)) { ?>
+      <?php if ($canSeePlasticsSection) { ?>
         <li class="nav-item menu-open"><a href="#" class="nav-link" style="background-color:#2a3036;"><i
               class="nav-icon fas fa-globe-africa" style="color:#ffc107;"></i>
             <p>Stock Management<i class="right fas fa-angle-left"></i></p>
           </a>
           <ul class="nav nav-treeview">
             <!-- 📊 DASHBOARDS & REPORTS -->
+            <?php if ($canSeePlastics || $canSeePlasticsReports): ?>
             <li class="nav-item <?= isMenuOpen([
               'plastics_dashboard',
               'year_to_year_statistics',
@@ -355,13 +393,16 @@ function isMenuOpen($pages = [])
                 <p>Dashboards & Reports <i class="right fas fa-angle-left"></i></p>
               </a>
               <ul class="nav nav-treeview">
+                <?php if ($canSeePlastics): ?>
                 <li class="nav-item">
                   <a href="?page=plastics_dashboard" class="nav-link <?= isActive('plastics_dashboard') ?>">
                     <i class="fa fa-calculator nav-icon"></i>
                     <p>Dashboard</p>
                   </a>
                 </li>
+                <?php endif; ?>
 
+                <?php if ($canSeePlasticsReports): ?>
                 <li class="nav-item">
                   <a href="?page=year_to_year_statistics" class="nav-link <?= isActive('year_to_year_statistics') ?>">
                     <i class="fas fa-chart-line nav-icon"></i>
@@ -389,16 +430,21 @@ function isMenuOpen($pages = [])
                     <p>Inventory Report</p>
                   </a>
                 </li>
+                <?php endif; ?>
+                <?php if ($canSeePlastics): ?>
                 <li class="nav-item">
                   <a href="?page=display_stock" class="nav-link <?= isActive('display_stock') ?>">
                     <i class="fas fa-stream nav-icon"></i>
                     <p>Shelves / PN Report</p>
                   </a>
                 </li>
+                <?php endif; ?>
 
               </ul>
             </li>
+            <?php endif; ?>
             <!-- 📦 INVENTORY & ITEMS -->
+            <?php if ($canSeePlastics || $canManagePlastics): ?>
             <li class="nav-item <?= isMenuOpen([
               'items',
               'add_item',
@@ -412,13 +458,22 @@ function isMenuOpen($pages = [])
               </a>
               <ul class="nav nav-treeview">
 
+                <?php if ($canSeePlastics): ?>
                 <li class="nav-item">
                   <a href="?page=items" class="nav-link <?= isActive('items') ?>">
                     <i class="fas fa-tag nav-icon"></i>
                     <p>All Items (KP Gen)</p>
                   </a>
                 </li>
+                <li class="nav-item">
+                  <a href="?page=shelves" class="nav-link <?= isActive('shelves') ?>">
+                    <i class="fas fa-border-all nav-icon"></i>
+                    <p>Shelves List</p>
+                  </a>
+                </li>
+                <?php endif; ?>
 
+                <?php if ($canManagePlastics): ?>
                 <li class="nav-item">
                   <a href="?page=add_item" class="nav-link <?= isActive('add_item') ?>">
                     <i class="fas fa-plus nav-icon"></i>
@@ -433,17 +488,14 @@ function isMenuOpen($pages = [])
                   </a>
                 </li>
 
-                <li class="nav-item">
-                  <a href="?page=shelves" class="nav-link <?= isActive('shelves') ?>">
-                    <i class="fas fa-border-all nav-icon"></i>
-                    <p>Shelves List</p>
-                  </a>
-                </li>
+                <?php endif; ?>
 
 
               </ul>
             </li>
+            <?php endif; ?>
             <!-- 🔄 STOCK OPERATIONS -->
+            <?php if ($canSeePlastics || $canWorkPlastics || $canManagePlastics): ?>
             <li class="nav-item <?= isMenuOpen([
               'reset_location',
               'relocate_item',
@@ -460,15 +512,18 @@ function isMenuOpen($pages = [])
               </a>
               <ul class="nav nav-treeview">
 
+                <?php if ($canSeePlastics): ?>
                 <li class="nav-item">
                   <a href="?page=search_item" class="nav-link <?= isActive('search_item') ?>">
                     <i class="fas fa-search nav-icon"></i>
                     <p>Quick Search</p>
                   </a>
                 </li>
+                <?php endif; ?>
 
 
 
+                <?php if ($canWorkPlastics): ?>
                 <li class="nav-item">
                   <a href="?page=scan_form_out" class="nav-link <?= isActive('scan_form_out') ?>">
                     <i class="fas fa-print nav-icon" style="color:#d9534f;"></i>
@@ -503,24 +558,29 @@ function isMenuOpen($pages = [])
                     <p>A010 Scan IN Form</p>
                   </a>
                 </li>
+                <?php endif; ?>
 
+                <?php if ($canManagePlastics): ?>
                 <li class="nav-item">
                   <a href="?page=upload_csv" class="nav-link <?= isActive('upload_csv') ?>">
                     <i class="fas fa-file-upload nav-icon"></i>
                     <p>CSV Upload</p>
                   </a>
                 </li>
+                <?php endif; ?>
 
               </ul>
             </li>
+            <?php endif; ?>
             <!-- 📝 ORDERS SECTION -->
+            <?php if ($canPurchasePlastics || $canReceivePlastics || $canWorkPlastics): ?>
             <li class="nav-item <?= isMenuOpen($ordersSectionPages) ? 'menu-open' : '' ?>">
               <a href="#" class="nav-link" style="background-color:#2a3036;">
                 <i class="fas fa-list nav-icon" style="color:#17a2b8;"></i>
                 <p>Orders Section <i class="fas fa-angle-left right"></i></p>
               </a>
               <ul class="nav nav-treeview">
-                <?php if ($canSeeFullOrdersSection) { ?>
+                <?php if ($canPurchasePlastics) { ?>
                 <li class="nav-item"><a href="?page=order_prepare" class="nav-link <?= isActive('order_prepare') ?>"><i
                       class="fas fa-clock nav-icon"></i>
                     <p> Prepare Order</p>
@@ -531,10 +591,6 @@ function isMenuOpen($pages = [])
                       class="fas fa-hourglass-half nav-icon"></i>
                     <p>Send Order</p>
                   </a></li>
-                <li class="nav-item"><a href="?page=receive_supply" class="nav-link <?= isActive('receive_supply') ?>"><i
-                      class="fas fa-inbox nav-icon"></i>
-                    <p>Receive Order</p>
-                  </a></li>
                 <li class="nav-item"><a href="?page=plastics_orders_sent"
                     class="nav-link <?= isActive('plastics_orders_sent') ?>"><i class="fas fa-truck nav-icon"></i>
                     <p>Sent Orders</p>
@@ -544,11 +600,19 @@ function isMenuOpen($pages = [])
                     <p>All Orders</p>
                   </a></li>
                 <?php } ?>
+                <?php if ($canReceivePlastics) { ?>
+                <li class="nav-item"><a href="?page=receive_supply" class="nav-link <?= isActive('receive_supply') ?>"><i
+                      class="fas fa-inbox nav-icon"></i>
+                    <p>Receive Order</p>
+                  </a></li>
+                <?php } ?>
+                <?php if ($canWorkPlastics) { ?>
                 <li class="nav-item"><a href="?page=kit_diss" class="nav-link <?= isActive('kit_diss') ?>"><i
                       class="fas fa-puzzle-piece nav-icon"></i>
                     <p>Kit Diss</p>
                   </a></li>
-                <?php if ($canSeeFullOrdersSection) { ?>
+                <?php } ?>
+                <?php if ($canReceivePlastics) { ?>
                 <li class="nav-item"><a href="?page=intake_print" class="nav-link <?= isActive('intake_print') ?>"><i
                       class="fas fa-print nav-icon"></i>
                     <p>Intake Print</p>
@@ -556,7 +620,9 @@ function isMenuOpen($pages = [])
                 <?php } ?>
               </ul>
             </li>
+            <?php endif; ?>
             <!-- 🛠 MAINTENANCE -->
+            <?php if ($canManagePlastics): ?>
             <li class="nav-item <?= isMenuOpen([
               'backup',
               'logs',
@@ -595,6 +661,7 @@ function isMenuOpen($pages = [])
                 </li>
               </ul>
             </li>
+            <?php endif; ?>
           </ul>
         <?php } ?>
 

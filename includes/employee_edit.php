@@ -216,9 +216,13 @@
 
     $is_moderator = ($current_permission == 300);
     $is_admin_plus = ($current_permission >= 500);
+    $central_auth_ready = isset($pdo) && $pdo instanceof PDO && function_exists('auth_schema_ready') && auth_schema_ready($pdo);
+    $can_manage_access = function_exists('auth_can') && auth_can('access.manage');
+    $legacy_permission_locked = $central_auth_ready && !$can_manage_access;
 
     $input_readonly = $is_moderator ? 'readonly' : '';
     $select_disabled = $is_moderator ? 'disabled' : '';
+    $permission_select_disabled = $legacy_permission_locked ? 'disabled' : '';
     ?>
 
     <div class="row align-items-stretch">
@@ -330,7 +334,7 @@
 
 <?php if($is_moderator): ?>
   <div class="alert alert-warning">
-    Moderator access: you can edit only <b>Position</b> and <b>User Level</b>.
+    Moderator access: you can edit only <b>Position</b><?= $legacy_permission_locked ? '.' : ' and <b>Legacy User Level</b>.' ?>
   </div>
 <?php endif; ?>
 
@@ -737,8 +741,8 @@
       </div>
 
       <div class="form-group">
-        <label>User Level</label>
-        <select class="form-control" name="permission">
+        <label><?= $central_auth_ready ? 'Legacy User Level' : 'User Level' ?></label>
+        <select class="form-control" name="permission" <?= $permission_select_disabled ?>>
           <option value="1" <?= ($user_permission == '1') ? 'selected' : '' ?>>User</option>
 
           <?php if ($current_permission >= 300): ?>
@@ -753,6 +757,20 @@
             <option value="900" <?= ($user_permission == '900') ? 'selected' : '' ?>>Super Administrator</option>
           <?php endif; ?>
         </select>
+        <?php if ($legacy_permission_locked): ?>
+          <input type="hidden" name="permission" value="<?= (int) $user_permission ?>">
+        <?php endif; ?>
+        <?php if ($central_auth_ready): ?>
+          <small class="form-text text-warning">
+            Legacy level affects old screens and level 900 is an emergency full-access bypass.
+            Module permissions are managed in <code>access_admin</code>.
+            <?php if ($can_manage_access): ?>
+              <a href="index.php?page=access_admin&amp;employee_id=<?= (int) $empid ?>">Open User Permissions</a>.
+            <?php endif; ?>
+          </small>
+        <?php else: ?>
+          <small class="form-text text-muted">This legacy level controls access until central permissions are installed.</small>
+        <?php endif; ?>
       </div>
 
       <div class="form-group mb-0">

@@ -138,15 +138,39 @@ function isOrderItemReady(string $type, string $status, ?string $optionsJson = n
     return $status === 'READY';
 }
 
-function itemTrafficState(string $type, array $items): string
+function ordersItemEffectiveWorkflowStatus(mysqli $conn, string $department, array $item): string
 {
+    $department = ordersNormalizeDepartmentCode($department);
+    $status = strtoupper(trim((string) ($item['status'] ?? '')));
+
+    if ($department !== '' && ($status === '' || $status === 'NEW')) {
+        $itemForDefinitions = $item;
+        $itemForDefinitions['item_type_code'] = $department;
+        $definitions = ordersGetItemStatusDefinitionsForItem($conn, $itemForDefinitions, true);
+
+        foreach ($definitions as $code => $meta) {
+            $defaultStatus = strtoupper(trim((string) ($meta['code'] ?? $code)));
+            if ($defaultStatus !== '') {
+                return $defaultStatus;
+            }
+        }
+
+        return ordersGetDefaultItemStatusCode($conn, $department, true);
+    }
+
+    return $status !== '' ? $status : 'NEW';
+}
+
+function itemTrafficState(mysqli $conn, string $type, array $items): string
+{
+    $department = ordersNormalizeDepartmentCode($type);
     $total = count($items);
     $ready = 0;
     $started = 0;
     $waiting = 0;
 
     foreach ($items as $item) {
-        $status = strtoupper((string) ($item['status'] ?? ''));
+        $status = ordersItemEffectiveWorkflowStatus($conn, $department, $item);
         $optionsJson = (string) ($item['options_json'] ?? '');
         $internalOptionsJson = (string) ($item['internal_options_json'] ?? '');
 
@@ -155,7 +179,7 @@ function itemTrafficState(string $type, array $items): string
             $started++;
         }
 
-        if (isOrderItemReady($type, $status, $optionsJson, $internalOptionsJson)) {
+        if (isOrderItemReady($department, $status, $optionsJson, $internalOptionsJson)) {
             $ready++;
             $started++;
         }
@@ -197,7 +221,7 @@ function ordersDepartmentWorkflowStatus(mysqli $conn, string $department, array 
     $definitions = ordersGetItemStatusDefinitions($conn, $department, true);
 
     foreach ($items as $item) {
-        $status = strtoupper((string) ($item['status'] ?? 'NEW'));
+        $status = ordersItemEffectiveWorkflowStatus($conn, $department, $item);
         $optionsJson = (string) ($item['options_json'] ?? '');
         $internalOptionsJson = (string) ($item['internal_options_json'] ?? '');
 
@@ -630,28 +654,11 @@ function ordersHasManualStatusOverride(mysqli $conn, int $orderId): bool
 
     return (int)($row['status_override'] ?? 0) === 1;
 }
-function recalculateOrderWorkflow(mysqli $conn, int $orderId): void
-{
-    $currentOrderStatus = ordersGetCurrentOrderStatus($conn, $orderId);
-     if (ordersHasManualStatusOverride($conn, $orderId)) {
-        return;
-    }
 
-    /* finálne stavy workflow nikdy neprepisuje */
-    /*
-    if (
-        in_array($currentOrderStatus, [
-            'SHIPPED',
-            'CANCELLED',
-            'DELIVERED',
-            'PENDING'
-        ], true)
-    ) {
-        return;
-    }
-    */
+function ordersBuildWorkflowGroups(mysqli $conn, int $orderId): array
+{
     $stmt = $conn->prepare("
-        SELECT item_type_code, status, options_json, internal_options_json
+        SELECT item_type_code, status, sku, custom_label, options_json, internal_options_json
         FROM order_items
         WHERE order_id = ?
           AND deleted_at IS NULL
@@ -679,6 +686,8 @@ function recalculateOrderWorkflow(mysqli $conn, int $orderId): void
 
         $groups[$type][] = [
             'status' => $status,
+            'sku' => $item['sku'] ?? null,
+            'custom_label' => $item['custom_label'] ?? null,
             'options_json' => $item['options_json'] ?? null,
             'internal_options_json' => $item['internal_options_json'] ?? null,
         ];
@@ -686,6 +695,11 @@ function recalculateOrderWorkflow(mysqli $conn, int $orderId): void
 
     $stmt->close();
 
+    return $groups;
+}
+
+function ordersComputeTrafficFromGroups(mysqli $conn, array $groups): array
+{
     $summary = [];
     $allGreen = true;
     $hasOrange = false;
@@ -693,7 +707,7 @@ function recalculateOrderWorkflow(mysqli $conn, int $orderId): void
     $firstBlocker = '';
 
     foreach ($groups as $type => $statuses) {
-        $state = itemTrafficState($type, $statuses);
+        $state = itemTrafficState($conn, (string) $type, $statuses);
         $summary[$type] = $state;
 
         if ($state === 'GREEN') {
@@ -703,7 +717,7 @@ function recalculateOrderWorkflow(mysqli $conn, int $orderId): void
         if ($state !== 'GREEN') {
             $allGreen = false;
             if ($firstBlocker === '') {
-                $firstBlocker = $type;
+                $firstBlocker = (string) $type;
             }
         }
 
@@ -712,11 +726,6 @@ function recalculateOrderWorkflow(mysqli $conn, int $orderId): void
         }
     }
 
-    $departmentStatuses = ordersResolveDepartmentStatusesFromGroups($conn, $groups);
-
-    // Semafor (traffic light) na urovni celej objednavky je iba vizualny
-    // indikator a pocita sa vzdy nezavisle od toho, aky overall status
-    // objednavka nakoniec dostane - nesuvisi s dynamickymi status policies.
     if (!$groups) {
         $traffic = 'RED';
     } elseif ($allGreen) {
@@ -726,6 +735,72 @@ function recalculateOrderWorkflow(mysqli $conn, int $orderId): void
     } else {
         $traffic = 'RED';
     }
+
+    return [
+        'summary' => $summary,
+        'traffic_light' => $traffic,
+        'traffic_blocker' => $firstBlocker,
+    ];
+}
+
+function refreshOrderTrafficSummary(mysqli $conn, int $orderId): array
+{
+    $groups = ordersBuildWorkflowGroups($conn, $orderId);
+    $trafficData = ordersComputeTrafficFromGroups($conn, $groups);
+    $summaryJson = json_encode($trafficData['summary'], JSON_UNESCAPED_UNICODE);
+
+    $stmt = $conn->prepare("
+        UPDATE orders
+        SET traffic_light = ?,
+            traffic_blocker = ?,
+            traffic_summary_json = ?
+        WHERE id = ?
+    ");
+    $stmt->bind_param(
+        'sssi',
+        $trafficData['traffic_light'],
+        $trafficData['traffic_blocker'],
+        $summaryJson,
+        $orderId
+    );
+    $stmt->execute();
+    $stmt->close();
+
+    return [
+        'groups' => $groups,
+        'summary' => $trafficData['summary'],
+        'traffic_light' => $trafficData['traffic_light'],
+        'traffic_blocker' => $trafficData['traffic_blocker'],
+    ];
+}
+
+function recalculateOrderWorkflow(mysqli $conn, int $orderId): void
+{
+    $currentOrderStatus = ordersGetCurrentOrderStatus($conn, $orderId);
+     if (ordersHasManualStatusOverride($conn, $orderId)) {
+        return;
+    }
+
+    /* finálne stavy workflow nikdy neprepisuje */
+    /*
+    if (
+        in_array($currentOrderStatus, [
+            'SHIPPED',
+            'CANCELLED',
+            'DELIVERED',
+            'PENDING'
+        ], true)
+    ) {
+        return;
+    }
+    */
+    $groups = ordersBuildWorkflowGroups($conn, $orderId);
+    $trafficData = ordersComputeTrafficFromGroups($conn, $groups);
+    $summary = $trafficData['summary'];
+    $traffic = $trafficData['traffic_light'];
+    $firstBlocker = $trafficData['traffic_blocker'];
+
+    $departmentStatuses = ordersResolveDepartmentStatusesFromGroups($conn, $groups);
 
     $currentStatusIsWorkflowScoped = ordersWorkflowCurrentStatusIsAllowedByAnyRule($conn, $currentOrderStatus);
     $ruleBasedOrderStatus = $currentStatusIsWorkflowScoped

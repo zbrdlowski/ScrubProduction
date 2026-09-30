@@ -498,7 +498,8 @@ function import_darkscrub_unified_csv(mysqli $conn, string $csvPath, string $mod
       // --- Primárna položka (vždy jeden riadok pre primárny department) ---
       $itemId = oi_insert_item_unified_with_internal(
         $conn, $orderId, $lineNo ?: null,
-        $sku, $title, $customLabel, $primaryDept, $qty, $optionsJson, $rawUnitPrice, $internalOptionsJson
+        $sku, $title, $customLabel, $primaryDept, $qty, $optionsJson, $rawUnitPrice, $internalOptionsJson,
+        oi_initial_import_item_status($primaryDept, $optionsJson)
       );
 
       $categoryCodes = dept_to_category_codes($departments);
@@ -521,13 +522,15 @@ function import_darkscrub_unified_csv(mysqli $conn, string $csvPath, string $mod
           if ($secDept === 'F') $autoTag = 'GFP_AUTO_FITTING';
           if ($secDept === 'S') $autoTag = 'GFP_AUTO_SEATCOVER';
         }
+        $secOptionsJson = oi_auto_item_options_json($optionsJson, $autoTag);
         $secItemId = oi_insert_item_unified_with_internal(
           $conn, $orderId, $autoLineNo++,
           $sku, $title, $customLabel,
           $secDept, $qty,
-          oi_auto_item_options_json($optionsJson, $autoTag),
+          $secOptionsJson,
           null,  // cena len na primárnej položke
-          null
+          null,
+          oi_initial_import_item_status($secDept, $secOptionsJson)
         );
         $secCatCode = dept_to_category_codes([$secDept]);
         $secCatIds = [];
@@ -543,13 +546,15 @@ function import_darkscrub_unified_csv(mysqli $conn, string $csvPath, string $mod
       // "No Patch" / "Kein Patch" still contain the word "Patch". A graphics
       // item is needed only when the customer supplied patch text or a font.
       if ($primaryDept === 'S' && oi_should_create_seat_patch($customLabel, $optionsJson)) {
+        $patchOptionsJson = oi_auto_item_options_json($optionsJson, 'SEAT_PATCH_AUTO_GRAPHICS');
         $patchItemId = oi_insert_item_unified_with_internal(
           $conn, $orderId, $autoLineNo++,
           $sku, 'Patch', $customLabel,
           'G', $qty,
-          oi_auto_item_options_json($optionsJson, 'SEAT_PATCH_AUTO_GRAPHICS'),
+          $patchOptionsJson,
           null,
-          null
+          null,
+          oi_initial_import_item_status('G', $patchOptionsJson)
         );
         oi_add_item_categories($conn, $patchItemId, [$catIds['GRAPHICS']]);
         $stats['items']++;
@@ -559,14 +564,16 @@ function import_darkscrub_unified_csv(mysqli $conn, string $csvPath, string $mod
       $extraItems = oi_extract_shoptet_variant_items($r, $qty, $autoLineNo);
       foreach ($extraItems as $extra) {
         $autoLineNo++;
+        $extraOptionsJson = oi_auto_item_options_json($optionsJson, $extra['auto_tag']);
         $extraItemId = oi_insert_item_unified_with_internal(
           $conn, $orderId,
           $extra['line_no'],
           $sku, $extra['title'], $customLabel,
           $extra['item_type'], $extra['qty'],
-          oi_auto_item_options_json($optionsJson, $extra['auto_tag']),
+          $extraOptionsJson,
           null,  // extra varianty nemajú vlastnú cenu
-          null
+          null,
+          oi_initial_import_item_status($extra['item_type'], $extraOptionsJson)
         );
         $extraCatCode = dept_to_category_codes([$extra['item_type']]);
         $extraCatIds = [];
@@ -588,6 +595,7 @@ function import_darkscrub_unified_csv(mysqli $conn, string $csvPath, string $mod
     }
 
     oi_refresh_order_categories($conn, $orderId);
+    refreshOrderTrafficSummary($conn, $orderId);
 
     // Keep unpaid orders visibly PENDING. Their item gate is already prepared,
     // but overall workflow starts only after payment is confirmed.
@@ -753,7 +761,10 @@ function oi_is_shipping_or_payment_line(array $r): bool {
 function oi_merge_options_json(array $r): ?string {
   $opts = [];
 
-  $optionsRaw = oi_trim($r['options_json'] ?? null);
+  $optionsRaw = oi_trim($r['options_json'] ?? null)
+    ?? oi_trim($r['option_json'] ?? null)
+    ?? oi_trim($r['optionsJson'] ?? null)
+    ?? oi_trim($r['optionJson'] ?? null);
   if ($optionsRaw) {
     $decoded = oi_json_decode_assoc_safe($optionsRaw);
     if (is_array($decoded)) $opts = $decoded;
@@ -885,19 +896,63 @@ function oi_has_positive_option_value(?string $value): bool {
   $value = oi_trim($value);
   if ($value === null) return false;
 
-  $negativeValues = ['no', 'nie', 'nein', 'non', 'false', '0', 'n/a', '-', 'x'];
+  $negativeValues = ['no', 'nie', 'ne', 'nein', 'non', 'false', '0', 'n/a', '-', 'x'];
   return !in_array(mb_strtolower($value), $negativeValues, true);
+}
+
+function oi_is_draft_option_key(string $key): bool {
+  $normalized = mb_strtolower(trim($key), 'UTF-8');
+  $normalized = preg_replace('/[\s_]+/u', '-', $normalized);
+  $normalized = preg_replace('/-+/', '-', (string)$normalized);
+
+  return in_array($normalized, ['draft', 'draft-before-production'], true);
+}
+
+function oi_has_draft_before_production(?string $optionsJson): bool {
+  $options = oi_json_decode_assoc_safe($optionsJson);
+  if (!$options) return false;
+
+  foreach ($options as $key => $value) {
+    if (!is_string($key) || !oi_is_draft_option_key($key) || !is_scalar($value)) {
+      continue;
+    }
+
+    return oi_has_positive_option_value((string)$value);
+  }
+
+  return false;
+}
+
+function oi_initial_import_item_status(?string $itemTypeCode, ?string $optionsJson): ?string {
+  if (ordersNormalizeDepartmentCode((string)$itemTypeCode) === 'G' && oi_has_draft_before_production($optionsJson)) {
+    return 'DRAFT_✗';
+  }
+
+  return null;
 }
 
 function oi_insert_item_unified(mysqli $conn, int $orderId, ?int $lineNo, ?string $sku, ?string $title, ?string $customLabel, ?string $itemTypeCode, int $qty, ?string $optionsJson, ?float $unitPrice = null): int {
   return oi_insert_item_unified_with_internal($conn, $orderId, $lineNo, $sku, $title, $customLabel, $itemTypeCode, $qty, $optionsJson, $unitPrice, null);
 }
 
-function oi_insert_item_unified_with_internal(mysqli $conn, int $orderId, ?int $lineNo, ?string $sku, ?string $title, ?string $customLabel, ?string $itemTypeCode, int $qty, ?string $optionsJson, ?float $unitPrice = null, ?string $internalOptionsJson = null): int {
+function oi_insert_item_unified_with_internal(mysqli $conn, int $orderId, ?int $lineNo, ?string $sku, ?string $title, ?string $customLabel, ?string $itemTypeCode, int $qty, ?string $optionsJson, ?float $unitPrice = null, ?string $internalOptionsJson = null, ?string $initialStatus = null): int {
   $sku = oi_trim($sku);
   $title = oi_trim($title);
   $customLabel = oi_trim($customLabel);
   $itemTypeCode = oi_trim($itemTypeCode);
+  $initialStatus = oi_trim($initialStatus);
+
+  if ($initialStatus !== null) {
+    $stmt = $conn->prepare('
+      INSERT INTO order_items (order_id, line_no, sku, title, custom_label, item_type_code, qty, unit_price, options_json, internal_options_json, status)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?)
+    ');
+    $stmt->bind_param('iissssidsss', $orderId, $lineNo, $sku, $title, $customLabel, $itemTypeCode, $qty, $unitPrice, $optionsJson, $internalOptionsJson, $initialStatus);
+    $stmt->execute();
+    $id = (int)$stmt->insert_id;
+    $stmt->close();
+    return $id;
+  }
 
   $stmt = $conn->prepare('
     INSERT INTO order_items (order_id, line_no, sku, title, custom_label, item_type_code, qty, unit_price, options_json, internal_options_json)

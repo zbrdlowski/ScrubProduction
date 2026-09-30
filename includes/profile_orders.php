@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/conn.php';
+require_once __DIR__ . '/orders_status_helpers.php';
 
 $dpt = (int) ($_SESSION['dpt'] ?? 0);
 $userId = (int) ($_SESSION['user_id'] ?? 0);
@@ -128,7 +129,7 @@ WHERE
           AND oia_me.removed_at IS NULL
       )
     )
-    AND UPPER(o.status) != 'SHIPPED'
+    AND UPPER(TRIM(COALESCE(o.status, ''))) NOT IN ('SHIPPED', 'DELIVERED')
 ORDER BY COALESCE(o.production_started_at, o.order_date) ASC, o.order_date ASC
 ";
 
@@ -141,36 +142,6 @@ $stmt->execute();
 $res = $stmt->get_result();
 ?>
 <?php
-function profileStatusButtonClass(string $status): string
-{
-    $status = strtoupper(trim($status));
-
-    switch ($status) {
-        case 'NEW':
-        case 'NEED_INFO':
-            return 'btn-outline-danger';
-
-        case 'IN_PROGRESS':
-        case 'WAITING_PARTS':
-        case 'READY_TO_INVOICE':
-            return 'btn-outline-warning';
-
-        case 'DONE':
-        case 'COMPLETED':
-        case 'READY':
-        case 'READY_TO_SHIP':
-        case 'SHIPPED':
-            return 'btn-outline-success';
-
-        case 'HOLD':
-        case 'CANCELLED':
-            return 'btn-outline-secondary';
-
-        default:
-            return 'btn-outline-secondary';
-    }
-}
-
 function profileRoleBadge(string $role): string
 {
     $role = strtoupper($role);
@@ -194,6 +165,21 @@ function profileRoleBadge(string $role): string
 
 .profile-order-row {
     cursor: pointer;
+}
+
+.profile-orders-table .orders-status-chip {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 28px;
+    padding: 4px 12px;
+    border: 1px solid transparent;
+    border-radius: .2rem;
+    font-size: 12px;
+    font-weight: 700;
+    line-height: 1.2;
+    white-space: nowrap;
+    box-shadow: inset 0 -1px 0 rgba(0, 0, 0, .14);
 }
 
 .profile-order-row.order-row-open {
@@ -384,9 +370,18 @@ function profileRoleBadge(string $role): string
                     <?php endforeach; ?>
                 </td>
 
-                <td class="text-center" data-status-cell="<?= $orderId ?>">
-                    <button class="btn btn-xs <?= profileStatusButtonClass($statusUpper) ?>" style="pointer-events:none;">
-                        <?= htmlspecialchars(str_replace('_', ' ', $statusUpper) ?: '-') ?>
+                <?php
+                $statusLabel = ordersGetStatusLabel($conn, 'order', $statusUpper);
+                $statusColor = ordersGetStatusColor($conn, 'order', $statusUpper) ?: '#6c757d';
+                $statusStyle = 'background-color:' . htmlspecialchars($statusColor, ENT_QUOTES, 'UTF-8') . ';'
+                    . 'border-color:' . htmlspecialchars($statusColor, ENT_QUOTES, 'UTF-8') . ';'
+                    . 'color:' . ordersContrastColor($statusColor) . ';';
+                ?>
+                <td class="text-center" data-status-cell="<?= $orderId ?>"
+                    data-status-color="<?= htmlspecialchars($statusColor, ENT_QUOTES, 'UTF-8') ?>"
+                    data-status-label="<?= htmlspecialchars($statusLabel ?: '-', ENT_QUOTES, 'UTF-8') ?>">
+                    <button type="button" class="btn btn-xs orders-status-chip" style="<?= $statusStyle ?> pointer-events:none;">
+                        <?= htmlspecialchars($statusLabel ?: '-') ?>
                     </button>
                     <?php if ((int)($row['status_override'] ?? 0) === 1): ?>
                         <span class="badge badge-warning ml-1" title="Item changes are saved, but the overall order status is locked">

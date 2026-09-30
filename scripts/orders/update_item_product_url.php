@@ -1,15 +1,43 @@
 <?php
 declare(strict_types=1);
+ob_start();
 session_start();
 
 header('Content-Type: application/json; charset=utf-8');
 
-if ((int)($_SESSION['permission'] ?? 0) < 300) {
-  echo json_encode(['ok' => false, 'error' => 'No permission']);
+register_shutdown_function(function (): void {
+  $err = error_get_last();
+  if ($err && in_array($err['type'], [E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR], true)) {
+    while (ob_get_level() > 0) {
+      ob_end_clean();
+    }
+    http_response_code(500);
+    echo json_encode(
+      ['ok' => false, 'error' => 'PHP Fatal: ' . $err['message']],
+      JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE
+    );
+  } elseif (ob_get_level() > 0) {
+    ob_end_flush();
+  }
+});
+
+function out_product_url(array $payload, int $status = 200): void
+{
+  while (ob_get_level() > 0) {
+    ob_end_clean();
+  }
+  http_response_code($status);
+  echo json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE);
   exit;
 }
 
 require_once __DIR__ . '/../../includes/conn.php';
+require_once __DIR__ . '/../../includes/auth.php';
+
+if (!auth_can('orders.manage')) {
+  out_product_url(['ok' => false, 'error' => 'No permission'], 403);
+}
+
 require_once __DIR__ . '/activity_helper.php';
 
 $itemId = (int)($_POST['item_id'] ?? 0);
@@ -17,19 +45,18 @@ $url = trim((string)($_POST['product_url'] ?? ''));
 $userId = (int)($_SESSION['user_id'] ?? 0);
 
 if ($itemId <= 0) {
-  echo json_encode(['ok' => false, 'error' => 'Invalid item']);
-  exit;
+  out_product_url(['ok' => false, 'error' => 'Invalid item']);
 }
 
 if ($url !== '' && !filter_var($url, FILTER_VALIDATE_URL)) {
-  echo json_encode(['ok' => false, 'error' => 'Invalid URL']);
-  exit;
+  out_product_url(['ok' => false, 'error' => 'Invalid URL']);
 }
 
 $stmt = $conn->prepare("
   SELECT order_id, product_url
   FROM order_items
   WHERE id = ?
+    AND deleted_at IS NULL
   LIMIT 1
 ");
 $stmt->bind_param('i', $itemId);
@@ -38,8 +65,7 @@ $item = $stmt->get_result()->fetch_assoc();
 $stmt->close();
 
 if (!$item) {
-  echo json_encode(['ok' => false, 'error' => 'Item not found']);
-  exit;
+  out_product_url(['ok' => false, 'error' => 'Item not found']);
 }
 
 $orderId = (int)$item['order_id'];
@@ -70,4 +96,4 @@ log_order_activity(
   'Product URL updated'
 );
 
-echo json_encode(['ok' => true]);
+out_product_url(['ok' => true, 'order_id' => $orderId]);

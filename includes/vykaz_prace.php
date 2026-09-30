@@ -501,6 +501,28 @@ foreach ($rows as $r) {
     box-shadow: 0 2px 7px rgba(0, 0, 0, .2);
     outline: none;
   }
+
+  @page {
+    size: A4 landscape;
+    margin: 10mm;
+  }
+
+  @media print {
+    #vykazTable {
+      width: 100% !important;
+      font-size: 10px;
+    }
+
+    #vykazTable th,
+    #vykazTable td {
+      padding: 5px 7px !important;
+      white-space: normal !important;
+    }
+
+    .job-report-day-separator-row > td {
+      padding: 4px 0 !important;
+    }
+  }
 </style>
 
       <?php if (!$hasSubmitted): ?>
@@ -625,7 +647,25 @@ foreach ($rows as $r) {
       pageLength: 200,
       order: [],
       dom: 'Bfrtip',
-      buttons: ["copy", "csv", "excel", "pdf", "print", "colvis"],
+      buttons: [
+        "copy",
+        "csv",
+        "excel",
+        {
+          extend: "pdf",
+          orientation: "landscape",
+          pageSize: "A4"
+        },
+        {
+          extend: "print",
+          customize: function (win) {
+            $(win.document.head).append(
+              '<style>@page{size:A4 landscape;margin:10mm;}#vykazTable{width:100%!important;font-size:10px;}#vykazTable th,#vykazTable td{padding:5px 7px!important;white-space:normal!important;}.job-report-day-separator-row>td{padding:4px 0!important;}</style>'
+            );
+          }
+        },
+        "colvis"
+      ],
       drawCallback: function () {
         addJobReportDaySeparators(this.api());
       }

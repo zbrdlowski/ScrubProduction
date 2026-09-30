@@ -6,7 +6,8 @@ require_once __DIR__ . '/bootstrap.php';
 $orderId = (int) ($_POST['custom_order_id'] ?? 0);
 $itemId = (int) ($_POST['custom_item_id'] ?? 0);
 $userId = (int) ($_SESSION['user_id'] ?? 0);
-$inlineEdit = (int) ($_POST['inline_edit'] ?? 0) === 1;
+$isAjaxRequest = strtolower((string) ($_SERVER['HTTP_X_REQUESTED_WITH'] ?? '')) === 'xmlhttprequest';
+$inlineEdit = (int) ($_POST['inline_edit'] ?? 0) === 1 && $isAjaxRequest;
 $finish = static function (bool $ok, string $message, int $responseItemId = 0) use ($inlineEdit, $orderId): void {
   if ($inlineEdit) {
     header('Content-Type: application/json; charset=utf-8');

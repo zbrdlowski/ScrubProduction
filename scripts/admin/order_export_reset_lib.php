@@ -1,16 +1,11 @@
 <?php
 declare(strict_types=1);
 
-function orderExportResetAllowedUserIds(): array
-{
-  // Keep this intentionally tiny while the tool is owner-only.
-  return [1];
-}
+require_once dirname(__DIR__, 2) . '/includes/auth.php';
 
 function orderExportResetCurrentUserAllowed(): bool
 {
-  $userId = (int) ($_SESSION['user_id'] ?? 0);
-  return in_array($userId, orderExportResetAllowedUserIds(), true);
+  return auth_can('orders.export_reset');
 }
 
 function orderExportResetH(string $value): string

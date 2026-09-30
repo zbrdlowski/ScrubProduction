@@ -121,12 +121,33 @@ function ordersShippingScopeIsPlastics(int $sessionDept): bool
   return $sessionDept === 6;
 }
 
-function ordersShippingScopeWhereSql(int $sessionDept, string $orderAlias = 'o'): string
+function ordersShippingScopeFromDepartment(int $sessionDept): string
+{
+  return ordersShippingScopeIsPlastics($sessionDept) ? 'plastics' : 'production';
+}
+
+function ordersShippingNormalizeScope(string $scope): string
+{
+  $scope = strtolower(trim($scope));
+  return in_array($scope, ['plastics', 'plastic', 'p'], true) ? 'plastics' : 'production';
+}
+
+function ordersShippingScopeLabel(string $scope): string
+{
+  return ordersShippingNormalizeScope($scope) === 'plastics' ? 'Plastics' : 'Production';
+}
+
+function ordersShippingScopeWhereSqlForScope(string $scope, string $orderAlias = 'o'): string
 {
   $containsPlasticsSql = ordersShippingContainsPlasticsWhereSql($orderAlias);
-  return ordersShippingScopeIsPlastics($sessionDept)
+  return ordersShippingNormalizeScope($scope) === 'plastics'
     ? $containsPlasticsSql
     : "NOT ($containsPlasticsSql)";
+}
+
+function ordersShippingScopeWhereSql(int $sessionDept, string $orderAlias = 'o'): string
+{
+  return ordersShippingScopeWhereSqlForScope(ordersShippingScopeFromDepartment($sessionDept), $orderAlias);
 }
 
 function ordersMultishippingGroupForOrder(mysqli $conn, int $orderId): ?array

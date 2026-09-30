@@ -5,7 +5,7 @@ $isCli = PHP_SAPI === 'cli';
 if (!$isCli) {
   session_start();
   header('Content-Type: application/json; charset=utf-8');
-  if ((int) ($_SESSION['permission'] ?? 0) < 400) {
+  if (!auth_can('orders.shipping')) {
     http_response_code(403);
     echo json_encode(['ok' => false, 'error' => 'No permission'], JSON_UNESCAPED_UNICODE);
     exit;
@@ -150,6 +150,7 @@ function fedexSyncFetchTrackingRows(mysqli $conn, int $limit, int $pollMinutes, 
       AND $pollWhere
     ORDER BY
       CASE WHEN otn.fedex_last_checked_at IS NULL THEN 0 ELSE 1 END ASC,
+      otn.fedex_last_checked_at ASC,
       otn.created_at ASC,
       otn.id ASC
     LIMIT ?

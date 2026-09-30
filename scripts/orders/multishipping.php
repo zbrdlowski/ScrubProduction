@@ -17,12 +17,10 @@ function multishippingJson(array $payload, int $status = 200): void
   exit;
 }
 
-$permission = (int) ($_SESSION['permission'] ?? 0);
-$isSuperAdmin = $permission >= 900;
-
-if ($permission < 1) {
-  multishippingJson(['ok' => false, 'error' => 'No permission.'], 403);
-}
+$isSuperAdmin = auth_can('orders.admin');
+$canEditOwnShippingScope = auth_can('orders.work');
+$canEditAnyShippingScope = $isSuperAdmin || auth_can('orders.shipping');
+$canEditMultishipping = $canEditOwnShippingScope || $canEditAnyShippingScope;
 
 try {
   ordersMultishippingEnsureSchema($conn);
@@ -82,7 +80,7 @@ if ($action === 'fetch') {
   if (!$base) {
     multishippingJson(['ok' => false, 'error' => 'Order not found.'], 404);
   }
-  if (!$isSuperAdmin && !multishippingOrderMatchesShippingScope($conn, $orderId, $sessionDept)) {
+  if (!$canEditAnyShippingScope && !multishippingOrderMatchesShippingScope($conn, $orderId, $sessionDept)) {
     multishippingJson(['ok' => false, 'error' => 'This order belongs to the other shipping workplace.'], 403);
   }
 
@@ -196,6 +194,7 @@ if ($action === 'fetch') {
 
   multishippingJson([
     'ok' => true,
+    'editable' => $canEditMultishipping,
     'group' => $group ? [
       'id' => $groupId,
       'status' => (string) $group['status'],
@@ -204,6 +203,10 @@ if ($action === 'fetch') {
     'requested_order_id' => $orderId,
     'candidates' => $output,
   ]);
+}
+
+if (!$canEditMultishipping) {
+  multishippingJson(['ok' => false, 'error' => 'No permission to change multishipping.'], 403);
 }
 
 if ($action === 'save') {
@@ -243,18 +246,20 @@ if ($action === 'save') {
       }
     }
 
-    $scopeWhere = ordersShippingScopeWhereSql($sessionDept, 'o');
-    $scopeStmt = $conn->prepare("SELECT o.id FROM orders o WHERE o.id IN ($placeholders) AND $scopeWhere");
-    $scopeStmt->bind_param($types, ...$orderIds);
-    $scopeStmt->execute();
-    $scopeRows = [];
-    $scopeRes = $scopeStmt->get_result();
-    while ($scopeRow = $scopeRes->fetch_assoc()) {
-      $scopeRows[(int) $scopeRow['id']] = true;
-    }
-    $scopeStmt->close();
-    if (!$scopeRows) {
-      throw new RuntimeException('Selected orders must include at least one order from this shipping workplace.');
+    if (!$canEditAnyShippingScope) {
+      $scopeWhere = ordersShippingScopeWhereSql($sessionDept, 'o');
+      $scopeStmt = $conn->prepare("SELECT o.id FROM orders o WHERE o.id IN ($placeholders) AND $scopeWhere");
+      $scopeStmt->bind_param($types, ...$orderIds);
+      $scopeStmt->execute();
+      $scopeRows = [];
+      $scopeRes = $scopeStmt->get_result();
+      while ($scopeRow = $scopeRes->fetch_assoc()) {
+        $scopeRows[(int) $scopeRow['id']] = true;
+      }
+      $scopeStmt->close();
+      if (!$scopeRows) {
+        throw new RuntimeException('Selected orders must include at least one order from this shipping workplace.');
+      }
     }
 
     $customerIds = array_values(array_unique(array_filter(array_map(

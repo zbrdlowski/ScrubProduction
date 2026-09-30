@@ -2,6 +2,7 @@
 declare(strict_types=1);
 /** @var mysqli $conn */
 require_once __DIR__ . '/conn.php';
+require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/render_assigned_users.php';
 require_once __DIR__ . '/orders_status_helpers.php';
 require_once __DIR__ . '/orders_workflow_helpers.php';
@@ -907,7 +908,13 @@ $rolePrimaryUI = $uiDeptCode ? ('PRIMARY_' . $uiDeptCode) : null;
 
 $meUserId = (int) ($_SESSION['user_id'] ?? 0);
 $perm = (int) ($_SESSION['permission'] ?? 0);
-$isSuperAdmin = $perm >= 900;
+$isSuperAdmin = auth_can('orders.admin');
+$ordersCanManage = auth_can('orders.manage');
+$canChooseFedexShippingScope = $isSuperAdmin || auth_can('orders.shipping');
+$defaultFedexShippingScope = ordersShippingScopeFromDepartment($dpt);
+if ($ordersCanManage) {
+  $perm = max($perm, 400);
+}
 $ordersTableColumnCount = $isSuperAdmin ? 13 : 12;
 
 $aclCats = [];
@@ -1395,6 +1402,7 @@ $sql = " SELECT
     SELECT GROUP_CONCAT(DISTINCT oi.item_type_code ORDER BY oi.item_type_code SEPARATOR ', ')
     FROM order_items oi
     WHERE oi.order_id = o.id
+      AND oi.deleted_at IS NULL
       AND oi.item_type_code IS NOT NULL
       AND oi.item_type_code <> ''
   ) AS item_types,
@@ -1680,7 +1688,7 @@ if ($orderIds) {
   $placeholders = implode(',', array_fill(0, count($orderIds), '?'));
   $types = str_repeat('i', count($orderIds));
   $stmtDeptStatuses = $conn->prepare("
-    SELECT order_id, item_type_code, status, options_json, internal_options_json
+    SELECT order_id, item_type_code, status, sku, custom_label, options_json, internal_options_json
     FROM order_items
     WHERE deleted_at IS NULL
       AND order_id IN ($placeholders)
@@ -1712,6 +1720,8 @@ if ($orderIds) {
 
       $groupsByOrder[$orderId][$itemType][] = [
         'status' => strtoupper((string)($deptRow['status'] ?? 'NEW')),
+        'sku' => $deptRow['sku'] ?? null,
+        'custom_label' => $deptRow['custom_label'] ?? null,
         'options_json' => $deptRow['options_json'] ?? null,
         'internal_options_json' => $deptRow['internal_options_json'] ?? null,
       ];
@@ -2558,18 +2568,6 @@ $deptOptions = [
     <form method="get" class="mb-0" style="min-width:320px; max-width:520px; flex:1;">
       <input type="hidden" name="page" value="<?= htmlspecialchars($page) ?>" />
 
-      <?php foreach ($_GET as $k => $v): ?>
-        <?php
-        if (in_array($k, ['page', 'q'], true)) {
-          continue;
-        }
-        if (is_array($v)) {
-          continue;
-        }
-        ?>
-        <input type="hidden" name="<?= htmlspecialchars((string) $k) ?>" value="<?= htmlspecialchars((string) $v) ?>">
-      <?php endforeach; ?>
-
       <div class="input-group input-group-sm <?= fActive($fQ) ?>">
         <input class="form-control form-control-sm" name="q" value="<?= htmlspecialchars($fQ) ?>"
           placeholder="Order #, product, SKU, customer, email, invoice, tracking…" />
@@ -3068,6 +3066,7 @@ $deptOptions = [
           <?php if (strtoupper($fStatus) === 'READY_TO_SHIP'): ?>
             <button type="button" class="active-filter-pill pill-action border-0 js-open-fedex-export-modal"
               data-dept="<?= (int) $fDept ?>"
+              data-shipping-scope="<?= htmlspecialchars($fDept === 6 ? 'plastics' : ($fDept > 0 ? 'production' : $defaultFedexShippingScope), ENT_QUOTES, 'UTF-8') ?>"
               title="Otvoriť FedEx export CSV pre Ready to Ship objednávky">
               <i class="fas fa-file-csv mr-1"></i>
               <span class="pill-value">Download CSV</span>
@@ -3673,6 +3672,14 @@ $deptOptions = [
                 $summaryRaw = (string) ($row['traffic_summary_json'] ?? '');
                 $summary = json_decode($summaryRaw, true);
                 $departmentStatuses = $orderDepartmentStatusMap[$orderId] ?? [];
+                $liveTrafficTypes = [];
+                $liveTrafficTypesRaw = str_replace([' ', ','], '', strtoupper((string) ($row['item_types'] ?? '')));
+                foreach (str_split($liveTrafficTypesRaw) as $liveTrafficType) {
+                  $liveTrafficDepartment = ordersNormalizeDepartmentCode($liveTrafficType);
+                  if (in_array($liveTrafficDepartment, ['G', 'F', 'P', 'S'], true)) {
+                    $liveTrafficTypes[$liveTrafficDepartment] = true;
+                  }
+                }
 
                 if (!is_array($summary) || !$summary) {
                   $typesFallback = strtoupper((string) ($row['item_types'] ?? ''));
@@ -3684,6 +3691,10 @@ $deptOptions = [
                       $summary[$t] = strtoupper((string) ($row['traffic_light'] ?? 'RED'));
                     }
                   }
+                } elseif ($liveTrafficTypes) {
+                  $summary = array_intersect_key($summary, $liveTrafficTypes);
+                } elseif ($liveTrafficTypesRaw === '') {
+                  $summary = [];
                 }
 
                 $order = ['G', 'F', 'P', 'S'];
@@ -3742,7 +3753,7 @@ $deptOptions = [
                 if ($priorityValue > 0)
                   $badgeStyle .= 'cursor:pointer;';
                 ?>
-                <?php if ($perm >= 300): ?>
+                <?php if ($ordersCanManage): ?>
                   <button type="button" class="badge <?= $priorityBadge ?> orders-priority-chip priority-badge-clickable" style="<?= $badgeStyle ?>"
                     data-order-id="<?= $orderId ?>" data-priority="<?= $priorityValue ?>"
                     data-priority-date="<?= htmlspecialchars($priorityDateRaw) ?>">
@@ -5564,7 +5575,14 @@ $deptOptions = [
 
         // Aplikujeme semafor priamo z odpovede — bez reloadu
         if (resp.traffic_summary && resp.order_id) {
-          applyTrafficSummaryToRow(resp.order_id, resp.traffic_summary, resp.order_status);
+          applyTrafficSummaryToRow(
+            resp.order_id,
+            resp.traffic_summary,
+            resp.order_status,
+            resp.department_statuses,
+            resp.department_labels,
+            resp.department_colors
+          );
         }
 
         // Refreshneme len otvorený detail panel
@@ -5583,34 +5601,52 @@ $deptOptions = [
       }
     });
   });
-  $(document).on('click', '.btn-set-product-url', function () {
-    const itemId = $(this).data('item-id');
-    const url = prompt('Paste product URL');
+  $(document)
+    .off('click.orderProductUrl', '.btn-set-product-url, .btn-edit-product-url')
+    .on('click.orderProductUrl', '.btn-set-product-url, .btn-edit-product-url', function (e) {
+      e.preventDefault();
+      e.stopPropagation();
 
-    if (url === null) return;
+      const $btn = $(this);
+      const itemId = $btn.data('item-id');
+      const orderId = parseInt($btn.data('order-id'), 10) || 0;
+      const currentUrl = String($btn.data('current-url') || '');
+      const url = prompt('Paste product URL. Leave empty to use the auto-generated SKU link.', currentUrl);
 
-    $.ajax({
-      url: 'scripts/orders/update_item_product_url.php',
-      method: 'POST',
-      dataType: 'json',
-      data: {
-        item_id: itemId,
-        product_url: url
-      },
-      success: function (resp) {
-        if (!resp || !resp.ok) {
-          alert(resp && resp.error ? resp.error : 'Product URL save failed');
-          return;
+      if (url === null) return;
+
+      $.ajax({
+        url: 'scripts/orders/update_item_product_url.php',
+        method: 'POST',
+        dataType: 'json',
+        data: {
+          item_id: itemId,
+          product_url: url
+        },
+        success: function (resp) {
+          if (!resp || !resp.ok) {
+            alert(resp && resp.error ? resp.error : 'Product URL save failed');
+            return;
+          }
+
+          const resolvedOrderId = orderId || parseInt(resp.order_id, 10) || 0;
+          if (resolvedOrderId && typeof reloadOrderDetail === 'function') {
+            reloadOrderDetail(resolvedOrderId);
+            return;
+          }
+
+          location.reload();
+        },
+        error: function (xhr) {
+          console.log(xhr.responseText);
+          const message =
+            (xhr.responseJSON && xhr.responseJSON.error) ||
+            (xhr.responseJSON && xhr.responseJSON.message) ||
+            'Product URL request failed';
+          alert(message);
         }
-
-        location.reload();
-      },
-      error: function (xhr) {
-        console.log(xhr.responseText);
-        alert('Product URL request failed');
-      }
+      });
     });
-  });
   $(document).on('click', '.btn-edit-production-note', function () {
     const $box = $(this).closest('.production-note-box');
 
@@ -6137,7 +6173,7 @@ $deptOptions = [
             <h6 class="text-muted mb-0">
               <i class="fas fa-tools mr-1"></i> Internal Production Blocks
             </h6>
-            <?php if ((int) ($_SESSION['permission'] ?? 0) >= 300): ?>
+            <?php if ($ordersCanManage): ?>
               <button type="button" class="btn btn-sm btn-outline-warning" id="btnEditInternalOptions">
                 <i class="fas fa-edit mr-1"></i> Edit internal
               </button>
@@ -6261,6 +6297,7 @@ $deptOptions = [
     <div class="modal-content bg-dark text-light">
       <form method="post" action="export_fedex_ready_to_ship.php" target="_blank">
         <input type="hidden" name="dept" id="fedexExportDeptInput" value="<?= (int) $fDept ?>">
+        <input type="hidden" name="shipping_scope" id="fedexExportScopeInput" value="<?= htmlspecialchars($defaultFedexShippingScope, ENT_QUOTES, 'UTF-8') ?>">
         <div class="modal-header border-secondary">
           <h5 class="modal-title">
             <i class="fas fa-file-csv mr-2"></i>FedEx CSV Preview
@@ -6270,6 +6307,22 @@ $deptOptions = [
           </button>
         </div>
         <div class="modal-body">
+          <div class="form-row align-items-end mb-3">
+            <div class="form-group col-md-4 mb-md-0 mb-2">
+              <label class="small mb-1" for="fedexExportScopeSelect">Shipping department</label>
+              <select class="form-control form-control-sm bg-dark text-light border-secondary" id="fedexExportScopeSelect" <?= $canChooseFedexShippingScope ? '' : 'disabled' ?>>
+                <option value="production" <?= $defaultFedexShippingScope === 'production' ? 'selected' : '' ?>>Production</option>
+                <option value="plastics" <?= $defaultFedexShippingScope === 'plastics' ? 'selected' : '' ?>>Plastics</option>
+              </select>
+            </div>
+            <div class="col-md-8 small text-muted">
+              <?php if ($canChooseFedexShippingScope): ?>
+                Vyberte, za ktoré shipping pracovisko sa budú generovať štítky.
+              <?php else: ?>
+                Export je viazaný na vaše aktuálne shipping pracovisko.
+              <?php endif; ?>
+            </div>
+          </div>
           <div id="fedexExportModalBody" class="fedex-export-loader text-muted">
             <div><span class="spinner-border spinner-border-sm mr-2"></span>Loading export preview...</div>
           </div>
@@ -6335,6 +6388,8 @@ $deptOptions = [
     const $fedexExportModalBody = $('#fedexExportModalBody');
     const $fedexExportSubmitBtn = $('#fedexExportSubmitBtn');
     const $fedexExportDeptInput = $('#fedexExportDeptInput');
+    const $fedexExportScopeInput = $('#fedexExportScopeInput');
+    const $fedexExportScopeSelect = $('#fedexExportScopeSelect');
     const $fedexEodImportModal = $('#fedexEodImportModal');
     const $fedexEodFile = $('#fedexEodFile');
     const $fedexEodImportResult = $('#fedexEodImportResult');
@@ -6370,6 +6425,17 @@ $deptOptions = [
       fedexExportResizableInit = true;
     }
 
+    function normalizeFedexExportScope(scope) {
+      scope = String(scope || '').toLowerCase();
+      return scope === 'plastics' ? 'plastics' : 'production';
+    }
+
+    function setFedexExportScope(scope) {
+      const normalized = normalizeFedexExportScope(scope);
+      $fedexExportScopeInput.val(normalized);
+      $fedexExportScopeSelect.val(normalized);
+    }
+
     function loadFedexExportPreview() {
       $fedexExportSubmitBtn.prop('disabled', true);
       $fedexExportModalBody
@@ -6380,7 +6446,7 @@ $deptOptions = [
       $.ajax({
         url: 'export_fedex_ready_to_ship.php',
         method: 'GET',
-        data: { preview: 1, dept: $fedexExportDeptInput.val() },
+        data: { preview: 1, dept: $fedexExportDeptInput.val(), shipping_scope: $fedexExportScopeInput.val() },
         cache: false,
         success: function (html) {
           $fedexExportModalBody
@@ -6426,7 +6492,7 @@ $deptOptions = [
             return;
           }
           const groupStatus = resp.group ? String(resp.group.status || '') : '';
-          const editable = !resp.group || groupStatus === 'DRAFT';
+          const editable = !!resp.editable && (!resp.group || groupStatus === 'DRAFT');
           let html = '';
           (resp.candidates || []).forEach(function (row) {
             const blocked = !!row.blocked_group || !!row.export_locked || row.status !== 'READY_TO_SHIP';
@@ -6578,8 +6644,18 @@ $deptOptions = [
       e.stopPropagation();
       const dept = parseInt($(this).data('dept'), 10);
       $fedexExportDeptInput.val(isNaN(dept) ? -1 : dept);
+      setFedexExportScope($fedexExportScopeSelect.prop('disabled')
+        ? $fedexExportScopeInput.val()
+        : ($(this).data('shipping-scope') || $fedexExportScopeInput.val()));
       $fedexExportModal.modal('show');
       loadFedexExportPreview();
+    });
+
+    $fedexExportScopeSelect.on('change', function () {
+      setFedexExportScope($(this).val());
+      if ($fedexExportModal.hasClass('show')) {
+        loadFedexExportPreview();
+      }
     });
 
     $(document).on('click', '.js-open-fedex-eod-import-modal', function (e) {
