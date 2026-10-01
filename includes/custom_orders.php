@@ -322,8 +322,12 @@ try {
     LEFT JOIN (
       SELECT
         custom_order_id,
-        SUM(CASE WHEN payment_kind IN ('DEPOSIT', 'EXTRA_DEPOSIT') THEN amount ELSE 0 END) AS deposit_total,
-        SUM(CASE WHEN payment_kind = 'REFUND' THEN -amount ELSE amount END) AS paid_total
+        SUM(CASE WHEN UPPER(TRIM(payment_kind)) IN ('DEPOSIT', 'EXTRA_DEPOSIT') THEN amount ELSE 0 END) AS deposit_total,
+        SUM(CASE
+          WHEN UPPER(TRIM(payment_kind)) = 'ADVANCE_INVOICE' THEN 0
+          WHEN UPPER(TRIM(payment_kind)) = 'REFUND' THEN -amount
+          ELSE amount
+        END) AS paid_total
       FROM custom_order_payments
       GROUP BY custom_order_id
     ) payment_stats ON payment_stats.custom_order_id = co.id
@@ -566,7 +570,11 @@ try {
         LEFT JOIN (
           SELECT
             custom_order_id,
-            SUM(CASE WHEN payment_kind = 'REFUND' THEN -amount ELSE amount END) AS paid_total
+            SUM(CASE
+              WHEN UPPER(TRIM(payment_kind)) = 'ADVANCE_INVOICE' THEN 0
+              WHEN UPPER(TRIM(payment_kind)) = 'REFUND' THEN -amount
+              ELSE amount
+            END) AS paid_total
           FROM custom_order_payments
           GROUP BY custom_order_id
         ) payment_stats ON payment_stats.custom_order_id = co.id
@@ -769,9 +777,9 @@ function customOrderHelpMap(string $lang = 'sk'): array
     'reference_urls' => 'Inspiracie, screenshoty, cloud folder, predosle designy. Jeden zaznam na riadok.',
     'customer_notes' => 'Dolezite dohodnute body, ktore maju zmysel aj po exporte.',
     'internal_notes' => 'Interne poznamky teamu, co nemusite tahat do production poznamky.',
-    'payment_kind' => 'DEPOSIT = prvy deposit, EXTRA_DEPOSIT = dalsi deposit, BALANCE = doplatok, REFUND = vratka.',
+    'payment_kind' => 'DEPOSIT = prvy deposit, EXTRA_DEPOSIT = dalsi deposit, BALANCE = doplatok, ADVANCE_INVOICE = preddavkova faktura bez vplyvu na Balance, REFUND = vratka.',
     'paypal_transaction_id' => 'Presne PayPal transaction ID pre spatne dohladanie platby.',
-    'payment_amount' => 'Prijata alebo vracana suma bez meny.',
+    'payment_amount' => 'Suma bez meny. Pri preddavkovej fakture je to suma faktury, nie prijata platba.',
     'payment_currency' => 'Mena danej platby, najcastejsie EUR.',
     'payment_received_at' => 'Datum a cas prijatia platby.',
     'payment_invoice' => 'Cislo faktury, ak uz bola k tejto platbe vystavena.',
@@ -812,7 +820,7 @@ function customOrderHelpMap(string $lang = 'sk'): array
     'list_items' => 'Pocet riadkovych poloziek v objednavke.',
     'list_total' => 'Sucet itemov a dopravy v EUR.',
     'list_updated' => 'Cas poslednej ulozenej zmeny custom objednavky.',
-    'payments_block' => 'Evidencia prijatych depositov, doplatkov a vratiek. Ovplyvnuje Paid net a Balance due.',
+    'payments_block' => 'Evidencia prijatych depositov, doplatkov, vratiek a preddavkovych faktur. Preddavkove faktury neovplyvnuju Paid net ani Balance due.',
     'production_snapshot' => 'Strucny prehlad produkcnej objednavky po exporte: production ID, faktury a tracking.',
     'order_photos' => 'Fotky priradene k objednavke. Mozes ich vlozit kliknutim alebo pretiahnutim; po exporte zostanu dostupne aj v production objednavke.',
     'followups_block' => 'Naplanovanie dalsieho kontaktu a historia komunikacie so zakaznikom.',
@@ -895,9 +903,9 @@ function customOrderHelpMap(string $lang = 'sk'): array
     'reference_urls' => 'Inspiration, screenshots, cloud folder, previous designs. One entry per line.',
     'customer_notes' => 'Important agreed points that should still matter after export.',
     'internal_notes' => 'Internal team notes that do not need to be pushed into production notes.',
-    'payment_kind' => 'DEPOSIT = first deposit, EXTRA_DEPOSIT = another deposit, BALANCE = final payment, REFUND = refund.',
+    'payment_kind' => 'DEPOSIT = first deposit, EXTRA_DEPOSIT = another deposit, BALANCE = final payment, ADVANCE_INVOICE = advance invoice without Balance impact, REFUND = refund.',
     'paypal_transaction_id' => 'Exact PayPal transaction ID for payment lookup.',
-    'payment_amount' => 'Received or refunded amount without currency.',
+    'payment_amount' => 'Amount without currency. For an advance invoice this is the invoice amount, not a received payment.',
     'payment_currency' => 'Currency of this payment, most often EUR.',
     'payment_received_at' => 'Date and time when the payment was received.',
     'payment_invoice' => 'Invoice number if one has already been generated for this payment.',
@@ -938,7 +946,7 @@ function customOrderHelpMap(string $lang = 'sk'): array
     'list_items' => 'Number of line items in the order.',
     'list_total' => 'Items plus shipping total in EUR.',
     'list_updated' => 'Time of the last saved custom-order change.',
-    'payments_block' => 'Received deposits, balances, and refunds. These values affect Paid net and Balance due.',
+    'payments_block' => 'Received deposits, balances, refunds, and advance invoices. Advance invoices do not affect Paid net or Balance due.',
     'production_snapshot' => 'Compact production overview after export: production ID, invoices, and tracking.',
     'order_photos' => 'Order photos. Click or drag files here; after export they remain available in the production order.',
     'followups_block' => 'Schedule the next contact and review the customer communication history.',
@@ -3576,8 +3584,344 @@ if (!$customOrdersDetailRequest && !$customOrdersFullPageDetail) {
     line-height: 1.35;
   }
 
+  .custom-item-modal {
+    --custom-item-accent: #17a2b8;
+    --custom-item-accent-rgb: 23, 162, 184;
+  }
+
+  .custom-item-modal.item-type-G {
+    --custom-item-accent: #28a745;
+    --custom-item-accent-rgb: 40, 167, 69;
+  }
+
+  .custom-item-modal.item-type-P {
+    --custom-item-accent: #17a2b8;
+    --custom-item-accent-rgb: 23, 162, 184;
+  }
+
+  .custom-item-modal.item-type-S {
+    --custom-item-accent: #ebd618;
+    --custom-item-accent-rgb: 235, 214, 24;
+  }
+
+  .custom-item-modal.item-type-F {
+    --custom-item-accent: #fd7e14;
+    --custom-item-accent-rgb: 253, 126, 20;
+  }
+
+  .custom-item-modal.item-type-T,
+  .custom-item-modal.item-type-M {
+    --custom-item-accent: #ffc107;
+    --custom-item-accent-rgb: 255, 193, 7;
+  }
+
+  .custom-item-modal .modal-dialog {
+    max-width: 920px;
+  }
+
+  .custom-item-modal .modal-content {
+    overflow: hidden;
+    border: 1px solid rgba(var(--custom-item-accent-rgb), .42);
+    border-radius: 10px;
+    background: #30373e;
+    color: #f4f7fa;
+    box-shadow: 0 18px 52px rgba(0, 0, 0, .58);
+  }
+
+  .custom-item-modal .modal-header {
+    align-items: flex-start;
+    border-bottom: 1px solid rgba(255, 255, 255, .12);
+    background:
+      linear-gradient(90deg, rgba(var(--custom-item-accent-rgb), .17), rgba(48, 55, 62, 0) 68%),
+      #2f363d;
+    padding: 14px 16px;
+  }
+
+  .custom-item-modal .modal-title {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    margin: 0;
+    color: #fff;
+    font-size: 16px;
+    font-weight: 800;
+    line-height: 1.25;
+  }
+
+  .custom-item-modal-icon {
+    width: 25px;
+    height: 25px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 25px;
+    border: 1px solid rgba(var(--custom-item-accent-rgb), .62);
+    border-radius: 7px;
+    background: rgba(var(--custom-item-accent-rgb), .16);
+    color: var(--custom-item-accent);
+    font-size: 12px;
+  }
+
+  .custom-item-modal .modal-subtitle {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 7px;
+    margin-top: 5px;
+    color: #b8c3ce;
+    font-size: 12px;
+    font-weight: 600;
+  }
+
+  .custom-item-type-chip {
+    display: inline-flex;
+    align-items: center;
+    min-height: 20px;
+    padding: 2px 7px;
+    border: 1px solid rgba(var(--custom-item-accent-rgb), .56);
+    border-radius: 999px;
+    background: rgba(var(--custom-item-accent-rgb), .15);
+    color: #f8fbfd;
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: .04em;
+  }
+
+  .custom-item-modal .modal-body {
+    max-height: calc(100vh - 180px);
+    overflow: auto;
+    padding: 16px;
+    background:
+      linear-gradient(180deg, rgba(255, 255, 255, .025), rgba(0, 0, 0, .06)),
+      #30373e;
+  }
+
+  .custom-item-modal .modal-footer {
+    border-top: 1px solid rgba(255, 255, 255, .12);
+    background: #2f363d;
+    padding: 10px 14px;
+  }
+
+  .custom-item-summary {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 10px;
+    margin-bottom: 14px;
+  }
+
+  .custom-item-summary-card {
+    position: relative;
+    min-width: 0;
+    overflow: hidden;
+    padding: 9px 11px;
+    border: 1px solid rgba(255, 255, 255, .12);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, .045);
+  }
+
+  .custom-item-summary-card::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: 3px;
+    background: var(--summary-accent, var(--custom-item-accent));
+  }
+
+  .custom-item-summary-card:nth-child(1) {
+    --summary-accent: var(--custom-item-accent);
+    background: rgba(var(--custom-item-accent-rgb), .10);
+  }
+
+  .custom-item-summary-card:nth-child(2) {
+    --summary-accent: #17a2b8;
+    background: rgba(23, 162, 184, .08);
+  }
+
+  .custom-item-summary-card:nth-child(3) {
+    --summary-accent: #ffc107;
+    background: rgba(255, 193, 7, .08);
+  }
+
+  .custom-item-summary-card:nth-child(4) {
+    --summary-accent: #6ea8fe;
+    background: rgba(110, 168, 254, .08);
+  }
+
+  .custom-item-summary-card-label {
+    margin-bottom: 3px;
+    color: #aeb8c2;
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+  }
+
+  .custom-item-summary-card-value {
+    min-width: 0;
+    color: #fff;
+    font-size: 14px;
+    font-weight: 800;
+    line-height: 1.25;
+    overflow-wrap: anywhere;
+  }
+
+  .custom-item-sections {
+    display: grid;
+    grid-template-columns: minmax(0, 1.28fr) minmax(240px, .72fr);
+    gap: 12px;
+    align-items: stretch;
+  }
+
+  .custom-item-section {
+    position: relative;
+    min-width: 0;
+    overflow: hidden;
+    border: 1px solid rgba(255, 255, 255, .13);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, .048);
+  }
+
+  .custom-item-section::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: 3px;
+    background: var(--custom-section-accent, var(--custom-item-accent));
+  }
+
+  .custom-item-section:nth-child(1) {
+    --custom-section-accent: var(--custom-item-accent);
+  }
+
+  .custom-item-section:nth-child(2) {
+    --custom-section-accent: #f0ad00;
+  }
+
+  .custom-item-section-title {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    margin: 0;
+    padding: 10px 12px 9px 15px;
+    border-bottom: 1px solid rgba(255, 255, 255, .10);
+    color: #f8fafc;
+    font-size: 12px;
+    font-weight: 800;
+    letter-spacing: .025em;
+  }
+
+  .custom-item-section-title i {
+    color: var(--custom-section-accent, var(--custom-item-accent));
+  }
+
+  .custom-item-detail-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    padding: 12px;
+  }
+
+  .custom-item-detail-row {
+    min-width: 0;
+    min-height: 54px;
+    padding: 8px 9px;
+    border: 1px solid rgba(255, 255, 255, .09);
+    border-radius: 7px;
+    background: rgba(0, 0, 0, .10);
+  }
+
+  .custom-item-detail-row.is-full {
+    grid-column: 1 / -1;
+  }
+
+  .custom-item-detail-label {
+    margin-bottom: 3px;
+    color: #aeb8c2;
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: .045em;
+    text-transform: uppercase;
+  }
+
+  .custom-item-detail-value {
+    color: #f7f9fb;
+    font-size: 12px;
+    font-weight: 700;
+    line-height: 1.35;
+    overflow-wrap: anywhere;
+  }
+
+  .custom-item-meta-list {
+    display: grid;
+    gap: 8px;
+    padding: 12px;
+  }
+
+  .custom-item-meta-pill {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    min-width: 0;
+    padding: 8px 9px;
+    border: 1px solid rgba(240, 173, 0, .28);
+    border-radius: 7px;
+    background: rgba(240, 173, 0, .08);
+  }
+
+  .custom-item-meta-pill strong {
+    color: #f4d27a;
+    font-size: 10px;
+    letter-spacing: .045em;
+    text-transform: uppercase;
+  }
+
+  .custom-item-meta-pill span {
+    min-width: 0;
+    color: #fff;
+    font-size: 12px;
+    font-weight: 800;
+    overflow-wrap: anywhere;
+  }
+
+  .custom-item-note-box {
+    margin: 12px;
+    padding: 10px 11px;
+    border: 1px solid rgba(23, 162, 184, .24);
+    border-radius: 8px;
+    background: rgba(23, 162, 184, .07);
+    color: #e9f3f7;
+    font-size: 12px;
+    line-height: 1.45;
+    overflow-wrap: anywhere;
+  }
+
+  .custom-item-note-box + .custom-item-note-box {
+    margin-top: -4px;
+  }
+
+  .custom-item-note-box strong {
+    color: #8fd7e6;
+  }
+
   @media (max-width: 900px) {
     .custom-category-picker-steps {
+      grid-template-columns: 1fr;
+    }
+
+    .custom-item-modal .modal-dialog {
+      max-width: calc(100vw - 20px);
+    }
+
+    .custom-item-summary {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .custom-item-sections {
       grid-template-columns: 1fr;
     }
 
@@ -3587,6 +3931,13 @@ if (!$customOrdersDetailRequest && !$customOrdersFullPageDetail) {
 
     .custom-builder-order-table .g-options-bar .product-spec-label {
       flex-basis: calc(50% - 6px) !important;
+    }
+  }
+
+  @media (max-width: 575.98px) {
+    .custom-item-summary,
+    .custom-item-detail-grid {
+      grid-template-columns: 1fr;
     }
   }
   .custom-item-assignment-cell {
@@ -4563,7 +4914,7 @@ if (!$customOrdersDetailRequest && !$customOrdersFullPageDetail) {
         <?php $paymentsDefaultExpanded = !empty($customOrderSectionDefaults['payments']); ?>
         <div id="custom-order-payments-block" data-scroll-block data-custom-collapsible-panel data-section-key="payments" data-order-id="<?= (int) $selectedOrder['id'] ?>" data-default-expanded="<?= $paymentsDefaultExpanded ? '1' : '0' ?>" class="custom-orders-panel custom-collapsible-panel mt-3 mb-3<?= $paymentsDefaultExpanded ? ' is-expanded' : '' ?>">
           <button type="button" class="custom-collapsible-toggle" data-custom-collapsible-toggle aria-expanded="<?= $paymentsDefaultExpanded ? 'true' : 'false' ?>">
-            <span class="custom-collapsible-toggle-title"><i class="fas fa-wallet" aria-hidden="true"></i>Payments And Deposits<?= customOrderHelp('payments_block') ?></span>
+            <span class="custom-collapsible-toggle-title"><i class="fas fa-wallet" aria-hidden="true"></i>Payments, Deposits And Advance Invoices<?= customOrderHelp('payments_block') ?></span>
             <span class="custom-collapsible-toggle-meta">
               <span class="badge badge-info"><?= count((array) ($selectedOrder['payments'] ?? [])) ?></span>
               <span>records</span>
@@ -5055,6 +5406,7 @@ if (!$customOrdersDetailRequest && !$customOrdersFullPageDetail) {
             </div>
 
             <?php foreach ($selectedOrder['items'] as $item): ?>
+              <?php $modalItemTypeCode = strtoupper(trim((string) ($item['item_type_code'] ?? ''))); ?>
               <?php $itemOptions = json_decode((string) ($item['options_json'] ?? ''), true) ?: []; ?>
               <?php $itemCategoryInfo = trim((string) (customOrdersCategoryFieldsFromOptions($itemOptions)['category_info'] ?? '')); ?>
               <?php $itemOptionGroups = customOrderItemOptionGroups(
@@ -5064,14 +5416,20 @@ if (!$customOrdersDetailRequest && !$customOrdersFullPageDetail) {
                 $itemSubcategory
               ); ?>
               <?php $itemModalId = 'custom-item-modal-' . (int) $item['id']; ?>
-              <div class="modal fade custom-item-modal" id="<?= h($itemModalId) ?>" tabindex="-1" role="dialog"
+              <div class="modal fade custom-item-modal item-type-<?= h($modalItemTypeCode) ?>" id="<?= h($itemModalId) ?>" tabindex="-1" role="dialog"
                 aria-hidden="true">
                 <div class="modal-dialog modal-lg" role="document">
-                  <div class="modal-content bg-dark">
+                  <div class="modal-content">
                     <div class="modal-header">
                       <div>
-                        <h5 class="modal-title"><?= h($item['title']) ?></h5>
-                        <div class="modal-subtitle">Custom item detail</div>
+                        <h5 class="modal-title">
+                          <span class="custom-item-modal-icon"><i class="fas fa-box-open" aria-hidden="true"></i></span>
+                          <span><?= h($item['title']) ?></span>
+                        </h5>
+                        <div class="modal-subtitle">
+                          <span class="custom-item-type-chip"><?= h($modalItemTypeCode !== '' ? $modalItemTypeCode : '-') ?></span>
+                          <span>Custom item detail</span>
+                        </div>
                       </div>
                       <button type="button" class="close text-white" data-dismiss="modal" aria-label="Close">
                         <span aria-hidden="true">&times;</span>
@@ -5100,7 +5458,7 @@ if (!$customOrdersDetailRequest && !$customOrdersFullPageDetail) {
 
                       <div class="custom-item-sections">
                         <div class="custom-item-section">
-                          <div class="custom-item-section-title">Core Info</div>
+                          <div class="custom-item-section-title"><i class="fas fa-info-circle" aria-hidden="true"></i><span>Core Info</span></div>
                           <div class="custom-item-detail-grid">
                             <div class="custom-item-detail-row is-full">
                               <div class="custom-item-detail-label">Title</div>
@@ -5126,7 +5484,7 @@ if (!$customOrdersDetailRequest && !$customOrdersFullPageDetail) {
                         </div>
 
                         <div class="custom-item-section">
-                          <div class="custom-item-section-title">Sales Flags</div>
+                          <div class="custom-item-section-title"><i class="fas fa-tags" aria-hidden="true"></i><span>Sales Flags</span></div>
                           <div class="custom-item-meta-list">
                             <div class="custom-item-meta-pill">
                               <strong>Upsell</strong><span><?= (int) $item['is_upsell'] === 1 ? 'Yes' : 'No' ?></span></div>
@@ -5138,7 +5496,7 @@ if (!$customOrdersDetailRequest && !$customOrdersFullPageDetail) {
 
                       <div class="custom-item-sections mt-3">
                         <div class="custom-item-section">
-                          <div class="custom-item-section-title">Specification</div>
+                          <div class="custom-item-section-title"><i class="fas fa-sliders-h" aria-hidden="true"></i><span>Specification</span></div>
                           <div class="custom-item-detail-grid">
                             <?php if (!empty($itemOptionGroups['spec_rows'])): ?>
                               <?php foreach ($itemOptionGroups['spec_rows'] as $specRow): ?>
@@ -5157,7 +5515,7 @@ if (!$customOrdersDetailRequest && !$customOrdersFullPageDetail) {
                         </div>
 
                         <div class="custom-item-section">
-                          <div class="custom-item-section-title">Notes</div>
+                          <div class="custom-item-section-title"><i class="fas fa-sticky-note" aria-hidden="true"></i><span>Notes</span></div>
                           <?php if (!empty($itemOptionGroups['note_rows'])): ?>
                             <?php foreach ($itemOptionGroups['note_rows'] as $noteRow): ?>
                               <div class="custom-item-note-box mb-2">
@@ -5170,6 +5528,9 @@ if (!$customOrdersDetailRequest && !$customOrdersFullPageDetail) {
                           <?php endif; ?>
                         </div>
                       </div>
+                    </div>
+                    <div class="modal-footer">
+                      <button type="button" class="btn btn-secondary btn-sm" data-dismiss="modal">Close</button>
                     </div>
                   </div>
                 </div>

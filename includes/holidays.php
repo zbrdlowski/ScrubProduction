@@ -130,6 +130,13 @@ function holidayPreviousWorkingDate(string $date, array $publicHolidays): string
   return $candidate;
 }
 
+function holidayEditableStartDate(string $date, array $publicHolidays): string
+{
+  return holidayIsNonWorkingDate($date, $publicHolidays)
+    ? holidayNextWorkingDate($date, $publicHolidays)
+    : $date;
+}
+
 function holidayCollectRequestIds(array $raw): array
 {
   $ids = [];
@@ -423,6 +430,129 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $holidayHasTable) {
     holidayRedirect($returnUrl);
   }
 
+  if ($action === 'update_holiday_note' && !$holidayCanManage) {
+    if (empty($requestIds)) {
+      $singleRequestId = intval($_POST['request_id'] ?? 0);
+      if ($singleRequestId > 0) {
+        $requestIds = [$singleRequestId];
+      }
+    }
+
+    $note = trim($_POST['note'] ?? '');
+    if (!empty($requestIds)) {
+      $editableStart = holidayEditableStartDate(date('Y-m-d'), $holidayPublicHolidays);
+      $conn->begin_transaction();
+      $operationOk = true;
+
+      foreach ($requestIds as $requestId) {
+        $stmt = $conn->prepare("SELECT id, start_date, end_date
+            FROM holiday_requests
+            WHERE id=? AND employee_id=? AND request_type IN ('holiday','toil','doctor','other')
+              AND status IN ('pending','approved')
+            FOR UPDATE");
+        if (!$stmt) {
+          $operationOk = false;
+          break;
+        }
+
+        $stmt->bind_param('ii', $requestId, $holidayEmpId);
+        $operationOk = $stmt->execute();
+        $request = $operationOk ? $stmt->get_result()->fetch_assoc() : null;
+        $stmt->close();
+
+        if (!$operationOk) {
+          break;
+        }
+
+        if (!$request || $request['end_date'] < $editableStart) {
+          continue;
+        }
+
+        if ($request['start_date'] >= $editableStart) {
+          $stmt = $conn->prepare("UPDATE holiday_requests
+              SET note=?
+              WHERE id=? AND employee_id=? AND request_type IN ('holiday','toil','doctor','other')
+                AND status IN ('pending','approved')");
+          if (!$stmt) {
+            $operationOk = false;
+            break;
+          }
+
+          $stmt->bind_param('sii', $note, $requestId, $holidayEmpId);
+          $operationOk = $stmt->execute();
+          $stmt->close();
+          if (!$operationOk) {
+            break;
+          }
+          continue;
+        }
+
+        $pastEnd = holidayPreviousWorkingDate($editableStart, $holidayPublicHolidays);
+        if ($pastEnd < $request['start_date']) {
+          $stmt = $conn->prepare("UPDATE holiday_requests
+              SET note=?
+              WHERE id=? AND employee_id=? AND request_type IN ('holiday','toil','doctor','other')
+                AND status IN ('pending','approved')");
+          if (!$stmt) {
+            $operationOk = false;
+            break;
+          }
+
+          $stmt->bind_param('sii', $note, $requestId, $holidayEmpId);
+          $operationOk = $stmt->execute();
+          $stmt->close();
+          if (!$operationOk) {
+            break;
+          }
+          continue;
+        }
+
+        $stmt = $conn->prepare("INSERT INTO holiday_requests
+            (employee_id, request_type, status, start_date, end_date, note, admin_note,
+             requested_by, reviewed_by, reviewed_at, employee_seen_at, created_at)
+            SELECT employee_id, request_type, status, ?, end_date, ?, admin_note,
+                   requested_by, reviewed_by, reviewed_at, employee_seen_at, created_at
+            FROM holiday_requests
+            WHERE id=? AND employee_id=? AND request_type IN ('holiday','toil','doctor','other')
+              AND status IN ('pending','approved')");
+        if (!$stmt) {
+          $operationOk = false;
+          break;
+        }
+
+        $stmt->bind_param('ssii', $editableStart, $note, $requestId, $holidayEmpId);
+        $operationOk = $stmt->execute() && $stmt->affected_rows === 1;
+        $stmt->close();
+        if (!$operationOk) {
+          break;
+        }
+
+        $stmt = $conn->prepare("UPDATE holiday_requests
+            SET end_date=?
+            WHERE id=? AND employee_id=? AND request_type IN ('holiday','toil','doctor','other')
+              AND status IN ('pending','approved')");
+        if (!$stmt) {
+          $operationOk = false;
+          break;
+        }
+
+        $stmt->bind_param('sii', $pastEnd, $requestId, $holidayEmpId);
+        $operationOk = $stmt->execute();
+        $stmt->close();
+        if (!$operationOk) {
+          break;
+        }
+      }
+
+      if ($operationOk) {
+        $conn->commit();
+      } else {
+        $conn->rollback();
+      }
+    }
+    holidayRedirect($returnUrl);
+  }
+
   if ($action === 'cancel_holiday_request') {
     if (empty($requestIds)) {
       $singleRequestId = intval($_POST['request_id'] ?? 0);
@@ -439,15 +569,94 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $holidayHasTable) {
         $types = str_repeat('i', count($requestIds));
         holidayStmtBindParams($stmt, $types, $requestIds);
       } else {
-        $stmt = $conn->prepare("UPDATE holiday_requests
-            SET status='cancelled'
-            WHERE id IN ({$placeholders}) AND employee_id=? AND status='pending'");
-        $types = str_repeat('i', count($requestIds)) . 'i';
-        $params = array_merge($requestIds, [$holidayEmpId]);
-        holidayStmtBindParams($stmt, $types, $params);
+        $editableStart = holidayEditableStartDate(date('Y-m-d'), $holidayPublicHolidays);
+        $conn->begin_transaction();
+        $operationOk = true;
+
+        foreach ($requestIds as $requestId) {
+          $stmt = $conn->prepare("SELECT id, start_date, end_date
+              FROM holiday_requests
+              WHERE id=? AND employee_id=? AND request_type IN ('holiday','toil','doctor','other')
+                AND status IN ('pending','approved')
+              FOR UPDATE");
+          if (!$stmt) {
+            $operationOk = false;
+            break;
+          }
+
+          $stmt->bind_param('ii', $requestId, $holidayEmpId);
+          $operationOk = $stmt->execute();
+          $request = $operationOk ? $stmt->get_result()->fetch_assoc() : null;
+          $stmt->close();
+
+          if (!$operationOk) {
+            break;
+          }
+
+          if (!$request || $request['end_date'] < $editableStart) {
+            continue;
+          }
+
+          if ($request['start_date'] >= $editableStart) {
+            $stmt = $conn->prepare("UPDATE holiday_requests
+                SET status='cancelled'
+                WHERE id=? AND employee_id=? AND request_type IN ('holiday','toil','doctor','other')
+                  AND status IN ('pending','approved')");
+            if (!$stmt) {
+              $operationOk = false;
+              break;
+            }
+
+            $stmt->bind_param('ii', $requestId, $holidayEmpId);
+            $operationOk = $stmt->execute();
+            $stmt->close();
+            if (!$operationOk) {
+              break;
+            }
+            continue;
+          }
+
+          $pastEnd = holidayPreviousWorkingDate($editableStart, $holidayPublicHolidays);
+          if ($pastEnd < $request['start_date']) {
+            $stmt = $conn->prepare("UPDATE holiday_requests
+                SET status='cancelled'
+                WHERE id=? AND employee_id=? AND request_type IN ('holiday','toil','doctor','other')
+                  AND status IN ('pending','approved')");
+          } else {
+            $stmt = $conn->prepare("UPDATE holiday_requests
+                SET end_date=?
+                WHERE id=? AND employee_id=? AND request_type IN ('holiday','toil','doctor','other')
+                  AND status IN ('pending','approved')");
+          }
+
+          if (!$stmt) {
+            $operationOk = false;
+            break;
+          }
+
+          if ($pastEnd < $request['start_date']) {
+            $stmt->bind_param('ii', $requestId, $holidayEmpId);
+          } else {
+            $stmt->bind_param('sii', $pastEnd, $requestId, $holidayEmpId);
+          }
+          $operationOk = $stmt->execute();
+          $stmt->close();
+          if (!$operationOk) {
+            break;
+          }
+        }
+
+        if ($operationOk) {
+          $conn->commit();
+        } else {
+          $conn->rollback();
+        }
+        holidayRedirect($returnUrl);
       }
-      $stmt->execute();
-      $stmt->close();
+      if ($holidayCanManage) {
+        $stmt->execute();
+        $stmt->close();
+      }
     }
     holidayRedirect($returnUrl);
   }
@@ -789,6 +998,17 @@ for ($i = 0; $i < 6; $i++) {
     color: #ffe1e5;
   }
 
+  .holiday-note-edit-form {
+    display: flex;
+    gap: 4px;
+    min-width: 240px;
+  }
+
+  .holiday-note-edit-form textarea {
+    min-height: 32px;
+    resize: vertical;
+  }
+
   .holiday-request-table td {
     vertical-align: middle !important;
   }
@@ -797,7 +1017,9 @@ for ($i = 0; $i < 6; $i++) {
 <div class="container-fluid">
   <div class="d-flex justify-content-between align-items-center mb-3">
     <h4 class="mb-0" style="color:#e4e6eb;"><i class="far fa-calendar-check mr-2"></i>Holiday planner</h4>
-    <button type="button" class="btn btn-primary" data-toggle="modal" data-target="#holidayRequestModal"
+    <button type="button" class="btn btn-primary" id="holidayNewRequestButton"
+      data-toggle="modal" data-target="#holidayRequestModal"
+      data-bs-toggle="modal" data-bs-target="#holidayRequestModal"
       <?= $holidayHasTable ? '' : 'disabled' ?>>
       <i class="fas fa-plus mr-1"></i> New request
     </button>
@@ -953,8 +1175,12 @@ for ($i = 0; $i < 6; $i++) {
                     if ($isOwn && empty($cellRequests) && $holidayHasTable) {
                       $cellClasses[] = 'holiday-cell-own';
                     }
+                    $cellTitle = ($isOwn && empty($cellRequests) && $holidayHasTable) ? $day->format('d.m.Y') : '';
+                    $cellTooltipAttrs = $cellTitle !== ''
+                      ? ' title="' . htmlspecialchars($cellTitle, ENT_QUOTES, 'UTF-8') . '" data-toggle="tooltip" data-bs-toggle="tooltip"'
+                      : '';
                     ?>
-                    <td class="<?= htmlspecialchars(implode(' ', $cellClasses)) ?>" data-date="<?= htmlspecialchars($date) ?>">
+                    <td class="<?= htmlspecialchars(implode(' ', $cellClasses)) ?>" data-date="<?= htmlspecialchars($date) ?>"<?= $cellTooltipAttrs ?>>
                       <div class="holiday-cell-badges">
                         <?php foreach ($cellRequests as $request): ?>
                           <?php
@@ -1038,19 +1264,46 @@ for ($i = 0; $i < 6; $i++) {
             </thead>
             <tbody>
               <?php foreach ($myRequests as $request): ?>
+                <?php
+                $myRequestIds = $request['request_ids'] ?? [intval($request['id'])];
+                $myRequestStatus = (string) ($request['status'] ?? '');
+                $myRequestType = (string) ($request['request_type'] ?? '');
+                $myRequestIsUserEditable = !$holidayCanManage
+                  && in_array($myRequestStatus, ['pending', 'approved'], true)
+                  && in_array($myRequestType, ['holiday', 'toil', 'doctor', 'other'], true)
+                  && (string) ($request['end_date'] ?? '') >= date('Y-m-d');
+                $myRequestCanCancel = $holidayCanManage
+                  ? $myRequestStatus === 'pending'
+                  : $myRequestIsUserEditable;
+                ?>
                 <tr>
                   <td><?= htmlspecialchars(holidayTypeLabel($request['request_type'])) ?></td>
                   <td><?= date('d.m.Y', strtotime($request['start_date'])) ?> -
                     <?= date('d.m.Y', strtotime($request['end_date'])) ?>
                   </td>
                   <td><?= holidayStatusBadge($request['status']) ?></td>
-                  <td><?= htmlspecialchars($request['note'] ?? '') ?></td>
+                  <td>
+                    <?php if ($myRequestIsUserEditable): ?>
+                      <form method="POST" class="holiday-note-edit-form">
+                        <input type="hidden" name="action" value="update_holiday_note">
+                        <?php foreach ($myRequestIds as $requestId): ?>
+                          <input type="hidden" name="request_ids[]" value="<?= intval($requestId) ?>">
+                        <?php endforeach; ?>
+                        <input type="hidden" name="return_start"
+                          value="<?= htmlspecialchars($windowStart->format('Y-m-01')) ?>">
+                        <textarea name="note" class="form-control form-control-sm" rows="1"><?= htmlspecialchars($request['note'] ?? '') ?></textarea>
+                        <button type="submit" class="btn btn-xs btn-outline-info">Save</button>
+                      </form>
+                    <?php else: ?>
+                      <?= htmlspecialchars($request['note'] ?? '') ?>
+                    <?php endif; ?>
+                  </td>
                   <td><?= htmlspecialchars($request['admin_note'] ?? '') ?></td>
                   <td>
-                    <?php if ($request['status'] === 'pending'): ?>
+                    <?php if ($myRequestCanCancel): ?>
                       <form method="POST" onsubmit="return confirm('Cancel this request?');">
                         <input type="hidden" name="action" value="cancel_holiday_request">
-                        <?php foreach (($request['request_ids'] ?? [intval($request['id'])]) as $requestId): ?>
+                        <?php foreach ($myRequestIds as $requestId): ?>
                           <input type="hidden" name="request_ids[]" value="<?= intval($requestId) ?>">
                         <?php endforeach; ?>
                         <input type="hidden" name="return_start"
@@ -1077,7 +1330,8 @@ for ($i = 0; $i < 6; $i++) {
         <input type="hidden" name="return_start" value="<?= htmlspecialchars($windowStart->format('Y-m-01')) ?>">
         <div class="modal-header bg-primary">
           <h5 class="modal-title text-white">New time off request</h5>
-          <button type="button" class="close text-white" data-dismiss="modal">&times;</button>
+          <button type="button" class="close text-white" data-dismiss="modal" data-bs-dismiss="modal"
+            data-holiday-modal-close aria-label="Close">&times;</button>
         </div>
         <div class="modal-body">
           <div class="form-group">
@@ -1126,7 +1380,8 @@ for ($i = 0; $i < 6; $i++) {
           </div>
         </div>
         <div class="modal-footer">
-          <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancel</button>
+          <button type="button" class="btn btn-secondary" data-dismiss="modal" data-bs-dismiss="modal"
+            data-holiday-modal-close>Cancel</button>
           <button type="submit" class="btn btn-primary">Submit request</button>
         </div>
       </form>
@@ -1136,12 +1391,99 @@ for ($i = 0; $i < 6; $i++) {
 
 <script>
   document.addEventListener('DOMContentLoaded', function () {
-    document.querySelectorAll('[data-bs-toggle="tooltip"], [data-toggle="tooltip"]').forEach(function (el) {
-      new bootstrap.Tooltip(el, {
+    var holidayModalEl = document.getElementById('holidayRequestModal');
+    var $holidayModal = window.jQuery && holidayModalEl ? $(holidayModalEl) : null;
+
+    function cleanupHolidayModalBackdrop() {
+      document.body.classList.remove('modal-open');
+      document.body.style.paddingRight = '';
+      document.querySelectorAll('.modal-backdrop').forEach(function (backdrop) {
+        backdrop.parentNode.removeChild(backdrop);
+      });
+    }
+
+    function showHolidayModal() {
+      if ($holidayModal && typeof $holidayModal.modal === 'function') {
+        $holidayModal.modal('show');
+        return;
+      }
+
+      if (window.bootstrap && typeof bootstrap.Modal === 'function' && holidayModalEl) {
+        var modal = typeof bootstrap.Modal.getOrCreateInstance === 'function'
+          ? bootstrap.Modal.getOrCreateInstance(holidayModalEl)
+          : new bootstrap.Modal(holidayModalEl);
+        modal.show();
+        return;
+      }
+
+      if (!holidayModalEl) {
+        return;
+      }
+
+      holidayModalEl.style.display = 'block';
+      holidayModalEl.removeAttribute('aria-hidden');
+      holidayModalEl.setAttribute('aria-modal', 'true');
+      holidayModalEl.classList.add('show');
+      document.body.classList.add('modal-open');
+    }
+
+    function hideHolidayModal(event) {
+      if (event) {
+        event.preventDefault();
+      }
+
+      if ($holidayModal && typeof $holidayModal.modal === 'function') {
+        $holidayModal.modal('hide');
+        return;
+      }
+
+      if (window.bootstrap && typeof bootstrap.Modal === 'function' && holidayModalEl) {
+        var modal = typeof bootstrap.Modal.getInstance === 'function'
+          ? bootstrap.Modal.getInstance(holidayModalEl)
+          : null;
+        if (!modal && typeof bootstrap.Modal.getOrCreateInstance === 'function') {
+          modal = bootstrap.Modal.getOrCreateInstance(holidayModalEl);
+        }
+        if (!modal) {
+          modal = new bootstrap.Modal(holidayModalEl);
+        }
+        modal.hide();
+        return;
+      }
+
+      if (!holidayModalEl) {
+        return;
+      }
+
+      holidayModalEl.classList.remove('show');
+      holidayModalEl.style.display = 'none';
+      holidayModalEl.setAttribute('aria-hidden', 'true');
+      holidayModalEl.removeAttribute('aria-modal');
+      cleanupHolidayModalBackdrop();
+    }
+
+    if (window.bootstrap && typeof bootstrap.Tooltip === 'function') {
+      document.querySelectorAll('[data-bs-toggle="tooltip"], [data-toggle="tooltip"]').forEach(function (el) {
+        new bootstrap.Tooltip(el, {
+          container: 'body',
+          trigger: 'hover'
+        });
+      });
+    } else if (window.jQuery && typeof $.fn.tooltip === 'function') {
+      $('[data-bs-toggle="tooltip"], [data-toggle="tooltip"]').tooltip({
         container: 'body',
         trigger: 'hover'
       });
+    }
+
+    $('#holidayNewRequestButton').on('click', function (event) {
+      if (this.disabled) {
+        return;
+      }
+      showHolidayModal();
     });
+
+    $('[data-holiday-modal-close]').on('click', hideHolidayModal);
 
     $('.holiday-cell-own').on('click', function () {
       var date = $(this).data('date');
@@ -1150,7 +1492,7 @@ for ($i = 0; $i < 6; $i++) {
       }
       $('#holidayStartDate').val(date);
       $('#holidayEndDate').val(date);
-      $('#holidayRequestModal').modal('show');
+      showHolidayModal();
     });
   });
 </script>

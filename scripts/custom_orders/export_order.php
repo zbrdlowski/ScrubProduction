@@ -10,9 +10,25 @@ if ($orderId <= 0) {
   customOrdersRedirect();
 }
 
+$orderNumber = '';
+$orderNumberStmt = $conn->prepare('SELECT official_order_number FROM custom_orders WHERE id = ? LIMIT 1');
+if ($orderNumberStmt) {
+  $orderNumberStmt->bind_param('i', $orderId);
+  $orderNumberStmt->execute();
+  $orderNumberRow = $orderNumberStmt->get_result()->fetch_assoc() ?: [];
+  $orderNumberStmt->close();
+  $orderNumber = trim((string) ($orderNumberRow['official_order_number'] ?? ''));
+}
+
 try {
   $productionOrderId = customOrdersExportToProduction($conn, $orderId, $userId);
-  customOrdersFlash('success', 'Exported to production order ID ' . $productionOrderId . '.');
+  $params = ['page' => 'orders'];
+  if ($orderNumber !== '') {
+    $params['q'] = $orderNumber;
+  }
+
+  header('Location: ../../index.php?' . http_build_query($params) . '#order-' . (int) $productionOrderId);
+  exit;
 } catch (Throwable $e) {
   $message = $e->getMessage();
   $fields = [];

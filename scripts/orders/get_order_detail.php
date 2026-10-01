@@ -750,6 +750,7 @@ function orderDetailCustomPaymentKindLabel(string $kind): string
     'DEPOSIT' => 'Deposit',
     'EXTRA_DEPOSIT' => 'Extra Deposit',
     'BALANCE' => 'Balance',
+    'ADVANCE_INVOICE' => 'Advance Invoice',
     'REFUND' => 'Refund',
   ];
 
@@ -758,6 +759,11 @@ function orderDetailCustomPaymentKindLabel(string $kind): string
   }
 
   return $kind !== '' ? ucwords(strtolower(str_replace('_', ' ', $kind))) : 'Payment';
+}
+
+function orderDetailCustomPaymentKindAffectsBalance(string $kind): bool
+{
+  return strtoupper(trim($kind)) !== 'ADVANCE_INVOICE';
 }
 
 function orderDetailCustomPaymentDateLabel(?string $receivedAt): string
@@ -771,7 +777,7 @@ function orderDetailCustomPaymentDateLabel(?string $receivedAt): string
   return $timestamp !== false ? date('d.m.Y', $timestamp) : '';
 }
 
-function orderDetailNormalizeCustomPaymentLines(array $lines, bool $skipZeroAmounts = true): array
+function orderDetailNormalizeCustomPaymentLines(array $lines, bool $skipZeroAmounts = true, bool $includeNonFinancial = false): array
 {
   $normalized = [];
   foreach ($lines as $line) {
@@ -788,6 +794,9 @@ function orderDetailNormalizeCustomPaymentLines(array $lines, bool $skipZeroAmou
     }
 
     $kind = strtoupper(trim((string) ($line['kind'] ?? $line['payment_kind'] ?? '')));
+    if (!$includeNonFinancial && !orderDetailCustomPaymentKindAffectsBalance($kind)) {
+      continue;
+    }
     if ($kind === 'REFUND') {
       $amount = -abs($amount);
     }
@@ -862,7 +871,7 @@ function orderDetailLoadCustomPaymentRows(mysqli $conn, int $customOrderId): arr
   }
   $stmt->close();
 
-  return orderDetailNormalizeCustomPaymentLines($rows, false);
+  return orderDetailNormalizeCustomPaymentLines($rows, false, true);
 }
 
 function orderDetailNormalizeCustomFinancialBreakdown(array $breakdown): array
@@ -938,7 +947,11 @@ function orderDetailLoadCustomFinancialBreakdownFallback(mysqli $conn, array $so
       SELECT
         custom_order_id,
         SUM(CASE WHEN UPPER(TRIM(payment_kind)) IN ('DEPOSIT', 'EXTRA_DEPOSIT') THEN amount ELSE 0 END) AS deposits,
-        SUM(CASE WHEN UPPER(TRIM(payment_kind)) = 'REFUND' THEN -amount ELSE amount END) AS paid_net
+        SUM(CASE
+          WHEN UPPER(TRIM(payment_kind)) = 'ADVANCE_INVOICE' THEN 0
+          WHEN UPPER(TRIM(payment_kind)) = 'REFUND' THEN -amount
+          ELSE amount
+        END) AS paid_net
       FROM custom_order_payments
       WHERE custom_order_id = ?
       GROUP BY custom_order_id
@@ -4512,6 +4525,10 @@ ob_start();
     border-left-color: rgba(255, 193, 7, .82);
   }
 
+  .order-production-payment-card.is-advance-invoice {
+    border-left-color: rgba(23, 162, 184, .82);
+  }
+
   .order-production-payment-main {
     display: flex;
     align-items: flex-start;
@@ -4555,6 +4572,11 @@ ob_start();
   .order-production-payment-card.is-refund .order-production-payment-amount {
     border-color: rgba(255, 193, 7, .36);
     background: rgba(255, 193, 7, .10);
+  }
+
+  .order-production-payment-card.is-advance-invoice .order-production-payment-amount {
+    border-color: rgba(23, 162, 184, .36);
+    background: rgba(23, 162, 184, .10);
   }
 
   .order-production-payment-amount span {
@@ -5164,6 +5186,29 @@ ob_start();
           <div class="order-header-summary order-summary-meta">
             <?php $customerDisplayName = $order['customer_name'] ?: $order['customer_email'] ?: '-'; ?>
             <div class="order-summary-meta-item">
+              <span class="order-summary-label">Shipping</span>
+              <div class="order-summary-value"><?php echo h($order['shipping_method'] ?? '-'); ?></div>
+            </div>
+
+            <div class="order-summary-meta-item">
+              <span class="order-summary-label">Order timeline</span>
+              <div class="order-summary-line small">
+                <i class="fas fa-calendar-alt mr-1 text-muted"></i><b>Order:</b> <?php echo h($order['order_date'] ?? '-'); ?>
+              </div>
+              <div class="order-summary-line small">
+                <i class="fas fa-upload mr-1 text-muted"></i><b>Import:</b> <?php echo h($order['imported_at'] ?? '-'); ?>
+              </div>
+              <div class="order-summary-line small">
+                <i class="fas fa-check-circle mr-1 <?php echo !empty($order['delivered_at']) ? 'text-success' : 'text-muted'; ?>"></i><b>Delivered:</b> <?php echo h($order['delivered_at'] ?? '-'); ?>
+              </div>
+              <?php if (!empty($order['production_started_at'])): ?>
+                <div class="order-summary-line small">
+                  <i class="fas fa-cogs mr-1 text-muted"></i><b>Production:</b> <?php echo h($order['production_started_at']); ?>
+                </div>
+              <?php endif; ?>
+            </div>
+
+            <div class="order-summary-meta-item">
               <span class="order-summary-label">Customer</span>
               <div class="order-summary-value font-weight-bold">
                 <?php echo h($customerDisplayName); ?>
@@ -5195,29 +5240,6 @@ ob_start();
                   <?php if ($followupDoNotInvoice): ?>
                     <span class="badge badge-danger">Do not invoice</span>
                   <?php endif; ?>
-                </div>
-              <?php endif; ?>
-            </div>
-
-            <div class="order-summary-meta-item">
-              <span class="order-summary-label">Shipping</span>
-              <div class="order-summary-value"><?php echo h($order['shipping_method'] ?? '-'); ?></div>
-            </div>
-
-            <div class="order-summary-meta-item">
-              <span class="order-summary-label">Order timeline</span>
-              <div class="order-summary-line small">
-                <i class="fas fa-calendar-alt mr-1 text-muted"></i><b>Order:</b> <?php echo h($order['order_date'] ?? '-'); ?>
-              </div>
-              <div class="order-summary-line small">
-                <i class="fas fa-upload mr-1 text-muted"></i><b>Import:</b> <?php echo h($order['imported_at'] ?? '-'); ?>
-              </div>
-              <div class="order-summary-line small">
-                <i class="fas fa-check-circle mr-1 <?php echo !empty($order['delivered_at']) ? 'text-success' : 'text-muted'; ?>"></i><b>Delivered:</b> <?php echo h($order['delivered_at'] ?? '-'); ?>
-              </div>
-              <?php if (!empty($order['production_started_at'])): ?>
-                <div class="order-summary-line small">
-                  <i class="fas fa-cogs mr-1 text-muted"></i><b>Production:</b> <?php echo h($order['production_started_at']); ?>
                 </div>
               <?php endif; ?>
             </div>
@@ -5396,34 +5418,6 @@ ob_start();
           <div class="order-header-summary order-summary-address-grid">
             <section class="order-summary-card">
               <div class="order-summary-card-title">
-                <span><i class="fas fa-file-invoice mr-1"></i>Billing address</span>
-                <?php if ($fullBilling !== ''): ?>
-                  <button class="btn btn-xs btn-copy-inline" data-copy="<?php echo h($fullBilling); ?>">📋 Copy</button>
-                <?php endif; ?>
-              </div>
-              <?php if ($b): ?>
-                <div class="order-summary-primary"><?php echo h($b['name'] ?? '-'); ?></div>
-                <?php if (!empty($b['company'])): ?>
-                  <div class="order-summary-line"><?php echo h($b['company']); ?><?php echo !empty($b['company_id']) ? ' [' . h($b['company_id']) . ']' : ''; ?></div>
-                <?php elseif (!empty($b['company_id'])): ?>
-                  <div class="order-summary-line">Company ID: <?php echo h($b['company_id']); ?></div>
-                <?php endif; ?>
-                <div class="order-summary-line"><?php echo h($b['street'] ?? ''); ?></div>
-                <div class="order-summary-line"><?php echo h(trim(($b['city'] ?? '') . ' ' . ($b['zip'] ?? ''))); ?></div>
-                <?php if ($billingState !== ''): ?><div class="order-summary-line">State: <b><?php echo h($billingState); ?></b></div><?php endif; ?>
-                <?php if (!empty($b['country'])): ?>
-                  <div class="order-summary-country"><?php echo countryFlag($b['country']); ?> <?php echo h(strtoupper((string) $b['country'])); ?></div>
-                <?php endif; ?>
-                <?php if ($billingPhone !== '' && $billingPhone !== $deliveryContactPhone): ?>
-                  <div class="order-summary-line mt-1"><i class="fas fa-phone-alt mr-1"></i><?php echo h($billingPhone); ?><button class="btn btn-xs btn-copy-inline ml-1" data-copy="<?php echo h($billingPhone); ?>">📋</button></div>
-                <?php endif; ?>
-              <?php else: ?>
-                <div class="text-muted">No billing address</div>
-              <?php endif; ?>
-            </section>
-
-            <section class="order-summary-card">
-              <div class="order-summary-card-title">
                 <span><i class="fas fa-shipping-fast mr-1"></i>Delivery address</span>
                 <?php if ($fullShipping !== ''): ?>
                   <button class="btn btn-xs btn-copy-inline" data-copy="<?php echo h($fullShipping); ?>">📋 Copy</button>
@@ -5459,47 +5453,38 @@ ob_start();
               <?php endif; ?>
             </section>
 
+            <section class="order-summary-card">
+              <div class="order-summary-card-title">
+                <span><i class="fas fa-file-invoice mr-1"></i>Billing address</span>
+                <?php if ($fullBilling !== ''): ?>
+                  <button class="btn btn-xs btn-copy-inline" data-copy="<?php echo h($fullBilling); ?>">📋 Copy</button>
+                <?php endif; ?>
+              </div>
+              <?php if ($b): ?>
+                <div class="order-summary-primary"><?php echo h($b['name'] ?? '-'); ?></div>
+                <?php if (!empty($b['company'])): ?>
+                  <div class="order-summary-line"><?php echo h($b['company']); ?><?php echo !empty($b['company_id']) ? ' [' . h($b['company_id']) . ']' : ''; ?></div>
+                <?php elseif (!empty($b['company_id'])): ?>
+                  <div class="order-summary-line">Company ID: <?php echo h($b['company_id']); ?></div>
+                <?php endif; ?>
+                <div class="order-summary-line"><?php echo h($b['street'] ?? ''); ?></div>
+                <div class="order-summary-line"><?php echo h(trim(($b['city'] ?? '') . ' ' . ($b['zip'] ?? ''))); ?></div>
+                <?php if ($billingState !== ''): ?><div class="order-summary-line">State: <b><?php echo h($billingState); ?></b></div><?php endif; ?>
+                <?php if (!empty($b['country'])): ?>
+                  <div class="order-summary-country"><?php echo countryFlag($b['country']); ?> <?php echo h(strtoupper((string) $b['country'])); ?></div>
+                <?php endif; ?>
+                <?php if ($billingPhone !== '' && $billingPhone !== $deliveryContactPhone): ?>
+                  <div class="order-summary-line mt-1"><i class="fas fa-phone-alt mr-1"></i><?php echo h($billingPhone); ?><button class="btn btn-xs btn-copy-inline ml-1" data-copy="<?php echo h($billingPhone); ?>">📋</button></div>
+                <?php endif; ?>
+              <?php else: ?>
+                <div class="text-muted">No billing address</div>
+              <?php endif; ?>
+            </section>
+
           </div>
 
           <?php $orderOperationsCanEdit = $ordersCanManage; ?>
           <div class="order-header-summary order-header-operations">
-            <div class="order-header-operations-card">
-              <div class="order-header-operations-title">Invoices</div>
-              <?php
-              $invoiceRows = [];
-              $invStmt = $conn->prepare("SELECT id, invoice_number FROM order_invoices WHERE order_id = ? AND deleted_at IS NULL ORDER BY id DESC");
-              if ($invStmt) {
-                $invStmt->bind_param('i', $orderId);
-                $invStmt->execute();
-                $invRes = $invStmt->get_result();
-                while ($inv = $invRes->fetch_assoc()) {
-                  $invoiceRows[] = $inv;
-                }
-                $invStmt->close();
-              }
-              ?>
-              <?php if ($invoiceRows): ?>
-                <?php foreach ($invoiceRows as $inv): ?>
-                  <?php $invoiceNumber = trim((string) ($inv['invoice_number'] ?? '')); ?>
-                  <div class="small mb-1 order-header-copy-row">
-                    <b class="order-header-copy-value"><?php echo h($invoiceNumber); ?></b>
-                    <button type="button" class="btn btn-xs btn-copy-inline" data-copy="<?php echo h($invoiceNumber); ?>" title="Copy invoice number">📋</button>
-                    <?php if ($orderOperationsCanEdit): ?>
-                      <button type="button" class="btn btn-xs btn-outline-danger ml-1 py-0 px-2 btn-delete-invoice" data-id="<?php echo (int) $inv['id']; ?>" data-order-id="<?php echo (int) $orderId; ?>">×</button>
-                    <?php endif; ?>
-                  </div>
-                <?php endforeach; ?>
-              <?php else: ?>
-                <div class="order-header-copy-empty">No invoice yet.</div>
-              <?php endif; ?>
-              <?php if ($orderOperationsCanEdit): ?>
-                <div class="form-row mt-2 invoice-add-row">
-                  <div class="col-md-8"><input class="form-control form-control-sm invoice-number" placeholder="Invoice number"></div>
-                  <div class="col-md-4"><button type="button" class="btn btn-sm btn-info btn-block btn-add-invoice" data-order-id="<?php echo (int) $orderId; ?>">Add Invoice</button></div>
-                </div>
-              <?php endif; ?>
-            </div>
-
             <div class="order-header-operations-card">
               <div class="order-header-operations-title">Tracking</div>
               <?php
@@ -5574,6 +5559,43 @@ ob_start();
                   <input class="form-control form-control-sm tracking-number" placeholder="Tracking number">
                   <input class="form-control form-control-sm tracking-carrier" placeholder="Carrier">
                   <button type="button" class="btn btn-sm btn-info btn-add-tracking" data-order-id="<?php echo (int) $orderId; ?>">Add Tracking</button>
+                </div>
+              <?php endif; ?>
+            </div>
+
+            <div class="order-header-operations-card">
+              <div class="order-header-operations-title">Invoices</div>
+              <?php
+              $invoiceRows = [];
+              $invStmt = $conn->prepare("SELECT id, invoice_number FROM order_invoices WHERE order_id = ? AND deleted_at IS NULL ORDER BY id DESC");
+              if ($invStmt) {
+                $invStmt->bind_param('i', $orderId);
+                $invStmt->execute();
+                $invRes = $invStmt->get_result();
+                while ($inv = $invRes->fetch_assoc()) {
+                  $invoiceRows[] = $inv;
+                }
+                $invStmt->close();
+              }
+              ?>
+              <?php if ($invoiceRows): ?>
+                <?php foreach ($invoiceRows as $inv): ?>
+                  <?php $invoiceNumber = trim((string) ($inv['invoice_number'] ?? '')); ?>
+                  <div class="small mb-1 order-header-copy-row">
+                    <b class="order-header-copy-value"><?php echo h($invoiceNumber); ?></b>
+                    <button type="button" class="btn btn-xs btn-copy-inline" data-copy="<?php echo h($invoiceNumber); ?>" title="Copy invoice number">📋</button>
+                    <?php if ($orderOperationsCanEdit): ?>
+                      <button type="button" class="btn btn-xs btn-outline-danger ml-1 py-0 px-2 btn-delete-invoice" data-id="<?php echo (int) $inv['id']; ?>" data-order-id="<?php echo (int) $orderId; ?>">×</button>
+                    <?php endif; ?>
+                  </div>
+                <?php endforeach; ?>
+              <?php else: ?>
+                <div class="order-header-copy-empty">No invoice yet.</div>
+              <?php endif; ?>
+              <?php if ($orderOperationsCanEdit): ?>
+                <div class="form-row mt-2 invoice-add-row">
+                  <div class="col-md-8"><input class="form-control form-control-sm invoice-number" placeholder="Invoice number"></div>
+                  <div class="col-md-4"><button type="button" class="btn btn-sm btn-info btn-block btn-add-invoice" data-order-id="<?php echo (int) $orderId; ?>">Add Invoice</button></div>
                 </div>
               <?php endif; ?>
             </div>
@@ -5801,7 +5823,7 @@ ob_start();
           data-default-expanded="<?php echo $customPaymentsPanelDefaultExpanded ? '1' : '0'; ?>"
           class="custom-orders-panel custom-collapsible-panel order-production-payments-panel<?php echo $customPaymentsPanelDefaultExpanded ? ' is-expanded' : ''; ?>">
           <button type="button" class="custom-collapsible-toggle" data-custom-collapsible-toggle aria-expanded="<?php echo $customPaymentsPanelDefaultExpanded ? 'true' : 'false'; ?>">
-            <span class="custom-collapsible-toggle-title"><i class="fas fa-wallet" aria-hidden="true"></i>Payments And Deposits</span>
+            <span class="custom-collapsible-toggle-title"><i class="fas fa-wallet" aria-hidden="true"></i>Payments, Deposits And Advance Invoices</span>
             <span class="custom-collapsible-toggle-meta">
               <span class="badge badge-info"><?php echo count($customProductionPaymentLines); ?></span>
               <span>records</span>
@@ -5814,9 +5836,11 @@ ob_start();
                 <?php
                 $paymentKind = (string) ($customProductionPaymentLine['kind'] ?? $customProductionPaymentLine['payment_kind'] ?? '');
                 $paymentKindLabel = orderDetailCustomPaymentKindLabel($paymentKind);
+                $paymentKindCode = strtoupper(trim($paymentKind));
+                $paymentIsAdvanceInvoice = $paymentKindCode === 'ADVANCE_INVOICE';
                 $paymentAmount = (float) ($customProductionPaymentLine['amount'] ?? 0);
-                $paymentAmountClass = $paymentAmount < 0 ? 'text-warning' : 'text-success';
-                $paymentCardClass = $paymentAmount < 0 ? ' is-refund' : '';
+                $paymentAmountClass = $paymentIsAdvanceInvoice ? 'text-info' : ($paymentAmount < 0 ? 'text-warning' : 'text-success');
+                $paymentCardClass = $paymentIsAdvanceInvoice ? ' is-advance-invoice' : ($paymentAmount < 0 ? ' is-refund' : '');
                 $paymentCurrency = strtoupper(trim((string) ($customProductionPaymentLine['currency'] ?? '')));
                 $paymentCurrencyDisplay = $paymentCurrency !== '' ? $paymentCurrency : $orderCurrency;
                 $paymentTransactionId = trim((string) ($customProductionPaymentLine['paypal_transaction_id'] ?? ''));
@@ -5835,13 +5859,13 @@ ob_start();
                   <div class="order-production-payment-main">
                     <div class="order-production-payment-kind">
                       <span class="order-production-payment-kind-title">
-                        <i class="fas <?php echo $paymentAmount < 0 ? 'fa-undo-alt text-warning' : 'fa-money-check-alt text-success'; ?>" aria-hidden="true"></i>
+                        <i class="fas <?php echo $paymentIsAdvanceInvoice ? 'fa-file-invoice-dollar text-info' : ($paymentAmount < 0 ? 'fa-undo-alt text-warning' : 'fa-money-check-alt text-success'); ?>" aria-hidden="true"></i>
                         <?php echo h($paymentKindLabel); ?>
                       </span>
-                      <small><?php echo $paymentReceivedAtDisplay !== '' ? 'Received ' . h($paymentReceivedAtDisplay) : 'Received date missing'; ?></small>
+                      <small><?php echo $paymentReceivedAtDisplay !== '' ? ($paymentIsAdvanceInvoice ? 'Issued ' : 'Received ') . h($paymentReceivedAtDisplay) : ($paymentIsAdvanceInvoice ? 'Issue date missing' : 'Received date missing'); ?></small>
                     </div>
                     <div class="order-production-payment-amount <?php echo h($paymentAmountClass); ?>">
-                      <?php echo ($paymentAmount > 0 ? '+' : ''); ?><?php echo number_format($paymentAmount, 2, '.', ''); ?>
+                      <?php echo (!$paymentIsAdvanceInvoice && $paymentAmount > 0 ? '+' : ''); ?><?php echo number_format($paymentAmount, 2, '.', ''); ?>
                       <span><?php echo h($paymentCurrencyDisplay); ?></span>
                     </div>
                   </div>

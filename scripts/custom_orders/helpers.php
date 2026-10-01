@@ -254,8 +254,14 @@ function customOrdersPaymentKinds(): array
     'DEPOSIT' => 'Deposit',
     'EXTRA_DEPOSIT' => 'Extra Deposit',
     'BALANCE' => 'Balance',
+    'ADVANCE_INVOICE' => 'Advance Invoice',
     'REFUND' => 'Refund',
   ];
+}
+
+function customOrdersPaymentKindAffectsBalance(string $kind): bool
+{
+  return strtoupper(trim($kind)) !== 'ADVANCE_INVOICE';
 }
 
 function customOrdersAllowedItemTypes(): array
@@ -871,6 +877,9 @@ function customOrdersPaymentBreakdownLines(array $payments): array
     }
 
     $kind = strtoupper(trim((string) ($payment['payment_kind'] ?? $payment['kind'] ?? '')));
+    if (!customOrdersPaymentKindAffectsBalance($kind)) {
+      continue;
+    }
     $signedAmount = $kind === 'REFUND' ? -abs($amount) : $amount;
     $receivedAt = trim((string) ($payment['received_at'] ?? ''));
     $dateLabel = customOrdersPaymentLineDateLabel($receivedAt);
@@ -2011,7 +2020,10 @@ function customOrdersComputeSummary(array $order): array
   $paymentNet = 0.0;
   foreach ((array) ($order['payments'] ?? []) as $payment) {
     $amount = (float) ($payment['amount'] ?? 0);
-    $kind = strtoupper((string) ($payment['payment_kind'] ?? ''));
+    $kind = strtoupper(trim((string) ($payment['payment_kind'] ?? '')));
+    if (!customOrdersPaymentKindAffectsBalance($kind)) {
+      continue;
+    }
     if ($kind === 'DEPOSIT' || $kind === 'EXTRA_DEPOSIT') {
       $depositTotal += $amount;
     }
