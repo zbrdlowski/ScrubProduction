@@ -72,10 +72,12 @@ $pageLabels = [
   'order_export_reset' => 'Order Export Reset',
   'product_listing_catalog' => 'Product Listing Catalog',
   'vykaz_prace' => 'Activity Report',
-  'accounting_payouts' => 'eBay Payouts',
-  'accounting_omega' => 'OMEGA Invoices',
+  'accounting_payouts' => 'eBay payouty',
+  'accounting_paypal' => 'PayPal účtovníctvo',
+  'accounting_omega' => 'OMEGA faktúry',
   'access_admin' => 'User Permissions',
-  'accounting_omega_export' => 'OMEGA TXT Export',
+  'accounting_omega_export' => 'OMEGA TXT export',
+  'accounting_help' => 'Pomocník účtovníctva',
 
   // Add more as needed
 ];

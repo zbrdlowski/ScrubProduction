@@ -250,25 +250,35 @@ function isMenuOpen($pages = [])
           }
           ?>
         <?php if ($canSeeAccounting): ?>
-        <li class="nav-item <?= isMenuOpen(['accounting_payouts', 'accounting_omega', 'accounting_omega_export']) ? 'menu-open' : '' ?>">
+        <li class="nav-item <?= isMenuOpen(['accounting_payouts', 'accounting_paypal', 'accounting_omega', 'accounting_omega_export', 'accounting_help']) ? 'menu-open' : '' ?>">
           <a href="#" class="nav-link" style="background-color:#2a3036;">
             <i class="nav-icon fas fa-calculator" style="color:#20c997;"></i>
-            <p>Accounting<i class="right fas fa-angle-left"></i></p>
+            <p>Účtovníctvo<i class="right fas fa-angle-left"></i></p>
           </a>
           <ul class="nav nav-treeview">
             <li class="nav-item">
               <a href="<?= basename($_SERVER['PHP_SELF']) ?>?page=accounting_payouts" class="nav-link <?= isActive('accounting_payouts') ?>">
-                <i class="fa fa-caret-right nav-icon"></i><p>eBay Payouts</p>
+                <i class="fa fa-caret-right nav-icon"></i><p>eBay payouty</p>
+              </a>
+            </li>
+            <li class="nav-item">
+              <a href="<?= basename($_SERVER['PHP_SELF']) ?>?page=accounting_paypal" class="nav-link <?= isActive('accounting_paypal') ?>">
+                <i class="fa fa-caret-right nav-icon"></i><p>PayPal</p>
               </a>
             </li>
             <li class="nav-item">
               <a href="<?= basename($_SERVER['PHP_SELF']) ?>?page=accounting_omega" class="nav-link <?= isActive('accounting_omega') ?>">
-                <i class="fa fa-caret-right nav-icon"></i><p>OMEGA Invoices</p>
+                <i class="fa fa-caret-right nav-icon"></i><p>OMEGA faktúry</p>
               </a>
             </li>
             <li class="nav-item">
               <a href="<?= basename($_SERVER['PHP_SELF']) ?>?page=accounting_omega_export" class="nav-link <?= isActive('accounting_omega_export') ?>">
-                <i class="fa fa-caret-right nav-icon"></i><p>OMEGA TXT Export</p>
+                <i class="fa fa-caret-right nav-icon"></i><p>OMEGA TXT export</p>
+              </a>
+            </li>
+            <li class="nav-item">
+              <a href="<?= basename($_SERVER['PHP_SELF']) ?>?page=accounting_help" class="nav-link <?= isActive('accounting_help') ?>">
+                <i class="fas fa-question-circle nav-icon"></i><p>Pomocník</p>
               </a>
             </li>
           </ul>

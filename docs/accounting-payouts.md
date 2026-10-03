@@ -1,45 +1,36 @@
-# eBay payout accounting module
+# eBay payouty – návod pre účtovníctvo
 
-## Installation
+Táto stránka slúži na nahratie výpisov platieb z eBay, kontrolu ich párovania s objednávkami a vytvorenie výcucu pre OMEGU.
 
-1. Run `db/accounting_payouts.sql` against the `scrubproduction` database.
-2. Open **Accounting** in Darkscrub.
-3. Upload the original UK and/or DE eBay transaction-report CSV files.
+## Bežný postup
 
-The importer reads the eBay preamble, detects English/German layout, comma or
-semicolon delimiter and UTF-8/Windows-1252 encoding. Uploaded files are parsed
-directly from PHP's temporary upload location and are not copied into the
-project. The database stores normalized transaction columns and the original
-row as JSON for audit.
+1. Z eBay stiahnite pôvodný výpis transakcií vo formáte CSV pre UK alebo DE.
+2. V časti **Import surového payout CSV** vyberte jeden alebo viac súborov a kliknite na **Importovať payout**.
+3. Skontrolujte kartu **Nespárované**. Ak je na nej nula, objednávkové platby sú pripravené.
+4. Vyberte správny mesiac a kliknite na **Export Vycuc**.
+5. Vytvorený súbor CSV importujte do OMEGY.
 
-Re-importing the same file or an overlapping report is safe. File hashes and
-transaction source keys prevent duplicate accounting rows.
+Rovnaký alebo časovo sa prekrývajúci výpis môžete nahrať opakovane. Systém už uložené transakcie rozpozná a nevytvorí duplicity.
 
-## Vycuc export
+## Čo znamenajú karty
 
-The **Export Vycuc** button creates a semicolon-separated UTF-8 CSV for the
-selected month. It contains only `ORDER` / `Bestellung` rows and aggregates
-multiple transaction rows with the same eBay order number.
+- **Objednávky** – prijaté platby za eBay objednávky v zvolenom mesiaci.
+- **Nespárované** – platby, ku ktorým systém nenašiel objednávku v Darkscrube. Tieto riadky treba preveriť.
+- **Refundácie** – vrátené platby zákazníkom. Vo výcucu pre OMEGU nie sú zmiešané s predajom.
+- **Ostatné poplatky** – poplatky a pohyby, ktoré nie sú objednávkou ani refundáciou.
 
-Refunds and other fees remain available in the accounting view but are not
-mixed into the invoice export.
+## Export Vycuc
 
-## Temporary import cleanup
+Export vytvorí CSV oddelené bodkočiarkou pre vybraný mesiac. Obsahuje iba riadky objednávok. Ak má jedna eBay objednávka vo výpise viac riadkov, export ich spojí podľa čísla objednávky.
 
-The payout importer itself leaves no uploaded file behind. The existing order
-importer archives every uploaded `DARKSCRUB_IMPORT.csv` in `uploads/imports`.
-Preview removal of archives older than 30 days with:
+Refundácie a ostatné poplatky zostávajú viditeľné na stránke, ale do výcucu objednávok sa nezaradia.
 
-```sh
-php scripts/maintenance/cleanup_import_files.php --days=30
-```
+## Dôležité upozornenia
 
-After reviewing the dry-run output, a daily cron job can perform deletion:
+- Súbor pred importom neotvárajte a neukladajte v Exceli; nahrajte pôvodné CSV z eBay.
+- Importovaný súbor sa po spracovaní neuchováva na disku. V databáze zostanú normalizované údaje a pôvodný riadok na kontrolu.
+- Modul rozpozná anglické aj nemecké rozloženie, čiarku aj bodkočiarku a bežné kódovania výpisov.
 
-```cron
-20 3 * * * cd /path/to/darkscrub && php scripts/maintenance/cleanup_import_files.php --days=30 --delete >> logs/import-cleanup.log 2>&1
-```
+## Technická inštalácia
 
-The cleanup script refuses directories outside the Darkscrub project and only
-deletes known import-file extensions. Do not point it at the project root or a
-general-purpose uploads directory.
+Pri prvom nasadení musí správca spustiť databázový súbor `db/accounting_payouts.sql`.

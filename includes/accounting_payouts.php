@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/../scripts/accounting/access.php';
+require_once __DIR__ . '/../scripts/accounting/ui_helpers.php';
 
 if (!accounting_payout_user_can_access()) {
     echo '<div class="alert alert-danger">Na účtovnú sekciu nemáte oprávnenie.</div>';
@@ -240,13 +241,15 @@ $accountingCardUrl = static function (string $cardType, string $cardMatch = 'all
     <div class="accounting-page-actions">
       <div class="btn-group" role="group" aria-label="Účtovné sekcie">
         <a class="btn btn-success active" href="?page=accounting_payouts" aria-current="page">eBay payouts</a>
+        <a class="btn btn-outline-secondary" href="?page=accounting_paypal">PayPal</a>
         <a class="btn btn-outline-secondary" href="?page=accounting_omega">OMEGA faktúry</a>
         <a class="btn btn-outline-secondary" href="?page=accounting_omega_export">OMEGA TXT export</a>
       </div>
+      <?= accountingUiHelpButton('payouts') ?>
       <?php if ($schemaReady && $canExportAccounting): ?>
         <a class="btn btn-outline-success"
            href="scripts/accounting/export_vycuc.php?month=<?= accountingPayoutH($month) ?>">
-          <i class="fas fa-file-csv mr-1"></i> Export Vycuc
+          <i class="fas fa-file-csv mr-1"></i> Export Vycuc<?= accountingUiInfo('Vytvorí súbor pre OMEGU iba z objednávkových platieb vo vybranom mesiaci. Refundácie a ostatné poplatky vynechá.') ?>
         </a>
       <?php endif; ?>
     </div>
@@ -275,7 +278,7 @@ $accountingCardUrl = static function (string $cardType, string $cardMatch = 'all
   <div class="row accounting-overview-row">
     <div class="col-lg-4 accounting-overview-column">
       <div class="card card-outline card-info">
-        <div class="card-header"><h3 class="card-title">Import surového payout CSV</h3></div>
+        <div class="card-header"><h3 class="card-title">Import surového payout CSV<?= accountingUiInfo('Nahrajte pôvodný UK alebo DE výpis z eBay. Rovnaké a prekrývajúce sa výpisy sa nezdvojnásobia.') ?></h3></div>
         <div class="card-body">
           <?php if ($canImportAccounting): ?>
           <form method="post" action="scripts/accounting/import_payout.php" enctype="multipart/form-data">
@@ -301,10 +304,10 @@ $accountingCardUrl = static function (string $cardType, string $cardMatch = 'all
     <div class="col-lg-8 accounting-overview-column">
       <div class="accounting-summary-column">
       <div class="row accounting-stats-row">
-        <div class="col-6 col-md-3"><a href="<?= accountingPayoutH($accountingCardUrl('ORDER')) ?>" class="small-box accounting-stat-card accounting-stat-orders <?= $type === 'ORDER' && $match === 'all' ? 'is-active' : '' ?>" aria-label="Zobraziť objednávky"><div class="inner"><h3><?= (int) $stats['orders'] ?></h3><p>Objednávky</p></div><div class="icon"><i class="fas fa-shopping-cart"></i></div></a></div>
-        <div class="col-6 col-md-3"><a href="<?= accountingPayoutH($accountingCardUrl('ORDER', 'unmatched')) ?>" class="small-box accounting-stat-card accounting-stat-unmatched <?= $type === 'ORDER' && $match === 'unmatched' ? 'is-active' : '' ?>" aria-label="Zobraziť nespárované objednávky"><div class="inner"><h3><?= (int) $stats['unmatched_orders'] ?></h3><p>Nespárované</p></div><div class="icon"><i class="fas fa-unlink"></i></div></a></div>
-        <div class="col-6 col-md-3"><a href="<?= accountingPayoutH($accountingCardUrl('REFUND')) ?>" class="small-box accounting-stat-card accounting-stat-refunds <?= $type === 'REFUND' && $match === 'all' ? 'is-active' : '' ?>" aria-label="Zobraziť refundácie"><div class="inner"><h3><?= (int) $stats['refunds'] ?></h3><p>Refundácie</p></div><div class="icon"><i class="fas fa-undo"></i></div></a></div>
-        <div class="col-6 col-md-3"><a href="<?= accountingPayoutH($accountingCardUrl('OTHER_FEE')) ?>" class="small-box accounting-stat-card accounting-stat-fees <?= $type === 'OTHER_FEE' && $match === 'all' ? 'is-active' : '' ?>" aria-label="Zobraziť ostatné poplatky"><div class="inner"><h3><?= (int) $stats['other_fees'] ?></h3><p>Ostatné poplatky</p></div><div class="icon"><i class="fas fa-receipt"></i></div></a></div>
+        <div class="col-6 col-md-3"><a href="<?= accountingPayoutH($accountingCardUrl('ORDER')) ?>" class="small-box accounting-stat-card accounting-stat-orders <?= $type === 'ORDER' && $match === 'all' ? 'is-active' : '' ?>" aria-label="Zobraziť objednávky"><div class="inner"><h3><?= (int) $stats['orders'] ?></h3><p>Objednávky<?= accountingUiInfo('Prijaté platby za eBay objednávky v zvolenom mesiaci.') ?></p></div><div class="icon"><i class="fas fa-shopping-cart"></i></div></a></div>
+        <div class="col-6 col-md-3"><a href="<?= accountingPayoutH($accountingCardUrl('ORDER', 'unmatched')) ?>" class="small-box accounting-stat-card accounting-stat-unmatched <?= $type === 'ORDER' && $match === 'unmatched' ? 'is-active' : '' ?>" aria-label="Zobraziť nespárované objednávky"><div class="inner"><h3><?= (int) $stats['unmatched_orders'] ?></h3><p>Nespárované<?= accountingUiInfo('Platby, ku ktorým sa nenašla objednávka v Darkscrube. Pred exportom ich preverte.') ?></p></div><div class="icon"><i class="fas fa-unlink"></i></div></a></div>
+        <div class="col-6 col-md-3"><a href="<?= accountingPayoutH($accountingCardUrl('REFUND')) ?>" class="small-box accounting-stat-card accounting-stat-refunds <?= $type === 'REFUND' && $match === 'all' ? 'is-active' : '' ?>" aria-label="Zobraziť refundácie"><div class="inner"><h3><?= (int) $stats['refunds'] ?></h3><p>Refundácie<?= accountingUiInfo('Vrátené platby zákazníkom; do výcucu objednávok sa nezaradia.') ?></p></div><div class="icon"><i class="fas fa-undo"></i></div></a></div>
+        <div class="col-6 col-md-3"><a href="<?= accountingPayoutH($accountingCardUrl('OTHER_FEE')) ?>" class="small-box accounting-stat-card accounting-stat-fees <?= $type === 'OTHER_FEE' && $match === 'all' ? 'is-active' : '' ?>" aria-label="Zobraziť ostatné poplatky"><div class="inner"><h3><?= (int) $stats['other_fees'] ?></h3><p>Ostatné poplatky<?= accountingUiInfo('eBay pohyby, ktoré nie sú objednávkou ani refundáciou.') ?></p></div><div class="icon"><i class="fas fa-receipt"></i></div></a></div>
       </div>
       <div class="card accounting-totals-card">
         <div class="card-body py-3">
@@ -323,7 +326,7 @@ $accountingCardUrl = static function (string $cardType, string $cardMatch = 'all
     <div class="card-header">
       <form class="form-inline" id="accountingPayoutFilters" method="get">
         <input type="hidden" name="page" value="accounting_payouts">
-        <label class="mr-2" for="accountingMonth">Mesiac</label>
+        <label class="mr-2" for="accountingMonth">Mesiac<?= accountingUiInfo('Určuje obdobie tabuľky aj exportu Vycuc.') ?></label>
         <input class="form-control form-control-sm mr-3 accounting-auto-filter" id="accountingMonth" type="month" name="month" value="<?= accountingPayoutH($month) ?>">
         <select class="form-control form-control-sm mr-3 accounting-auto-filter" name="type">
           <?php foreach ($typeLabels as $value => $label): ?>
@@ -342,9 +345,9 @@ $accountingCardUrl = static function (string $cardType, string $cardMatch = 'all
       <table class="table table-sm table-hover table-striped accounting-payout-table mb-0" id="accountingPayoutTable" data-export-title="eBay payouts <?= accountingPayoutH($month) ?>">
         <thead>
           <tr>
-            <th>Dátum</th><th>Typ</th><th>Objednávka</th><th>Zákazník</th><th>Krajina</th>
+            <th>Dátum</th><th>Typ</th><th>Objednávka<?= accountingUiInfo('Číslo objednávky uvedené v eBay výpise.') ?></th><th>Zákazník</th><th>Krajina</th>
             <th class="text-right">Suma EUR</th><th class="text-right">Poplatok EUR</th><th class="text-right">Netto EUR</th>
-            <th>DS objednávka</th><th>Aktuálna fakturovaná suma</th><th>Payout</th>
+            <th>DS objednávka<?= accountingUiInfo('Odkaz na objednávku nájdenú v Darkscrube.') ?></th><th>Aktuálna fakturovaná suma</th><th>Payout<?= accountingUiInfo('Identifikátor payoutu a zdrojový región výpisu.') ?></th>
           </tr>
         </thead>
         <tbody>
@@ -515,7 +518,7 @@ window.addEventListener('load', function () {
       emptyTable: 'Pre zvolený filter nie sú žiadne payout transakcie.'
     },
     buttons: [
-      { extend: 'copy', text: 'Copy', title: exportTitle, exportOptions: exportOptions },
+      { extend: 'copy', text: 'Kopírovať', title: exportTitle, exportOptions: exportOptions },
       { extend: 'csv', text: 'CSV', title: exportTitle, filename: exportTitle, exportOptions: exportOptions },
       { extend: 'excel', text: 'Excel', title: exportTitle, filename: exportTitle, exportOptions: exportOptions },
       {
@@ -531,8 +534,10 @@ window.addEventListener('load', function () {
           doc.styles.tableHeader.fontSize = 8;
         }
       },
-      { extend: 'print', text: 'Print', title: exportTitle, exportOptions: exportOptions }
+      { extend: 'print', text: 'Tlačiť', title: exportTitle, exportOptions: exportOptions }
     ]
   });
 });
 </script>
+<?= accountingUiHelpModal('payouts') ?>
+<?= accountingUiAssets() ?>

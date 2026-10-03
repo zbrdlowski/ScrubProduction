@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/../scripts/accounting/access.php';
+require_once __DIR__ . '/../scripts/accounting/ui_helpers.php';
 
 if (!accounting_payout_user_can_access()) {
     echo '<div class="alert alert-danger">Na účtovnú sekciu nemáte oprávnenie.</div>';
@@ -209,9 +210,11 @@ $accountingOmegaCardUrl = static function (
     <div class="accounting-page-actions">
       <div class="btn-group" role="group" aria-label="Účtovné sekcie">
         <a class="btn btn-outline-secondary" href="?page=accounting_payouts">eBay payouts</a>
+        <a class="btn btn-outline-secondary" href="?page=accounting_paypal">PayPal</a>
         <a class="btn btn-success active" href="?page=accounting_omega" aria-current="page">OMEGA faktúry</a>
         <a class="btn btn-outline-secondary" href="?page=accounting_omega_export">OMEGA TXT export</a>
       </div>
+      <?= accountingUiHelpButton('omega') ?>
     </div>
   </header>
 
@@ -240,7 +243,7 @@ $accountingOmegaCardUrl = static function (
   <div class="row accounting-omega-overview-row">
     <div class="col-lg-4 accounting-omega-overview-column">
       <div class="card card-outline card-success">
-        <div class="card-header"><h3 class="card-title">Import OMEGA TXT/TSV</h3></div>
+        <div class="card-header"><h3 class="card-title">Import OMEGA TXT/TSV<?= accountingUiInfo('Nahrajte pôvodný export evidencie T01 z OMEGY. Opakovaný import rovnaké faktúry nezdvojí.') ?></h3></div>
         <div class="card-body">
           <?php if ($canImportAccounting): ?>
           <form method="post" action="scripts/accounting/import_omega.php" enctype="multipart/form-data">
@@ -265,12 +268,12 @@ $accountingOmegaCardUrl = static function (
 
     <div class="col-lg-8 accounting-omega-summary-column">
       <div class="row accounting-omega-stats-row">
-        <div class="col-6 col-xl-4"><a href="<?= accountingOmegaH($accountingOmegaCardUrl()) ?>" class="card accounting-omega-stat <?= $match === 'all' && !$multiInvoiceOnly && $summaryView === '' ? 'is-active' : '' ?>" aria-label="Zobraziť všetky faktúry v mesiaci"><div class="card-body"><h3><?= (int) $stats['invoices'] ?></h3><div>Faktúry v mesiaci</div></div></a></div>
-        <div class="col-6 col-xl-4"><a href="<?= accountingOmegaH($accountingOmegaCardUrl('production')) ?>" class="card accounting-omega-stat accounting-omega-stat-production <?= $match === 'production' && !$multiInvoiceOnly ? 'is-active' : '' ?>" aria-label="Zobraziť faktúry spárované s production objednávkami"><div class="card-body"><h3><?= (int) $stats['matched_orders'] ?></h3><div>Production zhody</div></div></a></div>
-        <div class="col-6 col-xl-4"><a href="<?= accountingOmegaH($accountingOmegaCardUrl('custom')) ?>" class="card accounting-omega-stat accounting-omega-stat-custom <?= $match === 'custom' && !$multiInvoiceOnly ? 'is-active' : '' ?>" aria-label="Zobraziť faktúry spárované s custom objednávkami"><div class="card-body"><h3><?= (int) $stats['matched_custom_orders'] ?></h3><div>Custom zhody</div></div></a></div>
-        <div class="col-6 col-xl-4"><a href="<?= accountingOmegaH($accountingOmegaCardUrl('unmatched')) ?>" class="card accounting-omega-stat accounting-omega-stat-unmatched <?= $match === 'unmatched' && !$multiInvoiceOnly ? 'is-active' : '' ?>" aria-label="Zobraziť nespárované faktúry"><div class="card-body"><h3><?= (int) $stats['unmatched'] ?></h3><div>Nespárované</div></div></a></div>
-        <div class="col-6 col-xl-4"><a href="<?= accountingOmegaH($accountingOmegaCardUrl('all', true)) ?>" class="card accounting-omega-stat accounting-omega-stat-multi <?= $multiInvoiceOnly ? 'is-active' : '' ?>" aria-label="Zobraziť objednávky s viacerými faktúrami"><div class="card-body"><h3><?= (int) $stats['multi_invoice_orders'] ?></h3><div>Objednávky s viacerými faktúrami</div></div></a></div>
-        <div class="col-6 col-xl-4"><a href="<?= accountingOmegaH($accountingOmegaCardUrl('all', false, 'total')) ?>" class="card accounting-omega-stat accounting-omega-stat-total <?= $summaryView === 'total' ? 'is-active' : '' ?>" aria-label="Zobraziť faktúry zahrnuté v celkovej sume"><div class="card-body"><h3 class="accounting-omega-money"><?= number_format((float) $stats['total_amount'], 2, ',', ' ') ?> €</h3><div>Suma faktúr</div></div></a></div>
+        <div class="col-6 col-xl-4"><a href="<?= accountingOmegaH($accountingOmegaCardUrl()) ?>" class="card accounting-omega-stat <?= $match === 'all' && !$multiInvoiceOnly && $summaryView === '' ? 'is-active' : '' ?>" aria-label="Zobraziť všetky faktúry v mesiaci"><div class="card-body"><h3><?= (int) $stats['invoices'] ?></h3><div>Faktúry v mesiaci<?= accountingUiInfo('Všetky faktúry vystavené vo vybranom mesiaci.') ?></div></div></a></div>
+        <div class="col-6 col-xl-4"><a href="<?= accountingOmegaH($accountingOmegaCardUrl('production')) ?>" class="card accounting-omega-stat accounting-omega-stat-production <?= $match === 'production' && !$multiInvoiceOnly ? 'is-active' : '' ?>" aria-label="Zobraziť faktúry spárované s výrobnými objednávkami"><div class="card-body"><h3><?= (int) $stats['matched_orders'] ?></h3><div>Výrobné zhody<?= accountingUiInfo('Faktúry spárované s výrobnou objednávkou v Darkscrube.') ?></div></div></a></div>
+        <div class="col-6 col-xl-4"><a href="<?= accountingOmegaH($accountingOmegaCardUrl('custom')) ?>" class="card accounting-omega-stat accounting-omega-stat-custom <?= $match === 'custom' && !$multiInvoiceOnly ? 'is-active' : '' ?>" aria-label="Zobraziť faktúry spárované so zákazkovými objednávkami"><div class="card-body"><h3><?= (int) $stats['matched_custom_orders'] ?></h3><div>Zákazkové zhody<?= accountingUiInfo('Faktúry spárované so zákazkovou objednávkou v Darkscrube.') ?></div></div></a></div>
+        <div class="col-6 col-xl-4"><a href="<?= accountingOmegaH($accountingOmegaCardUrl('unmatched')) ?>" class="card accounting-omega-stat accounting-omega-stat-unmatched <?= $match === 'unmatched' && !$multiInvoiceOnly ? 'is-active' : '' ?>" aria-label="Zobraziť nespárované faktúry"><div class="card-body"><h3><?= (int) $stats['unmatched'] ?></h3><div>Nespárované<?= accountingUiInfo('Faktúry, ku ktorým sa podľa čísla nenašla objednávka.') ?></div></div></a></div>
+        <div class="col-6 col-xl-4"><a href="<?= accountingOmegaH($accountingOmegaCardUrl('all', true)) ?>" class="card accounting-omega-stat accounting-omega-stat-multi <?= $multiInvoiceOnly ? 'is-active' : '' ?>" aria-label="Zobraziť objednávky s viacerými faktúrami"><div class="card-body"><h3><?= (int) $stats['multi_invoice_orders'] ?></h3><div>Objednávky s viacerými faktúrami<?= accountingUiInfo('Napríklad objednávky so zálohovou aj konečnou faktúrou.') ?></div></div></a></div>
+        <div class="col-6 col-xl-4"><a href="<?= accountingOmegaH($accountingOmegaCardUrl('all', false, 'total')) ?>" class="card accounting-omega-stat accounting-omega-stat-total <?= $summaryView === 'total' ? 'is-active' : '' ?>" aria-label="Zobraziť faktúry zahrnuté v celkovej sume"><div class="card-body"><h3 class="accounting-omega-money"><?= number_format((float) $stats['total_amount'], 2, ',', ' ') ?> €</h3><div>Suma faktúr<?= accountingUiInfo('Súčet faktúr zahrnutých do mesačného prehľadu.') ?></div></div></a></div>
       </div>
     </div>
   </div>
@@ -280,13 +283,13 @@ $accountingOmegaCardUrl = static function (
       <form class="form-inline" id="accountingOmegaFilters" method="get">
         <input type="hidden" name="page" value="accounting_omega">
         <?php if ($multiInvoiceOnly): ?><input type="hidden" name="multi" value="1"><?php endif; ?>
-        <label class="mr-2" for="omegaMonth">Mesiac</label>
+        <label class="mr-2" for="omegaMonth">Mesiac<?= accountingUiInfo('Filtruje faktúry podľa dátumu vystavenia.') ?></label>
         <input class="form-control form-control-sm mr-3 accounting-omega-auto-filter" id="omegaMonth" type="month" name="month" value="<?= accountingOmegaH($month) ?>">
         <select class="form-control form-control-sm mr-3 accounting-omega-auto-filter" name="match">
           <option value="all" <?= $match === 'all' ? 'selected' : '' ?>>Všetky párovania</option>
           <option value="matched" <?= $match === 'matched' ? 'selected' : '' ?>>Spárované</option>
-          <option value="production" <?= $match === 'production' ? 'selected' : '' ?>>Production zhody</option>
-          <option value="custom" <?= $match === 'custom' ? 'selected' : '' ?>>Custom zhody</option>
+          <option value="production" <?= $match === 'production' ? 'selected' : '' ?>>Výrobné zhody</option>
+          <option value="custom" <?= $match === 'custom' ? 'selected' : '' ?>>Zákazkové zhody</option>
           <option value="unmatched" <?= $match === 'unmatched' ? 'selected' : '' ?>>Nespárované</option>
         </select>
         <select class="form-control form-control-sm accounting-omega-auto-filter" name="payment_type">
@@ -302,8 +305,8 @@ $accountingOmegaCardUrl = static function (
       <table class="table table-sm table-hover table-striped accounting-omega-table mb-0" id="accountingOmegaTable" data-export-title="OMEGA faktury <?= accountingOmegaH($month) ?>">
         <thead>
           <tr>
-            <th>Dátum</th><th>Faktúra</th><th>Objednávka</th><th>Zákazník</th>
-            <th>Platba</th><th>Typ</th><th class="text-right">Suma</th><th class="text-center">R02</th><th>Zhoda</th>
+            <th>Dátum</th><th>Faktúra<?= accountingUiInfo('Číslo faktúry z riadku R01 v OMEGE.') ?></th><th>Objednávka<?= accountingUiInfo('Číslo objednávky použité na párovanie s Darkscrubom.') ?></th><th>Zákazník</th>
+            <th>Platba</th><th>Typ</th><th class="text-right">Suma</th><th class="text-center">R02<?= accountingUiInfo('Počet položkových riadkov patriacich k faktúre.') ?></th><th>Zhoda<?= accountingUiInfo('Ukazuje nájdenú výrobnú alebo zákazkovú objednávku. Červenú Nenájdená treba preveriť.') ?></th>
           </tr>
         </thead>
         <tbody>
@@ -324,10 +327,10 @@ $accountingOmegaCardUrl = static function (
               <td class="text-center"><?= (int) $row['item_count'] ?></td>
               <td>
                 <?php if (!empty($row['matched_order_id'])): ?>
-                  <a class="badge badge-info" href="?page=orders&q=<?= rawurlencode((string) $row['order_number']) ?>">Production #<?= (int) $row['matched_order_id'] ?></a>
+                  <a class="badge badge-info" href="?page=orders&q=<?= rawurlencode((string) $row['order_number']) ?>">Výroba #<?= (int) $row['matched_order_id'] ?></a>
                 <?php endif; ?>
                 <?php if (!empty($row['matched_custom_order_id'])): ?>
-                  <a class="badge badge-success" href="?page=custom_orders&amp;custom_order_id=<?= (int) $row['matched_custom_order_id'] ?>">Custom #<?= (int) $row['matched_custom_order_id'] ?></a>
+                  <a class="badge badge-success" href="?page=custom_orders&amp;custom_order_id=<?= (int) $row['matched_custom_order_id'] ?>">Zákazková #<?= (int) $row['matched_custom_order_id'] ?></a>
                 <?php endif; ?>
                 <?php if (empty($row['matched_order_id']) && empty($row['matched_custom_order_id'])): ?>
                   <span class="badge badge-danger">Nenájdená</span>
@@ -348,7 +351,7 @@ $accountingOmegaCardUrl = static function (
       </div>
       <div class="card-body table-responsive p-0">
         <table class="table table-sm mb-0">
-          <thead><tr><th>Dátum</th><th>Súbor</th><th>Kódovanie</th><th>R01</th><th>R02</th><th>Nové</th><th>Zmenené</th><th>Nezmenené</th><th>Production</th><th>Custom</th></tr></thead>
+          <thead><tr><th>Dátum</th><th>Súbor</th><th>Kódovanie</th><th>R01</th><th>R02</th><th>Nové</th><th>Zmenené</th><th>Nezmenené</th><th>Výroba</th><th>Zákazkové</th></tr></thead>
           <tbody>
             <?php foreach ($imports as $import): ?>
               <tr>
@@ -430,11 +433,13 @@ window.addEventListener('load', function () {
     dom: '<"accounting-table-toolbar"Bf>rtip',
     language: { emptyTable: 'Pre zvolený filter nie sú žiadne OMEGA faktúry.' },
     buttons: [
-      { extend: 'copy', text: 'Copy', title: title, exportOptions: exportOptions },
+      { extend: 'copy', text: 'Kopírovať', title: title, exportOptions: exportOptions },
       { extend: 'csv', text: 'CSV', title: title, filename: title, exportOptions: exportOptions },
       { extend: 'excel', text: 'Excel', title: title, filename: title, exportOptions: exportOptions },
-      { extend: 'print', text: 'Print', title: title, exportOptions: exportOptions }
+      { extend: 'print', text: 'Tlačiť', title: title, exportOptions: exportOptions }
     ]
   });
 });
 </script>
+<?= accountingUiHelpModal('omega') ?>
+<?= accountingUiAssets() ?>

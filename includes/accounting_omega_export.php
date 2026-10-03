@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/../scripts/accounting/access.php';
 require_once __DIR__ . '/../scripts/accounting/omega_export_helpers.php';
+require_once __DIR__ . '/../scripts/accounting/ui_helpers.php';
 
 if (!accounting_payout_user_can_access()) {
     echo '<div class="alert alert-danger">Na účtovnú sekciu nemáte oprávnenie.</div>';
@@ -98,8 +99,10 @@ if ($schemaReady) {
     </div>
     <div class="omega-export-actions btn-group" role="group" aria-label="Účtovné sekcie">
       <a class="btn btn-outline-secondary" href="?page=accounting_payouts">eBay payouts</a>
+      <a class="btn btn-outline-secondary" href="?page=accounting_paypal">PayPal</a>
       <a class="btn btn-outline-secondary" href="?page=accounting_omega">OMEGA faktúry</a>
       <a class="btn btn-success active" href="?page=accounting_omega_export" aria-current="page">OMEGA TXT export</a>
+      <?= accountingUiHelpButton('omega_export') ?>
     </div>
   </header>
 
@@ -116,13 +119,13 @@ if ($schemaReady) {
   <?php endif; ?>
 
   <div class="card card-outline card-primary">
-    <div class="card-header"><h3 class="card-title">Pripraviť denný balík</h3></div>
+    <div class="card-header"><h3 class="card-title">Pripraviť denný balík<?= accountingUiInfo('Najprv skontrolujte výber objednávok. Až potom vytvorte nemenný balík a stiahnite oba TXT súbory.') ?></h3></div>
     <div class="card-body">
       <form class="form-row align-items-end" method="get" id="omegaExportFilter">
         <input type="hidden" name="page" value="accounting_omega_export">
-        <div class="form-group col-md-3 mb-2"><label for="omegaImportFrom">Import objednávok od</label><input class="form-control" id="omegaImportFrom" type="date" name="import_from" value="<?= omegaExportH($from) ?>"></div>
-        <div class="form-group col-md-3 mb-2"><label for="omegaImportTo">Import objednávok do</label><input class="form-control" id="omegaImportTo" type="date" name="import_to" value="<?= omegaExportH($to) ?>"></div>
-        <div class="form-group col-md-3 mb-2"><label for="omegaProcessingDate">Deň spracovania</label><input class="form-control" id="omegaProcessingDate" type="date" name="processing_date" value="<?= omegaExportH($processingDate) ?>"></div>
+        <div class="form-group col-md-3 mb-2"><label for="omegaImportFrom">Import objednávok od<?= accountingUiInfo('Prvý deň intervalu, v ktorom boli eBay a Shoptet objednávky importované do Darkscrubu.') ?></label><input class="form-control" id="omegaImportFrom" type="date" name="import_from" value="<?= omegaExportH($from) ?>"></div>
+        <div class="form-group col-md-3 mb-2"><label for="omegaImportTo">Import objednávok do<?= accountingUiInfo('Posledný deň kontrolovaného intervalu vrátane.') ?></label><input class="form-control" id="omegaImportTo" type="date" name="import_to" value="<?= omegaExportH($to) ?>"></div>
+        <div class="form-group col-md-3 mb-2"><label for="omegaProcessingDate">Deň spracovania<?= accountingUiInfo('Deň, keď balík pripravujete. Podľa neho sa vyberú Custom objednávky z predchádzajúceho pracovného dňa.') ?></label><input class="form-control" id="omegaProcessingDate" type="date" name="processing_date" value="<?= omegaExportH($processingDate) ?>"></div>
         <div class="form-group col-md-3 mb-2"><button class="btn btn-primary btn-block" type="submit"><i class="fas fa-search mr-1"></i> Skontrolovať</button></div>
       </form>
       <div class="small omega-export-muted mt-2">
@@ -133,10 +136,10 @@ if ($schemaReady) {
   </div>
 
   <div class="row">
-    <div class="col-6 col-xl-3"><div class="card omega-export-stat omega-export-ready"><div class="card-body"><h3><?= count($candidates['ready']) ?></h3><div>Pripravené objednávky</div></div></div></div>
-    <div class="col-6 col-xl-3"><div class="card omega-export-stat omega-export-waiting"><div class="card-body"><h3><?= count($candidates['waiting']) ?></h3><div>Čakajú na payout</div></div></div></div>
-    <div class="col-6 col-xl-3"><div class="card omega-export-stat omega-export-custom"><div class="card-body"><h3><?= count(array_filter($candidates['ready'], static function (array $r): bool { return $r['source_code'] === 'CUSTOM'; })) ?></h3><div>Custom z pracovného dňa</div></div></div></div>
-    <div class="col-6 col-xl-3"><div class="card omega-export-stat omega-export-blocked"><div class="card-body"><h3><?= count($candidates['blocked']) ?></h3><div>Blokované chybou dát</div></div></div></div>
+    <div class="col-6 col-xl-3"><div class="card omega-export-stat omega-export-ready"><div class="card-body"><h3><?= count($candidates['ready']) ?></h3><div>Pripravené objednávky<?= accountingUiInfo('Majú potrebné údaje a po zaškrtnutí môžu ísť do balíka.') ?></div></div></div></div>
+    <div class="col-6 col-xl-3"><div class="card omega-export-stat omega-export-waiting"><div class="card-body"><h3><?= count($candidates['waiting']) ?></h3><div>Čakajú na payout<?= accountingUiInfo('Cudzo-menové eBay objednávky bez importovaného payoutu a kurzu.') ?></div></div></div></div>
+    <div class="col-6 col-xl-3"><div class="card omega-export-stat omega-export-custom"><div class="card-body"><h3><?= count(array_filter($candidates['ready'], static function (array $r): bool { return $r['source_code'] === 'CUSTOM'; })) ?></h3><div>Custom z pracovného dňa<?= accountingUiInfo('Custom objednávky pridané do výroby v predchádzajúci pracovný deň.') ?></div></div></div></div>
+    <div class="col-6 col-xl-3"><div class="card omega-export-stat omega-export-blocked"><div class="card-body"><h3><?= count($candidates['blocked']) ?></h3><div>Blokované chybou dát<?= accountingUiInfo('Tieto objednávky nemožno exportovať, kým sa neopraví uvedený dôvod.') ?></div></div></div></div>
   </div>
 
   <div class="card">
@@ -144,7 +147,7 @@ if ($schemaReady) {
       <?php if ($canExportAccounting): ?>
       <form method="post" action="scripts/accounting/update_omega_export_seed.php" class="form-inline mb-0">
         <input type="hidden" name="csrf_token" value="<?= omegaExportH($_SESSION['accounting_payout_csrf']) ?>">
-        <label class="mr-2" for="omegaCustomerSeed"><b>Posledný použitý seed</b></label>
+        <label class="mr-2" for="omegaCustomerSeed"><b>Posledný použitý seed</b><?= accountingUiInfo('Posledný pridelený kód zákazníka. Bežne ho nemeňte; ďalší zákazník dostane nasledujúce číslo.') ?></label>
         <div class="input-group input-group-sm">
           <input class="form-control" id="omegaCustomerSeed" type="text" name="customer_seed" value="M<?= $currentCustomerNumber ?>" pattern="M[0-9]+" maxlength="10" required style="width:130px">
           <div class="input-group-append"><button class="btn btn-outline-warning" type="submit"><i class="fas fa-save mr-1"></i> Uložiť seed</button></div>
@@ -158,7 +161,7 @@ if ($schemaReady) {
         <input type="hidden" name="processing_date" value="<?= omegaExportH($processingDate) ?>">
         <input type="hidden" name="selection_submitted" value="1">
         <span class="small mr-2"><b id="omegaSelectedCount"><?= count($candidates['ready']) ?></b> vybraných</span>
-        <button class="btn btn-success" id="omegaCreatePackageButton" type="submit" <?= (!$schemaReady || !$candidates['ready']) ? 'disabled' : '' ?>><i class="fas fa-box mr-1"></i> Vytvoriť nemenný balík</button>
+        <button class="btn btn-success" id="omegaCreatePackageButton" type="submit" <?= (!$schemaReady || !$candidates['ready']) ? 'disabled' : '' ?>><i class="fas fa-box mr-1"></i> Vytvoriť nemenný balík<?= accountingUiInfo('Uloží presnú snímku zaškrtnutých objednávok. Obsah a zákaznícke kódy sa už pri ďalšom stiahnutí nezmenia.') ?></button>
       </form>
       <?php else: ?>
         <div class="alert alert-secondary mb-0"><i class="fas fa-lock mr-1"></i> Vytváranie balíkov povoľuje oprávnenie <code>accounting.export</code>.</div>
@@ -213,7 +216,7 @@ if ($schemaReady) {
   <?php endif; ?>
 
   <div class="card collapsed-card">
-    <div class="card-header"><h3 class="card-title">História exportných balíkov</h3><div class="card-tools"><button class="btn btn-tool" type="button" data-card-widget="collapse"><i class="fas fa-plus"></i></button></div></div>
+    <div class="card-header"><h3 class="card-title">História exportných balíkov<?= accountingUiInfo('Starší balík môžete otvoriť a oba jeho súbory stiahnuť znova bez zmeny obsahu.') ?></h3><div class="card-tools"><button class="btn btn-tool" type="button" data-card-widget="collapse"><i class="fas fa-plus"></i></button></div></div>
     <div class="card-body table-responsive p-0"><table class="table table-sm mb-0"><thead><tr><th>Balík</th><th>Vytvorený</th><th>Interval</th><th>eBay</th><th>Shoptet</th><th>Custom</th><th>Partneri</th><th>Objednávky</th><th></th></tr></thead><tbody>
       <?php foreach ($batches as $batch): ?><tr>
         <td>#<?= (int) $batch['id'] ?></td><td><?= omegaExportH(date('d.m.Y H:i', strtotime((string) $batch['created_at']))) ?></td><td><?= omegaExportH(date('d.m.Y', strtotime((string) $batch['import_from']))) ?> – <?= omegaExportH(date('d.m.Y', strtotime((string) $batch['import_to']))) ?></td>
@@ -251,3 +254,5 @@ if ($schemaReady) {
   refreshSelection();
 }());
 </script>
+<?= accountingUiHelpModal('omega_export') ?>
+<?= accountingUiAssets() ?>

@@ -1,59 +1,51 @@
-# OMEGA invoice import
+# OMEGA faktúry – návod pre účtovníctvo
 
-## Installation
+Táto stránka importuje faktúry vyexportované z OMEGY a páruje ich s výrobnými a zákazkovými objednávkami v Darkscrube.
 
-1. Run `db/accounting_omega.sql` against the `scrubproduction` database.
-2. Open **Accounting → OMEGA Invoices** in Darkscrub.
-3. Upload the original OMEGA T01 export (`.txt` or `.tsv`).
+## Bežný postup
 
-The importer accepts UTF-8 and Windows-1250 files up to 30 MB. Uploaded files
-are parsed directly from PHP's temporary upload directory and are not retained.
-If the web server has a lower `upload_max_filesize` or `post_max_size`, raise
-those PHP limits above the size of the OMEGA export.
+1. V OMEGE vytvorte pôvodný export evidencie T01 vo formáte TXT alebo TSV.
+2. V časti **Import OMEGA TXT/TSV** vyberte súbor a kliknite na **Importovať OMEGA faktúry**.
+3. Skontrolujte karty **Nespárované** a **Objednávky s viacerými faktúrami**.
+4. Pomocou mesiaca a filtrov si zobrazte potrebné faktúry.
 
-Large files can also be imported from the project directory without an HTTP
-upload:
+Rovnaký súbor alebo prekrývajúci sa súhrnný export môžete nahrať opakovane. Rovnaké faktúry sa nezdvojnásobia; zmenené faktúry a ich položky sa aktualizujú.
 
-```sh
-php scripts/accounting/import_omega.php db/fakturacia2026.txt
-```
+## Ako sa faktúra páruje
 
-## R01 invoice mapping
+Systém číta z riadku R01 najmä tieto údaje:
 
-The importer uses the same fixed columns as the former Google Sheet:
-
-| OMEGA column | Stored value |
+| Stĺpec v OMEGE | Uložený údaj |
 | --- | --- |
-| B | Invoice number |
-| E | Invoice issue date |
-| AH | Order number |
-| AL | Payment type |
-| AQ | Invoice total |
+| B | číslo faktúry |
+| E | dátum vystavenia |
+| AH | číslo objednávky |
+| AL | spôsob platby |
+| AQ | celková suma faktúry |
 
-It additionally stores the customer, document type and currency. An invoice is
-matched by order number against both production orders and custom orders.
+Číslo objednávky sa hľadá medzi výrobnými aj zákazkovými objednávkami. Jedna objednávka môže mať viac faktúr, napríklad zálohovú a konečnú. Preto sa všetky zachovajú a pri takej objednávke sa zobrazí počet faktúr.
 
-OMEGA exports can contain the same order number on more than one invoice, for
-example a deposit and a final invoice. Darkscrub therefore stores invoices as a
-one-to-many relation instead of reproducing the spreadsheet's first-match
-`XLOOKUP` behaviour.
+## Čo znamenajú karty
 
-## R02 invoice items
+- **Faktúry v mesiaci** – všetky faktúry vystavené v zvolenom mesiaci.
+- **Výrobné zhody** – faktúry spárované s výrobnou objednávkou.
+- **Zákazkové zhody** – faktúry spárované so zákazkovou objednávkou.
+- **Nespárované** – faktúry bez nájdenej objednávky; skontrolujte číslo objednávky v OMEGE a Darkscrube.
+- **Objednávky s viacerými faktúrami** – napríklad kombinácia zálohovej a konečnej faktúry.
+- **Suma faktúr** – súčet zobrazených faktúr podľa pravidiel stránky.
 
-Every R02 row following an R01 row is stored as an item of that invoice. The
-description, quantity, unit and unit price without VAT are normalized; the full
-source row is also kept as JSON for audit and future classification.
+## Položky R02
 
-R02 rows are not required for the current invoice/order matching, but keeping
-them makes later reporting by product, shipping, fitting, design or deposit
-possible without re-importing old exports.
+Každý riadok R02 za faktúrou R01 sa uloží ako jej položka. Ukladá sa popis, množstvo, jednotka a jednotková cena bez DPH. Počet položiek vidíte v stĺpci **R02**.
 
-## Re-import behaviour
+Položky zatiaľ nie sú potrebné na samotné párovanie, ale zostávajú uložené pre budúce prehľady a kontroly.
 
-Repeated and overlapping cumulative exports are safe:
+## Dôležité upozornenia
 
-- an identical file hash is skipped;
-- invoice number is the stable unique key;
-- new invoices are inserted;
-- changed invoices and their R02 items are updated;
-- unchanged invoices are counted but not duplicated.
+- Nahrajte pôvodný export z OMEGY s maximálnou veľkosťou 30 MB.
+- Nahraný súbor sa po importe neuchováva na disku.
+- Ak je faktúra nespárovaná, opravte zdrojové číslo objednávky a následne import zopakujte.
+
+## Technická inštalácia
+
+Pri prvom nasadení musí správca spustiť databázový súbor `db/accounting_omega.sql`.
