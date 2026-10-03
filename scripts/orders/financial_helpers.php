@@ -97,6 +97,7 @@ function order_financial_require_schema(mysqli $conn): void
 
 function order_financial_base_total_from_order(array $order, array $sourceMeta = []): float
 {
+  $sourceMeta = order_financial_sanitize_followup_source_meta($sourceMeta);
   $sourceTotal = order_financial_money_value($sourceMeta['total_price_with_vat'] ?? null);
   if ($sourceTotal !== null) {
     return round($sourceTotal, 2);
@@ -114,6 +115,46 @@ function order_financial_decode_source_meta(array $order): array
 {
   $sourceMeta = json_decode((string) ($order['source_meta'] ?? ''), true);
   return is_array($sourceMeta) ? $sourceMeta : [];
+}
+
+function order_financial_source_meta_is_followup(array $sourceMeta): bool
+{
+  return is_array($sourceMeta['_followup'] ?? null) && !empty($sourceMeta['_followup']['is_followup']);
+}
+
+function order_financial_sanitize_followup_source_meta(array $sourceMeta): array
+{
+  if (!order_financial_source_meta_is_followup($sourceMeta)) {
+    return $sourceMeta;
+  }
+
+  foreach ([
+    'custom_order_id',
+    'deposit_revision_limit',
+    'deposit_revision_used',
+    'deposit_total',
+    'upsell_subtotal',
+    'shipping_price',
+    'customs_ddp_amount',
+    'customs_ddp_note',
+    'financial_breakdown',
+    'payment_lines',
+    'paid_net',
+    'balance_due',
+    'total_price_with_vat',
+    'total_price_without_vat',
+    'total_vat',
+    'price_to_pay',
+    'amount_paid',
+    'payment_received_amount',
+    'paid',
+    'transaction_id',
+    'transaction_ids',
+  ] as $key) {
+    unset($sourceMeta[$key]);
+  }
+
+  return $sourceMeta;
 }
 
 function order_financial_fetch_custom_order_id_by_int(mysqli $conn, string $sql, int $value): int
@@ -162,6 +203,9 @@ function order_financial_resolve_custom_order_id(mysqli $conn, array $order, ?ar
   }
 
   $sourceMeta = $sourceMeta ?? order_financial_decode_source_meta($order);
+  if (order_financial_source_meta_is_followup($sourceMeta)) {
+    return 0;
+  }
   $sourceCode = strtoupper(trim((string) ($order['source_code'] ?? '')));
   $sourceMetaCustomId = (int) ($sourceMeta['custom_order_id'] ?? 0);
   $hasCustomOrderSignal = $sourceCode === 'CUSTOM' || $sourceMetaCustomId > 0;
@@ -218,6 +262,7 @@ function order_financial_resolve_custom_order_id(mysqli $conn, array $order, ?ar
 function order_financial_custom_deposit_total(mysqli $conn, array $order, ?array $sourceMeta = null): float
 {
   $sourceMeta = $sourceMeta ?? order_financial_decode_source_meta($order);
+  $sourceMeta = order_financial_sanitize_followup_source_meta($sourceMeta);
   $sourceFinancialBreakdown = is_array($sourceMeta['financial_breakdown'] ?? null)
     ? $sourceMeta['financial_breakdown']
     : [];
@@ -329,21 +374,63 @@ function order_financial_adjustment_total(mysqli $conn, int $orderId): float
   return round((float) ($row['total'] ?? 0), 2);
 }
 
+function order_financial_order_items_total(mysqli $conn, int $orderId): ?float
+{
+  if (
+    $orderId <= 0
+    || !order_financial_table_exists($conn, 'order_items')
+    || !order_financial_column_exists($conn, 'order_items', 'order_id')
+    || !order_financial_column_exists($conn, 'order_items', 'qty')
+    || !order_financial_column_exists($conn, 'order_items', 'unit_price')
+  ) {
+    return null;
+  }
+
+  $deletedFilter = order_financial_column_exists($conn, 'order_items', 'deleted_at')
+    ? ' AND deleted_at IS NULL'
+    : '';
+
+  $stmt = $conn->prepare("
+    SELECT COALESCE(SUM(qty * unit_price), 0) AS total
+    FROM order_items
+    WHERE order_id = ?
+      {$deletedFilter}
+  ");
+
+  if (!$stmt) {
+    return null;
+  }
+
+  $stmt->bind_param('i', $orderId);
+  $stmt->execute();
+  $row = $stmt->get_result()->fetch_assoc() ?: [];
+  $stmt->close();
+
+  return max(0.0, round((float) ($row['total'] ?? 0), 2));
+}
+
 function order_financial_effective_totals(mysqli $conn, array $order, ?array $sourceMeta = null): array
 {
   if ($sourceMeta === null) {
     $decoded = json_decode((string) ($order['source_meta'] ?? ''), true);
     $sourceMeta = is_array($decoded) ? $decoded : [];
   }
+  $sourceMeta = order_financial_sanitize_followup_source_meta($sourceMeta);
 
   $sourceCurrency = strtoupper(trim((string) ($order['currency'] ?? 'EUR')));
   if ($sourceCurrency === '') {
     $sourceCurrency = 'EUR';
   }
 
-  $baseTotal = order_financial_base_total_from_order($order, $sourceMeta);
-  $providedAdjustmentsTotal = order_financial_money_value($order['financial_adjustments_total'] ?? null);
   $orderId = (int) ($order['id'] ?? ($order['order_id'] ?? 0));
+  $baseTotal = order_financial_base_total_from_order($order, $sourceMeta);
+  if (order_financial_source_meta_is_followup($sourceMeta)) {
+    $itemTotal = order_financial_order_items_total($conn, $orderId);
+    if ($itemTotal !== null) {
+      $baseTotal = $itemTotal;
+    }
+  }
+  $providedAdjustmentsTotal = order_financial_money_value($order['financial_adjustments_total'] ?? null);
   $adjustmentsTotal = $providedAdjustmentsTotal !== null
     ? round($providedAdjustmentsTotal, 2)
     : order_financial_adjustment_total($conn, $orderId);

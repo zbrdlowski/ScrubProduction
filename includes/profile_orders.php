@@ -378,6 +378,7 @@ function profileRoleBadge(string $role): string
                     . 'color:' . ordersContrastColor($statusColor) . ';';
                 ?>
                 <td class="text-center" data-status-cell="<?= $orderId ?>"
+                    data-status-code="<?= htmlspecialchars($statusUpper, ENT_QUOTES, 'UTF-8') ?>"
                     data-status-color="<?= htmlspecialchars($statusColor, ENT_QUOTES, 'UTF-8') ?>"
                     data-status-label="<?= htmlspecialchars($statusLabel ?: '-', ENT_QUOTES, 'UTF-8') ?>">
                     <button type="button" class="btn btn-xs orders-status-chip" style="<?= $statusStyle ?> pointer-events:none;">

@@ -1154,6 +1154,12 @@ $(document)
               resp.department_statuses,
               resp.department_labels,
               resp.department_colors,
+              {
+                html: resp.status_html,
+                label: resp.order_status_label,
+                color: resp.order_status_color,
+                statusOverride: resp.status_override,
+              },
             );
           }
         },
@@ -1200,6 +1206,7 @@ $(document)
     departmentStatuses,
     departmentLabels,
     departmentColors,
+    orderStatusMeta,
   ) {
     orderId = parseInt(orderId, 10) || 0;
     if (!orderId) return;
@@ -1292,6 +1299,23 @@ $(document)
       const $statusCell = $row.find("td[data-status-cell]").first();
       if ($statusCell.length) {
         const s = String(orderStatus).toUpperCase();
+        const meta = orderStatusMeta || {};
+        const statusHtml = String(meta.html || "").trim();
+        const statusOverride =
+          meta.statusOverride === true ||
+          String(meta.statusOverride || "0") === "1";
+        const workflowPausedHtml =
+          '<span class="badge badge-warning ml-1" title="Item changes are saved, but the overall order status is locked">' +
+          '<i class="fas fa-lock mr-1"></i>Workflow paused</span>';
+
+        if (statusHtml) {
+          $statusCell
+            .attr("data-status-code", s)
+            .attr("data-status-color", meta.color || "")
+            .attr("data-status-label", meta.label || s.replace(/_/g, " "));
+          $statusCell.html(statusHtml + (statusOverride ? workflowPausedHtml : ""));
+          return;
+        }
 
         // Fallback farby — zrkadlo ordersStatusDefinitionFallbacks() v orders_status_helpers.php
         const colorFallbackMap = {
@@ -1317,8 +1341,9 @@ $(document)
         };
 
         // Preferujeme farbu uloženú v data-atribúte td (nastavuje ju PHP pri renderovaní)
-        const storedColor = $statusCell.attr("data-status-color") || "";
-        const storedLabel = $statusCell.attr("data-status-label") || "";
+        const storedCode = String($statusCell.attr("data-status-code") || "").toUpperCase();
+        const storedColor = storedCode === s ? $statusCell.attr("data-status-color") || "" : "";
+        const storedLabel = storedCode === s ? $statusCell.attr("data-status-label") || "" : "";
         const color = storedColor || colorFallbackMap[s] || "#6c757d";
         const label = storedLabel || s.replace(/_/g, " ") || "-";
 
@@ -1329,7 +1354,8 @@ $(document)
         // Aktualizujeme data-atribúty pre prípadné ďalšie volania
         $statusCell
           .attr("data-status-color", color)
-          .attr("data-status-label", label);
+          .attr("data-status-label", label)
+          .attr("data-status-code", s);
 
         $statusCell.html(
           '<button class="btn btn-xs orders-status-chip" style="' + chipStyle + '">' +
@@ -1550,6 +1576,12 @@ $(document)
         copyTextFallback(text);
       }
 
+      if ($btn.find("i").length || $btn.hasClass("order-header-copy-btn") || $btn.hasClass("order-production-payment-copy")) {
+        $btn.addClass("copy-success");
+        setTimeout(() => $btn.removeClass("copy-success"), 900);
+        return;
+      }
+
       const oldText = $btn.text();
       $btn.text("✔");
       setTimeout(() => $btn.text(oldText), 800);
@@ -1728,6 +1760,12 @@ $(document)
               resp.department_statuses,
               resp.department_labels,
               resp.department_colors,
+              {
+                html: resp.status_html,
+                label: resp.order_status_label,
+                color: resp.order_status_color,
+                statusOverride: resp.status_override,
+              },
             );
           }
 

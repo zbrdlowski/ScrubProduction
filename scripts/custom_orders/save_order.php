@@ -146,7 +146,9 @@ $data = [
   'shipping_email' => $postString('shipping_email', $existing),
   'shipping_phone' => $postString('shipping_phone', $existing),
   'shipping_method' => $postString('shipping_method', $existing),
-  'shipping_price' => $postFloat('shipping_price', $existing),
+  'shipping_price' => max(0.0, $postFloat('shipping_price', $existing)),
+  'customs_ddp_amount' => max(0.0, $postFloat('customs_ddp_amount', $existing)),
+  'customs_ddp_note' => $postString('customs_ddp_note', $existing),
   // Custom orders currently use one fixed currency. Change this constant value here
   // if the whole custom-order workflow moves to another currency in the future.
   'currency' => 'EUR',

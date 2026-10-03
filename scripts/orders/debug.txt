@@ -1,4 +1,4 @@
-__DIR__=E:\volume_0\darkscrub\scripts\orders
-base=E:\volume_0\darkscrub
-connFile=E:\volume_0\darkscrub/includes/conn.php
+__DIR__=F:\www\darkscrub\scripts\orders
+base=F:\www\darkscrub
+connFile=F:\www\darkscrub/includes/conn.php
 exists=YES

@@ -19,8 +19,9 @@ if (!customOrdersTableExists($conn, 'custom_order_photos')) {
 }
 
 $userId = (int) ($_SESSION['user_id'] ?? 0);
+$canDeleteAnyCustomOrderPhoto = auth_can('custom_orders.delete') || auth_can('custom_orders.manage');
 $photoStmt = $conn->prepare('
-  SELECT production_photo_id
+  SELECT production_photo_id, created_by
   FROM custom_order_photos
   WHERE id = ? AND custom_order_id = ? AND deleted_at IS NULL
   LIMIT 1
@@ -32,6 +33,12 @@ $photoStmt->close();
 if (!$photo) {
   http_response_code(404);
   echo json_encode(['ok' => false, 'error' => 'Photo not found.']);
+  exit;
+}
+
+if (!$canDeleteAnyCustomOrderPhoto && (int) ($photo['created_by'] ?? 0) !== $userId) {
+  http_response_code(403);
+  echo json_encode(['ok' => false, 'error' => 'No permission to delete this photo.']);
   exit;
 }
 

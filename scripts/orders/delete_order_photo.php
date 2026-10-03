@@ -28,6 +28,31 @@ require_once $connFile;
 require_once __DIR__ . '/access.php';
 
 $deletedBy = (int) ($_SESSION['user_id'] ?? 0);
+$canDeleteAnyOrderPhoto = auth_can('orders.manage');
+
+$photoStmt = $conn->prepare('
+  SELECT id, created_by
+  FROM order_photos
+  WHERE id = ? AND order_id = ? AND deleted_at IS NULL
+  LIMIT 1
+');
+if (!$photoStmt) {
+  out(500, ['ok' => false, 'error' => 'SQL prepare failed: ' . mysqli_error($conn)]);
+}
+$photoStmt->bind_param('ii', $photoId, $orderId);
+$photoStmt->execute();
+$photo = $photoStmt->get_result()->fetch_assoc();
+$photoStmt->close();
+
+if (!$photo) {
+  out(404, ['ok' => false, 'error' => 'Photo not found']);
+}
+
+$photoCreatedBy = (int) ($photo['created_by'] ?? 0);
+if (!$canDeleteAnyOrderPhoto && ($deletedBy <= 0 || $photoCreatedBy !== $deletedBy)) {
+  out(403, ['ok' => false, 'error' => 'No permission to delete this photo']);
+}
+
 $stmt = $conn->prepare('
   UPDATE order_photos
   SET deleted_at = NOW(), deleted_by = ?

@@ -292,7 +292,7 @@ $conn->commit();
 
 // Po prepočte načítame aktuálny traffic_summary_json a vrátime ho v odpovedi
 // — JS ho priamo aplikuje na badge v riadku tabuľky bez extra requestu
-$trafficStmt = $conn->prepare("SELECT traffic_summary_json, status FROM orders WHERE id = ? LIMIT 1");
+$trafficStmt = $conn->prepare("SELECT traffic_summary_json, status, status_override FROM orders WHERE id = ? LIMIT 1");
 $trafficStmt->bind_param('i', $orderId);
 $trafficStmt->execute();
 $trafficRow = $trafficStmt->get_result()->fetch_assoc();
@@ -307,6 +307,9 @@ if (!empty($trafficRow['traffic_summary_json'])) {
 }
 
 $orderStatus = strtoupper((string)($trafficRow['status'] ?? ''));
+$orderStatusLabel = ordersGetStatusLabel($conn, 'order', $orderStatus);
+$orderStatusColor = ordersGetStatusColor($conn, 'order', $orderStatus) ?: '#6c757d';
+$orderStatusOverride = (int)($trafficRow['status_override'] ?? 0) === 1;
 $departmentStatuses = [];
 $departmentColors = [];
 $departmentLabels = [];
@@ -361,6 +364,10 @@ echo json_encode([
     'order_id'        => $orderId,
     'traffic_summary' => $trafficSummary,
     'order_status'    => $orderStatus,
+    'order_status_label' => $orderStatusLabel,
+    'order_status_color' => $orderStatusColor,
+    'status_html' => ordersRenderStatusChip($conn, $orderStatus, 'xs'),
+    'status_override' => $orderStatusOverride,
     'department_statuses' => $departmentStatuses,
     'department_labels' => $departmentLabels,
     'department_colors' => $departmentColors,

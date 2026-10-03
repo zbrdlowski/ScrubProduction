@@ -833,6 +833,8 @@ function oi_merge_options_json(array $r): ?string {
         'itemTotalPriceVat', 'itemEan', 'itemPlu', 'itemSupplier',
         'itemUnitDiscountPriceWithVat', 'itemUnitDiscountPriceWithoutVat',
         'sourceName', 'salesChannelName', 'billVatIdValidationStatus',
+        // eBay note keys are normalized below to buyer-note / my-item-note.
+        'Buyer note', 'Buyer Note', 'My item note', 'My Item Note',
         // MxLocker order-level keys
         'Sale Date', 'Order Number', 'Item Title', 'Item Qty', 'Item State',
         'Buyer Name', 'Buyer Email', 'Gross Selling Price', 'Processing',
@@ -866,7 +868,58 @@ function oi_merge_options_json(array $r): ?string {
     }
   }
 
+  oi_fill_blank_option($opts, 'buyer-note', oi_first_nonempty(
+    $opts['buyer-note'] ?? null,
+    $opts['Buyer note'] ?? null,
+    $opts['Buyer Note'] ?? null,
+    $r['buyer-note'] ?? null,
+    $r['buyer_note'] ?? null,
+    $r['Buyer note'] ?? null,
+    $r['Buyer Note'] ?? null,
+    strtoupper((string)oi_trim($r['source'] ?? null)) === 'EBAY' ? ($r['customer_note'] ?? null) : null
+  ));
+
+  oi_fill_blank_option($opts, 'my-item-note', oi_first_nonempty(
+    $opts['my-item-note'] ?? null,
+    $opts['My item note'] ?? null,
+    $opts['My Item Note'] ?? null,
+    $r['my-item-note'] ?? null,
+    $r['my_item_note'] ?? null,
+    $r['My item note'] ?? null,
+    $r['My Item Note'] ?? null
+  ));
+
+  oi_fill_blank_option($opts, 'item_number', oi_first_nonempty(
+    $opts['item_number'] ?? null,
+    $opts['Item number'] ?? null,
+    $opts['Item Number'] ?? null,
+    $r['item_number'] ?? null,
+    $r['Item number'] ?? null,
+    $r['Item Number'] ?? null
+  ));
+
+  unset(
+    $opts['Buyer note'],
+    $opts['Buyer Note'],
+    $opts['My item note'],
+    $opts['My Item Note']
+  );
+
   return $opts ? json_encode($opts, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) : null;
+}
+
+function oi_fill_blank_option(array &$opts, string $key, ?string $value): void {
+  $value = oi_trim($value);
+  if ($value === null) {
+    return;
+  }
+
+  $existing = $opts[$key] ?? null;
+  if (is_scalar($existing) && oi_trim((string)$existing) !== null) {
+    return;
+  }
+
+  $opts[$key] = $value;
 }
 
 function oi_json_option_value(?string $json, string $key): ?string {

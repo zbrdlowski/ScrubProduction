@@ -22,6 +22,37 @@ function followup_decode_json_map(?string $raw): array
   return is_array($decoded) ? $decoded : [];
 }
 
+function followup_sanitize_child_source_meta(array $sourceMeta): array
+{
+  foreach ([
+    'custom_order_id',
+    'deposit_revision_limit',
+    'deposit_revision_used',
+    'deposit_total',
+    'upsell_subtotal',
+    'shipping_price',
+    'customs_ddp_amount',
+    'customs_ddp_note',
+    'financial_breakdown',
+    'payment_lines',
+    'paid_net',
+    'balance_due',
+    'total_price_with_vat',
+    'total_price_without_vat',
+    'total_vat',
+    'price_to_pay',
+    'amount_paid',
+    'payment_received_amount',
+    'paid',
+    'transaction_id',
+    'transaction_ids',
+  ] as $key) {
+    unset($sourceMeta[$key]);
+  }
+
+  return $sourceMeta;
+}
+
 function followup_build_order_number(mysqli $conn, string $baseNumber, string $followupCode): string
 {
   $baseNumber = trim($baseNumber);
@@ -177,6 +208,8 @@ while ($row = $addressRes->fetch_assoc()) {
 $stmt->close();
 
 $sourceMeta = followup_decode_json_map((string) ($sourceOrder['source_meta'] ?? ''));
+$parentCustomOrderId = (int) ($sourceMeta['custom_order_id'] ?? 0);
+$sourceMeta = followup_sanitize_child_source_meta($sourceMeta);
 $followupCode = $allowedTypes[$followupType];
 $newOrderNumber = followup_build_order_number(
   $conn,
@@ -194,7 +227,7 @@ $followupLabelMap = [
 $followupLabel = $followupLabelMap[$followupType] ?? $followupType;
 
 $selectedItemIds = array_map(static fn(array $item): int => (int) $item['id'], $itemsToClone);
-$sourceMeta['_followup'] = [
+$followupMeta = [
   'is_followup' => true,
   'parent_order_id' => $orderId,
   'parent_order_number' => (string) ($sourceOrder['order_number'] ?? ''),
@@ -206,6 +239,10 @@ $sourceMeta['_followup'] = [
   'created_by' => $userId,
   'selected_item_ids' => $selectedItemIds,
 ];
+if ($parentCustomOrderId > 0) {
+  $followupMeta['parent_custom_order_id'] = $parentCustomOrderId;
+}
+$sourceMeta['_followup'] = $followupMeta;
 $sourceMetaJson = json_encode($sourceMeta, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 
 $newTotal = 0.0;

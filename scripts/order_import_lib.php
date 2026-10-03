@@ -61,13 +61,13 @@ function oi_csv_read_assoc(string $path, string $encodingHint = 'UTF-8'): array 
   $semicolonCount = substr_count($firstLine, ';');
   $delimiter      = $semicolonCount > $commaCount ? ';' : ',';
 
-  $rawHeaders = fgetcsv($fh, 0, $delimiter);
+  $rawHeaders = fgetcsv($fh, 0, $delimiter, '"', '');
   if (!$rawHeaders) throw new RuntimeException("Empty CSV: $path");
   $headers = oi_normalize_headers($rawHeaders);
 
   $rows = [];
   $line = 1;
-  while (($row = fgetcsv($fh, 0, $delimiter)) !== false) {
+  while (($row = fgetcsv($fh, 0, $delimiter, '"', '')) !== false) {
     $line++;
     if (count($row) === 1 && trim((string)$row[0]) === '') continue;
 

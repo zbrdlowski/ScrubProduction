@@ -674,6 +674,8 @@ function customOrdersEnsureSchema(mysqli $conn): void
     'billing_phone' => "ADD COLUMN `billing_phone` varchar(64) DEFAULT NULL AFTER `billing_email`",
     'shipping_company_id' => "ADD COLUMN `shipping_company_id` varchar(128) DEFAULT NULL AFTER `shipping_company`",
     'shipping_state' => "ADD COLUMN `shipping_state` varchar(3) DEFAULT NULL AFTER `shipping_country`",
+    'customs_ddp_amount' => "ADD COLUMN `customs_ddp_amount` decimal(10,2) NOT NULL DEFAULT 0.00 AFTER `shipping_price`",
+    'customs_ddp_note' => "ADD COLUMN `customs_ddp_note` varchar(255) DEFAULT NULL AFTER `customs_ddp_amount`",
   ];
 
   $alterParts = [];
@@ -813,6 +815,8 @@ function customOrdersActivityFieldLabels(): array
     'shipping_phone' => 'Shipping phone',
     'shipping_method' => 'Shipping method',
     'shipping_price' => 'Shipping price',
+    'customs_ddp_amount' => 'Customs / DDP amount',
+    'customs_ddp_note' => 'Customs / DDP note',
     'currency' => 'Currency',
     'deposit_revision_limit' => 'Revisions included',
     'deposit_revision_used' => 'Revisions used',
@@ -942,7 +946,7 @@ function customOrdersActivityDisplayValue(string $field, $value): string
     return ((int) $value) === 1 ? 'Yes' : 'No';
   }
 
-  if (in_array($field, ['shipping_price', 'unit_price'], true) && is_numeric((string) $value)) {
+  if (in_array($field, ['shipping_price', 'unit_price', 'customs_ddp_amount'], true) && is_numeric((string) $value)) {
     return number_format((float) $value, 2, '.', '');
   }
 
@@ -1651,7 +1655,7 @@ function customOrdersGetOrder(mysqli $conn, int $orderId): ?array
   $order['photos'] = [];
   if (customOrdersTableExists($conn, 'custom_order_photos')) {
     $stmt = $conn->prepare('
-      SELECT id, file_name, original_name, file_path, mime_type, file_size, width, height, created_at, production_photo_id
+      SELECT id, file_name, original_name, file_path, mime_type, file_size, width, height, created_by, created_at, production_photo_id
       FROM custom_order_photos
       WHERE custom_order_id = ? AND deleted_at IS NULL
       ORDER BY id DESC
@@ -2036,11 +2040,15 @@ function customOrdersComputeSummary(array $order): array
   $paymentLines = customOrdersPaymentBreakdownLines((array) ($order['payments'] ?? []));
 
   $shipping = (float) ($order['shipping_price'] ?? 0);
-  $grossTotal = $itemSubtotal + $shipping;
+  $customsDdp = max(0.0, (float) ($order['customs_ddp_amount'] ?? 0));
+  $customsDdpNote = trim((string) ($order['customs_ddp_note'] ?? ''));
+  $grossTotal = $itemSubtotal + $shipping + $customsDdp;
 
   return [
     'item_subtotal' => $itemSubtotal,
     'shipping' => $shipping,
+    'customs_ddp' => $customsDdp,
+    'customs_ddp_note' => $customsDdpNote,
     'gross_total' => $grossTotal,
     'deposit_total' => $depositTotal,
     'payment_net' => $paymentNet,
@@ -2070,6 +2078,8 @@ function customOrdersFinancialBreakdownSnapshot(array $order, ?array $summary = 
     'accessories' => (float) ($typeTotals['T'] ?? 0),
     'other' => (float) ($typeTotals['M'] ?? 0),
     'shipping' => (float) ($summary['shipping'] ?? 0),
+    'customs_ddp' => (float) ($summary['customs_ddp'] ?? 0),
+    'customs_ddp_note' => (string) ($summary['customs_ddp_note'] ?? ($order['customs_ddp_note'] ?? '')),
     'deposits' => (float) ($summary['deposit_total'] ?? 0),
     'paid_net' => $paymentNet,
     'balance_due' => $grossTotal - $paymentNet,
@@ -2737,6 +2747,20 @@ function customOrdersSyncProductionHeader(mysqli $conn, int $customOrderId, int 
   $sourceMeta['social_handle'] = (string) ($orderData['social_handle'] ?? '');
   $sourceMeta['bike_photo_urls'] = (string) ($orderData['bike_photo_urls'] ?? '');
   $sourceMeta['reference_urls'] = (string) ($orderData['reference_urls'] ?? '');
+  $sourceMeta['customs_ddp_amount'] = max(0.0, (float) ($orderData['customs_ddp_amount'] ?? 0));
+  $sourceMeta['customs_ddp_note'] = trim((string) ($orderData['customs_ddp_note'] ?? ''));
+
+  $syncOrder = customOrdersGetOrder($conn, $customOrderId);
+  $syncSummary = is_array($syncOrder['summary'] ?? null) ? $syncOrder['summary'] : [];
+  $productionTotal = -1.0;
+  if ($syncOrder && $syncSummary) {
+    $productionTotal = (float) ($syncSummary['gross_total'] ?? 0);
+    $sourceMeta['shipping_price'] = (float) ($syncSummary['shipping'] ?? 0);
+    $sourceMeta['customs_ddp_amount'] = (float) ($syncSummary['customs_ddp'] ?? 0);
+    $sourceMeta['customs_ddp_note'] = (string) ($syncSummary['customs_ddp_note'] ?? $sourceMeta['customs_ddp_note']);
+    $sourceMeta['financial_breakdown'] = customOrdersFinancialBreakdownSnapshot($syncOrder, $syncSummary);
+  }
+
   $sourceMetaJson = json_encode($sourceMeta, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE);
   if ($sourceMetaJson === false) {
     $sourceMetaJson = '{}';
@@ -2751,6 +2775,7 @@ function customOrdersSyncProductionHeader(mysqli $conn, int $customOrderId, int 
     SET shipping_method = ?,
         payment_method = ?,
         note = ?,
+        total = CASE WHEN ? >= 0 THEN ? ELSE total END,
         source_meta = ?,
         customer_id = CASE WHEN ? > 0 THEN ? ELSE customer_id END
     WHERE id = ?
@@ -2759,7 +2784,7 @@ function customOrdersSyncProductionHeader(mysqli $conn, int $customOrderId, int 
   if (!$stmt) {
     throw new RuntimeException('Production order header sync could not be prepared.');
   }
-  $stmt->bind_param('ssssiii', $shippingMethod, $paymentMethod, $note, $sourceMetaJson, $customerId, $customerId, $productionOrderId);
+  $stmt->bind_param('sssddsiii', $shippingMethod, $paymentMethod, $note, $productionTotal, $productionTotal, $sourceMetaJson, $customerId, $customerId, $productionOrderId);
   $stmt->execute();
   $stmt->close();
 
@@ -2838,6 +2863,8 @@ function customOrdersExportToProduction(mysqli $conn, int $customOrderId, int $u
     'deposit_total' => (float) $summary['deposit_total'],
     'upsell_subtotal' => (float) $summary['upsell_subtotal'],
     'shipping_price' => (float) ($summary['shipping'] ?? 0),
+    'customs_ddp_amount' => (float) ($summary['customs_ddp'] ?? 0),
+    'customs_ddp_note' => (string) ($summary['customs_ddp_note'] ?? ''),
     'financial_breakdown' => customOrdersFinancialBreakdownSnapshot($order, $summary),
     'bike_photo_urls' => $order['bike_photo_urls'],
     'reference_urls' => $order['reference_urls'],

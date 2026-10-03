@@ -2830,6 +2830,39 @@ $deptOptions = [
         font-weight: 600;
       }
 
+      #ordersFilterForm .custom-country-select-wrap {
+        position: relative;
+        width: 100%;
+      }
+
+      #ordersFilterForm .custom-country-select-wrap .custom-country-select {
+        padding-left: 35px;
+      }
+
+      #ordersFilterForm .custom-country-select-wrap.no-flag .custom-country-select {
+        padding-left: .5rem;
+      }
+
+      #ordersFilterForm .custom-country-flag {
+        position: absolute;
+        left: 10px;
+        top: 50%;
+        z-index: 3;
+        width: 18px;
+        height: 13px;
+        transform: translateY(-50%);
+        border-radius: 2px;
+        background-position: 50%;
+        background-repeat: no-repeat;
+        background-size: cover;
+        box-shadow: 0 0 0 1px rgba(255, 255, 255, .18);
+        pointer-events: none;
+      }
+
+      #ordersFilterForm .custom-country-flag.is-empty {
+        display: none;
+      }
+
       #ordersFilterForm .bootstrap-datetimepicker-widget {
         z-index: 1080;
       }
@@ -3259,8 +3292,17 @@ $deptOptions = [
             <!-- 12. Country -->
             <div class="form-group <?= fActive($fCountry) ?>">
               <label class="small mb-1">Country</label>
-              <input class="form-control form-control-sm" name="country" value="<?= htmlspecialchars($fCountry) ?>"
-                placeholder="SK, US, DE…" maxlength="3" style="text-transform:uppercase;" />
+              <div class="custom-country-select-wrap no-flag">
+                <span class="custom-country-flag is-empty" data-country-flag aria-hidden="true"></span>
+                <select name="country"
+                  data-order-detail-country-select
+                  data-country-placeholder="— All —"
+                  class="form-control form-control-sm custom-country-select">
+                  <option value="<?= htmlspecialchars($fCountry, ENT_QUOTES, 'UTF-8') ?>" selected>
+                    <?= htmlspecialchars($fCountry !== '' ? $fCountry : '— All —', ENT_QUOTES, 'UTF-8') ?>
+                  </option>
+                </select>
+              </div>
             </div>
 
             <!-- 13. Payment -->
@@ -3780,6 +3822,7 @@ $deptOptions = [
                 . 'color:' . ordersContrastColor($statusColor) . ';';
               ?>
               <td class="text-center" data-status-cell="<?= $orderId ?>"
+                data-status-code="<?= htmlspecialchars($status, ENT_QUOTES, 'UTF-8') ?>"
                 data-status-color="<?= htmlspecialchars($statusColor, ENT_QUOTES, 'UTF-8') ?>"
                 data-status-label="<?= htmlspecialchars($statusLabel ?: '-', ENT_QUOTES, 'UTF-8') ?>">
                 <button type="button" class="btn btn-xs orders-status-chip" style="<?= $statusStyle ?> pointer-events:none;">
@@ -5581,7 +5624,13 @@ $deptOptions = [
             resp.order_status,
             resp.department_statuses,
             resp.department_labels,
-            resp.department_colors
+            resp.department_colors,
+            {
+              html: resp.status_html,
+              label: resp.order_status_label,
+              color: resp.order_status_color,
+              statusOverride: resp.status_override
+            }
           );
         }
 

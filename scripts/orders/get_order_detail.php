@@ -11,14 +11,6 @@ register_shutdown_function(function () {
   }
 });
 // pozor, odskoky v textarea sposobuje <div class="g-opt-note-display"> Ak dám formatovať dokument
-// DOČASNE — zmažať po diagnostike
-file_put_contents(
-  __DIR__ . '/debug.txt',
-  '__DIR__=' . __DIR__ . "\n" .
-  'base=' . dirname(__DIR__, 2) . "\n" .
-  'connFile=' . dirname(__DIR__, 2) . '/includes/conn.php' . "\n" .
-  'exists=' . (is_file(dirname(__DIR__, 2) . '/includes/conn.php') ? 'YES' : 'NO') . "\n"
-);
 session_start();
 header('Content-Type: application/json; charset=utf-8');
 function seatCoverOptionIsFilled($value): bool
@@ -55,6 +47,46 @@ function orderDetailMoneyValue($value): ?float
   }
 
   return is_numeric($value) ? (float) $value : null;
+}
+
+function orderDetailSourceMetaIsFollowup(array $sourceMeta): bool
+{
+  return is_array($sourceMeta['_followup'] ?? null) && !empty($sourceMeta['_followup']['is_followup']);
+}
+
+function orderDetailSanitizeFollowupSourceMeta(array $sourceMeta): array
+{
+  if (!orderDetailSourceMetaIsFollowup($sourceMeta)) {
+    return $sourceMeta;
+  }
+
+  foreach ([
+    'custom_order_id',
+    'deposit_revision_limit',
+    'deposit_revision_used',
+    'deposit_total',
+    'upsell_subtotal',
+    'shipping_price',
+    'customs_ddp_amount',
+    'customs_ddp_note',
+    'financial_breakdown',
+    'payment_lines',
+    'paid_net',
+    'balance_due',
+    'total_price_with_vat',
+    'total_price_without_vat',
+    'total_vat',
+    'price_to_pay',
+    'amount_paid',
+    'payment_received_amount',
+    'paid',
+    'transaction_id',
+    'transaction_ids',
+  ] as $key) {
+    unset($sourceMeta[$key]);
+  }
+
+  return $sourceMeta;
 }
 
 function orderDetailTableColumns(mysqli $conn, string $tableName): array
@@ -885,6 +917,7 @@ function orderDetailNormalizeCustomFinancialBreakdown(array $breakdown): array
     'accessories',
     'other',
     'shipping',
+    'customs_ddp',
     'deposits',
     'paid_net',
     'balance_due',
@@ -899,6 +932,10 @@ function orderDetailNormalizeCustomFinancialBreakdown(array $breakdown): array
   $currency = strtoupper(trim((string) ($breakdown['currency'] ?? '')));
   if ($currency !== '') {
     $normalized['currency'] = $currency;
+  }
+  $customsDdpNote = trim((string) ($breakdown['customs_ddp_note'] ?? ''));
+  if ($customsDdpNote !== '') {
+    $normalized['customs_ddp_note'] = $customsDdpNote;
   }
   if (is_array($breakdown['payment_lines'] ?? null)) {
     $paymentLines = orderDetailNormalizeCustomPaymentLines($breakdown['payment_lines']);
@@ -917,10 +954,20 @@ function orderDetailLoadCustomFinancialBreakdownFallback(mysqli $conn, array $so
     return [];
   }
 
+  $customOrderColumns = orderDetailTableColumns($conn, 'custom_orders');
+  $customsDdpSelect = in_array('customs_ddp_amount', $customOrderColumns, true)
+    ? 'COALESCE(co.customs_ddp_amount, 0)'
+    : '0';
+  $customsDdpNoteSelect = in_array('customs_ddp_note', $customOrderColumns, true)
+    ? 'COALESCE(co.customs_ddp_note, \'\')'
+    : "''";
+
   $stmt = $conn->prepare("
     SELECT
       co.currency,
       COALESCE(co.shipping_price, 0) AS shipping,
+      {$customsDdpSelect} AS customs_ddp,
+      {$customsDdpNoteSelect} AS customs_ddp_note,
       COALESCE(item_stats.graphics, 0) AS graphics,
       COALESCE(item_stats.plastics, 0) AS plastics,
       COALESCE(item_stats.seat_covers, 0) AS seat_covers,
@@ -977,7 +1024,8 @@ function orderDetailLoadCustomFinancialBreakdownFallback(mysqli $conn, array $so
     + (float) ($row['fitting'] ?? 0)
     + (float) ($row['accessories'] ?? 0)
     + (float) ($row['other_total'] ?? 0)
-    + (float) ($row['shipping'] ?? 0);
+    + (float) ($row['shipping'] ?? 0)
+    + (float) ($row['customs_ddp'] ?? 0);
   $paidNet = (float) ($row['paid_net'] ?? 0);
   $paymentLines = [];
   $paymentStmt = $conn->prepare("
@@ -1008,6 +1056,8 @@ function orderDetailLoadCustomFinancialBreakdownFallback(mysqli $conn, array $so
     'accessories' => (float) ($row['accessories'] ?? 0),
     'other' => (float) ($row['other_total'] ?? 0),
     'shipping' => (float) ($row['shipping'] ?? 0),
+    'customs_ddp' => (float) ($row['customs_ddp'] ?? 0),
+    'customs_ddp_note' => trim((string) ($row['customs_ddp_note'] ?? '')),
     'deposits' => (float) ($row['deposits'] ?? 0),
     'paid_net' => $paidNet,
     'balance_due' => $total - $paidNet,
@@ -1267,6 +1317,7 @@ require_once __DIR__ . '/manual_item_builder_helper.php';
 require_once __DIR__ . '/financial_helpers.php';
 
 $ordersCanManage = auth_can('orders.manage');
+$ordersCanWork = auth_can('orders.work');
 $ordersCanManageFinancials = auth_can('orders.financial');
 $ordersCanAdminister = auth_can('orders.admin');
 
@@ -1694,9 +1745,14 @@ $sourceMeta = json_decode((string) ($order['source_meta'] ?? ''), true);
 if (!is_array($sourceMeta)) {
   $sourceMeta = [];
 }
+$sourceMeta = orderDetailSanitizeFollowupSourceMeta($sourceMeta);
 
 $isCustomOrder = strtoupper(trim((string) ($order['source_code'] ?? ''))) === 'CUSTOM';
-$linkedCustomOrderId = $isCustomOrder ? orderDetailResolveCustomOrderId($conn, $order, $orderId, $sourceMeta) : 0;
+$isFollowupOrder = orderDetailSourceMetaIsFollowup($sourceMeta);
+$linkedCustomOrderId = ($isCustomOrder && !$isFollowupOrder) ? orderDetailResolveCustomOrderId($conn, $order, $orderId, $sourceMeta) : 0;
+if (!$isFollowupOrder && $linkedCustomOrderId > 0 && empty($sourceMeta['custom_order_id'])) {
+  $sourceMeta['custom_order_id'] = $linkedCustomOrderId;
+}
 $customOrderAppendOnlyNotes = orderDetailLoadCustomOrderNotes($conn, $linkedCustomOrderId);
 $customOrderNoteAuditViewerEmployeeIds = [3, 5];
 $canViewCustomOrderNoteAudit = $ordersCanAdminister
@@ -1709,7 +1765,8 @@ $visibleCustomOrderNotes = array_values(array_filter(
 ));
 $appendOnlyNotesMessageCount = count($visibleCustomOrderNotes);
 $customFinancialBreakdown = [];
-if ($isCustomOrder) {
+$customFinancialBreakdownFallback = [];
+if ($isCustomOrder && !$isFollowupOrder) {
   if (is_array($sourceMeta['financial_breakdown'] ?? null)) {
     $customFinancialBreakdown = orderDetailNormalizeCustomFinancialBreakdown($sourceMeta['financial_breakdown']);
   }
@@ -1728,12 +1785,35 @@ if ($isCustomOrder) {
       }
     }
   }
+  if (!isset($customFinancialBreakdown['customs_ddp']) && $linkedCustomOrderId > 0) {
+    if (empty($customFinancialBreakdownFallback)) {
+      $customFinancialBreakdownFallback = orderDetailLoadCustomFinancialBreakdownFallback($conn, $sourceMeta);
+    }
+    foreach (['shipping', 'customs_ddp', 'customs_ddp_note'] as $customsFallbackKey) {
+      if (array_key_exists($customsFallbackKey, $customFinancialBreakdownFallback)) {
+        $customFinancialBreakdown[$customsFallbackKey] = $customFinancialBreakdownFallback[$customsFallbackKey];
+      }
+    }
+  }
   if (!isset($sourceMeta['shipping_price']) && isset($customFinancialBreakdown['shipping'])) {
     $sourceMeta['shipping_price'] = $customFinancialBreakdown['shipping'];
   }
+  if (!isset($sourceMeta['customs_ddp_amount']) && isset($customFinancialBreakdown['customs_ddp'])) {
+    $sourceMeta['customs_ddp_amount'] = $customFinancialBreakdown['customs_ddp'];
+  }
+  if (!isset($sourceMeta['customs_ddp_note']) && isset($customFinancialBreakdown['customs_ddp_note'])) {
+    $sourceMeta['customs_ddp_note'] = $customFinancialBreakdown['customs_ddp_note'];
+  }
 }
+$customsDdpAmount = orderDetailMoneyValue($sourceMeta['customs_ddp_amount'] ?? null);
+if ($customsDdpAmount === null) {
+  $customsDdpAmount = orderDetailMoneyValue($customFinancialBreakdown['customs_ddp'] ?? null) ?? 0.0;
+}
+$customsDdpAmount = max(0.0, round((float) $customsDdpAmount, 2));
+$customsDdpNote = trim((string) ($sourceMeta['customs_ddp_note'] ?? ($customFinancialBreakdown['customs_ddp_note'] ?? '')));
+$customsDdpActive = $isCustomOrder && !$isFollowupOrder && $customsDdpAmount > 0.0;
 $customProductionPaymentLines = [];
-if ($isCustomOrder) {
+if ($isCustomOrder && !$isFollowupOrder) {
   $customProductionPaymentLines = orderDetailLoadCustomPaymentRows($conn, $linkedCustomOrderId);
   if (empty($customProductionPaymentLines) && is_array($customFinancialBreakdown['payment_lines'] ?? null)) {
     $customProductionPaymentLines = orderDetailNormalizeCustomPaymentLines($customFinancialBreakdown['payment_lines'], false);
@@ -1759,7 +1839,7 @@ $financialCustomsCalculatedTotal = (float) ($financialInfo['customs_calculated_t
 $financialTotalOverrideActive = (bool) $financialInfo['override_active'];
 $financialEffectiveTotal = (float) $financialInfo['effective_total'];
 $financialCustomsTotal = (float) ($financialInfo['customs_effective_total'] ?? $financialEffectiveTotal);
-$financialBreakdownTotal = $isCustomOrder ? $financialCalculatedTotal : $financialEffectiveTotal;
+$financialBreakdownTotal = ($isCustomOrder && !$isFollowupOrder) ? $financialCalculatedTotal : $financialEffectiveTotal;
 $financialSourceCurrency = (string) $financialInfo['source_currency'];
 $financialEffectiveCurrency = (string) $financialInfo['effective_currency'];
 $financialOverrideCurrency = (string) $financialInfo['override_currency'];
@@ -2165,10 +2245,17 @@ $orderValueBreakdown = [
   'fitting' => 0.0,
   'accessories' => 0.0,
   'other' => 0.0,
+  'customs_ddp' => 0.0,
 ];
 foreach ($items as $breakdownItem) {
   $lineValue = (float) ($breakdownItem['unit_price'] ?? 0) * max(1, (int) ($breakdownItem['qty'] ?? 1));
-  $itemDepartment = productSpecDepartmentForItemType((string) ($breakdownItem['item_type_code'] ?? ''));
+  $rawItemType = strtoupper(trim((string) ($breakdownItem['item_type_code'] ?? '')));
+  $itemDepartment = productSpecDepartmentForItemType($rawItemType);
+  if ($isCustomOrder && $rawItemType === 'T') {
+    $itemDepartment = 'T';
+  } elseif ($isCustomOrder && $rawItemType === 'M') {
+    $itemDepartment = 'M';
+  }
   if ($itemDepartment === 'G') {
     $orderValueBreakdown['graphics'] += $lineValue;
   } elseif ($itemDepartment === 'P') {
@@ -2177,16 +2264,21 @@ foreach ($items as $breakdownItem) {
     $orderValueBreakdown['seat_covers'] += $lineValue;
   } elseif ($itemDepartment === 'F') {
     $orderValueBreakdown['fitting'] += $lineValue;
+  } elseif ($itemDepartment === 'T') {
+    $orderValueBreakdown['accessories'] += $lineValue;
   } else {
     $orderValueBreakdown['other'] += $lineValue;
   }
 }
 $orderValueBreakdown['shipping'] = orderDetailMoneyValue($sourceMeta['shipping_price'] ?? null) ?? 0.0;
+$orderValueBreakdown['customs_ddp'] = $customsDdpAmount;
 $orderValueBreakdown['total'] = $financialBreakdownTotal;
 
 if (!empty($customFinancialBreakdown)) {
-  foreach (['graphics', 'plastics', 'seat_covers', 'fitting', 'accessories', 'other', 'shipping'] as $breakdownKey) {
-    $orderValueBreakdown[$breakdownKey] = (float) ($customFinancialBreakdown[$breakdownKey] ?? 0.0);
+  foreach (['shipping', 'customs_ddp'] as $breakdownKey) {
+    if (array_key_exists($breakdownKey, $customFinancialBreakdown)) {
+      $orderValueBreakdown[$breakdownKey] = (float) $customFinancialBreakdown[$breakdownKey];
+    }
   }
 }
 
@@ -2282,6 +2374,7 @@ if ($isShoptetOrder) {
 
   $shoptetShipping = orderDetailMoneyValue($sourceMeta['shipping_price'] ?? null) ?? 0.0;
   if ($shoptetShipping   > 0.0) $shoptetBreakdown[] = ['label' => 'Shipping',    'value' => $shoptetShipping];
+  if ($customsDdpAmount > 0.0) $shoptetBreakdown[] = ['label' => 'Customs / DDP', 'value' => $customsDdpAmount];
   if ($shoptetOther      > 0.0) $shoptetBreakdown[] = ['label' => 'Other',        'value' => $shoptetOther];
 }
 // ── koniec SHOPTET breakdown ──
@@ -2318,7 +2411,7 @@ if ($activePercentageBreakdown !== null) {
     + $orderValueBreakdown['accessories']
     + $orderValueBreakdown['other'];
   $percentageTotal = $financialBreakdownTotal > 0
-    ? $financialBreakdownTotal
+    ? max(0.0, $financialBreakdownTotal - $customsDdpAmount)
     : ($pricedItemsTotal > 0 ? $pricedItemsTotal : $orderValueBreakdown['total']);
   $totalCents       = (int) round($percentageTotal * 100);
   $allocatedCents   = 0;
@@ -2330,9 +2423,10 @@ if ($activePercentageBreakdown !== null) {
   $lastPercentageKey = end($nonZeroPercentageKeys);
 
   // Vynulujeme všetky breakdown kľúče — zobrazíme len tie, čo sú v konfigu
-  foreach (['graphics', 'plastics', 'seat_covers', 'fitting', 'accessories', 'shipping', 'other'] as $resetKey) {
+  foreach (['graphics', 'plastics', 'seat_covers', 'fitting', 'accessories', 'shipping', 'customs_ddp', 'other'] as $resetKey) {
     $orderValueBreakdown[$resetKey] = 0.0;
   }
+  $orderValueBreakdown['customs_ddp'] = $customsDdpAmount;
 
   foreach ($activePercentageBreakdown as $breakdownKey => $percentage) {
     $valueCents = $breakdownKey === $lastPercentageKey
@@ -2360,6 +2454,7 @@ if ($activePercentageBreakdown === null) {
       + $orderValueBreakdown['fitting']
       + $orderValueBreakdown['accessories']
       + $orderValueBreakdown['shipping']
+      + $orderValueBreakdown['customs_ddp']
       + $orderValueBreakdown['other'];
   }
 
@@ -2698,7 +2793,7 @@ $photoTableCheck = $conn->query("SHOW TABLES LIKE 'order_photos'");
 if ($photoTableCheck && $photoTableCheck->num_rows > 0) {
   $photoTableExists = true;
   $photoStmt = $conn->prepare("
-    SELECT id, file_name, original_name, file_path, mime_type, file_size, width, height, created_at
+    SELECT id, file_name, original_name, file_path, mime_type, file_size, width, height, created_by, created_at
     FROM order_photos
     WHERE order_id = ? AND deleted_at IS NULL
     ORDER BY id DESC
@@ -4249,6 +4344,27 @@ ob_start();
     color: rgba(255, 255, 255, .62) !important;
   }
 
+  .order-header-copy-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    margin-left: 4px;
+  }
+
+  .order-header-copy-btn {
+    width: 22px;
+    height: 20px;
+    padding: 0 !important;
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+    border: 1px solid rgba(23, 162, 184, .55) !important;
+    border-radius: 4px;
+    background: rgba(23, 162, 184, .08) !important;
+    color: #8fd7e6 !important;
+  }
+
   .order-summary-country {
     display: flex;
     align-items: center;
@@ -5184,7 +5300,11 @@ ob_start();
         <div class="col-lg-8 order-header-left-stack d-flex flex-column">
 
           <div class="order-header-summary order-summary-meta">
-            <?php $customerDisplayName = $order['customer_name'] ?: $order['customer_email'] ?: '-'; ?>
+            <?php
+            $customerDisplayName = $order['customer_name'] ?: $order['customer_email'] ?: '-';
+            $orderHeaderCopyNumber = trim((string) ($order['order_number'] ?? $order['external_order_id'] ?? $orderId));
+            $orderCustomerNameCopy = trim($orderHeaderCopyNumber . ($customerDisplayName !== '' && $customerDisplayName !== '-' ? ' ' . $customerDisplayName : ''));
+            ?>
             <div class="order-summary-meta-item">
               <span class="order-summary-label">Shipping</span>
               <div class="order-summary-value"><?php echo h($order['shipping_method'] ?? '-'); ?></div>
@@ -5212,8 +5332,14 @@ ob_start();
               <span class="order-summary-label">Customer</span>
               <div class="order-summary-value font-weight-bold">
                 <?php echo h($customerDisplayName); ?>
-                <button class="btn btn-xs btn-copy-inline ml-1" data-copy="<?php echo h($customerDisplayName); ?>"
-                  title="Copy customer name">📋</button>
+                <span class="order-header-copy-actions">
+                  <button type="button" class="btn btn-xs btn-outline-info btn-copy-inline order-header-copy-btn" data-copy="<?php echo h($customerDisplayName); ?>" title="Copy customer name" aria-label="Copy customer name">
+                    <i class="fas fa-copy" aria-hidden="true"></i>
+                  </button>
+                  <button type="button" class="btn btn-xs btn-outline-info btn-copy-inline order-header-copy-btn" data-copy="<?php echo h($orderCustomerNameCopy); ?>" title="Copy order number and customer name" aria-label="Copy order number and customer name">
+                    <i class="fas fa-copy" aria-hidden="true"></i>
+                  </button>
+                </span>
               </div>
               <?php if ($deliveryEmail !== ''): ?>
                 <div class="order-summary-line mt-1">
@@ -5234,6 +5360,15 @@ ob_start();
             <div class="order-summary-meta-item">
               <span class="order-summary-label">Payment</span>
               <div class="order-summary-value"><?php echo h($order['payment_method'] ?? '-'); ?></div>
+              <?php if ($customsDdpActive): ?>
+                <div class="order-summary-line mt-1 text-info">
+                  <i class="fas fa-file-invoice-dollar mr-1"></i><b>Customs / DDP:</b>
+                  <?php echo number_format($customsDdpAmount, 2, '.', ''); ?><?php echo h($orderCurrencySuffix); ?>
+                </div>
+                <?php if ($customsDdpNote !== ''): ?>
+                  <div class="order-summary-line small text-muted"><?php echo h($customsDdpNote); ?></div>
+                <?php endif; ?>
+              <?php endif; ?>
               <?php if ($followupLabel !== ''): ?>
                 <div class="mt-1">
                   <span class="badge badge-info"><?php echo h($followupLabel); ?></span>
@@ -5727,6 +5862,7 @@ ob_start();
                 'fitting'     => 'Fitting',
                 'accessories' => 'Accessories',
                 'shipping'    => 'Shipping',
+                'customs_ddp' => 'Customs / DDP',
                 'other'       => 'Other',
               ] as $breakdownKey => $breakdownLabel): ?>
                 <?php if (($orderValueBreakdown[$breakdownKey] ?? 0.0) > 0.0): ?>
@@ -5744,6 +5880,7 @@ ob_start();
                 'fitting'     => 'Fitting',
                 'accessories' => 'Accessories',
                 'shipping'    => 'Shipping',
+                'customs_ddp' => 'Customs / DDP',
                 'other'       => 'Other',
               ] as $breakdownKey => $breakdownLabel): ?>
                 <?php
@@ -6109,7 +6246,7 @@ ob_start();
             <div
               class="order-photos-card <?php echo $ordersCanManage ? 'order-photos-card-admin' : 'order-photos-card-user'; ?>"
               data-order-id="<?php echo (int) $orderId; ?>">
-          <?php if ($ordersCanManage): ?>
+          <?php if ($ordersCanWork): ?>
             <div class="order-photo-dropzone" data-order-id="<?php echo (int) $orderId; ?>">
               <input type="file" class="order-photo-input d-none" accept="image/jpeg,image/png,image/webp,image/gif" multiple>
               <div>
@@ -6124,12 +6261,15 @@ ob_start();
               <div class="order-photo-thumb-grid mt-2">
             <?php if (!empty($orderPhotos)): ?>
               <?php foreach ($orderPhotos as $photo): ?>
-                <?php $photoUrl = (string) ($photo['file_path'] ?? ''); ?>
+                <?php
+                $photoUrl = (string) ($photo['file_path'] ?? '');
+                $canDeletePhoto = $ordersCanManage || ($ordersCanWork && (int) ($photo['created_by'] ?? 0) === $currentUserId);
+                ?>
                 <div class="order-photo-thumb-wrap" data-photo-id="<?php echo (int) $photo['id']; ?>">
                   <img src="<?php echo h($photoUrl); ?>" class="order-photo-thumb"
                     data-full-src="<?php echo h($photoUrl); ?>"
                     alt="<?php echo h($photo['original_name'] ?? 'Order photo'); ?>">
-                  <?php if ($ordersCanManage): ?>
+                  <?php if ($canDeletePhoto): ?>
                     <button type="button" class="btn btn-xs btn-danger btn-delete-order-photo"
                       data-photo-id="<?php echo (int) $photo['id']; ?>" title="Delete photo">×</button>
                   <?php endif; ?>

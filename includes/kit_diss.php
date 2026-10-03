@@ -43,14 +43,93 @@
     </div>
   </div>
 
-  <script src="js/jquery-3.7.1.min.js"></script>
-  <script src="js/jquery.dataTables.min.js"></script>
-  <script src="js/bootstrap.bundle.min.js"></script>
   <script>
     let deleteId = null;
 
     $(document).ready(function () {
-      const table = $('#kitsTable').DataTable({
+      let table = null;
+
+      function reloadKitsTable() {
+        if (table) {
+          table.ajax.reload(null, false);
+        } else {
+          window.location.reload();
+        }
+      }
+
+      function hideKitModal(selector) {
+        const modalEl = document.querySelector(selector);
+        if (!modalEl) return;
+
+        if ($.fn.modal) {
+          $(modalEl).modal('hide');
+        }
+
+        if (window.bootstrap && window.bootstrap.Modal) {
+          const instance = typeof window.bootstrap.Modal.getInstance === 'function'
+            ? window.bootstrap.Modal.getInstance(modalEl)
+            : null;
+          if (instance) {
+            instance.hide();
+          } else if (typeof window.bootstrap.Modal.getOrCreateInstance === 'function') {
+            window.bootstrap.Modal.getOrCreateInstance(modalEl).hide();
+          }
+        }
+
+        setTimeout(function () {
+          modalEl.classList.remove('show');
+          modalEl.style.display = 'none';
+          modalEl.setAttribute('aria-hidden', 'true');
+          modalEl.removeAttribute('aria-modal');
+          document.body.classList.remove('modal-open');
+          document.body.style.removeProperty('padding-right');
+          document.querySelectorAll('.modal-backdrop').forEach(function (backdrop) {
+            backdrop.remove();
+          });
+        }, 180);
+      }
+
+      $(document).on('submit', '#addKitForm', function (e) {
+        e.preventDefault();
+
+        const form = this;
+        const $form = $(form);
+        const $submit = $form.find('button[type="submit"]');
+        const originalText = $submit.html();
+
+        $submit.prop('disabled', true).text('Adding...');
+
+        $.ajax({
+          url: 'scripts/add_kit.php',
+          method: 'POST',
+          dataType: 'json',
+          data: $form.serialize()
+        })
+          .done(function (response) {
+            if (!response || !response.ok) {
+              alert(response && response.error ? response.error : 'Unable to add disassembled kit.');
+              return;
+            }
+
+            hideKitModal('#addKitModal');
+            form.reset();
+            reloadKitsTable();
+          })
+          .fail(function (xhr) {
+            const response = xhr.responseJSON || {};
+            alert(response.error || xhr.responseText || 'Add request failed.');
+          })
+          .always(function () {
+            $submit.prop('disabled', false).html(originalText);
+          });
+      });
+
+      if (!$.fn.DataTable) {
+        alert('DataTables plugin is not loaded. The Kit Diss table cannot start.');
+        return;
+      }
+
+      table = $('#kitsTable').DataTable({
         ajax: 'scripts/fetch_kits.php',
         columns: [
         { data: 'timestamp' },
@@ -102,25 +181,15 @@
   });
 });
 
-      $('#addKitForm').submit(function (e) {
-        e.preventDefault();
-        const formData = $(this).serialize();
-        $.post('scripts/add_kit.php', formData, function (response) {
-            $('#addKitModal').modal('hide');
-            $('#addKitForm')[0].reset();
-            $('#kitsTable').DataTable().ajax.reload();
-        });
-        });
-
       $('#kitsTable').on('click', '.delete-btn', function () {
         deleteId = $(this).data('id');
-        new bootstrap.Modal(document.getElementById('confirmDelete')).show();
+        $('#confirmDelete').modal('show');
       });
 
       $('#deleteConfirmBtn').click(function () {
         $.post('scripts/delete_kits.php', { id: deleteId }, () => {
           $('#confirmDelete').modal('hide');
-          table.ajax.reload();
+          reloadKitsTable();
         });
       });
     });

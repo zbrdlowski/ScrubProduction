@@ -256,8 +256,191 @@ if (isset($conn) && $conn instanceof mysqli) {
       height: 40px;
       object-fit: cover;
     }
+
+    .fullscreen-restore-button {
+      position: fixed;
+      top: 4.25rem;
+      right: 1rem;
+      z-index: 1081;
+      box-shadow: 0 .5rem 1rem rgba(0, 0, 0, .25);
+    }
   </style>
   <script>
+(() => {
+    const fullscreenPreferenceKey = 'darkscrub.fullscreenPreferred';
+    const restoreButtonId = 'darkscrubFullscreenRestore';
+    let leavingPage = false;
+    let restoreArmed = false;
+
+    function fullscreenElement() {
+        return document.fullscreenElement ||
+            document.webkitFullscreenElement ||
+            document.mozFullScreenElement ||
+            document.msFullscreenElement;
+    }
+
+    function setFullscreenPreference(enabled) {
+        try {
+            sessionStorage.setItem(fullscreenPreferenceKey, enabled ? '1' : '0');
+        } catch (e) {
+            // sessionStorage can be unavailable in stricter browser modes.
+        }
+    }
+
+    function wantsFullscreen() {
+        try {
+            return sessionStorage.getItem(fullscreenPreferenceKey) === '1';
+        } catch (e) {
+            return false;
+        }
+    }
+
+    function requestDocumentFullscreen() {
+        const root = document.documentElement;
+        const request = root.requestFullscreen ||
+            root.webkitRequestFullscreen ||
+            root.mozRequestFullScreen ||
+            root.msRequestFullscreen;
+
+        if (!request) {
+            return Promise.reject(new Error('Fullscreen is not supported.'));
+        }
+
+        const result = request.call(root);
+        return result && typeof result.then === 'function' ? result : Promise.resolve();
+    }
+
+    function hideRestoreButton() {
+        $('#' + restoreButtonId).remove();
+    }
+
+    function showRestoreButton() {
+        if ($('#' + restoreButtonId).length || fullscreenElement() || !wantsFullscreen()) {
+            return;
+        }
+
+        $('body').append(
+            '<button type="button" class="btn btn-primary btn-sm fullscreen-restore-button" id="' + restoreButtonId + '">' +
+                '<i class="fas fa-expand-arrows-alt mr-1"></i> Obnoviť fullscreen' +
+            '</button>'
+        );
+    }
+
+    function restoreFullscreen() {
+        if (fullscreenElement() || !wantsFullscreen()) {
+            hideRestoreButton();
+            return Promise.resolve();
+        }
+
+        return requestDocumentFullscreen()
+            .then(function () {
+                setFullscreenPreference(true);
+                hideRestoreButton();
+            })
+            .catch(function () {
+                showRestoreButton();
+            });
+    }
+
+    function isPageNavigation(target) {
+        const link = $(target).closest('a[href]')[0];
+
+        if (!link) {
+            return false;
+        }
+
+        const href = link.getAttribute('href') || '';
+        const targetAttr = (link.getAttribute('target') || '').toLowerCase();
+
+        return href !== '' &&
+            href.charAt(0) !== '#' &&
+            href.toLowerCase().indexOf('javascript:') !== 0 &&
+            (!targetAttr || targetAttr === '_self');
+    }
+
+    function armRestoreOnNextGesture() {
+        if (restoreArmed) {
+            return;
+        }
+
+        restoreArmed = true;
+
+        $(document).on('click.darkscrubFullscreenRestore keydown.darkscrubFullscreenRestore touchend.darkscrubFullscreenRestore', function (event) {
+            if (!wantsFullscreen() || fullscreenElement()) {
+                $(document).off('.darkscrubFullscreenRestore');
+                restoreArmed = false;
+                return;
+            }
+
+            if (event.type === 'keydown' && (event.key === 'Escape' || event.key === 'Esc')) {
+                setFullscreenPreference(false);
+                hideRestoreButton();
+                $(document).off('.darkscrubFullscreenRestore');
+                restoreArmed = false;
+                return;
+            }
+
+            if ($(event.target).closest('#' + restoreButtonId).length || isPageNavigation(event.target)) {
+                return;
+            }
+
+            restoreFullscreen();
+        });
+    }
+
+    $(document).on('click.darkscrubFullscreenPreference', '[data-widget="fullscreen"]', function () {
+        setFullscreenPreference(!fullscreenElement());
+    });
+
+    $(document).on('click.darkscrubFullscreenRestoreButton', '#' + restoreButtonId, function (event) {
+        event.preventDefault();
+        restoreFullscreen();
+    });
+
+    $(document).on('mousedown.darkscrubFullscreenNavigation click.darkscrubFullscreenNavigation', 'a[href]', function (event) {
+        if (wantsFullscreen() && fullscreenElement() && isPageNavigation(event.target)) {
+            leavingPage = true;
+        }
+    });
+
+    $(document).on('submit.darkscrubFullscreenNavigation', 'form', function () {
+        if (wantsFullscreen() && fullscreenElement()) {
+            leavingPage = true;
+        }
+    });
+
+    $(window).on('beforeunload.darkscrubFullscreenNavigation pagehide.darkscrubFullscreenNavigation', function () {
+        if (wantsFullscreen()) {
+            leavingPage = true;
+        }
+    });
+
+    $(document).on('keydown.darkscrubFullscreenPreference', function (event) {
+        if ((event.key === 'Escape' || event.key === 'Esc') && fullscreenElement()) {
+            setFullscreenPreference(false);
+        }
+    });
+
+    $(document).on('webkitfullscreenchange mozfullscreenchange fullscreenchange MSFullscreenChange', function () {
+        if (fullscreenElement()) {
+            setFullscreenPreference(true);
+            hideRestoreButton();
+        } else if (!leavingPage) {
+            setFullscreenPreference(false);
+        }
+    });
+
+    $(document).ready(function () {
+        if (!wantsFullscreen() || fullscreenElement()) {
+            return;
+        }
+
+        showRestoreButton();
+        armRestoreOnNextGesture();
+        setTimeout(restoreFullscreen, 100);
+    });
+})();
+
 let chatNotifInitialized = false;
 let seenChatNotificationKeys = new Set();
 let chatNotificationPermissionRequested = false;

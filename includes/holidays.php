@@ -430,7 +430,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $holidayHasTable) {
     holidayRedirect($returnUrl);
   }
 
-  if ($action === 'update_holiday_note' && !$holidayCanManage) {
+  if ($action === 'update_holiday_note') {
     if (empty($requestIds)) {
       $singleRequestId = intval($_POST['request_id'] ?? 0);
       if ($singleRequestId > 0) {
@@ -1268,13 +1268,13 @@ for ($i = 0; $i < 6; $i++) {
                 $myRequestIds = $request['request_ids'] ?? [intval($request['id'])];
                 $myRequestStatus = (string) ($request['status'] ?? '');
                 $myRequestType = (string) ($request['request_type'] ?? '');
-                $myRequestIsUserEditable = !$holidayCanManage
-                  && in_array($myRequestStatus, ['pending', 'approved'], true)
+                $myRequestHasEditableDates = in_array($myRequestStatus, ['pending', 'approved'], true)
                   && in_array($myRequestType, ['holiday', 'toil', 'doctor', 'other'], true)
                   && (string) ($request['end_date'] ?? '') >= date('Y-m-d');
+                $myRequestCanEditNote = $myRequestHasEditableDates;
                 $myRequestCanCancel = $holidayCanManage
                   ? $myRequestStatus === 'pending'
-                  : $myRequestIsUserEditable;
+                  : $myRequestHasEditableDates;
                 ?>
                 <tr>
                   <td><?= htmlspecialchars(holidayTypeLabel($request['request_type'])) ?></td>
@@ -1283,7 +1283,7 @@ for ($i = 0; $i < 6; $i++) {
                   </td>
                   <td><?= holidayStatusBadge($request['status']) ?></td>
                   <td>
-                    <?php if ($myRequestIsUserEditable): ?>
+                    <?php if ($myRequestCanEditNote): ?>
                       <form method="POST" class="holiday-note-edit-form">
                         <input type="hidden" name="action" value="update_holiday_note">
                         <?php foreach ($myRequestIds as $requestId): ?>

@@ -76,6 +76,7 @@ $customOrderTabSets = [
   ['draft_x', 'draft_ad_changes', 'draft_ready', 'draft_sent'],
   ['contact_customer', 'customer_contacted'],
 ];
+$customOrderNumberAssignedDateTabs = array_fill_keys(['open_so', 'draft_x', 'draft_ad_changes', 'draft_ready', 'draft_sent'], true);
 $customOrderDraftTabCodes = ['DRAFT_X', 'DRAFT_AD_CHANGES', 'DRAFT_READY', 'DRAFT_SENT'];
 $customOrderComplexityOptions = [
   1 => 'Standard',
@@ -177,6 +178,7 @@ $editItem = null;
 $relatedOrders = [];
 $moduleLoadError = null;
 $customOrdersProductionDepartmentStatusMap = [];
+$customOrdersUseOfficialNumberAssignedOrder = false;
 
 $where = [];
 $sequences = ['SO' => 0, 'GO' => 0, 'SC' => 0];
@@ -300,6 +302,7 @@ try {
       po.traffic_light AS production_traffic_light,
       po.traffic_blocker AS production_traffic_blocker,
       po.traffic_summary_json AS production_traffic_summary_json,
+      number_activity.official_number_assigned_at,
       coa.id AS custom_order_assignment_id,
       coa.employee_id AS assigned_employee_id,
       TRIM(CONCAT_WS(' ', eca.firstname, eca.lastname)) AS assigned_employee_name,
@@ -309,6 +312,14 @@ try {
     LEFT JOIN orders po ON po.id = co.production_order_id
     LEFT JOIN custom_order_assignments coa ON coa.custom_order_id = co.id
     LEFT JOIN employees eca ON eca.id = coa.employee_id
+    LEFT JOIN (
+      SELECT
+        custom_order_id,
+        MIN(created_at) AS official_number_assigned_at
+      FROM custom_order_activity
+      WHERE action = 'official_number_assigned'
+      GROUP BY custom_order_id
+    ) number_activity ON number_activity.custom_order_id = co.id
     LEFT JOIN (
       SELECT
         custom_order_id,
@@ -335,9 +346,13 @@ try {
   if ($where) {
     $sql .= ' WHERE ' . implode(' AND ', $where);
   }
-  // Keep the newest 300 records available, but base their stable display order
-  // on the original creation time. Saving an order must not move it in the list.
-  $sql .= ' ORDER BY co.created_at DESC, co.id DESC LIMIT 300';
+  // Open SO and draft workflow tabs follow the moment the official number was assigned.
+  // Other tabs keep their stable creation order, so later edits never move their rows.
+  $customOrdersUseOfficialNumberAssignedOrder = isset($customOrderNumberAssignedDateTabs[$tabFilter]);
+  $listOrderDateSql = $customOrdersUseOfficialNumberAssignedOrder
+    ? 'COALESCE(number_activity.official_number_assigned_at, co.created_at)'
+    : 'co.created_at';
+  $sql .= ' ORDER BY ' . $listOrderDateSql . ' DESC, co.id DESC LIMIT 300';
   $res = $conn->query($sql);
   if (!$res) {
     throw new RuntimeException('Custom orders list query failed: ' . $conn->error);
@@ -551,6 +566,7 @@ try {
           co.customer_country,
           co.currency,
           co.shipping_price,
+          COALESCE(co.customs_ddp_amount, 0) AS customs_ddp_amount,
           co.updated_at,
           co.production_order_id,
           TRIM(CONCAT_WS(' ', eo.firstname, eo.lastname)) AS owner_name,
@@ -767,6 +783,8 @@ function customOrderHelpMap(string $lang = 'sk'): array
     'shipping_phone' => 'Volitelny telefon pre dorucenie, odporucany.',
     'shipping_method' => 'Sposob dopravy, napr. FedEx Economy, FedEx Express, DHL.',
     'shipping_price' => 'Cena dopravy bez meny, napr. 14.90.',
+    'customs_ddp_amount' => 'Priplatok za colne jednanie / DDP. Ak je 0, nikde sa nezobrazuje.',
+    'customs_ddp_note' => 'Kratka poznamka k colnemu jednaniu, napr. UK DDP, Israel customs handling.',
     'deposit_revision_limit' => 'Kolko uprav dizajnu je zahrnutych v aktualnom deposite. Standardne 3.',
     'deposit_revision_used' => 'Kolko uprav uz zakaznik minul. Pri prekroceni treba dalsi extra deposit.',
     'last_contact_at' => 'Kedy prebehla posledna komunikacia so zakaznikom.',
@@ -893,6 +911,8 @@ function customOrderHelpMap(string $lang = 'sk'): array
     'shipping_phone' => 'Optional delivery phone number, recommended.',
     'shipping_method' => 'Shipping method, for example FedEx Economy, FedEx Express, DHL.',
     'shipping_price' => 'Shipping price without currency, for example 14.90.',
+    'customs_ddp_amount' => 'Customs / DDP handling charge. If it is 0, it stays hidden.',
+    'customs_ddp_note' => 'Short customs note, for example UK DDP or Israel customs handling.',
     'deposit_revision_limit' => 'How many design revisions are included in the current deposit. Standard is 3.',
     'deposit_revision_used' => 'How many revisions the customer has already used. If exceeded, an extra deposit is required.',
     'last_contact_at' => 'When the last communication with the customer happened.',
@@ -2078,6 +2098,34 @@ if (!$customOrdersDetailRequest && !$customOrdersFullPageDetail) {
 
   .btn-copy-inline {
     transition: color .18s ease, text-shadow .18s ease, transform .18s ease;
+  }
+
+  .custom-header-label-row {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    min-height: 19px;
+    margin-bottom: .5rem;
+  }
+
+  .custom-header-label-row label {
+    margin-bottom: 0;
+  }
+
+  .custom-header-copy-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+  }
+
+  .custom-header-copy-btn {
+    width: 22px;
+    height: 20px;
+    padding: 0 !important;
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
   }
 
   .btn-copy-inline.is-copied {
@@ -4380,7 +4428,7 @@ if (!$customOrdersDetailRequest && !$customOrdersFullPageDetail) {
                 </div>
                 <div class="custom-order-meta">
                   Items <?= (int) $row['item_count'] ?> | Total
-                  <?= number_format((float) (($row['item_total'] ?? 0) + ($row['shipping_price'] ?? 0)), 2) ?>
+                  <?= number_format((float) (($row['item_total'] ?? 0) + ($row['shipping_price'] ?? 0) + ($row['customs_ddp_amount'] ?? 0)), 2) ?>
                   <?= h($row['currency'] ?: '') ?>
                 </div>
               </a>
@@ -4416,7 +4464,7 @@ if (!$customOrdersDetailRequest && !$customOrdersFullPageDetail) {
           <div class="panel-body">
             <div class="d-flex justify-content-between align-items-center mb-3">
               <div class="custom-order-section-title mb-0">Orders List</div>
-              <div class="text-muted small">Showing up to 300 latest matching rows, oldest updates first</div>
+              <div class="text-muted small">Showing up to 300 latest matching rows, <?= $customOrdersUseOfficialNumberAssignedOrder ? 'oldest number assignments first' : 'oldest creations first' ?></div>
             </div>
             <div class="table-responsive custom-orders-list-table-wrap">
               <table id="customOrdersTable" class="table table-sm table-dark table-striped custom-mini-table mb-0">
@@ -4441,8 +4489,10 @@ if (!$customOrdersDetailRequest && !$customOrdersFullPageDetail) {
                   <?php foreach ($listRows as $row): ?>
                     <?php
                     $rowUrl = customOrderBuildUrl((int) $row['id'], ['edit_item_id' => null]);
-                    $rowCreatedAt = (string) ($row['created_at'] ?? '');
-                    $rowDayTime = $rowCreatedAt !== '' ? strtotime($rowCreatedAt) : false;
+                    $rowListDate = $customOrdersUseOfficialNumberAssignedOrder
+                      ? (string) (($row['official_number_assigned_at'] ?? '') ?: ($row['created_at'] ?? ''))
+                      : (string) ($row['created_at'] ?? '');
+                    $rowDayTime = $rowListDate !== '' ? strtotime($rowListDate) : false;
                     $rowDayKey = $rowDayTime !== false ? date('Y-m-d', $rowDayTime) : 'unknown';
                     $rowDayLabel = $rowDayTime !== false ? date('d.m.Y', $rowDayTime) : 'Unknown date';
                     ?>
@@ -4623,7 +4673,7 @@ if (!$customOrdersDetailRequest && !$customOrdersFullPageDetail) {
                         <?php endif; ?>
                       </td>
                       <td><?= (int) $row['item_count'] ?></td>
-                      <td><?= number_format((float) (($row['item_total'] ?? 0) + ($row['shipping_price'] ?? 0)), 2) ?> <?= h($row['currency'] ?: '') ?></td>
+                      <td><?= number_format((float) (($row['item_total'] ?? 0) + ($row['shipping_price'] ?? 0) + ($row['customs_ddp_amount'] ?? 0)), 2) ?> <?= h($row['currency'] ?: '') ?></td>
                       <td><?= h(date('d.m.Y H:i', strtotime((string) $row['updated_at']))) ?></td>
                     </tr>
                     <tr class="custom-order-detail-row" data-detail-order-id="<?= (int) $row['id'] ?>">
@@ -4661,6 +4711,10 @@ if (!$customOrdersDetailRequest && !$customOrdersFullPageDetail) {
         }
         $customOfficialNumber = trim((string) ($selectedOrder['official_order_number'] ?? ''));
         $customDisplayNumber = (string) ($customOfficialNumber !== '' ? $customOfficialNumber : $selectedOrder['internal_code']);
+        $customCustomerNameCopy = trim((string) ($selectedOrder['customer_name'] ?? ''));
+        $customSocialHandleCopy = trim((string) ($selectedOrder['social_handle'] ?? ''));
+        $customOrderAndCustomerNameCopy = trim($customDisplayNumber . ($customCustomerNameCopy !== '' ? ' ' . $customCustomerNameCopy : ''));
+        $customOrderAndNickCopy = trim($customDisplayNumber . ($customSocialHandleCopy !== '' ? ' ' . $customSocialHandleCopy : ''));
         $customOfficialNumberLocked = (int) ($selectedOrder['production_order_id'] ?? 0) > 0;
         $customOfficialNumberEditable = $customOrdersCanManage && $customOfficialNumber !== '' && !$customOfficialNumberLocked;
         $customHeaderHasInvalid = (bool) array_intersect_key($invalidFields, array_flip([
@@ -4793,10 +4847,26 @@ if (!$customOrdersDetailRequest && !$customOrdersFullPageDetail) {
 
                       <div class="row">
                         <div class="col-md-4">
-                          <div class="form-group custom-twin-header-column-lead"><label>Customer name<?= customOrderHelp('customer_name') ?></label><input name="customer_name" class="form-control form-control-sm" value="<?= h($selectedOrder['customer_name']) ?>" placeholder="Customer name"></div>
+                          <div class="form-group custom-twin-header-column-lead"><label for="custom-order-customer-name-<?= (int) $selectedOrder['id'] ?>">Customer name<?= customOrderHelp('customer_name') ?></label><input id="custom-order-customer-name-<?= (int) $selectedOrder['id'] ?>" name="customer_name" class="form-control form-control-sm" value="<?= h($selectedOrder['customer_name']) ?>" placeholder="Customer name"></div>
                         </div>
                         <div class="col-md-4">
-                          <div class="form-group custom-twin-header-column-lead"><label>Nick<?= customOrderHelp('social_handle') ?></label><input name="social_handle" class="form-control form-control-sm" value="<?= h($selectedOrder['social_handle']) ?>" placeholder="Nick"></div>
+                          <div class="form-group custom-twin-header-column-lead">
+                            <div class="custom-header-label-row">
+                              <label for="custom-order-social-handle-<?= (int) $selectedOrder['id'] ?>">Nick<?= customOrderHelp('social_handle') ?></label>
+                              <span class="custom-header-copy-actions">
+                                <button type="button" class="btn btn-xs btn-outline-info btn-copy-inline custom-header-copy-btn" data-copy="<?= h($customSocialHandleCopy) ?>" data-copy-input="#custom-order-social-handle-<?= (int) $selectedOrder['id'] ?>" title="Copy nick" aria-label="Copy nick">
+                                  <i class="fas fa-copy" aria-hidden="true"></i>
+                                </button>
+                                <button type="button" class="btn btn-xs btn-outline-info btn-copy-inline custom-header-copy-btn" data-copy="<?= h($customOrderAndNickCopy) ?>" data-copy-input="#custom-order-social-handle-<?= (int) $selectedOrder['id'] ?>" data-copy-prefix="<?= h($customDisplayNumber) ?>" title="Copy order number and nick" aria-label="Copy order number and nick">
+                                  <i class="fas fa-copy" aria-hidden="true"></i>
+                                </button>
+                                <button type="button" class="btn btn-xs btn-outline-info btn-copy-inline custom-header-copy-btn" data-copy="<?= h($customOrderAndCustomerNameCopy) ?>" data-copy-input="#custom-order-customer-name-<?= (int) $selectedOrder['id'] ?>" data-copy-prefix="<?= h($customDisplayNumber) ?>" title="Copy order number and customer name" aria-label="Copy order number and customer name">
+                                  <i class="fas fa-copy" aria-hidden="true"></i>
+                                </button>
+                              </span>
+                            </div>
+                            <input id="custom-order-social-handle-<?= (int) $selectedOrder['id'] ?>" name="social_handle" class="form-control form-control-sm" value="<?= h($selectedOrder['social_handle']) ?>" placeholder="Nick">
+                          </div>
                         </div>
                         <div class="col-md-4">
                           <div class="form-group custom-twin-header-column-lead"><label>Source channel<?= customOrderHelp('source_channel') ?></label><select name="source_channel" class="form-control form-control-sm"><option value="">Select source...</option><?php foreach (customOrderOptionsWithCurrent($customOrderSourceChannels, (string) $selectedOrder['source_channel']) as $sourceChannel): ?><option value="<?= h($sourceChannel) ?>" <?= (string) $selectedOrder['source_channel'] === $sourceChannel ? 'selected' : '' ?>><?= h($sourceChannel) ?></option><?php endforeach; ?></select></div>
@@ -4820,6 +4890,10 @@ if (!$customOrdersDetailRequest && !$customOrdersFullPageDetail) {
                           <div class="form-row mt-1">
                             <div class="form-group col-md-8 mb-1"><label>Shipping Price<?= customOrderHelp('shipping_price') ?></label><input type="number" step="0.01" name="shipping_price" class="form-control form-control-sm" value="<?= h($selectedOrder['shipping_price']) ?>"></div>
                             <div class="form-group col-md-4 mb-1"><label>Shipping Method<?= customOrderHelp('shipping_method') ?></label><select name="shipping_method" class="form-control form-control-sm"><?php foreach (customOrderOptionsWithCurrent($customOrderShippingMethods, (string) $selectedOrder['shipping_method']) as $shippingMethod): ?><option value="<?= h($shippingMethod) ?>" <?= (string) $selectedOrder['shipping_method'] === $shippingMethod ? 'selected' : '' ?>><?= h($shippingMethod) ?></option><?php endforeach; ?></select></div>
+                          </div>
+                          <div class="form-row">
+                            <div class="form-group col-md-4 mb-1"><label>Customs / DDP<?= customOrderHelp('customs_ddp_amount') ?></label><input type="number" step="0.01" name="customs_ddp_amount" class="form-control form-control-sm" value="<?= h(number_format((float) ($selectedOrder['customs_ddp_amount'] ?? 0), 2, '.', '')) ?>"></div>
+                            <div class="form-group col-md-8 mb-1"><label>DDP Note<?= customOrderHelp('customs_ddp_note') ?></label><input type="text" name="customs_ddp_note" class="form-control form-control-sm" value="<?= h((string) ($selectedOrder['customs_ddp_note'] ?? '')) ?>" placeholder="UK DDP / customs handling"></div>
                           </div>
                         </div>
                         <div class="col-md-6">
@@ -4857,6 +4931,9 @@ if (!$customOrdersDetailRequest && !$customOrdersFullPageDetail) {
                     <?php if ($customTypeTotals[$typeCode] > 0): ?><div class="custom-order-value-breakdown-row"><span><?= h($typeLabel) ?>:</span><span><?= number_format($customTypeTotals[$typeCode], 2) ?> <?= h($selectedOrder['currency']) ?></span></div><?php endif; ?>
                   <?php endforeach; ?>
                   <div class="custom-order-value-breakdown-row"><span>Shipping:</span><span><?= number_format((float) $summary['shipping'], 2) ?> <?= h($selectedOrder['currency']) ?></span></div>
+                  <?php if ((float) ($summary['customs_ddp'] ?? 0) > 0): ?>
+                    <div class="custom-order-value-breakdown-row"><span>Customs / DDP:</span><span><?= number_format((float) $summary['customs_ddp'], 2) ?> <?= h($selectedOrder['currency']) ?></span></div>
+                  <?php endif; ?>
                   <hr style="border-color:rgba(255,255,255,.14);">
                   <?php if (!empty($customPaymentLines)): ?>
                     <?php foreach ($customPaymentLines as $customPaymentLine): ?>
@@ -4900,7 +4977,7 @@ if (!$customOrdersDetailRequest && !$customOrdersFullPageDetail) {
                     <?php foreach (($selectedOrder['photos'] ?? []) as $photo): ?>
                       <div class="custom-order-photo-wrap" data-photo-id="<?= (int) $photo['id'] ?>">
                         <img src="<?= h((string) $photo['file_path']) ?>" class="custom-order-photo-thumb" data-full-src="<?= h((string) $photo['file_path']) ?>" alt="<?= h((string) ($photo['original_name'] ?? 'Order photo')) ?>">
-                        <?php if ($customOrdersCanManage): ?><button type="button" class="btn btn-xs btn-danger custom-order-photo-delete" data-photo-id="<?= (int) $photo['id'] ?>" title="Delete photo">&times;</button><?php endif; ?>
+                        <?php if ($customOrdersCanManage || ((int) ($photo['created_by'] ?? 0) === $customOrdersCurrentUserId)): ?><button type="button" class="btn btn-xs btn-danger custom-order-photo-delete" data-photo-id="<?= (int) $photo['id'] ?>" title="Delete photo">&times;</button><?php endif; ?>
                       </div>
                     <?php endforeach; ?>
                     <?php if (empty($selectedOrder['photos'])): ?><div class="text-muted small custom-order-photo-empty">No photos yet.</div><?php endif; ?>
@@ -6034,6 +6111,7 @@ if (!$customOrdersDetailRequest && !$customOrdersFullPageDetail) {
         form.classList.add('custom-orders-readonly-form');
         form.querySelectorAll('input, select, textarea, button').forEach(function (control) {
           if (action.endsWith('/save_order.php') && String(control.getAttribute('name') || '') === 'custom_order_id') return;
+          if (control.classList.contains('btn-copy-inline')) return;
           if (control.classList.contains('custom-item-take-btn')) return;
           var modalTarget = String(control.getAttribute('data-target') || '');
           if (control.matches('[data-toggle="modal"]') && modalTarget.indexOf('#custom-item-modal-') === 0) return;
@@ -6042,6 +6120,7 @@ if (!$customOrdersDetailRequest && !$customOrdersFullPageDetail) {
       });
 
       root.querySelectorAll('[form^="custom-twin-header-form-"]').forEach(function (control) {
+        if (control.classList.contains('btn-copy-inline')) return;
         if (control.classList.contains('custom-status-control') || control.classList.contains('custom-status-save-btn')) {
           control.disabled = false;
           return;
@@ -6106,6 +6185,21 @@ if (!$customOrdersDetailRequest && !$customOrdersFullPageDetail) {
     function copyCustomInlineValue(btn) {
       if (!btn) return;
       var value = btn.getAttribute('data-copy') || '';
+      var inputSelector = btn.getAttribute('data-copy-input') || '';
+      if (inputSelector) {
+        try {
+          var input = document.querySelector(inputSelector);
+          if (input) {
+            var prefix = String(btn.getAttribute('data-copy-prefix') || '').trim();
+            var inputValue = String(input.value || '').trim();
+            var parts = [];
+            if (prefix !== '') parts.push(prefix);
+            if (inputValue !== '') parts.push(inputValue);
+            value = parts.join(' ');
+            btn.setAttribute('data-copy', value);
+          }
+        } catch (selectorError) {}
+      }
       if (!value) return;
       var done = function () { showCustomCopyFeedback(btn); };
       if (navigator.clipboard && navigator.clipboard.writeText) {
