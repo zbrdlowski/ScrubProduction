@@ -5,11 +5,11 @@ Táto stránka slúži na denný import PayPal výpisov, dohľadanie správneho 
 ## Bežný postup
 
 1. Z PayPalu stiahnite pôvodný výpis aktivít vo formáte CSV. Pred nahratím ho neotvárajte ani neukladajte v Exceli.
-2. Nahrajte súbor v časti **Import pôvodného PayPal CSV**. Výpis pokojne môže každý deň obsahovať posledné dva týždne.
+2. Súbor pretiahnite alebo vyberte v časti **Import pôvodného PayPal CSV**. Výpis pokojne môže každý deň obsahovať posledné dva týždne.
 3. Skontrolujte karty **Na potvrdenie** a **Nespárované**.
 4. Pri žltom návrhu overte správne SO a uložte ho. Pri nespárovanej platbe dohľadajte objednávku podľa PayPal ID, mena, e-mailu a textových stôp.
 5. Ak zákazková objednávka medzitým dostala SO, kliknite na **Obnoviť párovanie**.
-6. Vyberte správny mesiac a stiahnite **Vycuc PayPal** pre OMEGU.
+6. Priamo nad tabuľkou vyberte správny mesiac a hore pri Pomocníkovi stiahnite **Vycuc PayPal** pre OMEGU.
 
 Opakované a prekrývajúce sa výpisy sú bezpečné. Systém už uložené transakcie rozpozná a preskočí.
 
