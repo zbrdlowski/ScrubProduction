@@ -28,13 +28,34 @@ if (!$isSuperadmin && !$hasDeptAccess) {
 }
 
 // ── Konfigurácia oddelení pre výkaz ─────────────────────────────────────
-// item_type_code hodnoty v order_items: G = Graphics, F = Fitting, P = Plastics, S = Seatcover
-// Výkaz je zameraný na Graphics + Fitting, ale necháme to konfigurovateľné.
-$reportItemTypes = ['G' => 'Graphics', 'F' => 'Fitting'];
+// item_type_code hodnoty v order_items: G = Graphics, F = Fitting, P = Plastics, S = Seat Cover
+$reportItemTypes = ['G' => 'Graphics', 'S' => 'Seat Covers', 'F' => 'Fitting'];
 
 // position.id hodnoty pre pracovníkov, ktorých chceme vidieť vo filtri "Pracovník"
-// (2 = Graphics, 9 = Fitting podľa deptCodeMap v orders.php)
-$reportPositionIds = [2, 9];
+// (2 = Graphics, 8 = Seat Covers Production, 9 = Production - Fitting)
+$reportPositionIds = [2, 8, 9];
+
+// ── DOČASNÝ CENNÍK SUBDODÁVATEĽSKEJ PRÁCE ─────────────────────────────
+// Ceny sú zámerne sústredené na jednom mieste. Po dodaní reálneho cenníka
+// stačí zmeniť hodnoty unit_price; uložené hodnoty položiek sa nemenia.
+$subcontractorRateCards = [
+  'S' => [
+    'csa' => ['label' => 'CSA', 'unit_price' => 12.50],
+    'sa'  => ['label' => 'SA',  'unit_price' => 10.00],
+    'csb' => ['label' => 'CSB', 'unit_price' => 15.00],
+    'sb'  => ['label' => 'SB',  'unit_price' => 12.00],
+    'csc' => ['label' => 'CSC', 'unit_price' => 17.50],
+    'sc'  => ['label' => 'SC',  'unit_price' => 14.00],
+    'sd'  => ['label' => 'SD',  'unit_price' => 20.00],
+  ],
+  'F' => [
+    'jm-1'   => ['label' => 'JM-1',   'unit_price' => 8.00],
+    'jm-2'   => ['label' => 'JM-2',   'unit_price' => 12.00],
+    'jm-3-a' => ['label' => 'JM-3-A', 'unit_price' => 16.00],
+    'jm-3-b' => ['label' => 'JM-3-B', 'unit_price' => 18.00],
+    'jm-3-c' => ['label' => 'JM-3-C', 'unit_price' => 20.00],
+  ],
+];
 
 // ── STĹPCE VÝKAZU ────────────────────────────────────────────────────────
 // Pridávanie nového stĺpca = pridanie položky sem + naplnenie hodnoty nižšie
@@ -48,12 +69,15 @@ $reportColumns = [
   'estimated_time' => 'Estimated Time',
   'department' => 'Department',
   'item_title' => 'Item',
+  'work_level' => 'Complexity / Fitting',
+  'unit_price' => 'Unit Price',
+  'line_total' => 'Total Price',
   'workers' => 'Worker(s)',
 ];
 
 // Mapovanie item_type_code -> prefix rolí v order_assignments (PRIMARY_/COLLAB_ + tento kód)
 // Používa sa na nájdenie dátumu "prevzatia" objednávky pre dané oddelenie.
-$deptRolePrefix = ['G' => 'GRAPHICS', 'F' => 'FITTING'];
+$deptRolePrefix = ['G' => 'GRAPHICS', 'S' => 'SEATCOVER', 'F' => 'FITTING'];
 
 // ── LIMITY ───────────────────────────────────────────────────────────────
 // Objednávok pribúda cca 30k/rok, takže report NESMIE bežať bez filtra a
@@ -66,7 +90,7 @@ $rangeWasClamped = false;
 // ── FILTRE ───────────────────────────────────────────────────────────────
 $fDateFrom = trim((string) ($_GET['date_from'] ?? ''));
 $fDateTo = trim((string) ($_GET['date_to'] ?? ''));
-$fDept = trim((string) ($_GET['dept'] ?? ''));           // '', 'G', 'F'
+$fDept = trim((string) ($_GET['dept'] ?? ''));           // '', 'G', 'S', 'F'
 $fWorker = (int) ($_GET['worker'] ?? 0);
 $fOnlyCompleted = (isset($_GET['only_completed']) && $_GET['only_completed'] === '1')
   // Spätná kompatibilita so starými uloženými URL reportu.
@@ -96,7 +120,7 @@ if ($dtFrom->diff($dtTo)->days > $maxRangeDays) {
 $fDateFrom = $dtFrom->format('Y-m-d');
 $fDateTo = $dtTo->format('Y-m-d');
 
-// Zoznam pracovníkov pre select (Graphics + Fitting)
+// Zoznam pracovníkov pre select (Graphics + Seat Covers + Fitting)
 // employees.active je varchar('Active'/'Inactive'...), rovnaký stĺpec, aký sa
 // používa aj vo filtri dochádzkového reportu pre účtovné oddelenie.
 //
@@ -127,7 +151,7 @@ if ($stmt) {
   $stmt->close();
 }
 
-// ── HLAVNÝ QUERY: order_items (G/F) + orders + priradení pracovníci ─────
+// ── HLAVNÝ QUERY: order_items (G/S/F) + orders + priradení pracovníci ───
 // Beží iba ak používateľ formulár skutočne odoslal (submitted=1) — pri prvom
 // načítaní stránky sa report nenačítava, aby sme zbytočne nezaťažovali DB.
 $rows = [];
@@ -180,6 +204,8 @@ $sql = "SELECT
     oi.title,
     oi.custom_label,
     oi.qty,
+    oi.options_json,
+    oi.internal_options_json,
     (
       SELECT GROUP_CONCAT(DISTINCT CONCAT(e.firstname, ' ', e.lastname) ORDER BY e.firstname, e.lastname SEPARATOR ', ')
       FROM order_item_assignments oia
@@ -206,7 +232,7 @@ if ($stmt) {
 }
 
 // ── Dátum dokončenia práce na konkrétnej položke ────────────────────────────
-// Graphics končí prechodom do RIP, Fitting prechodom do READY. Používame
+// Graphics končí prechodom do RIP, Seat Covers a Fitting prechodom do READY. Používame
 // históriu statusov položky, nie aktuálny stav ani odoslanie objednávky.
 $orderIds = array_values(array_unique(array_map(fn($r) => (int) $r['order_id'], $rows)));
 $itemIds = array_values(array_unique(array_map(fn($r) => (int) $r['item_id'], $rows)));
@@ -222,8 +248,7 @@ if ($itemIds) {
     WHERE ois.order_item_id IN ($itemIdPh)
       AND (
         (UPPER(TRIM(oi_done.item_type_code)) = 'G' AND UPPER(TRIM(ois.new_status)) = 'RIP')
-        OR
-        (UPPER(TRIM(oi_done.item_type_code)) = 'F' AND UPPER(TRIM(ois.new_status)) = 'READY')
+        OR (UPPER(TRIM(oi_done.item_type_code)) IN ('S', 'F') AND UPPER(TRIM(ois.new_status)) = 'READY')
       )
     GROUP BY ois.order_item_id
   ";
@@ -323,6 +348,23 @@ $formatEstimatedDuration = static function (?string $startedAt, ?string $complet
 };
 
 $displayRows = [];
+$readSubcontractorLevel = static function (array $row): string {
+  $department = strtoupper(trim((string) ($row['item_type_code'] ?? '')));
+  $sourceKey = $department === 'S' ? 'seat' : ($department === 'F' ? 'fitting' : '');
+  if ($sourceKey === '') {
+    return '';
+  }
+
+  $options = json_decode((string) ($row['options_json'] ?? ''), true);
+  $internalOptions = json_decode((string) ($row['internal_options_json'] ?? ''), true);
+  $options = is_array($options) ? $options : [];
+  $internalOptions = is_array($internalOptions) ? $internalOptions : [];
+
+  $internalKey = '_' . $sourceKey;
+  $value = $internalOptions[$internalKey] ?? $options[$sourceKey] ?? '';
+  return is_scalar($value) ? strtolower(trim((string) $value)) : '';
+};
+
 foreach ($rows as $r) {
   $orderId = (int) $r['order_id'];
   $completedAt = $itemCompletionDates[(int) $r['item_id']] ?? null;
@@ -338,6 +380,11 @@ foreach ($rows as $r) {
   $itemDept = $r['item_type_code'];
   $startedAt = $startDates[$orderId][$itemDept] ?? null;
   $estimatedDuration = $formatEstimatedDuration($startedAt, $completedAt);
+  $workLevelKey = $readSubcontractorLevel($r);
+  $rate = $subcontractorRateCards[$itemDept][$workLevelKey] ?? null;
+  $quantity = max(1, (int) ($r['qty'] ?? 1));
+  $unitPrice = $rate !== null ? (float) $rate['unit_price'] : null;
+  $lineTotal = $unitPrice !== null ? $unitPrice * $quantity : null;
   $displayRows[] = [
     'order_number' => $r['order_number'],
     'order_date' => $r['order_date'],
@@ -346,7 +393,14 @@ foreach ($rows as $r) {
     'estimated_time' => $estimatedDuration['label'],
     'estimated_time_seconds' => $estimatedDuration['seconds'],
     'department' => $reportItemTypes[$itemDept] ?? $itemDept,
-    'item_title' => $itemLabel . ($r['qty'] > 1 ? ' (x' . (int) $r['qty'] . ')' : ''),
+    'item_title' => $itemLabel . ($quantity > 1 ? ' (x' . $quantity . ')' : ''),
+    'work_level' => $rate['label'] ?? ($workLevelKey !== '' ? strtoupper($workLevelKey) : '—'),
+    'unit_price' => $unitPrice !== null ? number_format($unitPrice, 2, '.', '') . ' €' : '—',
+    'unit_price_value' => $unitPrice,
+    'line_total' => $lineTotal !== null ? number_format($lineTotal, 2, '.', '') . ' €' : '—',
+    'line_total_value' => $lineTotal,
+    'department_code' => $itemDept,
+    'quantity' => $quantity,
     'workers' => $r['workers'] ?: '—',
     // NOVÝ STĹPEC: sem pridaj ďalší kľúč zodpovedajúci $reportColumns vyššie
   ];
@@ -366,16 +420,32 @@ foreach ($rows as $r) {
         <div class="form-row align-items-end">
           <div class="col-auto">
             <label class="mb-1">Date From</label>
-            <input type="date" class="form-control form-control-sm" name="date_from" id="dateFrom" max="<?= htmlspecialchars($today->format('Y-m-d')) ?>" value="<?= htmlspecialchars($fDateFrom) ?>">
+            <div class="input-group input-group-sm date job-report-date-picker" id="dateFromPicker" data-target-input="nearest">
+              <input type="text" class="form-control form-control-sm datetimepicker-input" id="dateFromDisplay"
+                     value="<?= htmlspecialchars($dtFrom->format('d.m.Y')) ?>" data-target="#dateFromPicker" readonly
+                     aria-label="Date From in day, month, year format">
+              <div class="input-group-append" data-target="#dateFromPicker" data-toggle="datetimepicker">
+                <div class="input-group-text"><i class="far fa-calendar-alt"></i></div>
+              </div>
+            </div>
+            <input type="hidden" name="date_from" id="dateFrom" value="<?= htmlspecialchars($fDateFrom) ?>">
           </div>
           <div class="col-auto">
             <label class="mb-1">Date To <small class="text-muted">(max <?= (int) $maxRangeDays ?> days range)</small></label>
-            <input type="date" class="form-control form-control-sm" name="date_to" id="dateTo" max="<?= htmlspecialchars($today->format('Y-m-d')) ?>" value="<?= htmlspecialchars($fDateTo) ?>">
+            <div class="input-group input-group-sm date job-report-date-picker" id="dateToPicker" data-target-input="nearest">
+              <input type="text" class="form-control form-control-sm datetimepicker-input" id="dateToDisplay"
+                     value="<?= htmlspecialchars($dtTo->format('d.m.Y')) ?>" data-target="#dateToPicker" readonly
+                     aria-label="Date To in day, month, year format">
+              <div class="input-group-append" data-target="#dateToPicker" data-toggle="datetimepicker">
+                <div class="input-group-text"><i class="far fa-calendar-alt"></i></div>
+              </div>
+            </div>
+            <input type="hidden" name="date_to" id="dateTo" value="<?= htmlspecialchars($fDateTo) ?>">
           </div>
           <div class="col-auto">
             <label class="mb-1">Department</label>
             <select class="form-control form-control-sm" name="dept">
-              <option value="">All (Graphics + Fitting)</option>
+              <option value="">All (Graphics + Seat Covers + Fitting)</option>
               <?php foreach ($reportItemTypes as $code => $label): ?>
                 <option value="<?= htmlspecialchars($code) ?>" <?= $fDept === $code ? 'selected' : '' ?>><?= htmlspecialchars($label) ?></option>
               <?php endforeach; ?>
@@ -418,6 +488,14 @@ foreach ($rows as $r) {
     border-spacing: 0;
   }
 
+  .job-report-date-picker {
+    width: 142px;
+  }
+
+  .job-report-date-picker input[readonly] {
+    cursor: pointer;
+  }
+
   #vykazTable th,
   #vykazTable td {
     padding: 12px 16px !important;
@@ -432,12 +510,54 @@ foreach ($rows as $r) {
     background-color: #161616;
   }
 
+  #vykazTable tfoot th {
+    padding: 10px 16px !important;
+    border-top: 2px solid #20c997;
+    background: #252b31;
+    color: #f8f9fa;
+    white-space: nowrap;
+  }
+
+  #vykazTable tfoot [data-summary-total] {
+    color: #69e0ba;
+    font-size: 1rem;
+  }
+
   #vykazTable_wrapper .dt-buttons {
-    margin-bottom: 12px;
+    margin: 0;
   }
 
   #vykazTable_wrapper .dataTables_filter {
+    margin: 0;
+  }
+
+  #vykazTable_wrapper .dataTables_filter label,
+  #vykazTable_wrapper .dataTables_length label {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    margin: 0;
+    white-space: nowrap;
+  }
+
+  #vykazTable_wrapper .dataTables_filter input {
+    margin-left: 0;
+  }
+
+  .job-report-table-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 10px 18px;
     margin-bottom: 12px;
+  }
+
+  .job-report-table-actions {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 10px;
   }
 
   .job-report-day-separator-row > td {
@@ -519,6 +639,10 @@ foreach ($rows as $r) {
       white-space: normal !important;
     }
 
+    #vykazTable tfoot th {
+      padding: 5px 7px !important;
+    }
+
     .job-report-day-separator-row > td {
       padding: 4px 0 !important;
     }
@@ -531,6 +655,11 @@ foreach ($rows as $r) {
           The order volume is large (~30k/year), so the report is not loaded until you filter.
         </div>
       <?php else: ?>
+
+      <div class="alert alert-warning py-2">
+        <strong>Temporary pricing:</strong> Seat Covers and Fitting prices are test values. Replace the rate card in
+        <code>includes/vykaz_prace.php</code> before using this report as an invoice attachment.
+      </div>
 
       <table class="table table-bordered table-striped" id="vykazTable">
         <thead>
@@ -553,13 +682,20 @@ foreach ($rows as $r) {
             $rowDayLabel = $rowDayTimestamp !== false ? date('d.m.Y', $rowDayTimestamp) : 'Unknown date';
             ?>
             <tr data-report-day="<?= htmlspecialchars($rowDayKey, ENT_QUOTES, 'UTF-8') ?>"
-                data-report-day-label="<?= htmlspecialchars($rowDayLabel, ENT_QUOTES, 'UTF-8') ?>">
+                data-report-day-label="<?= htmlspecialchars($rowDayLabel, ENT_QUOTES, 'UTF-8') ?>"
+                data-report-department="<?= htmlspecialchars((string) ($dr['department_code'] ?? ''), ENT_QUOTES, 'UTF-8') ?>"
+                data-report-quantity="<?= (int) ($dr['quantity'] ?? 0) ?>"
+                data-report-priced="<?= ($dr['line_total_value'] ?? null) !== null ? '1' : '0' ?>"
+                data-report-line-total="<?= htmlspecialchars((string) ($dr['line_total_value'] ?? 0), ENT_QUOTES, 'UTF-8') ?>">
               <?php foreach (array_keys($reportColumns) as $colKey): ?>
                 <?php
                 $sortAttribute = '';
                 if ($colKey === 'estimated_time') {
                   $sortSeconds = $dr['estimated_time_seconds'] ?? null;
                   $sortAttribute = ' data-order="' . ($sortSeconds === null ? -1 : (int) $sortSeconds) . '"';
+                } elseif (in_array($colKey, ['unit_price', 'line_total'], true)) {
+                  $sortValue = $dr[$colKey . '_value'] ?? null;
+                  $sortAttribute = ' data-order="' . ($sortValue === null ? -1 : (float) $sortValue) . '"';
                 }
                 ?>
                 <td<?= $sortAttribute ?>>
@@ -586,6 +722,20 @@ foreach ($rows as $r) {
             </tr>
           <?php endforeach; ?>
         </tbody>
+        <tfoot>
+          <?php foreach (['S' => 'Seat Covers', 'F' => 'Fitting'] as $summaryCode => $summaryLabel): ?>
+            <tr class="job-report-summary-row"
+                data-report-summary="<?= htmlspecialchars($summaryCode, ENT_QUOTES, 'UTF-8') ?>"
+                data-summary-label="<?= htmlspecialchars($summaryLabel, ENT_QUOTES, 'UTF-8') ?>">
+              <th colspan="9" class="text-right">
+                <?= htmlspecialchars($summaryLabel) ?> total
+                <span class="font-weight-normal text-muted" data-summary-detail></span>
+              </th>
+              <th class="text-right" data-summary-total>0.00 €</th>
+              <th></th>
+            </tr>
+          <?php endforeach; ?>
+        </tfoot>
       </table>
       <?php endif; ?>
     </div>
@@ -594,23 +744,56 @@ foreach ($rows as $r) {
 
 <script>
   $(function () {
-    // Client-side pomôcka: obmedz "Date To" na max <?= (int) $maxRangeDays ?> dní od "Date From".
-    // Server aj tak rozsah oreže, toto len zabráni zbytočnému submitu s príliš veľkým rozsahom.
+    // Dátumy sú používateľovi vždy zobrazené ako DD.MM.RRRR. Hidden inputy
+    // ponechávajú serverový formát YYYY-MM-DD, takže databázový filter ostáva stabilný.
     var maxRangeDays = <?= (int) $maxRangeDays ?>;
+    var todayLimit = moment('<?= htmlspecialchars($today->format('Y-m-d'), ENT_QUOTES, 'UTF-8') ?>', 'YYYY-MM-DD', true).endOf('day');
+    var initialFrom = moment($('#dateFrom').val(), 'YYYY-MM-DD', true);
+    var initialTo = moment($('#dateTo').val(), 'YYYY-MM-DD', true);
+
+    $('#dateFromPicker').datetimepicker({
+      format: 'DD.MM.YYYY',
+      useCurrent: false,
+      defaultDate: initialFrom,
+      maxDate: todayLimit,
+      ignoreReadonly: true,
+      allowInputToggle: true
+    });
+    $('#dateToPicker').datetimepicker({
+      format: 'DD.MM.YYYY',
+      useCurrent: false,
+      defaultDate: initialTo,
+      maxDate: todayLimit,
+      ignoreReadonly: true,
+      allowInputToggle: true
+    });
+
     function clampDateTo() {
-      var from = $('#dateFrom').val();
-      if (!from) return;
-      var fromDate = new Date(from);
-      var maxTo = new Date(fromDate);
-      maxTo.setDate(maxTo.getDate() + maxRangeDays);
-      var maxToStr = maxTo.toISOString().slice(0, 10);
-      $('#dateTo').attr('max', maxToStr);
-      $('#dateTo').attr('min', from);
-      if ($('#dateTo').val() && $('#dateTo').val() > maxToStr) {
-        $('#dateTo').val(maxToStr);
+      var from = moment($('#dateFrom').val(), 'YYYY-MM-DD', true);
+      if (!from.isValid()) return;
+
+      var maxTo = from.clone().add(maxRangeDays, 'days');
+      if (maxTo.isAfter(todayLimit)) maxTo = todayLimit.clone();
+
+      $('#dateToPicker').datetimepicker('minDate', from.clone().startOf('day'));
+      $('#dateToPicker').datetimepicker('maxDate', maxTo.clone().endOf('day'));
+
+      var currentTo = moment($('#dateTo').val(), 'YYYY-MM-DD', true);
+      if (!currentTo.isValid() || currentTo.isBefore(from, 'day') || currentTo.isAfter(maxTo, 'day')) {
+        $('#dateToPicker').datetimepicker('date', maxTo.clone());
       }
     }
-    $('#dateFrom').on('change', clampDateTo);
+
+    $('#dateFromPicker').on('change.datetimepicker', function (event) {
+      if (!event.date) return;
+      $('#dateFrom').val(event.date.format('YYYY-MM-DD'));
+      clampDateTo();
+    });
+    $('#dateToPicker').on('change.datetimepicker', function (event) {
+      if (!event.date) return;
+      $('#dateTo').val(event.date.format('YYYY-MM-DD'));
+    });
+
     clampDateTo();
 
     <?php if ($hasSubmitted): ?>
@@ -638,6 +821,70 @@ foreach ($rows as $r) {
       });
     }
 
+    function updateJobReportSummary(dataTableApi) {
+      var summaries = {
+        S: { pricedQuantity: 0, unpricedQuantity: 0, total: 0 },
+        F: { pricedQuantity: 0, unpricedQuantity: 0, total: 0 }
+      };
+
+      $(dataTableApi.rows({ search: 'applied' }).nodes()).each(function () {
+        var $row = $(this);
+        var department = String($row.attr('data-report-department') || '');
+        if (!summaries[department]) return;
+
+        var quantity = parseInt($row.attr('data-report-quantity'), 10) || 0;
+        if ($row.attr('data-report-priced') === '1') {
+          summaries[department].pricedQuantity += quantity;
+          summaries[department].total += parseFloat($row.attr('data-report-line-total')) || 0;
+        } else {
+          summaries[department].unpricedQuantity += quantity;
+        }
+      });
+
+      Object.keys(summaries).forEach(function (department) {
+        var summary = summaries[department];
+        var $footerRow = $('#vykazTable tfoot [data-report-summary="' + department + '"]');
+        var totalQuantity = summary.pricedQuantity + summary.unpricedQuantity;
+        $footerRow.toggle(totalQuantity > 0);
+
+        var detail = '(' + summary.pricedQuantity + ' priced pcs';
+        if (summary.unpricedQuantity > 0) {
+          detail += ', ' + summary.unpricedQuantity + ' without price';
+        }
+        detail += ')';
+
+        $footerRow.find('[data-summary-detail]').text(detail);
+        $footerRow.find('[data-summary-total]').text(summary.total.toFixed(2) + ' €');
+      });
+    }
+
+    function jobReportExportOptions() {
+      return {
+        customizeData: function (data) {
+          var summaryParts = [];
+          var grandTotal = 0;
+
+          $('#vykazTable tfoot [data-report-summary]:visible').each(function () {
+            var $row = $(this);
+            var label = String($row.attr('data-summary-label') || 'Summary');
+            var detail = String($row.find('[data-summary-detail]').text() || '');
+            var totalText = String($row.find('[data-summary-total]').text() || '0');
+            var numericTotal = parseFloat(totalText.replace(',', '.')) || 0;
+            grandTotal += numericTotal;
+            summaryParts.push(label + ' ' + detail + ': ' + numericTotal.toFixed(2) + ' EUR');
+          });
+
+          data.footer = new Array(data.header.length).fill('');
+          if (data.footer.length > 6) {
+            data.footer[6] = summaryParts.join(' | ');
+          }
+          if (data.footer.length > 9) {
+            data.footer[9] = grandTotal.toFixed(2) + ' EUR';
+          }
+        }
+      };
+    }
+
     $('#vykazTable').DataTable({
       responsive: true,
       info: true,
@@ -646,18 +893,22 @@ foreach ($rows as $r) {
       autoWidth: false,
       pageLength: 200,
       order: [],
-      dom: 'Bfrtip',
+      dom: "<'job-report-table-toolbar'<'job-report-table-actions'Bl>f>rt<'row'<'col-sm-12 col-md-5'i><'col-sm-12 col-md-7'p>>",
       buttons: [
-        "copy",
-        "csv",
-        "excel",
+        { extend: "copy", footer: true, exportOptions: jobReportExportOptions() },
+        { extend: "csv", footer: true, exportOptions: jobReportExportOptions() },
+        { extend: "excel", footer: true, exportOptions: jobReportExportOptions() },
         {
           extend: "pdf",
           orientation: "landscape",
-          pageSize: "A4"
+          pageSize: "A4",
+          footer: true,
+          exportOptions: jobReportExportOptions()
         },
         {
           extend: "print",
+          footer: true,
+          exportOptions: jobReportExportOptions(),
           customize: function (win) {
             $(win.document.head).append(
               '<style>@page{size:A4 landscape;margin:10mm;}#vykazTable{width:100%!important;font-size:10px;}#vykazTable th,#vykazTable td{padding:5px 7px!important;white-space:normal!important;}.job-report-day-separator-row>td{padding:4px 0!important;}</style>'
@@ -668,8 +919,9 @@ foreach ($rows as $r) {
       ],
       drawCallback: function () {
         addJobReportDaySeparators(this.api());
+        updateJobReportSummary(this.api());
       }
-    }).buttons().container().appendTo('#vykazTable_wrapper .col-md-6:eq(0)');
+    });
     <?php endif; ?>
   });
 </script>
