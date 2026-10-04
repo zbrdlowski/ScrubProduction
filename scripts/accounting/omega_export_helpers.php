@@ -169,7 +169,7 @@ function omega_export_find_payout(PDO $pdo, int $orderId, string $orderNumber, s
     return $row ?: null;
 }
 
-function omega_export_base_orders(PDO $pdo, string $from, string $to, string $customWorkday): array
+function omega_export_base_orders(PDO $pdo, string $from, string $to): array
 {
     $stmt = $pdo->prepare('
         SELECT o.id, o.order_number, o.external_order_id, o.imported_at, o.order_date,
@@ -183,11 +183,11 @@ function omega_export_base_orders(PDO $pdo, string $from, string $to, string $cu
         WHERE exported.id IS NULL
           AND (
             (os.code IN (\'EBAY\', \'SHOPTET\') AND DATE(o.imported_at) BETWEEN :from_date AND :to_date)
-            OR (os.code = \'CUSTOM\' AND DATE(o.imported_at) = :custom_workday)
+            OR os.code = \'CUSTOM\'
           )
         ORDER BY o.imported_at, o.id
     ');
-    $stmt->execute([':from_date' => $from, ':to_date' => $to, ':custom_workday' => $customWorkday]);
+    $stmt->execute([':from_date' => $from, ':to_date' => $to]);
     return $stmt->fetchAll(PDO::FETCH_ASSOC);
 }
 
@@ -217,8 +217,10 @@ function omega_export_late_payout_orders(PDO $pdo, string $from, string $to): ar
 
 function omega_export_collect_candidates(PDO $pdo, string $from, string $to, string $processingDate): array
 {
+    // Kept as batch metadata for backward compatibility. Custom selection itself
+    // is intentionally date-independent and includes every not-yet-exported order.
     $customWorkday = omega_export_previous_workday($processingDate);
-    $orders = omega_export_base_orders($pdo, $from, $to, $customWorkday);
+    $orders = omega_export_base_orders($pdo, $from, $to);
     $seen = [];
     foreach ($orders as $order) {
         $seen[(int) $order['id']] = true;
@@ -246,7 +248,7 @@ function omega_export_collect_candidates(PDO $pdo, string $from, string $to, str
             }
             $basis = 'PAYOUT_IMPORT';
         } elseif ($source === 'CUSTOM') {
-            $basis = 'CUSTOM_WORKDAY';
+            $basis = 'CUSTOM_NOT_EXPORTED';
         }
 
         $total = $payout

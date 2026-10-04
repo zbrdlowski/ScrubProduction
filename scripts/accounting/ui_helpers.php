@@ -23,7 +23,7 @@ function accountingUiHelpDocuments(): array
 {
     return [
         'payouts' => ['title' => 'eBay payouty', 'file' => 'accounting-payouts.md'],
-        'paypal' => ['title' => 'PayPal', 'file' => 'accounting-paypal.md'],
+        'paypal' => ['title' => 'PayPal platby', 'file' => 'accounting-paypal.md'],
         'omega' => ['title' => 'OMEGA faktúry', 'file' => 'accounting-omega.md'],
         'omega_export' => ['title' => 'OMEGA TXT export', 'file' => 'accounting-omega-export.md'],
     ];

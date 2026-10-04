@@ -16,9 +16,15 @@ session_start();
 
 if (!isset($_SESSION['permission'])) {
   header('location:login.php');
+  exit;
 }
 include 'includes/conn.php';
 require_once 'includes/auth.php';
+
+if (empty($_GET['page'])) {
+  header('Location: index.php?page=profile');
+  exit;
+}
 
 // Page title mapping - user-friendly names for breadcrumb
 $pageLabels = [
@@ -73,7 +79,7 @@ $pageLabels = [
   'product_listing_catalog' => 'Product Listing Catalog',
   'vykaz_prace' => 'Activity Report',
   'accounting_payouts' => 'eBay payouty',
-  'accounting_paypal' => 'PayPal účtovníctvo',
+  'accounting_paypal' => 'PayPal platby',
   'accounting_omega' => 'OMEGA faktúry',
   'access_admin' => 'User Permissions',
   'accounting_omega_export' => 'OMEGA TXT export',
@@ -207,38 +213,19 @@ $pageLabels = [
           </div>
           <div class="card-body">
             <?
-            if (!empty($_GET['page'])) {
-              $requestedPage = (string) $_GET['page'];
-              $pageFile = __DIR__ . '/includes/' . $requestedPage . '.php';
-              if (!preg_match('/^[a-zA-Z0-9_-]+$/', $requestedPage) || !is_file($pageFile)) {
-                http_response_code(404);
-                echo '<div class="alert alert-danger">Stránka neexistuje.</div>';
-              } else {
-                $requiredPermission = auth_page_permission($requestedPage);
-                if ($requiredPermission !== null && !auth_can($requiredPermission)) {
+            $requestedPage = (string) $_GET['page'];
+            $pageFile = __DIR__ . '/includes/' . $requestedPage . '.php';
+            if (!preg_match('/^[a-zA-Z0-9_-]+$/', $requestedPage) || !is_file($pageFile)) {
+              http_response_code(404);
+              echo '<div class="alert alert-danger">Stránka neexistuje.</div>';
+            } else {
+              $requiredPermission = auth_page_permission($requestedPage);
+              if ($requiredPermission !== null && !auth_can($requiredPermission)) {
                 http_response_code(403);
                 echo '<div class="alert alert-danger">Na túto stránku nemáte oprávnenie.</div>';
-                } else {
-                  include $pageFile;
-                }
+              } else {
+                include $pageFile;
               }
-            } else {
-              ?>
-              <div class="container-fluid">
-                <div class="row">
-                  <div class="col-md-12">
-                    <div class="card" style="width:100%;">
-                      <div class="card-header">
-                        <h2>Welcome</h2>
-                      </div>
-                      <div class="card-body">
-                        New Content Here
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-              <?
             }
             ?>
           </div>

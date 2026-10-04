@@ -11,6 +11,33 @@ function omegaExportAssert(bool $condition, string $message): void
     }
 }
 
+$selectionDb = new PDO('sqlite::memory:');
+$selectionDb->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+$selectionDb->exec('CREATE TABLE order_sources (id INTEGER PRIMARY KEY, code TEXT NOT NULL)');
+$selectionDb->exec('CREATE TABLE customers (id INTEGER PRIMARY KEY, name TEXT, email TEXT, phone TEXT)');
+$selectionDb->exec('CREATE TABLE orders (
+    id INTEGER PRIMARY KEY, order_number TEXT, external_order_id TEXT, imported_at TEXT, order_date TEXT,
+    currency TEXT, total REAL, financial_total_value REAL, financial_total_currency TEXT,
+    payment_method TEXT, shipping_method TEXT, source_meta TEXT, customer_id INTEGER, source_id INTEGER
+)');
+$selectionDb->exec('CREATE TABLE accounting_omega_export_items (id INTEGER PRIMARY KEY, order_id INTEGER)');
+$selectionDb->exec("INSERT INTO order_sources (id, code) VALUES (1, 'CUSTOM'), (2, 'EBAY'), (3, 'SHOPTET')");
+$selectionDb->exec("INSERT INTO customers (id, name, email, phone) VALUES (1, 'Test', 'test@example.test', '123')");
+$selectionDb->exec("INSERT INTO orders
+    (id, order_number, imported_at, order_date, currency, total, financial_total_value, customer_id, source_id)
+    VALUES
+    (1, 'SO-OLD-CUSTOM', '2025-01-10 10:00:00', '2025-01-10', 'EUR', 100, 100, 1, 1),
+    (2, 'SO-EXPORTED-CUSTOM', '2026-10-03 10:00:00', '2026-10-03', 'EUR', 100, 100, 1, 1),
+    (3, 'EBAY-IN-RANGE', '2026-10-03 10:00:00', '2026-10-03', 'EUR', 100, 100, 1, 2),
+    (4, 'EBAY-OUTSIDE-RANGE', '2026-09-01 10:00:00', '2026-09-01', 'EUR', 100, 100, 1, 2)");
+$selectionDb->exec('INSERT INTO accounting_omega_export_items (id, order_id) VALUES (1, 2)');
+$selectedBaseOrders = omega_export_base_orders($selectionDb, '2026-10-03', '2026-10-03');
+$selectedBaseIds = array_map(static function (array $order): int { return (int) $order['id']; }, $selectedBaseOrders);
+omegaExportAssert(in_array(1, $selectedBaseIds, true), 'An older unexported CUSTOM order must be selected.');
+omegaExportAssert(!in_array(2, $selectedBaseIds, true), 'A CUSTOM order already present in an immutable batch must be excluded.');
+omegaExportAssert(in_array(3, $selectedBaseIds, true), 'An eBay order inside the selected interval must be selected.');
+omegaExportAssert(!in_array(4, $selectedBaseIds, true), 'An eBay order outside the selected interval must remain excluded.');
+
 $payload = [
     'source_code' => 'CUSTOM',
     'order_number' => 'SO12345',

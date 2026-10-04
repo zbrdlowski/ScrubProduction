@@ -71,7 +71,7 @@ try {
             'import_from' => $from,
             'import_to' => $to,
             'processing_date' => $processingDate,
-            'error' => 'Pre zvolené dátumy nie je pripravená žiadna objednávka.',
+            'error' => 'Nie je pripravená žiadna nová objednávka.',
         ]);
     }
 

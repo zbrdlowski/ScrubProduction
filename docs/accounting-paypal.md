@@ -1,4 +1,4 @@
-# PayPal – návod pre účtovníctvo
+# PayPal platby – návod pre účtovníctvo
 
 Táto stránka slúži na denný import PayPal výpisov, dohľadanie správneho čísla objednávky a vytvorenie výcucu pre OMEGU.
 

@@ -32,7 +32,7 @@ foreach (['from' => &$from, 'to' => &$to, 'processingDate' => &$processingDate] 
 unset($date);
 
 $schemaReady = $pdo instanceof PDO && omega_export_schema_ready($pdo);
-$candidates = ['ready' => [], 'waiting' => [], 'blocked' => [], 'customWorkday' => omega_export_previous_workday($processingDate)];
+$candidates = ['ready' => [], 'waiting' => [], 'blocked' => []];
 $batches = [];
 $selectedBatch = null;
 $selectedItems = [];
@@ -74,6 +74,11 @@ if ($schemaReady) {
         $previewError = $e->getMessage();
     }
 }
+$readinessLabels = [
+    'ORDER_IMPORT' => 'Import objednávky',
+    'PAYOUT_IMPORT' => 'Import payoutu',
+    'CUSTOM_NOT_EXPORTED' => 'Doteraz neexportovaná Custom',
+];
 ?>
 
 <style>
@@ -99,7 +104,7 @@ if ($schemaReady) {
     </div>
     <div class="omega-export-actions btn-group" role="group" aria-label="Účtovné sekcie">
       <a class="btn btn-outline-secondary" href="?page=accounting_payouts">eBay payouts</a>
-      <a class="btn btn-outline-secondary" href="?page=accounting_paypal">PayPal</a>
+      <a class="btn btn-outline-secondary" href="?page=accounting_paypal">PayPal platby</a>
       <a class="btn btn-outline-secondary" href="?page=accounting_omega">OMEGA faktúry</a>
       <a class="btn btn-success active" href="?page=accounting_omega_export" aria-current="page">OMEGA TXT export</a>
       <?= accountingUiHelpButton('omega_export') ?>
@@ -125,12 +130,12 @@ if ($schemaReady) {
         <input type="hidden" name="page" value="accounting_omega_export">
         <div class="form-group col-md-3 mb-2"><label for="omegaImportFrom">Import objednávok od<?= accountingUiInfo('Prvý deň intervalu, v ktorom boli eBay a Shoptet objednávky importované do Darkscrubu.') ?></label><input class="form-control" id="omegaImportFrom" type="date" name="import_from" value="<?= omegaExportH($from) ?>"></div>
         <div class="form-group col-md-3 mb-2"><label for="omegaImportTo">Import objednávok do<?= accountingUiInfo('Posledný deň kontrolovaného intervalu vrátane.') ?></label><input class="form-control" id="omegaImportTo" type="date" name="import_to" value="<?= omegaExportH($to) ?>"></div>
-        <div class="form-group col-md-3 mb-2"><label for="omegaProcessingDate">Deň spracovania<?= accountingUiInfo('Deň, keď balík pripravujete. Podľa neho sa vyberú Custom objednávky z predchádzajúceho pracovného dňa.') ?></label><input class="form-control" id="omegaProcessingDate" type="date" name="processing_date" value="<?= omegaExportH($processingDate) ?>"></div>
+        <div class="form-group col-md-3 mb-2"><label for="omegaProcessingDate">Deň spracovania<?= accountingUiInfo('Dátum, ku ktorému pripravujete tento balík. Custom objednávky sa vyberajú nezávisle od tohto dátumu – zahrnú sa všetky, ktoré ešte neboli exportované.') ?></label><input class="form-control" id="omegaProcessingDate" type="date" name="processing_date" value="<?= omegaExportH($processingDate) ?>"></div>
         <div class="form-group col-md-3 mb-2"><button class="btn btn-primary btn-block" type="submit"><i class="fas fa-search mr-1"></i> Skontrolovať</button></div>
       </form>
       <div class="small omega-export-muted mt-2">
         eBay a Shoptet sa vyberajú podľa dátumu importu. Staršie cudzo-menové eBay objednávky sa doplnia, keď bol payout importovaný v zvolenom období.
-        Custom sa automaticky berie z predošlého pracovného dňa: <b><?= omegaExportH(date('d.m.Y', strtotime($candidates['customWorkday']))) ?></b>.
+        Custom zahŕňa všetky objednávky, ktoré ešte neboli zaradené do žiadneho nemenného balíka.
       </div>
     </div>
   </div>
@@ -138,7 +143,7 @@ if ($schemaReady) {
   <div class="row">
     <div class="col-6 col-xl-3"><div class="card omega-export-stat omega-export-ready"><div class="card-body"><h3><?= count($candidates['ready']) ?></h3><div>Pripravené objednávky<?= accountingUiInfo('Majú potrebné údaje a po zaškrtnutí môžu ísť do balíka.') ?></div></div></div></div>
     <div class="col-6 col-xl-3"><div class="card omega-export-stat omega-export-waiting"><div class="card-body"><h3><?= count($candidates['waiting']) ?></h3><div>Čakajú na payout<?= accountingUiInfo('Cudzo-menové eBay objednávky bez importovaného payoutu a kurzu.') ?></div></div></div></div>
-    <div class="col-6 col-xl-3"><div class="card omega-export-stat omega-export-custom"><div class="card-body"><h3><?= count(array_filter($candidates['ready'], static function (array $r): bool { return $r['source_code'] === 'CUSTOM'; })) ?></h3><div>Custom z pracovného dňa<?= accountingUiInfo('Custom objednávky pridané do výroby v predchádzajúci pracovný deň.') ?></div></div></div></div>
+    <div class="col-6 col-xl-3"><div class="card omega-export-stat omega-export-custom"><div class="card-body"><h3><?= count(array_filter($candidates['ready'], static function (array $r): bool { return $r['source_code'] === 'CUSTOM'; })) ?></h3><div>Neexportované Custom<?= accountingUiInfo('Všetky Custom objednávky, ktoré ešte neboli zaradené do žiadneho nemenného balíka, bez obmedzenia na konkrétny deň.') ?></div></div></div></div>
     <div class="col-6 col-xl-3"><div class="card omega-export-stat omega-export-blocked"><div class="card-body"><h3><?= count($candidates['blocked']) ?></h3><div>Blokované chybou dát<?= accountingUiInfo('Tieto objednávky nemožno exportovať, kým sa neopraví uvedený dôvod.') ?></div></div></div></div>
   </div>
 
@@ -178,10 +183,10 @@ if ($schemaReady) {
             <td><span class="badge badge-info"><?= omegaExportH($row['source_code']) ?></span></td>
             <td><?= omegaExportH($row['order_number']) ?></td><td><?= omegaExportH($row['customer_name']) ?></td>
             <td><?= omegaExportH($row['currency']) ?></td><td class="text-right"><?= number_format((float) $row['_total_eur'], 2, ',', ' ') ?></td>
-            <td><?= omegaExportH($row['_readiness_basis']) ?></td>
+            <td><?= omegaExportH($readinessLabels[$row['_readiness_basis']] ?? $row['_readiness_basis']) ?></td>
           </tr>
         <?php endforeach; ?>
-        <?php if (!$candidates['ready']): ?><tr><td colspan="8" class="text-center text-muted py-3">Pre zvolený interval nie je nič pripravené.</td></tr><?php endif; ?>
+        <?php if (!$candidates['ready']): ?><tr><td colspan="8" class="text-center text-muted py-3">Nie je pripravená žiadna nová objednávka.</td></tr><?php endif; ?>
         </tbody>
       </table>
     </div>

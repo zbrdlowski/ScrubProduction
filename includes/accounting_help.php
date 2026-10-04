@@ -11,7 +11,7 @@ if (!accounting_payout_user_can_access()) {
 
 $documents = [
     'payouts' => ['title' => 'eBay payouty', 'file' => 'accounting-payouts.md', 'page' => 'accounting_payouts'],
-    'paypal' => ['title' => 'PayPal', 'file' => 'accounting-paypal.md', 'page' => 'accounting_paypal'],
+    'paypal' => ['title' => 'PayPal platby', 'file' => 'accounting-paypal.md', 'page' => 'accounting_paypal'],
     'omega' => ['title' => 'OMEGA faktúry', 'file' => 'accounting-omega.md', 'page' => 'accounting_omega'],
     'omega_export' => ['title' => 'OMEGA TXT export', 'file' => 'accounting-omega-export.md', 'page' => 'accounting_omega_export'],
 ];

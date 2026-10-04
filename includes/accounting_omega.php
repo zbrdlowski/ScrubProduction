@@ -210,7 +210,7 @@ $accountingOmegaCardUrl = static function (
     <div class="accounting-page-actions">
       <div class="btn-group" role="group" aria-label="Účtovné sekcie">
         <a class="btn btn-outline-secondary" href="?page=accounting_payouts">eBay payouts</a>
-        <a class="btn btn-outline-secondary" href="?page=accounting_paypal">PayPal</a>
+        <a class="btn btn-outline-secondary" href="?page=accounting_paypal">PayPal platby</a>
         <a class="btn btn-success active" href="?page=accounting_omega" aria-current="page">OMEGA faktúry</a>
         <a class="btn btn-outline-secondary" href="?page=accounting_omega_export">OMEGA TXT export</a>
       </div>

@@ -21,7 +21,7 @@ Oba súbory sú tabulátorové TXT v kódovaní Windows-1250. Neupravujte ich v 
 
 - **Pripravené objednávky** – majú všetky potrebné údaje a môžu ísť do balíka.
 - **Čakajú na payout** – cudzo-menové eBay objednávky, ku ktorým ešte chýba importovaný payout s kurzom.
-- **Custom z pracovného dňa** – zákazkové objednávky zaradené podľa predchádzajúceho pracovného dňa.
+- **Neexportované Custom** – všetky zákazkové objednávky, ktoré ešte neboli zaradené do žiadneho nemenného balíka.
 - **Blokované chybou dát** – objednávky s chýbajúcou alebo neplatnou fakturovanou sumou či iným povinným údajom.
 
 ## Ako sa objednávky vyberajú
@@ -29,7 +29,7 @@ Oba súbory sú tabulátorové TXT v kódovaní Windows-1250. Neupravujte ich v 
 - **Shoptet** – objednávky importované vo zvolenom intervale.
 - **eBay v EUR** – objednávky importované vo zvolenom intervale.
 - **eBay v inej mene** – iba objednávky, ku ktorým bol vo zvolenom intervale importovaný payout s kurzom. Môže ísť aj o staršiu objednávku.
-- **Custom** – výrobné objednávky so zdrojom CUSTOM, pridané do výroby v predchádzajúci pracovný deň. Víkend sa preskočí.
+- **Custom** – všetky výrobné objednávky so zdrojom CUSTOM, ktoré ešte neboli zaradené do žiadneho nemenného balíka. Dátum ich pridania výber neobmedzuje.
 
 Objednávka bez kladnej fakturovanej sumy sa zobrazí ako blokovaná a do balíka sa nezaradí.
 

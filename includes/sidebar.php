@@ -263,7 +263,7 @@ function isMenuOpen($pages = [])
             </li>
             <li class="nav-item">
               <a href="<?= basename($_SERVER['PHP_SELF']) ?>?page=accounting_paypal" class="nav-link <?= isActive('accounting_paypal') ?>">
-                <i class="fa fa-caret-right nav-icon"></i><p>PayPal</p>
+                <i class="fa fa-caret-right nav-icon"></i><p>PayPal platby</p>
               </a>
             </li>
             <li class="nav-item">

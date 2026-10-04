@@ -117,16 +117,18 @@ $baseUrl = 'index.php?page=accounting_paypal&month=' . rawurlencode($month);
   .paypal-accounting .stat-link:hover .card { border-color:#20c997; }
   .paypal-accounting .paypal-help { color:#6ed3c1; cursor:help; font-size:.82em; }
   .paypal-accounting .btn[disabled] { cursor:not-allowed; }
-  .paypal-page-header { display:flex; justify-content:space-between; align-items:flex-start; gap:1rem; margin-bottom:1rem; }
-  .paypal-page-heading { min-width:0; }
-  .paypal-page-actions { display:flex; flex:0 0 auto; align-items:flex-start; gap:.5rem; margin-left:1rem; }
-  @media(max-width:767.98px){.paypal-page-header{flex-direction:column}.paypal-page-actions{flex-wrap:wrap;margin-left:0}}
+  .accounting-page-header { display:flex; justify-content:space-between; align-items:flex-start; gap:1rem; min-height:52px; margin-bottom:1rem; }
+  .accounting-page-heading { min-width:0; }
+  .accounting-page-heading h1 { line-height:1.15; }
+  .accounting-page-subtitle { min-height:1.25em; line-height:1.25; }
+  .accounting-page-actions { display:flex; flex:0 0 auto; align-items:flex-start; gap:.5rem; margin-left:1rem; }
+  @media(max-width:767.98px){.accounting-page-header{flex-direction:column;min-height:0;gap:.75rem}.accounting-page-actions{flex-wrap:wrap;margin-left:0}}
 </style>
-<div class="container-fluid paypal-accounting py-3">
-  <header class="paypal-page-header">
-    <div class="paypal-page-heading">
-      <h2 class="mb-1">PayPal účtovníctvo<?= accountingPaypalInfo('Denný import prekrývajúcich sa PayPal CSV, automatické párovanie platieb a export podkladov do OMEGY.') ?></h2>
-      <div class="text-muted">Pôvodné CSV zostáva nezmenené. CO sa používa na dohľadanie leadu, export vždy použije aktuálne SO.</div>
+<div class="container-fluid paypal-accounting">
+  <header class="accounting-page-header">
+    <div class="accounting-page-heading">
+      <h1 class="h3 mb-1">PayPal platby<?= accountingPaypalInfo('Denný import prekrývajúcich sa PayPal CSV, automatické párovanie platieb a export podkladov do OMEGY.') ?></h1>
+      <div class="accounting-page-subtitle text-muted">Pôvodné CSV zostáva nezmenené. CO sa používa na dohľadanie leadu, export vždy použije aktuálne SO.</div>
       <form method="get" class="form-inline mt-3">
         <input type="hidden" name="page" value="accounting_paypal">
         <label class="mr-2" for="paypal-month">Mesiac<?= accountingPaypalInfo('Určuje obdobie zobrazených transakcií aj oboch exportov. Denný CSV môže obsahovať aj časť predchádzajúceho mesiaca.') ?></label>
@@ -134,10 +136,10 @@ $baseUrl = 'index.php?page=accounting_paypal&month=' . rawurlencode($month);
         <button class="btn btn-outline-light btn-sm">Zobraziť</button>
       </form>
     </div>
-    <div class="paypal-page-actions">
+    <div class="accounting-page-actions">
       <div class="btn-group" role="group" aria-label="Účtovné sekcie">
         <a class="btn btn-outline-secondary" href="?page=accounting_payouts">eBay payouty</a>
-        <a class="btn btn-success active" href="?page=accounting_paypal" aria-current="page">PayPal</a>
+        <a class="btn btn-success active" href="?page=accounting_paypal" aria-current="page">PayPal platby</a>
         <a class="btn btn-outline-secondary" href="?page=accounting_omega">OMEGA faktúry</a>
         <a class="btn btn-outline-secondary" href="?page=accounting_omega_export">OMEGA TXT export</a>
       </div>
