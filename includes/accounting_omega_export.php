@@ -409,8 +409,11 @@ natcasesort($manualCustomers);
   function refreshManualRows() {
     const customer = manualCustomer.value;
     const search = manualSearch.value.trim().toLocaleLowerCase('sk');
+    const hasFilter = customer !== '' || search !== '';
     manualRows.forEach(function (row) {
-      const visible = customer !== '' && row.dataset.customer === customer && (!search || row.dataset.search.indexOf(search) !== -1);
+      const visible = hasFilter
+        && (!customer || row.dataset.customer === customer)
+        && (!search || row.dataset.search.indexOf(search) !== -1);
       row.classList.toggle('is-filtered', !visible);
       if (!visible && row.dataset.customer !== customer) row.querySelector('.omega-manual-selection').checked = false;
     });
@@ -420,7 +423,20 @@ natcasesort($manualCustomers);
   }
   manualCustomer.addEventListener('change', refreshManualRows);
   manualSearch.addEventListener('input', refreshManualRows);
-  manualSelections.forEach(function (checkbox) { checkbox.addEventListener('change', refreshManualRows); });
+  manualSearch.addEventListener('keydown', function (event) {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      refreshManualRows();
+    }
+  });
+  manualSelections.forEach(function (checkbox) {
+    checkbox.addEventListener('change', function () {
+      if (checkbox.checked && !manualCustomer.value) {
+        manualCustomer.value = checkbox.closest('.omega-manual-candidate').dataset.customer;
+      }
+      refreshManualRows();
+    });
+  });
   manualSelectVisible.addEventListener('click', function () {
     manualRows.forEach(function (row) { if (!row.classList.contains('is-filtered')) row.querySelector('.omega-manual-selection').checked = true; });
     refreshManualRows();
