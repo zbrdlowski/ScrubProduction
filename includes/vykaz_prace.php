@@ -2,6 +2,7 @@
 declare(strict_types=1);
 /** @var mysqli $conn */
 require_once __DIR__ . '/conn.php';
+require_once __DIR__ . '/auth.php';
 
 if (!isset($conn) || !$conn instanceof mysqli) {
   echo '<div class="alert alert-danger">Database connection error.</div>';
@@ -9,10 +10,17 @@ if (!isset($conn) || !$conn instanceof mysqli) {
 }
 
 // ── ACL ──────────────────────────────────────────────────────────────────
-// Prístup: superadmin (permission 900) alebo admini z dpt. Management (id 3).
+// Plná stránka: superadmin (permission 900) alebo admini z dpt. Management/Administration.
+// Profilový tab: iba vlastný report cez centralizované oprávnenie profile.work_report.
 $permission = (int) ($_SESSION['permission'] ?? 0);
 $dpt = (int) ($_SESSION['dpt'] ?? 0);
 $isSuperadmin = $permission === 900;
+$jobReportContext = isset($jobReportContext) ? (string) $jobReportContext : 'full';
+$jobReportIsProfileSelf = $jobReportContext === 'profile_self';
+$jobReportSelfWorkerId = (int) ($_SESSION['user_id'] ?? 0);
+$jobReportSelfWorkerName = '';
+$hasProfileSelfAccess = $jobReportSelfWorkerId > 0
+  && ($isSuperadmin || (function_exists('auth_can') && auth_can('profile.work_report')));
 
 // dpt.id => minimálny permission floor pre prístup k tomuto reportu
 $allowedDepartments = [
@@ -22,7 +30,12 @@ $allowedDepartments = [
 
 $hasDeptAccess = isset($allowedDepartments[$dpt]) && $permission >= $allowedDepartments[$dpt];
 
-if (!$isSuperadmin && !$hasDeptAccess) {
+if ($jobReportIsProfileSelf) {
+  if (!$hasProfileSelfAccess) {
+    echo '<div class="alert alert-danger">No permission for this report.</div>';
+    return;
+  }
+} elseif (!$isSuperadmin && !$hasDeptAccess) {
   echo '<div class="alert alert-danger">No permission for this page.</div>';
   return;
 }
@@ -40,20 +53,20 @@ $reportPositionIds = [2, 8, 9];
 // stačí zmeniť hodnoty unit_price; uložené hodnoty položiek sa nemenia.
 $subcontractorRateCards = [
   'S' => [
-    'csa' => ['label' => 'CSA', 'unit_price' => 12.50],
-    'sa'  => ['label' => 'SA',  'unit_price' => 10.00],
+    'csa' => ['label' => 'CSA', 'unit_price' => 12.60],
+    'sa'  => ['label' => 'SA',  'unit_price' => 8.00],
     'csb' => ['label' => 'CSB', 'unit_price' => 15.00],
-    'sb'  => ['label' => 'SB',  'unit_price' => 12.00],
-    'csc' => ['label' => 'CSC', 'unit_price' => 17.50],
-    'sc'  => ['label' => 'SC',  'unit_price' => 14.00],
-    'sd'  => ['label' => 'SD',  'unit_price' => 20.00],
+    'sb'  => ['label' => 'SB',  'unit_price' => 10.00],
+    'csc' => ['label' => 'CSC', 'unit_price' => 20.70],
+    'sc'  => ['label' => 'SC',  'unit_price' => 20.700],
+    'sd'  => ['label' => 'SD',  'unit_price' => 5.00],
   ],
   'F' => [
-    'jm-1'   => ['label' => 'JM-1',   'unit_price' => 8.00],
-    'jm-2'   => ['label' => 'JM-2',   'unit_price' => 12.00],
-    'jm-3-a' => ['label' => 'JM-3-A', 'unit_price' => 16.00],
-    'jm-3-b' => ['label' => 'JM-3-B', 'unit_price' => 18.00],
-    'jm-3-c' => ['label' => 'JM-3-C', 'unit_price' => 20.00],
+    'jm-1'   => ['label' => 'JM-1',   'unit_price' => 16.50],
+    'jm-2'   => ['label' => 'JM-2',   'unit_price' => 4.00],
+    'jm-3-a' => ['label' => 'JM-3-A', 'unit_price' => 2.00],
+    'jm-3-b' => ['label' => 'JM-3-B', 'unit_price' => 4.00],
+    'jm-3-c' => ['label' => 'JM-3-C', 'unit_price' => 6.00],
   ],
 ];
 
@@ -69,7 +82,7 @@ $reportColumns = [
   'estimated_time' => 'Estimated Time',
   'department' => 'Department',
   'item_title' => 'Item',
-  'work_level' => 'Complexity / Fitting',
+  'work_level' => 'Complexity / Extras',
   'unit_price' => 'Unit Price',
   'line_total' => 'Total Price',
   'workers' => 'Worker(s)',
@@ -86,6 +99,11 @@ $deptRolePrefix = ['G' => 'GRAPHICS', 'S' => 'SEATCOVER', 'F' => 'FITTING'];
 $maxRangeDays = 92; // ~3 mesiace
 $hasSubmitted = isset($_GET['submitted']); // formulár má hidden input 'submitted'
 $rangeWasClamped = false;
+$jobReportResetParams = $jobReportIsProfileSelf
+  ? ['page' => 'profile', 'tab' => 'work_report']
+  : ['page' => 'vykaz_prace'];
+$jobReportFormPage = (string) $jobReportResetParams['page'];
+$jobReportResetUrl = 'index.php?' . http_build_query($jobReportResetParams);
 
 // ── FILTRE ───────────────────────────────────────────────────────────────
 $fDateFrom = trim((string) ($_GET['date_from'] ?? ''));
@@ -95,6 +113,11 @@ $fWorker = (int) ($_GET['worker'] ?? 0);
 $fOnlyCompleted = (isset($_GET['only_completed']) && $_GET['only_completed'] === '1')
   // Spätná kompatibilita so starými uloženými URL reportu.
   || (isset($_GET['only_shipped']) && $_GET['only_shipped'] === '1');
+
+if ($jobReportIsProfileSelf) {
+  $fDept = '';
+  $fWorker = $jobReportSelfWorkerId;
+}
 
 // Validácia a orezanie dátumového rozsahu. Robí sa VŽDY (aj pri prvom
 // načítaní bez odoslaného filtra), aby mal formulár rozumný prednastavený
@@ -133,22 +156,43 @@ $fDateTo = $dtTo->format('Y-m-d');
 $empActiveWhere = "AND active = 'Active'";
 
 $workerOptions = [];
-$posPh = implode(',', array_fill(0, count($reportPositionIds), '?'));
-$stmt = $conn->prepare("SELECT id, firstname, lastname, position_id
-  FROM employees
-  WHERE position_id IN ($posPh)
-  $empActiveWhere
-  ORDER BY firstname, lastname
-");
-if ($stmt) {
-  $types = str_repeat('i', count($reportPositionIds));
-  $stmt->bind_param($types, ...$reportPositionIds);
-  $stmt->execute();
-  $res = $stmt->get_result();
-  while ($row = $res->fetch_assoc()) {
-    $workerOptions[] = $row;
+if ($jobReportIsProfileSelf) {
+  $stmt = $conn->prepare("SELECT id, firstname, lastname, position_id
+    FROM employees
+    WHERE id = ?
+    LIMIT 1
+  ");
+  if ($stmt) {
+    $stmt->bind_param('i', $jobReportSelfWorkerId);
+    $stmt->execute();
+    $res = $stmt->get_result();
+    if ($row = $res->fetch_assoc()) {
+      $workerOptions[] = $row;
+      $jobReportSelfWorkerName = trim((string) $row['firstname'] . ' ' . (string) $row['lastname']);
+    }
+    $stmt->close();
   }
-  $stmt->close();
+  if ($jobReportSelfWorkerName === '') {
+    $jobReportSelfWorkerName = 'Employee #' . $jobReportSelfWorkerId;
+  }
+} else {
+  $posPh = implode(',', array_fill(0, count($reportPositionIds), '?'));
+  $stmt = $conn->prepare("SELECT id, firstname, lastname, position_id
+    FROM employees
+    WHERE position_id IN ($posPh)
+    $empActiveWhere
+    ORDER BY firstname, lastname
+  ");
+  if ($stmt) {
+    $types = str_repeat('i', count($reportPositionIds));
+    $stmt->bind_param($types, ...$reportPositionIds);
+    $stmt->execute();
+    $res = $stmt->get_result();
+    while ($row = $res->fetch_assoc()) {
+      $workerOptions[] = $row;
+    }
+    $stmt->close();
+  }
 }
 
 // ── HLAVNÝ QUERY: order_items (G/S/F) + orders + priradení pracovníci ───
@@ -348,21 +392,112 @@ $formatEstimatedDuration = static function (?string $startedAt, ?string $complet
 };
 
 $displayRows = [];
-$readSubcontractorLevel = static function (array $row): string {
+$decodeJobReportOptions = static function (?string $json): array {
+  $decoded = json_decode((string) $json, true);
+  return is_array($decoded) ? $decoded : [];
+};
+
+$jobReportOptionIsPositive = static function ($value, array $excludeContains = []): bool {
+  if (is_array($value) || is_object($value) || $value === null) {
+    return false;
+  }
+
+  $normalized = trim(mb_strtolower((string) $value, 'UTF-8'));
+  if ($normalized === '') {
+    return false;
+  }
+
+  $negativeValues = ['no', 'nie', 'ne', 'nein', 'non', 'false', '0', 'n/a', '-', 'x', 'select', 'select...', 'none', 'null'];
+  if (in_array($normalized, $negativeValues, true)) {
+    return false;
+  }
+
+  foreach ($excludeContains as $needle) {
+    $needle = trim(mb_strtolower((string) $needle, 'UTF-8'));
+    if ($needle !== '' && strpos($normalized, $needle) !== false) {
+      return false;
+    }
+  }
+
+  return true;
+};
+
+$jobReportFirstOptionValue = static function (array $options, array $internalOptions, array $keys) {
+  foreach ($keys as $key) {
+    if (array_key_exists($key, $internalOptions)) {
+      return $internalOptions[$key];
+    }
+    if (array_key_exists($key, $options)) {
+      return $options[$key];
+    }
+  }
+
+  return null;
+};
+
+$readSubcontractorLevel = static function (array $row) use ($decodeJobReportOptions): string {
   $department = strtoupper(trim((string) ($row['item_type_code'] ?? '')));
   $sourceKey = $department === 'S' ? 'seat' : ($department === 'F' ? 'fitting' : '');
   if ($sourceKey === '') {
     return '';
   }
 
-  $options = json_decode((string) ($row['options_json'] ?? ''), true);
-  $internalOptions = json_decode((string) ($row['internal_options_json'] ?? ''), true);
-  $options = is_array($options) ? $options : [];
-  $internalOptions = is_array($internalOptions) ? $internalOptions : [];
+  $options = $decodeJobReportOptions($row['options_json'] ?? null);
+  $internalOptions = $decodeJobReportOptions($row['internal_options_json'] ?? null);
 
   $internalKey = '_' . $sourceKey;
   $value = $internalOptions[$internalKey] ?? $options[$sourceKey] ?? '';
   return is_scalar($value) ? strtolower(trim((string) $value)) : '';
+};
+
+$readSeatCoverExtraCharges = static function (array $row) use ($decodeJobReportOptions, $jobReportOptionIsPositive, $jobReportFirstOptionValue): array {
+  if (strtoupper(trim((string) ($row['item_type_code'] ?? ''))) !== 'S') {
+    return [];
+  }
+
+  $options = $decodeJobReportOptions($row['options_json'] ?? null);
+  $internalOptions = $decodeJobReportOptions($row['internal_options_json'] ?? null);
+  $customLabel = strtoupper(trim((string) ($row['custom_label'] ?? '')));
+  $textHaystack = mb_strtolower(trim((string) ($row['title'] ?? '') . ' ' . (string) ($row['custom_label'] ?? '')), 'UTF-8');
+  $extras = [];
+
+  $patchValue = $jobReportFirstOptionValue($options, $internalOptions, ['_seat_patch_applied', 'patch-style']);
+  $hasPatch = $jobReportOptionIsPositive($patchValue, ['no patch', 'kein patch']);
+  if (!$hasPatch) {
+    foreach (['name', 'name-font', 'number', 'number-font'] as $patchKey) {
+      if ($jobReportOptionIsPositive($options[$patchKey] ?? null)) {
+        $hasPatch = true;
+        break;
+      }
+    }
+  }
+  $autoGenerated = mb_strtolower(trim((string) ($options['_auto_generated'] ?? '')), 'UTF-8');
+  if (!$hasPatch && $autoGenerated === 'seat_patch_auto_graphics') {
+    $hasPatch = true;
+  }
+  if ($hasPatch) {
+    $extras[] = ['label' => 'Patch', 'unit_price' => 3.50];
+  }
+
+  $hasSideBrand = $jobReportOptionIsPositive($jobReportFirstOptionValue($options, $internalOptions, ['_seat_side_brand_patches', 'side-brand-patches']));
+  $hasLicensed = $jobReportOptionIsPositive($jobReportFirstOptionValue($options, $internalOptions, ['_seat_licensed', 'licensed', 'license', 'seat-licensed', 'seat_licensed']))
+    || strpos($textHaystack, 'licensed') !== false;
+  if ($hasSideBrand || $hasLicensed) {
+    $extras[] = ['label' => $hasSideBrand && $hasLicensed ? 'Sidebrand / Licensed' : ($hasSideBrand ? 'Sidebrand' : 'Licensed'), 'unit_price' => 3.50];
+  }
+
+  if ($jobReportOptionIsPositive($jobReportFirstOptionValue($options, $internalOptions, ['_seat_enduro_pocket', 'enduro-pocket', 'enduro_pocket']))) {
+    $extras[] = ['label' => 'Enduro Pocket', 'unit_price' => 10.00];
+  }
+
+  $hasPrintedRibs = $jobReportOptionIsPositive($jobReportFirstOptionValue($options, $internalOptions, ['_seat_printed_ribs', 'printed-ribs', 'printed_ribs']))
+    || strpos($customLabel, 'S_RIDGE') === 0
+    || strpos($textHaystack, 'printed ribs') !== false;
+  if ($hasPrintedRibs) {
+    $extras[] = ['label' => 'Printed Ribs', 'unit_price' => 5.00];
+  }
+
+  return $extras;
 };
 
 foreach ($rows as $r) {
@@ -383,8 +518,17 @@ foreach ($rows as $r) {
   $workLevelKey = $readSubcontractorLevel($r);
   $rate = $subcontractorRateCards[$itemDept][$workLevelKey] ?? null;
   $quantity = max(1, (int) ($r['qty'] ?? 1));
-  $unitPrice = $rate !== null ? (float) $rate['unit_price'] : null;
+  $extraCharges = $readSeatCoverExtraCharges($r);
+  $extraUnitPrice = array_sum(array_map(static fn(array $extra): float => (float) $extra['unit_price'], $extraCharges));
+  $unitPrice = $rate !== null ? ((float) $rate['unit_price'] + $extraUnitPrice) : null;
   $lineTotal = $unitPrice !== null ? $unitPrice * $quantity : null;
+  $workLevelLabel = $rate['label'] ?? ($workLevelKey !== '' ? strtoupper($workLevelKey) : '—');
+  if ($extraCharges) {
+    $extraLabels = array_map(static function (array $extra): string {
+      return $extra['label'] . ' +' . number_format((float) $extra['unit_price'], 2, '.', '') . ' €';
+    }, $extraCharges);
+    $workLevelLabel .= ' + ' . implode(', ', $extraLabels);
+  }
   $displayRows[] = [
     'order_number' => $r['order_number'],
     'order_date' => $r['order_date'],
@@ -394,7 +538,7 @@ foreach ($rows as $r) {
     'estimated_time_seconds' => $estimatedDuration['seconds'],
     'department' => $reportItemTypes[$itemDept] ?? $itemDept,
     'item_title' => $itemLabel . ($quantity > 1 ? ' (x' . $quantity . ')' : ''),
-    'work_level' => $rate['label'] ?? ($workLevelKey !== '' ? strtoupper($workLevelKey) : '—'),
+    'work_level' => $workLevelLabel,
     'unit_price' => $unitPrice !== null ? number_format($unitPrice, 2, '.', '') . ' €' : '—',
     'unit_price_value' => $unitPrice,
     'line_total' => $lineTotal !== null ? number_format($lineTotal, 2, '.', '') . ' €' : '—',
@@ -415,7 +559,10 @@ foreach ($rows as $r) {
 
     <div class="card-body">
       <form method="GET" class="mb-3">
-        <input type="hidden" name="page" value="vykaz_prace">
+        <input type="hidden" name="page" value="<?= htmlspecialchars($jobReportFormPage, ENT_QUOTES, 'UTF-8') ?>">
+        <?php if ($jobReportIsProfileSelf): ?>
+          <input type="hidden" name="tab" value="work_report">
+        <?php endif; ?>
         <input type="hidden" name="submitted" value="1">
         <div class="form-row align-items-end">
           <div class="col-auto">
@@ -442,26 +589,35 @@ foreach ($rows as $r) {
             </div>
             <input type="hidden" name="date_to" id="dateTo" value="<?= htmlspecialchars($fDateTo) ?>">
           </div>
-          <div class="col-auto">
-            <label class="mb-1">Department</label>
-            <select class="form-control form-control-sm" name="dept">
-              <option value="">All (Graphics + Seat Covers + Fitting)</option>
-              <?php foreach ($reportItemTypes as $code => $label): ?>
-                <option value="<?= htmlspecialchars($code) ?>" <?= $fDept === $code ? 'selected' : '' ?>><?= htmlspecialchars($label) ?></option>
-              <?php endforeach; ?>
-            </select>
-          </div>
-          <div class="col-auto">
-            <label class="mb-1">Worker</label>
-            <select class="form-control form-control-sm" name="worker">
-              <option value="0">All</option>
-              <?php foreach ($workerOptions as $w): ?>
-                <option value="<?= (int) $w['id'] ?>" <?= $fWorker === (int) $w['id'] ? 'selected' : '' ?>>
-                  <?= htmlspecialchars($w['firstname'] . ' ' . $w['lastname']) ?>
-                </option>
-              <?php endforeach; ?>
-            </select>
-          </div>
+          <?php if (!$jobReportIsProfileSelf): ?>
+            <div class="col-auto">
+              <label class="mb-1">Department</label>
+              <select class="form-control form-control-sm" name="dept">
+                <option value="">All (Graphics + Seat Covers + Fitting)</option>
+                <?php foreach ($reportItemTypes as $code => $label): ?>
+                  <option value="<?= htmlspecialchars($code) ?>" <?= $fDept === $code ? 'selected' : '' ?>><?= htmlspecialchars($label) ?></option>
+                <?php endforeach; ?>
+              </select>
+            </div>
+            <div class="col-auto">
+              <label class="mb-1">Worker</label>
+              <select class="form-control form-control-sm" name="worker">
+                <option value="0">All</option>
+                <?php foreach ($workerOptions as $w): ?>
+                  <option value="<?= (int) $w['id'] ?>" <?= $fWorker === (int) $w['id'] ? 'selected' : '' ?>>
+                    <?= htmlspecialchars($w['firstname'] . ' ' . $w['lastname']) ?>
+                  </option>
+                <?php endforeach; ?>
+              </select>
+            </div>
+          <?php else: ?>
+            <div class="col-auto">
+              <label class="mb-1">Worker</label>
+              <div class="job-report-static-worker">
+                <?= htmlspecialchars($jobReportSelfWorkerName, ENT_QUOTES, 'UTF-8') ?>
+              </div>
+            </div>
+          <?php endif; ?>
           <div class="col-auto">
             <div class="custom-control custom-checkbox mt-4">
               <input type="checkbox" class="custom-control-input" id="onlyCompleted" name="only_completed" value="1" <?= $fOnlyCompleted ? 'checked' : '' ?>>
@@ -470,7 +626,7 @@ foreach ($rows as $r) {
           </div>
           <div class="col-auto">
             <button type="submit" class="btn btn-primary btn-sm mt-4">Filter</button>
-            <a href="index.php?page=vykaz_prace" class="btn btn-secondary btn-sm mt-4">Reset</a>
+            <a href="<?= htmlspecialchars($jobReportResetUrl, ENT_QUOTES, 'UTF-8') ?>" class="btn btn-secondary btn-sm mt-4">Reset</a>
           </div>
         </div>
       </form>
@@ -494,6 +650,19 @@ foreach ($rows as $r) {
 
   .job-report-date-picker input[readonly] {
     cursor: pointer;
+  }
+
+  .job-report-static-worker {
+    min-width: 180px;
+    height: calc(1.8125rem + 2px);
+    display: flex;
+    align-items: center;
+    padding: .25rem .5rem;
+    border: 1px solid #6c757d;
+    border-radius: .2rem;
+    background: #343a40;
+    color: #f8f9fa;
+    line-height: 1.2;
   }
 
   #vykazTable th,
@@ -651,16 +820,17 @@ foreach ($rows as $r) {
 
       <?php if (!$hasSubmitted): ?>
         <div class="alert alert-info">
-          Select a date range (and optionally a department/worker) and click <strong>Filter</strong> to generate the report.
+          Select a date range<?= $jobReportIsProfileSelf ? '' : ' (and optionally a department/worker)' ?> and click <strong>Filter</strong> to generate the report.
           The order volume is large (~30k/year), so the report is not loaded until you filter.
         </div>
       <?php else: ?>
 
+        <!---
       <div class="alert alert-warning py-2">
         <strong>Temporary pricing:</strong> Seat Covers and Fitting prices are test values. Replace the rate card in
         <code>includes/vykaz_prace.php</code> before using this report as an invoice attachment.
       </div>
-
+      -->
       <table class="table table-bordered table-striped" id="vykazTable">
         <thead>
           <tr>

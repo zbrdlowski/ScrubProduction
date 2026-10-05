@@ -32,13 +32,16 @@ function auth_legacy_can(string $permissionKey): bool
     if ($permissionKey === 'attendance.view_all') {
         return $level === 900 || (int) ($_SESSION['user_id'] ?? 0) === 21;
     }
+    if ($permissionKey === 'profile.work_report') {
+        return $level === 900;
+    }
     if (strpos($permissionKey, 'accounting.') === 0) {
         return $level === 900 || in_array($department, [1, 3], true);
     }
     if (in_array($permissionKey, ['orders.view', 'orders.work', 'custom_orders.view', 'custom_orders.work'], true)) {
         return $level >= 1;
     }
-    if (in_array($permissionKey, ['orders.manage', 'custom_orders.manage', 'custom_orders.financial', 'custom_orders.export', 'custom_orders.delete'], true)) {
+    if (in_array($permissionKey, ['orders.manage', 'custom_orders.manage', 'custom_orders.financial', 'custom_orders.export', 'custom_orders.items.delete', 'custom_orders.delete'], true)) {
         return $level >= 300;
     }
     if ($permissionKey === 'custom_orders.audit') {
@@ -187,10 +190,22 @@ function auth_can(string $permissionKey): bool
         if ($permissionKey === 'attendance.view_all') {
             return auth_legacy_can($permissionKey);
         }
+        if ($permissionKey === 'custom_orders.items.delete') {
+            return auth_can('custom_orders.delete');
+        }
         return false;
     }
     if ((int) ($_SESSION['permission'] ?? 0) === 900) {
         return true;
+    }
+    if ($permissionKey === 'custom_orders.items.delete') {
+        if (($access[$permissionKey]['override'] ?? null) === 'deny') {
+            return false;
+        }
+        if (!empty($access[$permissionKey]['allowed'])) {
+            return true;
+        }
+        return !empty($access['custom_orders.delete']['allowed']);
     }
     return (bool) $access[$permissionKey]['allowed'];
 }

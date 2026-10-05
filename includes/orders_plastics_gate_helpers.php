@@ -276,16 +276,23 @@ function ordersPlasticsGateIsDraftOptionKey(string $key): bool
 function ordersPlasticsGateItemHasDraftBeforeProduction(array $item): bool
 {
     $options = json_decode((string)($item['options_json'] ?? ''), true);
-    if (!is_array($options)) {
-        return false;
+    if (is_array($options)) {
+        foreach ($options as $key => $value) {
+            if (!is_string($key) || !ordersPlasticsGateIsDraftOptionKey($key)) {
+                continue;
+            }
+
+            if (ordersPlasticsGateOptionIsPositive($value)) {
+                return true;
+            }
+        }
     }
 
-    foreach ($options as $key => $value) {
-        if (!is_string($key) || !ordersPlasticsGateIsDraftOptionKey($key)) {
-            continue;
-        }
-
-        return ordersPlasticsGateOptionIsPositive($value);
+    $internalOptions = json_decode((string)($item['internal_options_json'] ?? ''), true);
+    if (is_array($internalOptions)
+        && array_key_exists('_draft_before_production_from_graphics', $internalOptions)
+    ) {
+        return ordersPlasticsGateOptionIsPositive($internalOptions['_draft_before_production_from_graphics']);
     }
 
     return false;
@@ -294,7 +301,7 @@ function ordersPlasticsGateItemHasDraftBeforeProduction(array $item): bool
 function ordersPlasticsGateDefaultStatusForItem(mysqli $conn, array $item): string
 {
     $department = ordersNormalizeDepartmentCode((string)($item['item_type_code'] ?? ''));
-    if ($department === 'G' && ordersPlasticsGateItemHasDraftBeforeProduction($item)) {
+    if (in_array($department, ['G', 'S'], true) && ordersPlasticsGateItemHasDraftBeforeProduction($item)) {
         return 'DRAFT_✗';
     }
 

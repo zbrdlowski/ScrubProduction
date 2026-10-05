@@ -13,6 +13,7 @@ require_once __DIR__ . '/orders_workflow_helpers.php';
 $customOrdersCanManage = auth_can('custom_orders.manage');
 $customOrdersCanContribute = auth_can('custom_orders.work');
 $customOrdersCanUpdateStatus = auth_can('custom_orders.work');
+$customOrdersCanDeleteItems = auth_can('custom_orders.items.delete') || auth_can('custom_orders.delete');
 $customOrderCustomerServiceOnlyStatusCodes = array_fill_keys(customOrdersCustomerServiceOnlyStatusCodes(), true);
 $customOrdersCurrentUserId = (int) ($_SESSION['user_id'] ?? 0);
 // CUSTOM ORDERS NOTE AUDIT: Sem dopln employee ID konatela alebo dalsich ludi,
@@ -5450,7 +5451,7 @@ if (!$customOrdersDetailRequest && !$customOrdersFullPageDetail) {
                             <button type="submit" class="btn btn-xs btn-outline-success">Save</button>
                           </td>
                           <td class="text-center" style="width:62px;">
-                            <button type="submit" form="<?= h($itemDeleteFormId) ?>" class="btn btn-xs btn-outline-danger">Delete</button>
+                            <?php if ($customOrdersCanDeleteItems): ?><button type="submit" form="<?= h($itemDeleteFormId) ?>" class="btn btn-xs btn-outline-danger">Delete</button><?php else: ?><button type="button" class="btn btn-xs btn-outline-danger" disabled title="No permission to delete custom order items">Delete</button><?php endif; ?>
                           </td>
                         </tr>
 
@@ -5938,6 +5939,7 @@ if (!$customOrdersDetailRequest && !$customOrdersFullPageDetail) {
     var customOrdersHighlightStorageKey = 'custom-orders-highlight:' + window.location.pathname;
     var customBuilderStatusMap = <?= json_encode($customBuilderStatusMap, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE) ?>;
     var customOrdersCanManage = <?= $customOrdersCanManage ? 'true' : 'false' ?>;
+    var customOrdersCanDeleteItems = <?= $customOrdersCanDeleteItems ? 'true' : 'false' ?>;
     var customItemWorkflowStatusEnabled = false;
     var customOrdersHelpLang = <?= json_encode($customOrderHelpLang === 'en' ? 'en' : 'sk', JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
 
@@ -6107,6 +6109,7 @@ if (!$customOrdersDetailRequest && !$customOrdersFullPageDetail) {
       root.querySelectorAll('form[action^="scripts/custom_orders/"]').forEach(function (form) {
         var action = String(form.getAttribute('action') || '').toLowerCase();
         if (action.endsWith('/save_note.php') || action.endsWith('/edit_note.php') || action.endsWith('/delete_note.php') || action.endsWith('/take_item.php')) return;
+        if (customOrdersCanDeleteItems && action.endsWith('/delete_item.php')) return;
 
         form.classList.add('custom-orders-readonly-form');
         form.querySelectorAll('input, select, textarea, button').forEach(function (control) {

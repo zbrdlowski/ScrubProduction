@@ -33,7 +33,7 @@ $customOrdersPermissionMap = [
   'assign_official_number.php' => 'custom_orders.export',
   'export_order.php' => 'custom_orders.export',
   'delete_order.php' => 'custom_orders.delete',
-  'delete_item.php' => 'custom_orders.delete',
+  'delete_item.php' => 'custom_orders.items.delete',
   'delete_photo.php' => 'custom_orders.work',
 ];
 auth_require($customOrdersPermissionMap[$customOrdersEntryScript] ?? 'custom_orders.manage', 'No permission for this Custom Orders action.');

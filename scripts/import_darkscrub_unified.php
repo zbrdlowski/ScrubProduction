@@ -426,6 +426,7 @@ function import_darkscrub_unified_csv(mysqli $conn, string $csvPath, string $mod
     // Add/update mode: refresh items from latest CSV snapshot.
     oi_delete_items_for_order($conn, $orderId);
 
+    $orderHasGraphicsDraft = oi_order_has_graphics_draft_request($itemRows);
     $seenShipping = false;
     $autoLineNo = 1000; // synthetic line numbers for auto-generated items start here
     foreach ($itemRows as $r) {
@@ -469,15 +470,7 @@ function import_darkscrub_unified_csv(mysqli $conn, string $csvPath, string $mod
       }
 
       // --- Department + subcategory detekcia cez department_config.php ---
-      $departments = dept_get_departments($customLabel, $sku);
-
-      // Fallback na starú heuristiku ak config prefix nenašiel zhodu
-      if (empty($departments)) {
-        $legacyType = oi_detect_item_type($sku, $customLabel, $title, $r['item_type_code'] ?? null);
-        if ($legacyType !== null) {
-          $departments = [$legacyType];
-        }
-      }
+      $departments = oi_detect_import_row_departments($r, $sku, $customLabel, $title);
 
       // Primárny department = prvý v poli (napr. GFP → G)
       $primaryDept = $departments[0] ?? 'G';
@@ -493,13 +486,14 @@ function import_darkscrub_unified_csv(mysqli $conn, string $csvPath, string $mod
       if ($graphicsSubcat !== null) {
         $internalOptions['_subcat'] = $graphicsSubcat;
       }
-      $internalOptionsJson = $internalOptions ? json_encode($internalOptions, JSON_UNESCAPED_UNICODE) : null;
+      $internalOptionsJson = oi_internal_options_json($internalOptions);
+      $internalOptionsJson = oi_mark_seatcover_draft_from_graphics($primaryDept, $internalOptionsJson, $orderHasGraphicsDraft);
 
       // --- Primárna položka (vždy jeden riadok pre primárny department) ---
       $itemId = oi_insert_item_unified_with_internal(
         $conn, $orderId, $lineNo ?: null,
         $sku, $title, $customLabel, $primaryDept, $qty, $optionsJson, $rawUnitPrice, $internalOptionsJson,
-        oi_initial_import_item_status($primaryDept, $optionsJson)
+        oi_initial_import_item_status($primaryDept, $optionsJson, $orderHasGraphicsDraft)
       );
 
       $categoryCodes = dept_to_category_codes($departments);
@@ -529,8 +523,8 @@ function import_darkscrub_unified_csv(mysqli $conn, string $csvPath, string $mod
           $secDept, $qty,
           $secOptionsJson,
           null,  // cena len na primárnej položke
-          null,
-          oi_initial_import_item_status($secDept, $secOptionsJson)
+          oi_mark_seatcover_draft_from_graphics($secDept, null, $orderHasGraphicsDraft),
+          oi_initial_import_item_status($secDept, $secOptionsJson, $orderHasGraphicsDraft)
         );
         $secCatCode = dept_to_category_codes([$secDept]);
         $secCatIds = [];
@@ -554,7 +548,7 @@ function import_darkscrub_unified_csv(mysqli $conn, string $csvPath, string $mod
           $patchOptionsJson,
           null,
           null,
-          oi_initial_import_item_status('G', $patchOptionsJson)
+          oi_initial_import_item_status('G', $patchOptionsJson, $orderHasGraphicsDraft)
         );
         oi_add_item_categories($conn, $patchItemId, [$catIds['GRAPHICS']]);
         $stats['items']++;
@@ -572,8 +566,8 @@ function import_darkscrub_unified_csv(mysqli $conn, string $csvPath, string $mod
           $extra['item_type'], $extra['qty'],
           $extraOptionsJson,
           null,  // extra varianty nemajú vlastnú cenu
-          null,
-          oi_initial_import_item_status($extra['item_type'], $extraOptionsJson)
+          oi_mark_seatcover_draft_from_graphics($extra['item_type'], null, $orderHasGraphicsDraft),
+          oi_initial_import_item_status($extra['item_type'], $extraOptionsJson, $orderHasGraphicsDraft)
         );
         $extraCatCode = dept_to_category_codes([$extra['item_type']]);
         $extraCatIds = [];
@@ -710,6 +704,81 @@ function oi_detect_item_type(?string $sku, ?string $customLabel, ?string $title,
   if (str_contains($t, 'fitting') || str_contains($t, 'install')) return 'F';
 
   return null;
+}
+
+function oi_detect_import_row_departments(array $r, ?string $sku, ?string $customLabel, ?string $title): array {
+  $departments = dept_get_departments($customLabel, $sku);
+  if (!empty($departments)) {
+    return $departments;
+  }
+
+  $legacyType = oi_detect_item_type($sku, $customLabel, $title, $r['item_type_code'] ?? null);
+  return $legacyType !== null ? [$legacyType] : [];
+}
+
+function oi_is_shipping_or_billing_sku(?string $sku): bool {
+  $skuUpper = strtoupper((string)oi_trim($sku));
+  return str_starts_with($skuUpper, 'SHIPPING') || str_starts_with($skuUpper, 'BILLING');
+}
+
+function oi_order_has_graphics_draft_request(array $itemRows): bool {
+  foreach ($itemRows as $r) {
+    if (oi_is_shipping_or_payment_line($r)) {
+      continue;
+    }
+
+    $sku = oi_trim($r['item_sku'] ?? null);
+    if (oi_is_shipping_or_billing_sku($sku)) {
+      continue;
+    }
+
+    $customLabel = oi_trim($r['custom_label'] ?? null);
+    $title = oi_trim($r['item_name'] ?? null);
+    $variant = oi_trim($r['item_variant'] ?? null);
+    if ($variant) {
+      $title = trim((string)$title . ' / ' . $variant);
+    }
+
+    $optionsJson = oi_merge_options_json($r);
+    if (!oi_has_draft_before_production($optionsJson)) {
+      continue;
+    }
+
+    $departments = oi_detect_import_row_departments($r, $sku, $customLabel, $title);
+    if (!$departments) {
+      $departments = ['G'];
+    }
+    if (in_array('G', $departments, true)) {
+      return true;
+    }
+
+    $qty = (int)(oi_trim($r['item_qty'] ?? null) ?? 1);
+    if ($qty < 1) {
+      $qty = 1;
+    }
+    $extraLineNo = 1000;
+    foreach (oi_extract_shoptet_variant_items($r, $qty, $extraLineNo) as $extra) {
+      if (ordersNormalizeDepartmentCode((string)($extra['item_type'] ?? '')) === 'G') {
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
+function oi_internal_options_json(array $internalOptions): ?string {
+  return $internalOptions ? json_encode($internalOptions, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) : null;
+}
+
+function oi_mark_seatcover_draft_from_graphics(?string $itemTypeCode, ?string $internalOptionsJson, bool $orderHasGraphicsDraft): ?string {
+  if (!$orderHasGraphicsDraft || ordersNormalizeDepartmentCode((string)$itemTypeCode) !== 'S') {
+    return $internalOptionsJson;
+  }
+
+  $internalOptions = oi_json_decode_assoc_safe($internalOptionsJson);
+  $internalOptions['_draft_before_production_from_graphics'] = true;
+  return oi_internal_options_json($internalOptions);
 }
 
 function oi_item_type_to_category_codes(?string $itemType, ?string $sku = null, ?string $customLabel = null, ?string $title = null): array {
@@ -976,8 +1045,14 @@ function oi_has_draft_before_production(?string $optionsJson): bool {
   return false;
 }
 
-function oi_initial_import_item_status(?string $itemTypeCode, ?string $optionsJson): ?string {
-  if (ordersNormalizeDepartmentCode((string)$itemTypeCode) === 'G' && oi_has_draft_before_production($optionsJson)) {
+function oi_initial_import_item_status(?string $itemTypeCode, ?string $optionsJson, bool $orderHasGraphicsDraft = false): ?string {
+  $department = ordersNormalizeDepartmentCode((string)$itemTypeCode);
+
+  if ($department === 'G' && oi_has_draft_before_production($optionsJson)) {
+    return 'DRAFT_✗';
+  }
+
+  if ($department === 'S' && ($orderHasGraphicsDraft || oi_has_draft_before_production($optionsJson))) {
     return 'DRAFT_✗';
   }
 

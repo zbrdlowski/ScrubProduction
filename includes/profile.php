@@ -166,6 +166,13 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == '1') {
     case 'custom_orders':
       include __DIR__ . '/profile_custom_orders.php';
       break;
+    case 'work_report':
+      if (!function_exists('auth_can')) {
+        require_once __DIR__ . '/auth.php';
+      }
+      $jobReportContext = 'profile_self';
+      include __DIR__ . '/vykaz_prace.php';
+      break;
     case 'online':
       include __DIR__ . '/profile_online_grid.php';
       break;
@@ -192,8 +199,13 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == '1') {
 
     <?php
     // ktorý panel je predvolene aktívny
-    $activeTab = ($_GET['tab'] ?? 'attendance'); // možné hodnoty: attendance | orders | online
+    $activeTab = ($_GET['tab'] ?? 'attendance');
+    if (!function_exists('auth_can')) {
+      require_once __DIR__ . '/auth.php';
+    }
     $showPersonalOrders = !empty($_SESSION['personal_orders']);
+    $showWorkReport = ((int) ($_SESSION['permission'] ?? 0) === 900)
+      || (function_exists('auth_can') && auth_can('profile.work_report'));
     $profileProjectCount = 0;
     $profileUserId = intval($_SESSION['user_id'] ?? 0);
 
@@ -275,6 +287,9 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == '1') {
     if ($activeTab === 'projects' && $profileProjectCount <= 0) {
       $activeTab = 'attendance';
     }
+    if ($activeTab === 'work_report' && !$showWorkReport) {
+      $activeTab = 'attendance';
+    }
     ?>
 
     <!-- ZÁLOŽKY + OBSAH (celá šírka pod bannerom) -->
@@ -322,6 +337,14 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == '1') {
                     <span class="badge badge-warning ml-1">
                       <?php echo $profileProjectCount; ?>
                     </span>
+                  </a>
+                </li>
+              <?php endif; ?>
+              <?php if ($showWorkReport): ?>
+                <li class="nav-item">
+                  <a class="nav-link <?php echo ($activeTab === 'work_report') ? 'active' : ''; ?>"
+                    href="?page=profile&tab=work_report">
+                    Výkaz práce
                   </a>
                 </li>
               <?php endif; ?>
@@ -503,6 +526,14 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == '1') {
             <?php elseif ($activeTab === 'projects'): ?>
               <div id="profileProjectsContainer" class="detail-wrap">
                 <?php include 'includes/profile_projects.php'; ?>
+              </div>
+
+            <?php elseif ($activeTab === 'work_report'): ?>
+              <div id="profileWorkReportContainer" class="detail-wrap">
+                <?php
+                $jobReportContext = 'profile_self';
+                include 'includes/vykaz_prace.php';
+                ?>
               </div>
 
             <?php else: ?>
