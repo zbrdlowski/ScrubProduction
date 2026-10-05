@@ -17,6 +17,21 @@ Oba súbory sú tabulátorové TXT v kódovaní Windows-1250. Neupravujte ich v 
 6. Z vytvoreného balíka stiahnite najprv **Zákazníci TXT** a potom **Objednávky TXT**.
 7. Oba súbory importujte do OMEGY v rovnakom poradí.
 
+## Zberné a manuálne faktúry
+
+CUSTOM objednávky, ktoré účtovníctvo fakturuje ručne alebo spolu na jednej
+zbernej faktúre, nevkladajte do falošného OMEGA balíka. Kliknite na
+**Zberná faktúra**, vyberte zákazníka, zadajte číslo a dátum faktúry a označte
+objednávky, ktoré faktúra obsahuje. Jedna zberná faktúra môže obsahovať iba
+objednávky jedného zákazníka.
+
+Objednávky sa nevymažú ani sa im nezmení cena. Prestanú sa iba ponúkať medzi
+objednávkami na vytvorenie OMEGA TXT balíka. Platí to aj pre objednávky s nulovou
+alebo symbolickou cenou.
+
+V **Histórii zberných faktúr** možno faktúru otvoriť a omylom označenú
+objednávku tlačidlom **Vrátiť** znovu zaradiť do ponuky OMEGA exportu.
+
 ## Čo znamenajú karty
 
 - **Pripravené objednávky** – majú všetky potrebné údaje a môžu ísť do balíka.
@@ -53,4 +68,7 @@ Seed je posledný použitý číselný kód zákazníka. Bežne ho nemeňte. Ak 
 
 ## Technická inštalácia
 
-Pri prvom nasadení musí správca spustiť databázový súbor `db/accounting_omega_exports.sql`. Počiatočný posledný použitý zákaznícky kód je `M2602995`.
+Pri prvom nasadení musí správca spustiť databázový súbor `db/accounting_omega_exports.sql`.
+Pre evidenciu zberných faktúr treba navyše spustiť
+`db/accounting_omega_manual_invoices.sql`. Počiatočný posledný použitý
+zákaznícky kód je `M2602995`.

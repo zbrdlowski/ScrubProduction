@@ -38,6 +38,20 @@ omegaExportAssert(!in_array(2, $selectedBaseIds, true), 'A CUSTOM order already 
 omegaExportAssert(in_array(3, $selectedBaseIds, true), 'An eBay order inside the selected interval must be selected.');
 omegaExportAssert(!in_array(4, $selectedBaseIds, true), 'An eBay order outside the selected interval must remain excluded.');
 
+$selectionDb->exec('CREATE TABLE accounting_omega_manual_invoices (id INTEGER PRIMARY KEY)');
+$selectionDb->exec('CREATE TABLE accounting_omega_manual_invoice_items (
+    id INTEGER PRIMARY KEY, manual_invoice_id INTEGER, order_id INTEGER, restored_at TEXT
+)');
+$selectionDb->exec('INSERT INTO accounting_omega_manual_invoices (id) VALUES (1)');
+$selectionDb->exec('INSERT INTO accounting_omega_manual_invoice_items (id, manual_invoice_id, order_id) VALUES (1, 1, 1)');
+$manualFilteredOrders = omega_export_base_orders($selectionDb, '2026-10-03', '2026-10-03');
+$manualFilteredIds = array_map(static function (array $order): int { return (int) $order['id']; }, $manualFilteredOrders);
+omegaExportAssert(!in_array(1, $manualFilteredIds, true), 'A CUSTOM order assigned to a manual invoice must be excluded.');
+$selectionDb->exec("UPDATE accounting_omega_manual_invoice_items SET restored_at = '2026-10-05 12:00:00' WHERE id = 1");
+$restoredOrders = omega_export_base_orders($selectionDb, '2026-10-03', '2026-10-03');
+$restoredIds = array_map(static function (array $order): int { return (int) $order['id']; }, $restoredOrders);
+omegaExportAssert(in_array(1, $restoredIds, true), 'A restored manual-invoice order must return to the export candidates.');
+
 $payload = [
     'source_code' => 'CUSTOM',
     'order_number' => 'SO12345',

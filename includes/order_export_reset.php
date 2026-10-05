@@ -154,6 +154,8 @@ if (!orderExportResetCurrentUserAllowed()) {
 
     function renderCounts(counts) {
       var labels = {
+        accounting_omega_export_items: 'OMEGA export items (blocks reset)',
+        invoices: 'Legacy invoices',
         order_items: 'Items',
         order_item_statuses: 'Item statuses',
         order_item_categories: 'Item categories',

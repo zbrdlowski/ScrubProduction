@@ -3,9 +3,20 @@ declare(strict_types=1);
 
 function omega_export_table_exists(PDO $pdo, string $table): bool
 {
+    if ($pdo->getAttribute(PDO::ATTR_DRIVER_NAME) === 'sqlite') {
+        $stmt = $pdo->prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?");
+        $stmt->execute([$table]);
+        return (bool) $stmt->fetchColumn();
+    }
     $stmt = $pdo->prepare('SHOW TABLES LIKE ?');
     $stmt->execute([$table]);
     return (bool) $stmt->fetchColumn();
+}
+
+function omega_export_manual_invoice_schema_ready(PDO $pdo): bool
+{
+    return omega_export_table_exists($pdo, 'accounting_omega_manual_invoices')
+        && omega_export_table_exists($pdo, 'accounting_omega_manual_invoice_items');
 }
 
 function omega_export_schema_ready(PDO $pdo): bool
@@ -171,6 +182,14 @@ function omega_export_find_payout(PDO $pdo, int $orderId, string $orderNumber, s
 
 function omega_export_base_orders(PDO $pdo, string $from, string $to): array
 {
+    $manualInvoiceFilter = omega_export_manual_invoice_schema_ready($pdo)
+        ? 'AND NOT EXISTS (
+            SELECT 1
+            FROM accounting_omega_manual_invoice_items manual_item
+            WHERE manual_item.order_id = o.id
+              AND manual_item.restored_at IS NULL
+          )'
+        : '';
     $stmt = $pdo->prepare('
         SELECT o.id, o.order_number, o.external_order_id, o.imported_at, o.order_date,
                o.currency, o.total, o.financial_total_value, o.financial_total_currency,
@@ -181,6 +200,7 @@ function omega_export_base_orders(PDO $pdo, string $from, string $to): array
         LEFT JOIN customers c ON c.id = o.customer_id
         LEFT JOIN accounting_omega_export_items exported ON exported.order_id = o.id
         WHERE exported.id IS NULL
+          ' . $manualInvoiceFilter . '
           AND (
             (os.code IN (\'EBAY\', \'SHOPTET\') AND DATE(o.imported_at) BETWEEN :from_date AND :to_date)
             OR os.code = \'CUSTOM\'
@@ -193,6 +213,14 @@ function omega_export_base_orders(PDO $pdo, string $from, string $to): array
 
 function omega_export_late_payout_orders(PDO $pdo, string $from, string $to): array
 {
+    $manualInvoiceFilter = omega_export_manual_invoice_schema_ready($pdo)
+        ? 'AND NOT EXISTS (
+            SELECT 1
+            FROM accounting_omega_manual_invoice_items manual_item
+            WHERE manual_item.order_id = o.id
+              AND manual_item.restored_at IS NULL
+          )'
+        : '';
     $stmt = $pdo->prepare('
         SELECT DISTINCT o.id, o.order_number, o.external_order_id, o.imported_at, o.order_date,
                o.currency, o.total, o.financial_total_value, o.financial_total_currency,
@@ -205,6 +233,7 @@ function omega_export_late_payout_orders(PDO $pdo, string $from, string $to): ar
         LEFT JOIN customers c ON c.id = o.customer_id
         LEFT JOIN accounting_omega_export_items exported ON exported.order_id = o.id
         WHERE exported.id IS NULL
+          ' . $manualInvoiceFilter . '
           AND UPPER(COALESCE(o.currency, \'EUR\')) <> \'EUR\'
           AND t.transaction_type = \'ORDER\'
           AND t.exchange_rate IS NOT NULL

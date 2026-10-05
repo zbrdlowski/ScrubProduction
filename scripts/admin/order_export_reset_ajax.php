@@ -103,6 +103,30 @@ function orderExportResetDeleteByOrderId(mysqli $conn, string $table, int $order
   return max(0, (int) $affected);
 }
 
+function orderExportResetOmegaBatchIds(mysqli $conn, int $orderId): array
+{
+  if (!orderExportResetTableExists($conn, 'accounting_omega_export_items')) {
+    return [];
+  }
+
+  $stmt = $conn->prepare('
+    SELECT batch_id
+    FROM accounting_omega_export_items
+    WHERE order_id = ?
+    ORDER BY batch_id
+  ');
+  $stmt->bind_param('i', $orderId);
+  $stmt->execute();
+  $result = $stmt->get_result();
+  $batchIds = [];
+  while ($row = $result->fetch_assoc()) {
+    $batchIds[] = (int) $row['batch_id'];
+  }
+  $stmt->close();
+
+  return $batchIds;
+}
+
 function orderExportResetItemLinkedCount(mysqli $conn, string $table, string $itemColumn, int $orderId): int
 {
   if (!orderExportResetTableExists($conn, $table) || !orderExportResetTableExists($conn, 'order_items')) {
@@ -264,8 +288,11 @@ function orderExportResetFetchContext(mysqli $conn, string $orderNumber): array
   $supported = in_array($sourceCode, orderExportResetSupportedSources(), true);
   $orderId = (int) $order['id'];
   $customOrder = $sourceCode === 'CUSTOM' ? orderExportResetFindCustomOrder($conn, $order) : null;
+  $omegaBatchIds = orderExportResetOmegaBatchIds($conn, $orderId);
 
   $counts = [
+    'accounting_omega_export_items' => count($omegaBatchIds),
+    'invoices' => orderExportResetCountByOrderId($conn, 'invoices', $orderId),
     'order_addresses' => orderExportResetCountByOrderId($conn, 'order_addresses', $orderId),
     'order_assignments' => orderExportResetCountByOrderId($conn, 'order_assignments', $orderId),
     'order_activity' => orderExportResetCountByOrderId($conn, 'order_activity', $orderId),
@@ -290,6 +317,13 @@ function orderExportResetFetchContext(mysqli $conn, string $orderNumber): array
   if ($sourceCode === 'CUSTOM' && !$customOrder) {
     $messages[] = 'Custom Orders row was not found, so the export button cannot be safely reset.';
   }
+  if ($omegaBatchIds) {
+    $batchLabels = array_map(static function (int $batchId): string {
+      return '#' . $batchId;
+    }, $omegaBatchIds);
+    $messages[] = 'This order is part of immutable OMEGA export batch ' . implode(', ', $batchLabels)
+      . '. Reset is blocked to preserve accounting export history.';
+  }
 
   return [
     'found' => true,
@@ -298,7 +332,9 @@ function orderExportResetFetchContext(mysqli $conn, string $orderNumber): array
     'orders' => $orders,
     'custom_order' => $customOrder,
     'counts' => $counts,
-    'can_reset' => $supported && ($sourceCode !== 'CUSTOM' || (bool) $customOrder),
+    'can_reset' => $supported
+      && ($sourceCode !== 'CUSTOM' || (bool) $customOrder)
+      && !$omegaBatchIds,
     'message' => implode(' ', $messages),
   ];
 }
@@ -392,6 +428,7 @@ function orderExportResetDeleteOrder(mysqli $conn, array $context, int $userId):
       'shipments',
       'order_tracking_numbers',
       'order_invoices',
+      'invoices',
       'order_assignments',
       'order_activity',
       'order_categories',

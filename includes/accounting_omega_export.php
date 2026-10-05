@@ -32,10 +32,14 @@ foreach (['from' => &$from, 'to' => &$to, 'processingDate' => &$processingDate] 
 unset($date);
 
 $schemaReady = $pdo instanceof PDO && omega_export_schema_ready($pdo);
+$manualInvoiceSchemaReady = $pdo instanceof PDO && omega_export_manual_invoice_schema_ready($pdo);
 $candidates = ['ready' => [], 'waiting' => [], 'blocked' => []];
 $batches = [];
 $selectedBatch = null;
 $selectedItems = [];
+$manualInvoices = [];
+$selectedManualInvoice = null;
+$selectedManualItems = [];
 $currentCustomerNumber = 2602995;
 $previewError = '';
 
@@ -70,6 +74,33 @@ if ($schemaReady) {
                 $selectedItems = $stmt->fetchAll(PDO::FETCH_ASSOC);
             }
         }
+        if ($manualInvoiceSchemaReady) {
+            $manualInvoices = $pdo->query('
+                SELECT invoice.*, COUNT(item.id) AS item_count,
+                       SUM(item.restored_at IS NULL) AS active_item_count,
+                       COALESCE(SUM(CASE WHEN item.restored_at IS NULL THEN item.total_eur ELSE 0 END), 0) AS active_total_eur
+                FROM accounting_omega_manual_invoices invoice
+                LEFT JOIN accounting_omega_manual_invoice_items item ON item.manual_invoice_id = invoice.id
+                GROUP BY invoice.id
+                ORDER BY invoice.invoice_date DESC, invoice.id DESC
+                LIMIT 50
+            ')->fetchAll(PDO::FETCH_ASSOC);
+            $manualInvoiceId = (int) ($_GET['manual_invoice'] ?? 0);
+            if ($manualInvoiceId > 0) {
+                $stmt = $pdo->prepare('SELECT * FROM accounting_omega_manual_invoices WHERE id = ?');
+                $stmt->execute([$manualInvoiceId]);
+                $selectedManualInvoice = $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
+                if ($selectedManualInvoice) {
+                    $stmt = $pdo->prepare('
+                        SELECT * FROM accounting_omega_manual_invoice_items
+                        WHERE manual_invoice_id = ?
+                        ORDER BY restored_at IS NOT NULL, id
+                    ');
+                    $stmt->execute([$manualInvoiceId]);
+                    $selectedManualItems = $stmt->fetchAll(PDO::FETCH_ASSOC);
+                }
+            }
+        }
     } catch (Throwable $e) {
         $previewError = $e->getMessage();
     }
@@ -79,6 +110,20 @@ $readinessLabels = [
     'PAYOUT_IMPORT' => 'Import payoutu',
     'CUSTOM_NOT_EXPORTED' => 'Doteraz neexportovaná Custom',
 ];
+$manualCandidates = array_values(array_filter(
+    array_merge($candidates['ready'], $candidates['blocked']),
+    static function (array $row): bool {
+        return strtoupper((string) ($row['source_code'] ?? '')) === 'CUSTOM';
+    }
+));
+$manualCustomers = [];
+foreach ($manualCandidates as $row) {
+    $customerKey = $row['customer_id'] !== null
+        ? 'id:' . (int) $row['customer_id']
+        : 'name:' . mb_strtolower((string) ($row['customer_name'] ?? ''), 'UTF-8');
+    $manualCustomers[$customerKey] = (string) ($row['customer_name'] ?: 'Bez názvu');
+}
+natcasesort($manualCustomers);
 ?>
 
 <style>
@@ -93,6 +138,9 @@ $readinessLabels = [
   .omega-export-custom { --accent:#17a2b8; }
   .omega-export-blocked { --accent:#dc3545; }
   .omega-export-table th { white-space:nowrap; }
+  .omega-manual-modal-table { max-height:52vh; overflow:auto; }
+  .omega-manual-modal-table tr.is-filtered { display:none; }
+  .omega-manual-restored { opacity:.55; text-decoration:line-through; }
   @media(max-width:767.98px){.omega-export-header{flex-direction:column}.omega-export-actions{width:100%}}
 </style>
 
@@ -122,6 +170,12 @@ $readinessLabels = [
   <?php if (!empty($_GET['seed_updated'])): ?>
     <div class="alert alert-success">Posledný použitý zákaznícky seed bol nastavený na <b><?= omegaExportH($_GET['seed_updated']) ?></b>.</div>
   <?php endif; ?>
+  <?php if (!empty($_GET['manual_created'])): ?>
+    <div class="alert alert-success">Do zbernej faktúry bolo zaradených <b><?= (int) $_GET['manual_created'] ?></b> objednávok. Z ponuky OMEGA exportu sú vyradené.</div>
+  <?php endif; ?>
+  <?php if (!empty($_GET['manual_restored'])): ?>
+    <div class="alert alert-success">Objednávka bola vrátená do ponuky OMEGA exportu.</div>
+  <?php endif; ?>
 
   <div class="card card-outline card-primary">
     <div class="card-header"><h3 class="card-title">Pripraviť denný balík<?= accountingUiInfo('Najprv skontrolujte výber objednávok. Až potom vytvorte nemenný balík a stiahnite oba TXT súbory.') ?></h3></div>
@@ -150,6 +204,9 @@ $readinessLabels = [
   <div class="card">
     <div class="card-header d-flex align-items-center justify-content-between flex-wrap" style="gap:.75rem">
       <?php if ($canExportAccounting): ?>
+      <button class="btn btn-info btn-sm" type="button" data-toggle="modal" data-target="#omegaManualInvoiceModal" <?= (!$manualInvoiceSchemaReady || !$manualCandidates) ? 'disabled' : '' ?>>
+        <i class="fas fa-file-invoice-dollar mr-1"></i> Zberná faktúra
+      </button>
       <form method="post" action="scripts/accounting/update_omega_export_seed.php" class="form-inline mb-0">
         <input type="hidden" name="csrf_token" value="<?= omegaExportH($_SESSION['accounting_payout_csrf']) ?>">
         <label class="mr-2" for="omegaCustomerSeed"><b>Posledný použitý seed</b><?= accountingUiInfo('Posledný pridelený kód zákazníka. Bežne ho nemeňte; ďalší zákazník dostane nasledujúce číslo.') ?></label>
@@ -204,6 +261,48 @@ $readinessLabels = [
   </div>
   <?php endif; ?>
 
+  <?php if ($selectedManualInvoice): ?>
+  <div class="card card-outline card-info">
+    <div class="card-header"><h3 class="card-title">Zberná faktúra <?= omegaExportH($selectedManualInvoice['invoice_number']) ?></h3></div>
+    <div class="card-body pb-2">
+      <dl class="row mb-0">
+        <dt class="col-sm-2">Dátum</dt><dd class="col-sm-4"><?= omegaExportH(date('d.m.Y', strtotime((string) $selectedManualInvoice['invoice_date']))) ?></dd>
+        <dt class="col-sm-2">Zákazník</dt><dd class="col-sm-4"><?= omegaExportH($selectedManualInvoice['customer_name']) ?></dd>
+        <?php if (!empty($selectedManualInvoice['note'])): ?><dt class="col-sm-2">Poznámka</dt><dd class="col-sm-10"><?= nl2br(omegaExportH($selectedManualInvoice['note'])) ?></dd><?php endif; ?>
+      </dl>
+    </div>
+    <div class="card-body table-responsive p-0"><table class="table table-sm mb-0"><thead><tr><th>Objednávka</th><th>Zákazník</th><th class="text-right">Evidovaná suma</th><th>Stav</th><th></th></tr></thead><tbody>
+      <?php foreach ($selectedManualItems as $item): ?><tr class="<?= $item['restored_at'] ? 'omega-manual-restored' : '' ?>">
+        <td><?= omegaExportH($item['order_number']) ?></td><td><?= omegaExportH($item['customer_name']) ?></td><td class="text-right"><?= number_format((float) $item['total_eur'], 2, ',', ' ') ?> €</td>
+        <td><?= $item['restored_at'] ? 'Vrátená ' . omegaExportH(date('d.m.Y H:i', strtotime((string) $item['restored_at']))) : '<span class="badge badge-info">vyradená z OMEGA ponuky</span>' ?></td>
+        <td class="text-right">
+          <?php if (!$item['restored_at'] && $canExportAccounting): ?>
+          <form method="post" action="scripts/accounting/manual_omega_invoice.php" class="d-inline" onsubmit="return confirm('Vrátiť objednávku <?= omegaExportH($item['order_number']) ?> späť do ponuky OMEGA exportu?');">
+            <input type="hidden" name="csrf_token" value="<?= omegaExportH($_SESSION['accounting_payout_csrf']) ?>"><input type="hidden" name="action" value="restore_item"><input type="hidden" name="item_id" value="<?= (int) $item['id'] ?>">
+            <input type="hidden" name="import_from" value="<?= omegaExportH($from) ?>"><input type="hidden" name="import_to" value="<?= omegaExportH($to) ?>"><input type="hidden" name="processing_date" value="<?= omegaExportH($processingDate) ?>">
+            <button class="btn btn-xs btn-outline-warning" type="submit"><i class="fas fa-undo mr-1"></i> Vrátiť</button>
+          </form>
+          <?php endif; ?>
+        </td>
+      </tr><?php endforeach; ?>
+    </tbody></table></div>
+  </div>
+  <?php endif; ?>
+
+  <?php if ($manualInvoiceSchemaReady): ?>
+  <div class="card collapsed-card">
+    <div class="card-header"><h3 class="card-title">História zberných faktúr<?= accountingUiInfo('Objednávky v aktívnej zbernej faktúre sa neponúkajú do OMEGA TXT balíka. Každú možno samostatne vrátiť.') ?></h3><div class="card-tools"><button class="btn btn-tool" type="button" data-card-widget="collapse"><i class="fas fa-plus"></i></button></div></div>
+    <div class="card-body table-responsive p-0"><table class="table table-sm mb-0"><thead><tr><th>Faktúra</th><th>Dátum</th><th>Zákazník</th><th class="text-right">Aktívne objednávky</th><th class="text-right">Evidovaná suma</th><th></th></tr></thead><tbody>
+      <?php foreach ($manualInvoices as $invoice): ?><tr>
+        <td><b><?= omegaExportH($invoice['invoice_number']) ?></b></td><td><?= omegaExportH(date('d.m.Y', strtotime((string) $invoice['invoice_date']))) ?></td><td><?= omegaExportH($invoice['customer_name']) ?></td>
+        <td class="text-right"><?= (int) $invoice['active_item_count'] ?> / <?= (int) $invoice['item_count'] ?></td><td class="text-right"><?= number_format((float) $invoice['active_total_eur'], 2, ',', ' ') ?> €</td>
+        <td class="text-right"><a class="btn btn-xs btn-outline-info" href="?page=accounting_omega_export&amp;import_from=<?= omegaExportH($from) ?>&amp;import_to=<?= omegaExportH($to) ?>&amp;processing_date=<?= omegaExportH($processingDate) ?>&amp;manual_invoice=<?= (int) $invoice['id'] ?>">Otvoriť</a></td>
+      </tr><?php endforeach; ?>
+      <?php if (!$manualInvoices): ?><tr><td colspan="6" class="text-center text-muted py-3">Zatiaľ nebola zaevidovaná žiadna zberná faktúra.</td></tr><?php endif; ?>
+    </tbody></table></div>
+  </div>
+  <?php endif; ?>
+
   <?php if ($selectedBatch): ?>
   <div class="card card-outline card-success">
     <div class="card-header"><h3 class="card-title">Balík #<?= (int) $selectedBatch['id'] ?></h3><div class="card-tools">
@@ -235,28 +334,102 @@ $readinessLabels = [
   </div>
 </div>
 
+<?php if ($canExportAccounting && $manualInvoiceSchemaReady): ?>
+<div class="modal fade" id="omegaManualInvoiceModal" tabindex="-1" role="dialog" aria-labelledby="omegaManualInvoiceTitle" aria-hidden="true">
+  <div class="modal-dialog modal-xl" role="document"><div class="modal-content bg-dark">
+    <form method="post" action="scripts/accounting/manual_omega_invoice.php" id="omegaManualInvoiceForm">
+      <div class="modal-header"><h5 class="modal-title" id="omegaManualInvoiceTitle"><i class="fas fa-file-invoice-dollar mr-2"></i>Zaevidovať zbernú faktúru</h5><button type="button" class="close text-white" data-dismiss="modal" aria-label="Zavrieť"><span aria-hidden="true">&times;</span></button></div>
+      <div class="modal-body">
+        <input type="hidden" name="csrf_token" value="<?= omegaExportH($_SESSION['accounting_payout_csrf']) ?>"><input type="hidden" name="action" value="create">
+        <input type="hidden" name="import_from" value="<?= omegaExportH($from) ?>"><input type="hidden" name="import_to" value="<?= omegaExportH($to) ?>"><input type="hidden" name="processing_date" value="<?= omegaExportH($processingDate) ?>">
+        <div class="alert alert-info py-2"><i class="fas fa-info-circle mr-1"></i> Objednávky sa nevymažú. Iba sa označia ako ručne fakturované a prestanú sa ponúkať do OMEGA TXT balíka.</div>
+        <div class="form-row">
+          <div class="form-group col-md-4"><label for="omegaManualInvoiceNumber">Číslo faktúry</label><input class="form-control" id="omegaManualInvoiceNumber" name="invoice_number" maxlength="128" required></div>
+          <div class="form-group col-md-3"><label for="omegaManualInvoiceDate">Dátum faktúry</label><input class="form-control" id="omegaManualInvoiceDate" type="date" name="invoice_date" value="<?= omegaExportH($today) ?>" required></div>
+          <div class="form-group col-md-5"><label for="omegaManualCustomer">Zákazník / dealer</label><select class="form-control" id="omegaManualCustomer" required><option value="">Vyberte zákazníka…</option><?php foreach ($manualCustomers as $key => $name): ?><option value="<?= omegaExportH($key) ?>"><?= omegaExportH($name) ?></option><?php endforeach; ?></select></div>
+        </div>
+        <div class="form-row align-items-end">
+          <div class="form-group col-md-7"><label for="omegaManualSearch">Hľadať objednávku</label><input class="form-control" id="omegaManualSearch" type="search" placeholder="Číslo objednávky alebo zákazník"></div>
+          <div class="form-group col-md-5 text-md-right"><button class="btn btn-outline-light" id="omegaManualSelectVisible" type="button"><i class="fas fa-check-square mr-1"></i> Označiť zobrazené</button> <button class="btn btn-outline-secondary" id="omegaManualClear" type="button">Zrušiť výber</button></div>
+        </div>
+        <div class="omega-manual-modal-table table-responsive border rounded">
+          <table class="table table-sm table-hover mb-0"><thead><tr><th style="width:42px"></th><th>Objednávka</th><th>Zákazník</th><th>Dátum importu</th><th class="text-right">Evidovaná suma</th><th>Stav</th></tr></thead><tbody>
+          <?php foreach ($manualCandidates as $row):
+            $customerKey = $row['customer_id'] !== null ? 'id:' . (int) $row['customer_id'] : 'name:' . mb_strtolower((string) ($row['customer_name'] ?? ''), 'UTF-8');
+            $manualTotal = isset($row['_total_eur']) ? (float) $row['_total_eur'] : omega_export_decimal($row['financial_total_value'] ?? null);
+            if ($manualTotal <= 0) { $manualTotal = omega_export_decimal($row['total'] ?? null); }
+          ?>
+            <tr class="omega-manual-candidate is-filtered" data-customer="<?= omegaExportH($customerKey) ?>" data-search="<?= omegaExportH(mb_strtolower((string) $row['order_number'] . ' ' . (string) $row['customer_name'], 'UTF-8')) ?>">
+              <td class="text-center"><input class="omega-manual-selection" type="checkbox" name="order_ids[]" value="<?= (int) $row['id'] ?>"></td><td><b><?= omegaExportH($row['order_number']) ?></b></td><td><?= omegaExportH($row['customer_name']) ?></td>
+              <td><?= omegaExportH(date('d.m.Y', strtotime((string) $row['imported_at']))) ?></td><td class="text-right"><?= number_format($manualTotal, 2, ',', ' ') ?> €</td><td><?= isset($row['block_reason']) ? '<span class="badge badge-warning">' . omegaExportH($row['block_reason']) . '</span>' : '<span class="badge badge-success">pripravená</span>' ?></td>
+            </tr>
+          <?php endforeach; ?>
+          </tbody></table>
+        </div>
+        <div class="form-group mt-3 mb-0"><label for="omegaManualNote">Poznámka (nepovinná)</label><textarea class="form-control" id="omegaManualNote" name="note" rows="2" maxlength="2000"></textarea></div>
+      </div>
+      <div class="modal-footer justify-content-between"><span><b id="omegaManualSelectedCount">0</b> označených objednávok</span><div><button type="button" class="btn btn-secondary" data-dismiss="modal">Zavrieť</button> <button class="btn btn-info" id="omegaManualSave" type="submit" disabled><i class="fas fa-save mr-1"></i> Uložiť zbernú faktúru</button></div></div>
+    </form>
+  </div></div>
+</div>
+<?php endif; ?>
+
 <script>
 (function () {
   const selectAll = document.getElementById('omegaSelectAll');
   const selections = Array.prototype.slice.call(document.querySelectorAll('.omega-order-selection'));
   const count = document.getElementById('omegaSelectedCount');
   const createButton = document.getElementById('omegaCreatePackageButton');
-  if (!selectAll || !count || !createButton) return;
-
-  function refreshSelection() {
-    const checked = selections.filter(function (checkbox) { return checkbox.checked; }).length;
-    count.textContent = String(checked);
-    createButton.disabled = checked === 0;
-    selectAll.checked = selections.length > 0 && checked === selections.length;
-    selectAll.indeterminate = checked > 0 && checked < selections.length;
+  if (selectAll && count && createButton) {
+    function refreshSelection() {
+      const checked = selections.filter(function (checkbox) { return checkbox.checked; }).length;
+      count.textContent = String(checked);
+      createButton.disabled = checked === 0;
+      selectAll.checked = selections.length > 0 && checked === selections.length;
+      selectAll.indeterminate = checked > 0 && checked < selections.length;
+    }
+    selectAll.addEventListener('change', function () {
+      selections.forEach(function (checkbox) { checkbox.checked = selectAll.checked; });
+      refreshSelection();
+    });
+    selections.forEach(function (checkbox) { checkbox.addEventListener('change', refreshSelection); });
+    refreshSelection();
   }
 
-  selectAll.addEventListener('change', function () {
-    selections.forEach(function (checkbox) { checkbox.checked = selectAll.checked; });
-    refreshSelection();
+  const manualCustomer = document.getElementById('omegaManualCustomer');
+  const manualSearch = document.getElementById('omegaManualSearch');
+  const manualRows = Array.prototype.slice.call(document.querySelectorAll('.omega-manual-candidate'));
+  const manualSelections = Array.prototype.slice.call(document.querySelectorAll('.omega-manual-selection'));
+  const manualCount = document.getElementById('omegaManualSelectedCount');
+  const manualSave = document.getElementById('omegaManualSave');
+  const manualSelectVisible = document.getElementById('omegaManualSelectVisible');
+  const manualClear = document.getElementById('omegaManualClear');
+  if (!manualCustomer || !manualSearch || !manualCount || !manualSave) return;
+
+  function refreshManualRows() {
+    const customer = manualCustomer.value;
+    const search = manualSearch.value.trim().toLocaleLowerCase('sk');
+    manualRows.forEach(function (row) {
+      const visible = customer !== '' && row.dataset.customer === customer && (!search || row.dataset.search.indexOf(search) !== -1);
+      row.classList.toggle('is-filtered', !visible);
+      if (!visible && row.dataset.customer !== customer) row.querySelector('.omega-manual-selection').checked = false;
+    });
+    const checked = manualSelections.filter(function (checkbox) { return checkbox.checked; }).length;
+    manualCount.textContent = String(checked);
+    manualSave.disabled = checked === 0;
+  }
+  manualCustomer.addEventListener('change', refreshManualRows);
+  manualSearch.addEventListener('input', refreshManualRows);
+  manualSelections.forEach(function (checkbox) { checkbox.addEventListener('change', refreshManualRows); });
+  manualSelectVisible.addEventListener('click', function () {
+    manualRows.forEach(function (row) { if (!row.classList.contains('is-filtered')) row.querySelector('.omega-manual-selection').checked = true; });
+    refreshManualRows();
   });
-  selections.forEach(function (checkbox) { checkbox.addEventListener('change', refreshSelection); });
-  refreshSelection();
+  manualClear.addEventListener('click', function () {
+    manualSelections.forEach(function (checkbox) { checkbox.checked = false; });
+    refreshManualRows();
+  });
+  refreshManualRows();
 }());
 </script>
 <?= accountingUiHelpModal('omega_export') ?>
