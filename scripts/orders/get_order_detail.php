@@ -1337,6 +1337,8 @@ $ordersCanManage = auth_can('orders.manage');
 $ordersCanWork = auth_can('orders.work');
 $ordersCanManageFinancials = auth_can('orders.financial');
 $ordersCanAdminister = auth_can('orders.admin');
+$ordersCanManageCustomOrders = auth_can('custom_orders.manage') || auth_can('custom_orders.financial');
+$ordersCanAccessAccounting = auth_can('accounting.view') || auth_can('accounting.export');
 
 $orderId = (int) ($_POST['order_id'] ?? 0);
 if ($orderId <= 0)
@@ -1932,6 +1934,27 @@ if (!empty($addr['SHIPPING']['phone'])) {
 } else {
   $displayCustomerPhone = (string) ($order['customer_phone'] ?? '');
 }
+
+$postProductionInvoiceMeta = $sourceMeta['_invoice_request'] ?? [];
+if (!is_array($postProductionInvoiceMeta)) {
+  $postProductionInvoiceMeta = [];
+}
+$postProductionInvoiceRequired = !empty($postProductionInvoiceMeta['required']);
+$postProductionInvoiceDetectedTarget = (
+  trim((string) ($addr['BILLING']['company'] ?? '')) !== ''
+  || trim((string) ($addr['BILLING']['company_id'] ?? '')) !== ''
+) ? 'company' : 'person';
+$postProductionInvoiceTarget = strtolower(trim((string) ($postProductionInvoiceMeta['target'] ?? '')));
+if (!in_array($postProductionInvoiceTarget, ['company', 'person'], true)) {
+  $postProductionInvoiceTarget = $postProductionInvoiceDetectedTarget;
+}
+$postProductionInvoiceTargetLabel = $postProductionInvoiceTarget === 'company' ? 'firmu' : 'osobu';
+$postProductionInvoiceDetectedLabel = $postProductionInvoiceDetectedTarget === 'company' ? 'firma' : 'osoba';
+$canManagePostProductionInvoice = $isCustomOrder && !$isFollowupOrder && (
+  $ordersCanManageCustomOrders
+  || $ordersCanAccessAccounting
+  || $ordersCanAdminister
+);
 
 $deliveryContactPhone = trim((string) ($addr['SHIPPING']['phone'] ?? ''));
 if ($deliveryContactPhone === '') {
@@ -4719,6 +4742,40 @@ ob_start();
     background: rgba(23, 162, 184, .10);
   }
 
+  .order-invoice-request-alert {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    border: 1px solid rgba(255, 193, 7, .36);
+    border-radius: 6px;
+    background: rgba(255, 193, 7, .10);
+    color: #ffe8a1;
+    padding: 5px 8px;
+    font-size: 12px;
+    font-weight: 700;
+    line-height: 1.25;
+  }
+
+  .order-invoice-request-control {
+    display: grid;
+    gap: 4px;
+    max-width: 260px;
+  }
+
+  .order-invoice-request-control label {
+    margin: 0;
+    color: #8f9ca8;
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: .05em;
+    text-transform: uppercase;
+  }
+
+  .order-invoice-request-control small {
+    color: #9aa6b2;
+    line-height: 1.25;
+  }
+
   .order-production-payment-amount span {
     display: block;
     margin-top: 2px;
@@ -5396,6 +5453,26 @@ ob_start();
                 <?php if ($customsDdpNote !== ''): ?>
                   <div class="order-summary-line small text-muted"><?php echo h($customsDdpNote); ?></div>
                 <?php endif; ?>
+              <?php endif; ?>
+              <?php if ($postProductionInvoiceRequired): ?>
+                <div class="order-invoice-request-alert mt-2">
+                  <i class="fas fa-file-invoice-dollar" aria-hidden="true"></i>
+                  Faktúru vystaviť na <?php echo h($postProductionInvoiceTargetLabel); ?>
+                </div>
+              <?php endif; ?>
+              <?php if ($canManagePostProductionInvoice): ?>
+                <div class="order-invoice-request-control mt-2">
+                  <label for="postProductionInvoice-<?php echo (int) $orderId; ?>">Invoice after production</label>
+                  <select id="postProductionInvoice-<?php echo (int) $orderId; ?>"
+                    class="form-control form-control-sm order-invoice-request-select"
+                    data-order-id="<?php echo (int) $orderId; ?>"
+                    data-current-target="<?php echo h($postProductionInvoiceRequired ? $postProductionInvoiceTarget : ''); ?>">
+                    <option value="" <?php echo !$postProductionInvoiceRequired ? 'selected' : ''; ?>>No invoice request</option>
+                    <option value="company" <?php echo $postProductionInvoiceRequired && $postProductionInvoiceTarget === 'company' ? 'selected' : ''; ?>>Invoice to company</option>
+                    <option value="person" <?php echo $postProductionInvoiceRequired && $postProductionInvoiceTarget === 'person' ? 'selected' : ''; ?>>Invoice to person</option>
+                  </select>
+                  <small>Detected: <?php echo h($postProductionInvoiceDetectedLabel); ?></small>
+                </div>
               <?php endif; ?>
               <?php if ($followupLabel !== ''): ?>
                 <div class="mt-1">
@@ -8439,6 +8516,52 @@ ob_start();
         alert('Delete failed:\n' + xhr.status + '\n' + xhr.responseText);
       });
     });
+  })();
+
+  (function () {
+    'use strict';
+
+    function reloadInvoiceRequestDetail(orderId) {
+      orderId = parseInt(orderId, 10) || 0;
+      if (orderId && typeof window.reloadOrderDetail === 'function') {
+        window.reloadOrderDetail(orderId);
+        return;
+      }
+      window.location.reload();
+    }
+
+    $(document)
+      .off('change.invoiceRequest', '.order-invoice-request-select')
+      .on('change.invoiceRequest', '.order-invoice-request-select', function () {
+        var $select = $(this);
+        var orderId = parseInt($select.data('order-id'), 10) || 0;
+        var target = String($select.val() || '');
+        var previousTarget = String($select.data('current-target') || '');
+
+        if (!orderId) {
+          alert('Missing order ID');
+          return;
+        }
+
+        $select.prop('disabled', true);
+
+        $.post('scripts/orders/update_order_invoice_request.php', {
+          order_id: orderId,
+          invoice_target: target
+        }, function (res) {
+          if (!res || !res.ok) {
+            alert(res && res.error ? res.error : 'Invoice request update failed');
+            $select.val(previousTarget).prop('disabled', false);
+            return;
+          }
+
+          $select.data('current-target', target);
+          reloadInvoiceRequestDetail(orderId);
+        }, 'json').fail(function (xhr) {
+          alert('Invoice request update failed:\n' + xhr.status + '\n' + xhr.responseText);
+          $select.val(previousTarget).prop('disabled', false);
+        });
+      });
   })();
 
 </script>

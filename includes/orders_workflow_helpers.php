@@ -584,6 +584,37 @@ function ordersOrderDoNotInvoice(mysqli $conn, int $orderId): bool
     return !empty($followupMeta['do_not_invoice']);
 }
 
+function ordersOrderPostProductionInvoiceRequest(mysqli $conn, int $orderId): array
+{
+    $sourceMeta = ordersOrderSourceMeta($conn, $orderId);
+    $invoiceMeta = $sourceMeta['_invoice_request'] ?? null;
+
+    if (!is_array($invoiceMeta)) {
+        return [
+            'required' => false,
+            'target' => '',
+            'note' => '',
+        ];
+    }
+
+    $target = strtolower(trim((string) ($invoiceMeta['target'] ?? '')));
+    if (!in_array($target, ['company', 'person'], true)) {
+        $target = '';
+    }
+
+    return [
+        'required' => !empty($invoiceMeta['required']),
+        'target' => $target,
+        'note' => trim((string) ($invoiceMeta['note'] ?? '')),
+    ];
+}
+
+function ordersOrderRequiresPostProductionInvoice(mysqli $conn, int $orderId): bool
+{
+    $invoiceRequest = ordersOrderPostProductionInvoiceRequest($conn, $orderId);
+    return !empty($invoiceRequest['required']);
+}
+
 /**
  * Krajiny EU (27 clenskych statov, 2-pismenkove ISO kody). UK (GB) po
  * Brexite EU nie je - zostava mimo, teda potrebuje faktura ku colnemu
@@ -826,6 +857,19 @@ function recalculateOrderWorkflow(mysqli $conn, int $orderId): void
         $orderStatus = 'NEW';
     }
 
+    $requiresPostProductionInvoice = ordersOrderRequiresPostProductionInvoice($conn, $orderId);
+
+    // Custom Orders s dodatočnou fakturáciou musia po dokončení výroby prejsť
+    // cez READY_TO_INVOICE aj vtedy, keď by ich EU doručenie inak poslalo rovno
+    // na label.
+    if (
+        $requiresPostProductionInvoice
+        && $traffic === 'GREEN'
+        && !in_array($currentOrderStatus, ['SHIPPED', 'CANCELLED', 'DELIVERED', 'PENDING'], true)
+    ) {
+        $orderStatus = 'READY_TO_INVOICE';
+    }
+
     // "Netreba fakturovat" pripady - warranty/no-invoice production objednavky
     // A ODOSIELANIE V RAMCI EU (netreba faktura ku colnemu konaniu, staci
     // Ready for Label). V oboch pripadoch konecny status = READY_TO_SHIP
@@ -834,7 +878,7 @@ function recalculateOrderWorkflow(mysqli $conn, int $orderId): void
     // iba vnutri stareho hardcoded fallbacku a teraz by inak ticho prestala
     // fungovat.
     if ($orderStatus === 'READY_TO_INVOICE') {
-        if (ordersOrderDoNotInvoice($conn, $orderId) || ordersIsEuShipping($conn, $orderId)) {
+        if (!$requiresPostProductionInvoice && (ordersOrderDoNotInvoice($conn, $orderId) || ordersIsEuShipping($conn, $orderId))) {
             $orderStatus = 'READY_TO_SHIP';
         }
     }
