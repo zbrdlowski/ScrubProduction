@@ -112,8 +112,10 @@ if ($orderId <= 0 || !isset($allowedTypes[$followupType])) {
   out_followup(400, ['ok' => false, 'error' => 'Invalid follow-up request']);
 }
 
-if ($followupType === 'WARRANTY' && $doNotInvoice !== 1) {
-  $doNotInvoice = 1;
+$isWarrantyClaim = $followupType === 'WARRANTY';
+$warrantyDdpAmount = $isWarrantyClaim ? 5.00 : 0.0;
+if ($isWarrantyClaim) {
+  $doNotInvoice = 0;
 }
 
 if ($followupType === 'SPLIT' && $doNotInvoice !== 1) {
@@ -243,13 +245,24 @@ $followupMeta = [
 if ($parentCustomOrderId > 0) {
   $followupMeta['parent_custom_order_id'] = $parentCustomOrderId;
 }
+if ($isWarrantyClaim) {
+  $followupMeta['customs_ddp_amount'] = $warrantyDdpAmount;
+}
 $sourceMeta['_followup'] = $followupMeta;
+if ($isWarrantyClaim) {
+  $sourceMeta['customs_ddp_enabled'] = 1;
+  $sourceMeta['customs_ddp_amount'] = $warrantyDdpAmount;
+  $sourceMeta['customs_ddp_note'] = 'Warranty claim DDP';
+}
 $sourceMetaJson = json_encode($sourceMeta, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 
 $newTotal = 0.0;
 foreach ($itemsToClone as $item) {
-  $unitPrice = $doNotInvoice === 1 ? 0.0 : (float) ($item['unit_price'] ?? 0);
+  $unitPrice = ($doNotInvoice === 1 || $isWarrantyClaim) ? 0.0 : (float) ($item['unit_price'] ?? 0);
   $newTotal += $unitPrice * (int) ($item['followup_qty'] ?? 0);
+}
+if ($isWarrantyClaim) {
+  $newTotal += $warrantyDdpAmount;
 }
 
 $shippingMethod = trim((string) ($sourceOrder['shipping_method'] ?? ''));
@@ -264,6 +277,8 @@ $newNoteParts = [
 ];
 if ($doNotInvoice === 1) {
   $newNoteParts[] = 'Do not invoice';
+} elseif ($isWarrantyClaim) {
+  $newNoteParts[] = 'DDP enabled: ' . number_format($warrantyDdpAmount, 2, '.', '') . ' EUR';
 }
 if ($reason !== '') {
   $newNoteParts[] = $reason;
@@ -377,7 +392,7 @@ try {
     $customLabel = (string) ($item['custom_label'] ?? '');
     $itemTypeCode = strtoupper(trim((string) ($item['item_type_code'] ?? 'M')));
     $qty = (int) ($item['followup_qty'] ?? 1);
-    $unitPrice = $doNotInvoice === 1 ? 0.0 : (float) ($item['unit_price'] ?? 0);
+    $unitPrice = ($doNotInvoice === 1 || $isWarrantyClaim) ? 0.0 : (float) ($item['unit_price'] ?? 0);
     $optionsJson = (string) ($item['options_json'] ?? '{}');
     $internalOptions = followup_decode_json_map((string) ($item['internal_options_json'] ?? '{}'));
     $internalOptions['_followup_parent_item_id'] = (int) ($item['id'] ?? 0);
@@ -474,6 +489,7 @@ try {
       'parent_order_number' => (string) ($sourceOrder['order_number'] ?? ''),
       'followup_type' => $followupType,
       'do_not_invoice' => $doNotInvoice === 1 ? 1 : 0,
+      'customs_ddp_amount' => $isWarrantyClaim ? $warrantyDdpAmount : 0,
       'reason' => $reason,
       'moved_items' => $movedItems,
     ],
@@ -492,6 +508,7 @@ try {
       'new_order_number' => $newOrderNumber,
       'followup_type' => $followupType,
       'do_not_invoice' => $doNotInvoice === 1 ? 1 : 0,
+      'customs_ddp_amount' => $isWarrantyClaim ? $warrantyDdpAmount : 0,
       'reason' => $reason,
       'moved_items' => $movedItems,
     ],
@@ -504,6 +521,7 @@ try {
     'new_order_id' => $newOrderId,
     'order_number' => $newOrderNumber,
     'do_not_invoice' => $doNotInvoice,
+    'customs_ddp_amount' => $isWarrantyClaim ? $warrantyDdpAmount : 0,
   ]);
 } catch (Throwable $e) {
   $conn->rollback();

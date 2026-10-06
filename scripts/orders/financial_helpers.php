@@ -144,6 +144,15 @@ function order_financial_sanitize_followup_source_meta(array $sourceMeta): array
     return $sourceMeta;
   }
 
+  $followupType = strtoupper(trim((string) ($sourceMeta['_followup']['type'] ?? '')));
+  $preservedWarrantyDdp = [];
+  if ($followupType === 'WARRANTY') {
+    foreach (['customs_ddp_amount', 'customs_ddp_enabled', 'customs_ddp_note'] as $ddpKey) {
+      if (array_key_exists($ddpKey, $sourceMeta)) {
+        $preservedWarrantyDdp[$ddpKey] = $sourceMeta[$ddpKey];
+      }
+    }
+  }
   foreach ([
     'custom_order_id',
     'deposit_revision_limit',
@@ -171,6 +180,9 @@ function order_financial_sanitize_followup_source_meta(array $sourceMeta): array
     unset($sourceMeta[$key]);
   }
 
+  foreach ($preservedWarrantyDdp as $ddpKey => $ddpValue) {
+    $sourceMeta[$ddpKey] = $ddpValue;
+  }
   return $sourceMeta;
 }
 

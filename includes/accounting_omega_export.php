@@ -207,9 +207,27 @@ natcasesort($manualCustomers);
     <div class="card-body">
       <form class="form-row align-items-end" method="get" id="omegaExportFilter">
         <input type="hidden" name="page" value="accounting_omega_export">
-        <div class="form-group col-md-3 mb-2"><label for="omegaImportFrom">Import objednávok od<?= accountingUiInfo('Prvý deň intervalu, v ktorom boli eBay, Shoptet aj Custom objednávky importované do Darkscrubu.') ?></label><input class="form-control" id="omegaImportFrom" type="text" name="import_from" value="<?= omegaExportH(omegaExportDisplayDate($from)) ?>" placeholder="01.01.1970" inputmode="numeric" autocomplete="off"></div>
-        <div class="form-group col-md-3 mb-2"><label for="omegaImportTo">Import objednávok do<?= accountingUiInfo('Posledný deň kontrolovaného intervalu vrátane.') ?></label><input class="form-control" id="omegaImportTo" type="text" name="import_to" value="<?= omegaExportH(omegaExportDisplayDate($to)) ?>" placeholder="01.01.1970" inputmode="numeric" autocomplete="off"></div>
-        <div class="form-group col-md-3 mb-2"><label for="omegaProcessingDate">Deň spracovania<?= accountingUiInfo('Dátum, ku ktorému pripravujete tento balík. Custom objednávky sa vyberajú podľa zvoleného intervalu importu, rovnako ako eBay a Shoptet.') ?></label><input class="form-control" id="omegaProcessingDate" type="text" name="processing_date" value="<?= omegaExportH(omegaExportDisplayDate($processingDate)) ?>" placeholder="01.01.1970" inputmode="numeric" autocomplete="off"></div>
+        <div class="form-group col-md-3 mb-2">
+          <label for="omegaImportFrom">Import objednávok od<?= accountingUiInfo('Prvý deň intervalu, v ktorom boli eBay, Shoptet aj Custom objednávky importované do Darkscrubu.') ?></label>
+          <div class="input-group date omega-export-date-picker" id="omegaImportFromPicker" data-target-input="nearest">
+            <input class="form-control datetimepicker-input" id="omegaImportFrom" type="text" name="import_from" value="<?= omegaExportH(omegaExportDisplayDate($from)) ?>" placeholder="01.01.1970" inputmode="numeric" autocomplete="off" data-target="#omegaImportFromPicker">
+            <div class="input-group-append" data-target="#omegaImportFromPicker" data-toggle="datetimepicker"><div class="input-group-text"><i class="far fa-calendar-alt"></i></div></div>
+          </div>
+        </div>
+        <div class="form-group col-md-3 mb-2">
+          <label for="omegaImportTo">Import objednávok do<?= accountingUiInfo('Posledný deň kontrolovaného intervalu vrátane.') ?></label>
+          <div class="input-group date omega-export-date-picker" id="omegaImportToPicker" data-target-input="nearest">
+            <input class="form-control datetimepicker-input" id="omegaImportTo" type="text" name="import_to" value="<?= omegaExportH(omegaExportDisplayDate($to)) ?>" placeholder="01.01.1970" inputmode="numeric" autocomplete="off" data-target="#omegaImportToPicker">
+            <div class="input-group-append" data-target="#omegaImportToPicker" data-toggle="datetimepicker"><div class="input-group-text"><i class="far fa-calendar-alt"></i></div></div>
+          </div>
+        </div>
+        <div class="form-group col-md-3 mb-2">
+          <label for="omegaProcessingDate">Deň spracovania<?= accountingUiInfo('Dátum, ku ktorému pripravujete tento balík. Custom objednávky sa vyberajú podľa zvoleného intervalu importu, rovnako ako eBay a Shoptet.') ?></label>
+          <div class="input-group date omega-export-date-picker" id="omegaProcessingDatePicker" data-target-input="nearest">
+            <input class="form-control datetimepicker-input" id="omegaProcessingDate" type="text" name="processing_date" value="<?= omegaExportH(omegaExportDisplayDate($processingDate)) ?>" placeholder="01.01.1970" inputmode="numeric" autocomplete="off" data-target="#omegaProcessingDatePicker">
+            <div class="input-group-append" data-target="#omegaProcessingDatePicker" data-toggle="datetimepicker"><div class="input-group-text"><i class="far fa-calendar-alt"></i></div></div>
+          </div>
+        </div>
         <div class="form-group col-md-3 mb-2"><button class="btn btn-primary btn-block" type="submit"><i class="fas fa-search mr-1"></i> Skontrolovať</button></div>
       </form>
       <div class="small omega-export-muted mt-2">
@@ -400,6 +418,38 @@ natcasesort($manualCustomers);
 
 <script>
 (function () {
+  function initOmegaExportDatePickers(attempt) {
+    attempt = attempt || 0;
+    if (!window.jQuery || typeof window.jQuery.fn.datetimepicker === 'undefined' || typeof window.moment === 'undefined') {
+      if (attempt < 30) {
+        window.setTimeout(function () { initOmegaExportDatePickers(attempt + 1); }, 150);
+      }
+      return;
+    }
+    window.jQuery('.omega-export-date-picker').each(function () {
+      var picker = window.jQuery(this);
+      if (picker.data('DateTimePicker')) return;
+      picker.datetimepicker({
+        format: 'DD.MM.YYYY',
+        useCurrent: false,
+        icons: {
+          date: 'far fa-calendar-alt',
+          previous: 'fas fa-chevron-left',
+          next: 'fas fa-chevron-right',
+          today: 'far fa-calendar-check',
+          clear: 'far fa-trash-alt',
+          close: 'fas fa-times'
+        }
+      });
+    });
+  }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', function () { initOmegaExportDatePickers(0); });
+  } else {
+    initOmegaExportDatePickers(0);
+  }
+  window.addEventListener('load', function () { initOmegaExportDatePickers(0); });
+
   const selectAll = document.getElementById('omegaSelectAll');
   const selections = Array.prototype.slice.call(document.querySelectorAll('.omega-order-selection'));
   const count = document.getElementById('omegaSelectedCount');

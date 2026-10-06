@@ -4825,21 +4825,28 @@ $deptOptions = [
   function applyFollowupTypeState($panel) {
     const type = String($panel.find('.followup-type-select').val() || 'REPEAT').toUpperCase();
     const $checkbox = $panel.find('.followup-do-not-invoice');
+    const $checkboxWrap = $panel.find('.followup-do-not-invoice-wrap');
+    const $ddpState = $panel.find('.followup-ddp-state');
     const $state = $panel.find('.followup-invoice-state');
     const $hint = $panel.find('.followup-hint');
-    const wasLockedByWarranty = $checkbox.prop('disabled');
+    const wasLocked = $checkbox.prop('disabled');
 
     if (type === 'WARRANTY') {
       $panel.find('.followup-item-qty').prop('readonly', false);
-      $checkbox.prop('checked', true).prop('disabled', true);
-      $state.text('Do not invoice').removeClass('bg-secondary').addClass('bg-danger');
-      $hint.text('Warranty claim creates a no-invoice production order and keeps the workflow out of Ready to Invoice.');
+      $checkbox.prop('checked', false).prop('disabled', true);
+      $checkboxWrap.hide();
+      $ddpState.show();
+      $state.text('DDP 5.00 EUR').removeClass('bg-secondary bg-danger').addClass('bg-info');
+      $hint.text('Warranty claim creates an invoiceable DDP order with default Customs / DDP value 5.00 EUR.');
       return;
     }
 
+    $checkboxWrap.show();
+    $ddpState.hide();
+
     if (type === 'SPLIT') {
       $checkbox.prop('checked', true).prop('disabled', true);
-      $state.text('Do not invoice').removeClass('bg-secondary').addClass('bg-danger');
+      $state.text('Do not invoice').removeClass('bg-secondary bg-info').addClass('bg-danger');
       $panel.find('.followup-item-qty').val(1).prop('readonly', true);
       $hint.text('Order split moves exactly 1 unit from every selected item and automatically subtracts it from the original order (Q1, Q2, ...).');
       return;
@@ -4847,13 +4854,13 @@ $deptOptions = [
 
     $panel.find('.followup-item-qty').prop('readonly', false);
     $checkbox.prop('disabled', false);
-    if (wasLockedByWarranty) {
+    if (wasLocked) {
       $checkbox.prop('checked', false);
     }
     if ($checkbox.is(':checked')) {
-      $state.text('Do not invoice').removeClass('bg-secondary').addClass('bg-danger');
+      $state.text('Do not invoice').removeClass('bg-secondary bg-info').addClass('bg-danger');
     } else {
-      $state.text('Standard invoicing').removeClass('bg-danger').addClass('bg-secondary');
+      $state.text('Standard invoicing').removeClass('bg-danger bg-info').addClass('bg-secondary');
     }
 
     if (type === 'CRASH') {

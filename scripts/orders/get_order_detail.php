@@ -76,6 +76,15 @@ function orderDetailSanitizeFollowupSourceMeta(array $sourceMeta): array
     return $sourceMeta;
   }
 
+  $followupType = strtoupper(trim((string) ($sourceMeta['_followup']['type'] ?? '')));
+  $preservedWarrantyDdp = [];
+  if ($followupType === 'WARRANTY') {
+    foreach (['customs_ddp_amount', 'customs_ddp_enabled', 'customs_ddp_note'] as $ddpKey) {
+      if (array_key_exists($ddpKey, $sourceMeta)) {
+        $preservedWarrantyDdp[$ddpKey] = $sourceMeta[$ddpKey];
+      }
+    }
+  }
   foreach ([
     'custom_order_id',
     'deposit_revision_limit',
@@ -103,6 +112,9 @@ function orderDetailSanitizeFollowupSourceMeta(array $sourceMeta): array
     unset($sourceMeta[$key]);
   }
 
+  foreach ($preservedWarrantyDdp as $ddpKey => $ddpValue) {
+    $sourceMeta[$ddpKey] = $ddpValue;
+  }
   return $sourceMeta;
 }
 
@@ -5479,6 +5491,8 @@ ob_start();
                   <span class="badge badge-info"><?php echo h($followupLabel); ?></span>
                   <?php if ($followupDoNotInvoice): ?>
                     <span class="badge badge-danger">Do not invoice</span>
+                  <?php elseif ($followupTypeCode === 'WARRANTY' && $customsDdpEnabled): ?>
+                    <span class="badge badge-info">DDP <?php echo number_format($customsDdpAmount, 2, '.', ''); ?><?php echo h($orderCurrencySuffix); ?></span>
                   <?php endif; ?>
                 </div>
               <?php endif; ?>
@@ -6296,11 +6310,15 @@ ob_start();
                 </div>
                 <div class="form-group col-md-4">
                   <label>&nbsp;</label>
-                  <div class="form-check mt-1">
+                  <div class="form-check mt-1 followup-do-not-invoice-wrap">
                     <input class="form-check-input followup-do-not-invoice" type="checkbox" value="1" id="followup-do-not-invoice-<?php echo (int) $orderId; ?>">
                     <label class="form-check-label" for="followup-do-not-invoice-<?php echo (int) $orderId; ?>">
                       Do not invoice
                     </label>
+                  </div>
+                  <div class="followup-ddp-state small text-info mt-1" style="display:none;">
+                    <i class="fas fa-file-invoice-dollar mr-1" aria-hidden="true"></i>
+                    DDP enabled, default 5.00 EUR
                   </div>
                 </div>
               </div>
