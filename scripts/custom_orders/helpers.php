@@ -672,6 +672,7 @@ function customOrdersEnsureSchema(mysqli $conn): void
     'billing_state' => "ADD COLUMN `billing_state` varchar(3) DEFAULT NULL AFTER `billing_country`",
     'billing_email' => "ADD COLUMN `billing_email` varchar(255) DEFAULT NULL AFTER `billing_state`",
     'billing_phone' => "ADD COLUMN `billing_phone` varchar(64) DEFAULT NULL AFTER `billing_email`",
+    'billing_same_as_shipping' => "ADD COLUMN `billing_same_as_shipping` tinyint(1) DEFAULT NULL AFTER `billing_phone`",
     'shipping_company_id' => "ADD COLUMN `shipping_company_id` varchar(128) DEFAULT NULL AFTER `shipping_company`",
     'shipping_state' => "ADD COLUMN `shipping_state` varchar(3) DEFAULT NULL AFTER `shipping_country`",
     'customs_ddp_amount' => "ADD COLUMN `customs_ddp_amount` decimal(10,2) NOT NULL DEFAULT 0.00 AFTER `shipping_price`",
@@ -803,6 +804,7 @@ function customOrdersActivityFieldLabels(): array
     'billing_state' => 'Billing state',
     'billing_email' => 'Billing email',
     'billing_phone' => 'Billing phone',
+    'billing_same_as_shipping' => 'Billing same as shipping',
     'shipping_name' => 'Shipping name',
     'shipping_company' => 'Shipping company',
     'shipping_company_id' => 'Shipping company ID',
@@ -2748,6 +2750,7 @@ function customOrdersSyncProductionHeader(mysqli $conn, int $customOrderId, int 
   $sourceMeta['bike_photo_urls'] = (string) ($orderData['bike_photo_urls'] ?? '');
   $sourceMeta['reference_urls'] = (string) ($orderData['reference_urls'] ?? '');
   $sourceMeta['customs_ddp_amount'] = max(0.0, (float) ($orderData['customs_ddp_amount'] ?? 0));
+  $sourceMeta['customs_ddp_enabled'] = $sourceMeta['customs_ddp_amount'] > 0.0 ? 1 : 0;
   $sourceMeta['customs_ddp_note'] = trim((string) ($orderData['customs_ddp_note'] ?? ''));
 
   $syncOrder = customOrdersGetOrder($conn, $customOrderId);
@@ -2757,6 +2760,7 @@ function customOrdersSyncProductionHeader(mysqli $conn, int $customOrderId, int 
     $productionTotal = (float) ($syncSummary['gross_total'] ?? 0);
     $sourceMeta['shipping_price'] = (float) ($syncSummary['shipping'] ?? 0);
     $sourceMeta['customs_ddp_amount'] = (float) ($syncSummary['customs_ddp'] ?? 0);
+    $sourceMeta['customs_ddp_enabled'] = $sourceMeta['customs_ddp_amount'] > 0.0 ? 1 : 0;
     $sourceMeta['customs_ddp_note'] = (string) ($syncSummary['customs_ddp_note'] ?? $sourceMeta['customs_ddp_note']);
     $sourceMeta['financial_breakdown'] = customOrdersFinancialBreakdownSnapshot($syncOrder, $syncSummary);
   }
@@ -2864,6 +2868,7 @@ function customOrdersExportToProduction(mysqli $conn, int $customOrderId, int $u
     'upsell_subtotal' => (float) $summary['upsell_subtotal'],
     'shipping_price' => (float) ($summary['shipping'] ?? 0),
     'customs_ddp_amount' => (float) ($summary['customs_ddp'] ?? 0),
+    'customs_ddp_enabled' => ((float) ($summary['customs_ddp'] ?? 0)) > 0.0 ? 1 : 0,
     'customs_ddp_note' => (string) ($summary['customs_ddp_note'] ?? ''),
     'financial_breakdown' => customOrdersFinancialBreakdownSnapshot($order, $summary),
     'bike_photo_urls' => $order['bike_photo_urls'],

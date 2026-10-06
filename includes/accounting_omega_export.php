@@ -16,20 +16,45 @@ function omegaExportH($value): string
     return htmlspecialchars((string) $value, ENT_QUOTES, 'UTF-8');
 }
 
+function omegaExportNormalizeDateInput($value, string $fallback): string
+{
+    $value = trim((string) $value);
+    if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $value)) {
+        $date = DateTimeImmutable::createFromFormat('!Y-m-d', $value);
+        $errors = DateTimeImmutable::getLastErrors();
+        if ($date && ($errors === false || (!$errors['warning_count'] && !$errors['error_count']))) {
+            return $date->format('Y-m-d');
+        }
+    }
+    if (preg_match('/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/', $value, $matches)) {
+        $day = str_pad($matches[1], 2, '0', STR_PAD_LEFT);
+        $month = str_pad($matches[2], 2, '0', STR_PAD_LEFT);
+        $year = $matches[3];
+        if (checkdate((int) $month, (int) $day, (int) $year)) {
+            return $year . '-' . $month . '-' . $day;
+        }
+    }
+    return $fallback;
+}
+
+function omegaExportDisplayDate(string $date): string
+{
+    $parsed = DateTimeImmutable::createFromFormat('!Y-m-d', $date);
+    $errors = DateTimeImmutable::getLastErrors();
+    if (!$parsed || ($errors !== false && ($errors['warning_count'] || $errors['error_count']))) {
+        return $date;
+    }
+    return $parsed->format('d.m.Y');
+}
+
 if (empty($_SESSION['accounting_payout_csrf'])) {
     $_SESSION['accounting_payout_csrf'] = bin2hex(random_bytes(32));
 }
 
 $today = date('Y-m-d');
-$from = trim((string) ($_GET['import_from'] ?? $today));
-$to = trim((string) ($_GET['import_to'] ?? $today));
-$processingDate = trim((string) ($_GET['processing_date'] ?? $today));
-foreach (['from' => &$from, 'to' => &$to, 'processingDate' => &$processingDate] as &$date) {
-    if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $date)) {
-        $date = $today;
-    }
-}
-unset($date);
+$from = omegaExportNormalizeDateInput($_GET['import_from'] ?? $today, $today);
+$to = omegaExportNormalizeDateInput($_GET['import_to'] ?? $today, $today);
+$processingDate = omegaExportNormalizeDateInput($_GET['processing_date'] ?? $today, $today);
 
 $schemaReady = $pdo instanceof PDO && omega_export_schema_ready($pdo);
 $manualInvoiceSchemaReady = $pdo instanceof PDO && omega_export_manual_invoice_schema_ready($pdo);
@@ -108,7 +133,7 @@ if ($schemaReady) {
 $readinessLabels = [
     'ORDER_IMPORT' => 'Import objednávky',
     'PAYOUT_IMPORT' => 'Import payoutu',
-    'CUSTOM_NOT_EXPORTED' => 'Doteraz neexportovaná Custom',
+    'CUSTOM_NOT_EXPORTED' => 'Custom podľa dátumu importu',
 ];
 $manualCandidates = array_values(array_filter(
     array_merge($candidates['ready'], $candidates['blocked']),
@@ -182,14 +207,13 @@ natcasesort($manualCustomers);
     <div class="card-body">
       <form class="form-row align-items-end" method="get" id="omegaExportFilter">
         <input type="hidden" name="page" value="accounting_omega_export">
-        <div class="form-group col-md-3 mb-2"><label for="omegaImportFrom">Import objednávok od<?= accountingUiInfo('Prvý deň intervalu, v ktorom boli eBay a Shoptet objednávky importované do Darkscrubu.') ?></label><input class="form-control" id="omegaImportFrom" type="date" name="import_from" value="<?= omegaExportH($from) ?>"></div>
-        <div class="form-group col-md-3 mb-2"><label for="omegaImportTo">Import objednávok do<?= accountingUiInfo('Posledný deň kontrolovaného intervalu vrátane.') ?></label><input class="form-control" id="omegaImportTo" type="date" name="import_to" value="<?= omegaExportH($to) ?>"></div>
-        <div class="form-group col-md-3 mb-2"><label for="omegaProcessingDate">Deň spracovania<?= accountingUiInfo('Dátum, ku ktorému pripravujete tento balík. Custom objednávky sa vyberajú nezávisle od tohto dátumu – zahrnú sa všetky, ktoré ešte neboli exportované.') ?></label><input class="form-control" id="omegaProcessingDate" type="date" name="processing_date" value="<?= omegaExportH($processingDate) ?>"></div>
+        <div class="form-group col-md-3 mb-2"><label for="omegaImportFrom">Import objednávok od<?= accountingUiInfo('Prvý deň intervalu, v ktorom boli eBay, Shoptet aj Custom objednávky importované do Darkscrubu.') ?></label><input class="form-control" id="omegaImportFrom" type="text" name="import_from" value="<?= omegaExportH(omegaExportDisplayDate($from)) ?>" placeholder="01.01.1970" inputmode="numeric" autocomplete="off"></div>
+        <div class="form-group col-md-3 mb-2"><label for="omegaImportTo">Import objednávok do<?= accountingUiInfo('Posledný deň kontrolovaného intervalu vrátane.') ?></label><input class="form-control" id="omegaImportTo" type="text" name="import_to" value="<?= omegaExportH(omegaExportDisplayDate($to)) ?>" placeholder="01.01.1970" inputmode="numeric" autocomplete="off"></div>
+        <div class="form-group col-md-3 mb-2"><label for="omegaProcessingDate">Deň spracovania<?= accountingUiInfo('Dátum, ku ktorému pripravujete tento balík. Custom objednávky sa vyberajú podľa zvoleného intervalu importu, rovnako ako eBay a Shoptet.') ?></label><input class="form-control" id="omegaProcessingDate" type="text" name="processing_date" value="<?= omegaExportH(omegaExportDisplayDate($processingDate)) ?>" placeholder="01.01.1970" inputmode="numeric" autocomplete="off"></div>
         <div class="form-group col-md-3 mb-2"><button class="btn btn-primary btn-block" type="submit"><i class="fas fa-search mr-1"></i> Skontrolovať</button></div>
       </form>
       <div class="small omega-export-muted mt-2">
-        eBay a Shoptet sa vyberajú podľa dátumu importu. Staršie cudzo-menové eBay objednávky sa doplnia, keď bol payout importovaný v zvolenom období.
-        Custom zahŕňa všetky objednávky, ktoré ešte neboli zaradené do žiadneho nemenného balíka.
+        eBay, Shoptet aj Custom sa vyberajú podľa dátumu importu. Staršie cudzo-menové eBay objednávky sa doplnia, keď bol payout importovaný v zvolenom období.
       </div>
     </div>
   </div>
@@ -197,7 +221,7 @@ natcasesort($manualCustomers);
   <div class="row">
     <div class="col-6 col-xl-3"><div class="card omega-export-stat omega-export-ready"><div class="card-body"><h3><?= count($candidates['ready']) ?></h3><div>Pripravené objednávky<?= accountingUiInfo('Majú potrebné údaje a po zaškrtnutí môžu ísť do balíka.') ?></div></div></div></div>
     <div class="col-6 col-xl-3"><div class="card omega-export-stat omega-export-waiting"><div class="card-body"><h3><?= count($candidates['waiting']) ?></h3><div>Čakajú na payout<?= accountingUiInfo('Cudzo-menové eBay objednávky bez importovaného payoutu a kurzu.') ?></div></div></div></div>
-    <div class="col-6 col-xl-3"><div class="card omega-export-stat omega-export-custom"><div class="card-body"><h3><?= count(array_filter($candidates['ready'], static function (array $r): bool { return $r['source_code'] === 'CUSTOM'; })) ?></h3><div>Neexportované Custom<?= accountingUiInfo('Všetky Custom objednávky, ktoré ešte neboli zaradené do žiadneho nemenného balíka, bez obmedzenia na konkrétny deň.') ?></div></div></div></div>
+    <div class="col-6 col-xl-3"><div class="card omega-export-stat omega-export-custom"><div class="card-body"><h3><?= count(array_filter($candidates['ready'], static function (array $r): bool { return $r['source_code'] === 'CUSTOM'; })) ?></h3><div>Custom v intervale<?= accountingUiInfo('Neexportované Custom objednávky importované v zvolenom intervale.') ?></div></div></div></div>
     <div class="col-6 col-xl-3"><div class="card omega-export-stat omega-export-blocked"><div class="card-body"><h3><?= count($candidates['blocked']) ?></h3><div>Blokované chybou dát<?= accountingUiInfo('Tieto objednávky nemožno exportovať, kým sa neopraví uvedený dôvod.') ?></div></div></div></div>
   </div>
 

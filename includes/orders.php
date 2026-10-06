@@ -4550,6 +4550,13 @@ $deptOptions = [
       .html('✏️ Edit header');
   });
 
+  $(document).on('input', '.edit-customs-ddp-amount', function () {
+    const amount = parseFloat(String($(this).val() || '').replace(',', '.'));
+    if (amount > 0) {
+      $(this).closest('.order-header-edit').find('.edit-customs-ddp-enabled').prop('checked', true);
+    }
+  });
+
   $(document).on('click', '.btn-save-order-header', function () {
     const $box = $(this).closest('.order-header-edit');
     const orderId = $box.find('.edit-order-id').val();
@@ -4568,6 +4575,9 @@ $deptOptions = [
         delivery: $box.find('.edit-delivery').val(),
         payment: $box.find('.edit-payment').val(),
         customs_identifier: $box.find('.edit-customs-identifier').val(),
+        customs_ddp_enabled: $box.find('.edit-customs-ddp-enabled').is(':checked') ? 1 : 0,
+        customs_ddp_amount: $box.find('.edit-customs-ddp-amount').val(),
+        customs_ddp_note: $box.find('.edit-customs-ddp-note').val(),
 
         'billing[name]': $box.find('.edit-billing-name').val(),
         'billing[company]': $box.find('.edit-billing-company').val(),

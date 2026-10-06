@@ -201,10 +201,8 @@ function omega_export_base_orders(PDO $pdo, string $from, string $to): array
         LEFT JOIN accounting_omega_export_items exported ON exported.order_id = o.id
         WHERE exported.id IS NULL
           ' . $manualInvoiceFilter . '
-          AND (
-            (os.code IN (\'EBAY\', \'SHOPTET\') AND DATE(o.imported_at) BETWEEN :from_date AND :to_date)
-            OR os.code = \'CUSTOM\'
-          )
+          AND os.code IN (\'EBAY\', \'SHOPTET\', \'CUSTOM\')
+          AND DATE(o.imported_at) BETWEEN :from_date AND :to_date
         ORDER BY o.imported_at, o.id
     ');
     $stmt->execute([':from_date' => $from, ':to_date' => $to]);
@@ -246,8 +244,7 @@ function omega_export_late_payout_orders(PDO $pdo, string $from, string $to): ar
 
 function omega_export_collect_candidates(PDO $pdo, string $from, string $to, string $processingDate): array
 {
-    // Kept as batch metadata for backward compatibility. Custom selection itself
-    // is intentionally date-independent and includes every not-yet-exported order.
+    // Kept as batch metadata for backward compatibility with existing batches.
     $customWorkday = omega_export_previous_workday($processingDate);
     $orders = omega_export_base_orders($pdo, $from, $to);
     $seen = [];

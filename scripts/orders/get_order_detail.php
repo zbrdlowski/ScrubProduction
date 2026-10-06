@@ -49,6 +49,22 @@ function orderDetailMoneyValue($value): ?float
   return is_numeric($value) ? (float) $value : null;
 }
 
+function orderDetailBooleanValue($value): bool
+{
+  if (is_bool($value)) {
+    return $value;
+  }
+  if (is_int($value) || is_float($value)) {
+    return (float) $value !== 0.0;
+  }
+  if ($value === null || is_array($value) || is_object($value)) {
+    return false;
+  }
+
+  $value = strtolower(trim((string) $value));
+  return in_array($value, ['1', 'true', 'yes', 'y', 'on', 'ddp'], true);
+}
+
 function orderDetailSourceMetaIsFollowup(array $sourceMeta): bool
 {
   return is_array($sourceMeta['_followup'] ?? null) && !empty($sourceMeta['_followup']['is_followup']);
@@ -68,6 +84,7 @@ function orderDetailSanitizeFollowupSourceMeta(array $sourceMeta): array
     'upsell_subtotal',
     'shipping_price',
     'customs_ddp_amount',
+    'customs_ddp_enabled',
     'customs_ddp_note',
     'financial_breakdown',
     'payment_lines',
@@ -1811,7 +1828,14 @@ if ($customsDdpAmount === null) {
 }
 $customsDdpAmount = max(0.0, round((float) $customsDdpAmount, 2));
 $customsDdpNote = trim((string) ($sourceMeta['customs_ddp_note'] ?? ($customFinancialBreakdown['customs_ddp_note'] ?? '')));
-$customsDdpActive = $isCustomOrder && !$isFollowupOrder && $customsDdpAmount > 0.0;
+$customsDdpHasExplicitFlag = array_key_exists('customs_ddp_enabled', $sourceMeta);
+$customsDdpEnabled = $customsDdpHasExplicitFlag
+  ? orderDetailBooleanValue($sourceMeta['customs_ddp_enabled'])
+  : $customsDdpAmount > 0.0;
+if (!$customsDdpHasExplicitFlag && !$customsDdpEnabled && isset($customFinancialBreakdown['customs_ddp'])) {
+  $customsDdpEnabled = (float) $customFinancialBreakdown['customs_ddp'] > 0.0;
+}
+$customsDdpActive = !$isFollowupOrder && ($customsDdpEnabled || $customsDdpAmount > 0.0);
 $customProductionPaymentLines = [];
 if ($isCustomOrder && !$isFollowupOrder) {
   $customProductionPaymentLines = orderDetailLoadCustomPaymentRows($conn, $linkedCustomOrderId);
@@ -5363,7 +5387,11 @@ ob_start();
               <?php if ($customsDdpActive): ?>
                 <div class="order-summary-line mt-1 text-info">
                   <i class="fas fa-file-invoice-dollar mr-1"></i><b>Customs / DDP:</b>
-                  <?php echo number_format($customsDdpAmount, 2, '.', ''); ?><?php echo h($orderCurrencySuffix); ?>
+                  <?php if ($customsDdpAmount > 0.0): ?>
+                    <?php echo number_format($customsDdpAmount, 2, '.', ''); ?><?php echo h($orderCurrencySuffix); ?>
+                  <?php else: ?>
+                    DDP enabled
+                  <?php endif; ?>
                 </div>
                 <?php if ($customsDdpNote !== ''): ?>
                   <div class="order-summary-line small text-muted"><?php echo h($customsDdpNote); ?></div>
@@ -5433,6 +5461,27 @@ ob_start();
                           </option>
                         <?php endforeach; ?>
                       </select>
+                    </div>
+                  </div>
+
+                  <div class="form-row align-items-end">
+                    <div class="form-group col-md-3">
+                      <label class="d-block">Customs / DDP</label>
+                      <div class="custom-control custom-checkbox mt-1">
+                        <input type="checkbox" class="custom-control-input edit-customs-ddp-enabled"
+                          id="customsDdpEnabled-<?php echo (int) $orderId; ?>" value="1" <?php echo $customsDdpActive ? 'checked' : ''; ?>>
+                        <label class="custom-control-label" for="customsDdpEnabled-<?php echo (int) $orderId; ?>">We pay customs</label>
+                      </div>
+                    </div>
+                    <div class="form-group col-md-3">
+                      <label>DDP amount</label>
+                      <input type="number" min="0" step="0.01" class="form-control form-control-sm edit-customs-ddp-amount"
+                        value="<?php echo h(number_format($customsDdpAmount, 2, '.', '')); ?>">
+                    </div>
+                    <div class="form-group col-md-6">
+                      <label>DDP note</label>
+                      <input type="text" maxlength="255" class="form-control form-control-sm edit-customs-ddp-note"
+                        value="<?php echo h($customsDdpNote); ?>" placeholder="UK DDP / customs handling">
                     </div>
                   </div>
 

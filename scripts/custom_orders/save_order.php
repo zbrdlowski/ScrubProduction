@@ -164,7 +164,13 @@ $data = [
   'dead_order_flag' => (int) ($_POST['dead_order_flag'] ?? 0) === 1 ? 1 : 0,
 ];
 
-if ((int) ($_POST['billing_same_as_shipping'] ?? 0) === 1) {
+if ($posted('billing_same_as_shipping')) {
+  $data['billing_same_as_shipping'] = (int) ($_POST['billing_same_as_shipping'] ?? 0) === 1 ? 1 : 0;
+} elseif (array_key_exists('billing_same_as_shipping', $existing) && $existing['billing_same_as_shipping'] !== null) {
+  $data['billing_same_as_shipping'] = (int) $existing['billing_same_as_shipping'] === 1 ? 1 : 0;
+}
+
+if ((int) ($data['billing_same_as_shipping'] ?? 0) === 1) {
   foreach (['name', 'company', 'company_id', 'street', 'city', 'zip', 'country', 'state', 'email', 'phone'] as $addressField) {
     $data['billing_' . $addressField] = $data['shipping_' . $addressField] ?? '';
   }

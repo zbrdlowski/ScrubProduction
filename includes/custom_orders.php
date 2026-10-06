@@ -4733,7 +4733,10 @@ if (!$customOrdersDetailRequest && !$customOrdersFullPageDetail) {
             break;
           }
         }
-        $customBillingSameAsShipping = !$customBillingHasDifferentValue;
+        $customBillingStoredSameAsShipping = $selectedOrder['billing_same_as_shipping'] ?? null;
+        $customBillingSameAsShipping = $customBillingStoredSameAsShipping === null
+          ? !$customBillingHasDifferentValue
+          : (int) $customBillingStoredSameAsShipping === 1;
         $customBillingDisplay = [];
         foreach ($customBillingAddressFields as $customBillingField) {
           $customBillingDisplay[$customBillingField] = $customBillingSameAsShipping
@@ -4900,6 +4903,7 @@ if (!$customOrdersDetailRequest && !$customOrdersFullPageDetail) {
                         <div class="col-md-6">
                           <div class="custom-billing-sync-row">
                             <h6>Billing<?= customOrderHelp('billing_address') ?></h6>
+                            <input type="hidden" name="billing_same_as_shipping" value="0">
                             <div class="form-check mb-0"><input class="form-check-input" type="checkbox" name="billing_same_as_shipping" id="billing-same-shipping-<?= (int) $selectedOrder['id'] ?>" value="1" data-billing-same-toggle <?= $customBillingSameAsShipping ? 'checked' : '' ?>><label class="form-check-label" for="billing-same-shipping-<?= (int) $selectedOrder['id'] ?>">Same as Shipping</label></div>
                           </div>
                           <div class="custom-billing-fields<?= $customBillingSameAsShipping ? ' is-synced' : '' ?>" data-billing-fields>

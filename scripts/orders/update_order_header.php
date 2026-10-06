@@ -37,11 +37,55 @@ function clean($v): string {
   return trim((string)$v);
 }
 
+function orderHeaderMoneyValue($value): ?float {
+  if ($value === null || is_array($value) || is_object($value)) {
+    return null;
+  }
+
+  $value = trim(str_replace(["\u{00A0}", ' '], '', (string) $value));
+  $value = preg_replace('/[^\d.,\-]/', '', $value) ?? '';
+  if ($value === '') {
+    return null;
+  }
+
+  if (substr_count($value, ',') === 1 && substr_count($value, '.') === 0) {
+    $value = str_replace(',', '.', $value);
+  } elseif (substr_count($value, ',') > 0 && substr_count($value, '.') === 1) {
+    $value = str_replace(',', '', $value);
+  }
+
+  return is_numeric($value) ? (float) $value : null;
+}
+
+function orderHeaderBoolValue($value): bool {
+  if (is_bool($value)) return $value;
+  if (is_int($value) || is_float($value)) return (float) $value !== 0.0;
+  if ($value === null || is_array($value) || is_object($value)) return false;
+
+  $value = strtolower(trim((string) $value));
+  return in_array($value, ['1', 'true', 'yes', 'y', 'on', 'ddp'], true);
+}
+
+$customsDdpSubmitted = array_key_exists('customs_ddp_enabled', $_POST)
+  || array_key_exists('customs_ddp_amount', $_POST)
+  || array_key_exists('customs_ddp_note', $_POST);
+$customsDdpEnabled = $customsDdpSubmitted ? orderHeaderBoolValue($_POST['customs_ddp_enabled'] ?? 0) : false;
+$customsDdpAmountRaw = $customsDdpSubmitted ? orderHeaderMoneyValue($_POST['customs_ddp_amount'] ?? null) : null;
+$customsDdpAmount = max(0.0, round((float) ($customsDdpAmountRaw ?? 0.0), 2));
+$customsDdpNote = $customsDdpSubmitted ? clean($_POST['customs_ddp_note'] ?? '') : '';
+if ($customsDdpSubmitted && mb_strlen($customsDdpNote) > 255) {
+  out(400, ['ok'=>false,'error'=>'DDP note is too long (maximum 255 characters)']);
+}
+if ($customsDdpSubmitted && !$customsDdpEnabled) {
+  $customsDdpAmount = 0.0;
+  $customsDdpNote = '';
+}
+
 $conn->begin_transaction();
 
 try {
   $orderStmt = $conn->prepare("
-    SELECT customer_id
+    SELECT customer_id, source_meta
     FROM orders
     WHERE id = ?
     LIMIT 1
@@ -54,6 +98,37 @@ try {
   $orderStmt->close();
   if (!$orderRow) {
     throw new Exception('Order not found.');
+  }
+
+  $sourceMeta = json_decode((string)($orderRow['source_meta'] ?? ''), true);
+  if (!is_array($sourceMeta)) {
+    $sourceMeta = [];
+  }
+  $previousCustomsDdpAmount = orderHeaderMoneyValue($sourceMeta['customs_ddp_amount'] ?? null);
+  if ($previousCustomsDdpAmount === null && isset($sourceMeta['financial_breakdown']) && is_array($sourceMeta['financial_breakdown'])) {
+    $previousCustomsDdpAmount = orderHeaderMoneyValue($sourceMeta['financial_breakdown']['customs_ddp'] ?? null);
+  }
+  $previousCustomsDdpAmount = max(0.0, round((float) ($previousCustomsDdpAmount ?? 0.0), 2));
+  $customsDdpDelta = $customsDdpSubmitted ? round($customsDdpAmount - $previousCustomsDdpAmount, 2) : 0.0;
+
+  if ($customsDdpSubmitted) {
+    $sourceMeta['customs_ddp_enabled'] = $customsDdpEnabled ? 1 : 0;
+    $sourceMeta['customs_ddp_amount'] = $customsDdpAmount;
+    $sourceMeta['customs_ddp_note'] = $customsDdpNote;
+    if (isset($sourceMeta['financial_breakdown']) && is_array($sourceMeta['financial_breakdown'])) {
+      foreach (['total', 'balance_due'] as $ddpTotalKey) {
+        $currentTotal = orderHeaderMoneyValue($sourceMeta['financial_breakdown'][$ddpTotalKey] ?? null);
+        if ($currentTotal !== null) {
+          $sourceMeta['financial_breakdown'][$ddpTotalKey] = max(0.0, round($currentTotal + $customsDdpDelta, 2));
+        }
+      }
+      $sourceMeta['financial_breakdown']['customs_ddp'] = $customsDdpAmount;
+      $sourceMeta['financial_breakdown']['customs_ddp_note'] = $customsDdpNote;
+    }
+  }
+  $sourceMetaJson = json_encode($sourceMeta, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE);
+  if ($sourceMetaJson === false) {
+    $sourceMetaJson = '{}';
   }
 
   $customerEmail = clean($shipping['email'] ?? '');
@@ -93,12 +168,15 @@ try {
     SET shipping_method = ?,
         payment_method = ?,
         customs_identifier = ?,
+        source_meta = ?,
+        total = CASE WHEN ? = 1 THEN GREATEST(0, COALESCE(total, 0) + ?) ELSE total END,
         customer_id = CASE WHEN ? > 0 THEN ? ELSE customer_id END
     WHERE id = ?
     LIMIT 1
   ");
   if (!$stmt) throw new Exception($conn->error);
-  $stmt->bind_param('sssiii', $delivery, $payment, $customsIdentifier, $customerId, $customerId, $orderId);
+  $customsDdpSubmittedInt = $customsDdpSubmitted ? 1 : 0;
+  $stmt->bind_param('ssssidiii', $delivery, $payment, $customsIdentifier, $sourceMetaJson, $customsDdpSubmittedInt, $customsDdpDelta, $customerId, $customerId, $orderId);
   $stmt->execute();
   $stmt->close();
 
@@ -242,6 +320,23 @@ try {
       );
       $stmt->execute();
       $stmt->close();
+
+      if ($customsDdpSubmitted) {
+        $ddpStmt = $conn->prepare("
+          UPDATE custom_orders
+          SET customs_ddp_amount = ?,
+              customs_ddp_note = ?,
+              updated_by = ?,
+              updated_at = NOW()
+          WHERE id = ?
+          LIMIT 1
+        ");
+        if ($ddpStmt) {
+          $ddpStmt->bind_param('dsii', $customsDdpAmount, $customsDdpNote, $userId, $customOrderId);
+          $ddpStmt->execute();
+          $ddpStmt->close();
+        }
+      }
     }
   }
 

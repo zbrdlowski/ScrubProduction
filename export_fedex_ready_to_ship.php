@@ -192,6 +192,8 @@ $WEIGHT_MAP = [
 $WEIGHT_DEFAULT = 5;
 
 const HS_CODE = '8714109000';
+const FEDEX_DUTY_PAYER_SENDER = '1';
+const FEDEX_DUTY_PAYER_RECIPIENT = '2';
 
 function calcInsuredValue(float $value): float
 {
@@ -458,9 +460,13 @@ function applyMultishippingAggregates(mysqli $conn, array $orders): array
   while ($row = $res->fetch_assoc()) {
     $groupId = (int) $row['group_id'];
     if (!isset($aggregate[$groupId])) {
-      $aggregate[$groupId] = ['total' => 0.0, 'types' => [], 'member_types' => [], 'count' => 0];
+      $aggregate[$groupId] = ['total' => 0.0, 'types' => [], 'member_types' => [], 'count' => 0, 'ddp_enabled' => false];
     }
     $financialInfo = order_financial_effective_totals($conn, $row);
+    $ddpInfo = order_financial_customs_ddp($conn, $row);
+    if (!empty($ddpInfo['enabled'])) {
+      $aggregate[$groupId]['ddp_enabled'] = true;
+    }
     $aggregate[$groupId]['total'] += (float) ($financialInfo['customs_effective_total'] ?? $financialInfo['effective_total']);
     $memberTypes = normalizeTypesOrder((string) ($row['item_types'] ?? ''));
     $aggregate[$groupId]['member_types'][] = $memberTypes;
@@ -480,6 +486,7 @@ function applyMultishippingAggregates(mysqli $conn, array $orders): array
     $orders[$index]['item_types'] = normalizeTypesOrder(implode('', array_keys($aggregate[$groupId]['types'])));
     $orders[$index]['multishipping_member_types'] = $aggregate[$groupId]['member_types'];
     $orders[$index]['multishipping_member_count'] = $aggregate[$groupId]['count'];
+    $orders[$index]['fedex_ddp_enabled'] = !empty($aggregate[$groupId]['ddp_enabled']) ? 1 : 0;
   }
   return $orders;
 }
@@ -494,6 +501,10 @@ function buildExportRows(mysqli $conn, array $orders, array $materialMap, string
     $financialInfo = order_financial_effective_totals($conn, $row);
     $orderTotal = (float) ($financialInfo['customs_effective_total'] ?? $financialInfo['effective_total']);
     $orderTotal = max(0.0, round($orderTotal, 2));
+    $ddpInfo = !empty($row['fedex_ddp_enabled'])
+      ? ['enabled' => true]
+      : order_financial_customs_ddp($conn, $row);
+    $dutyPayer = !empty($ddpInfo['enabled']) ? FEDEX_DUTY_PAYER_SENDER : FEDEX_DUTY_PAYER_RECIPIENT;
 
     $orderNumber = trim((string) ($row['order_number'] ?? ''));
     $externalOrderId = trim((string) ($row['external_order_id'] ?? ''));
@@ -542,7 +553,7 @@ function buildExportRows(mysqli $conn, array $orders, array $materialMap, string
       'invoice_name' => $invoiceName,
       'customs_value' => number_format($orderTotal, 2, '.', ''),
       'service' => darkscrubFedexStratusServiceForShipping($row['shipping_method'] ?? ''),
-      'duty_payer' => '2',
+      'duty_payer' => $dutyPayer,
       'insured_value' => number_format(calcInsuredValue($orderTotal), 2, '.', ''),
       'hs_code' => HS_CODE,
       'material' => $material,

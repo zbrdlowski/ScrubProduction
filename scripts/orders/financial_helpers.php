@@ -22,6 +22,22 @@ function order_financial_money_value($value): ?float
   return is_numeric($value) ? (float) $value : null;
 }
 
+function order_financial_bool_value($value): bool
+{
+  if (is_bool($value)) {
+    return $value;
+  }
+  if (is_int($value) || is_float($value)) {
+    return (float) $value !== 0.0;
+  }
+  if ($value === null || is_array($value) || is_object($value)) {
+    return false;
+  }
+
+  $value = strtolower(trim((string) $value));
+  return in_array($value, ['1', 'true', 'yes', 'y', 'on', 'ddp'], true);
+}
+
 function order_financial_table_exists(mysqli $conn, string $table): bool
 {
   $escaped = $conn->real_escape_string($table);
@@ -136,6 +152,7 @@ function order_financial_sanitize_followup_source_meta(array $sourceMeta): array
     'upsell_subtotal',
     'shipping_price',
     'customs_ddp_amount',
+    'customs_ddp_enabled',
     'customs_ddp_note',
     'financial_breakdown',
     'payment_lines',
@@ -257,6 +274,85 @@ function order_financial_resolve_custom_order_id(mysqli $conn, array $order, ?ar
   }
 
   return 0;
+}
+
+function order_financial_customs_ddp_from_source_meta(array $sourceMeta): array
+{
+  $amount = order_financial_money_value($sourceMeta['customs_ddp_amount'] ?? null);
+  $breakdown = is_array($sourceMeta['financial_breakdown'] ?? null)
+    ? $sourceMeta['financial_breakdown']
+    : [];
+  if ($amount === null && $breakdown) {
+    $amount = order_financial_money_value($breakdown['customs_ddp'] ?? null);
+  }
+  $amount = max(0.0, round((float) ($amount ?? 0.0), 2));
+
+  $enabled = array_key_exists('customs_ddp_enabled', $sourceMeta)
+    ? order_financial_bool_value($sourceMeta['customs_ddp_enabled'])
+    : $amount > 0.0;
+
+  $note = trim((string) ($sourceMeta['customs_ddp_note'] ?? ''));
+  if ($note === '' && $breakdown) {
+    $note = trim((string) ($breakdown['customs_ddp_note'] ?? ''));
+  }
+
+  return [
+    'enabled' => $enabled || $amount > 0.0,
+    'amount' => $amount,
+    'note' => $note,
+    'has_explicit_enabled' => array_key_exists('customs_ddp_enabled', $sourceMeta),
+  ];
+}
+
+function order_financial_customs_ddp(mysqli $conn, array $order, ?array $sourceMeta = null): array
+{
+  if ($sourceMeta === null) {
+    $sourceMeta = order_financial_decode_source_meta($order);
+  }
+  $sourceMeta = order_financial_sanitize_followup_source_meta($sourceMeta);
+
+  $info = order_financial_customs_ddp_from_source_meta($sourceMeta);
+  if ($info['has_explicit_enabled'] || $info['enabled'] || $info['amount'] > 0.0) {
+    return $info;
+  }
+
+  $customOrderId = order_financial_resolve_custom_order_id($conn, $order, $sourceMeta);
+  if (
+    $customOrderId <= 0
+    || !order_financial_column_exists($conn, 'custom_orders', 'customs_ddp_amount')
+  ) {
+    return $info;
+  }
+
+  $noteSelect = order_financial_column_exists($conn, 'custom_orders', 'customs_ddp_note')
+    ? 'COALESCE(customs_ddp_note, \'\') AS customs_ddp_note'
+    : "'' AS customs_ddp_note";
+  $stmt = $conn->prepare("
+    SELECT COALESCE(customs_ddp_amount, 0) AS customs_ddp_amount, {$noteSelect}
+    FROM custom_orders
+    WHERE id = ?
+    LIMIT 1
+  ");
+  if (!$stmt) {
+    return $info;
+  }
+
+  $stmt->bind_param('i', $customOrderId);
+  $stmt->execute();
+  $row = $stmt->get_result()->fetch_assoc() ?: [];
+  $stmt->close();
+
+  $amount = max(0.0, round((float) ($row['customs_ddp_amount'] ?? 0), 2));
+  if ($amount <= 0.0) {
+    return $info;
+  }
+
+  return [
+    'enabled' => true,
+    'amount' => $amount,
+    'note' => trim((string) ($row['customs_ddp_note'] ?? '')),
+    'has_explicit_enabled' => false,
+  ];
 }
 
 function order_financial_custom_deposit_total(mysqli $conn, array $order, ?array $sourceMeta = null): float

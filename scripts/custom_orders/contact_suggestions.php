@@ -117,6 +117,7 @@ while ($row = $result->fetch_assoc()) {
     'label' => $primaryLabel !== '' ? $primaryLabel : ('Custom order #' . (int) $row['id']),
     'detail' => implode(' · ', array_unique($secondaryParts)),
     'profile' => [
+      'customer_name' => $primaryLabel,
       'source_channel' => (string) $row['source_channel'],
       'social_handle' => (string) $row['social_handle'],
       'payment_method' => (string) $row['payment_method'],
@@ -216,6 +217,7 @@ if (count($suggestions) < 10) {
       'label' => $company !== '' ? $company : ($billingName !== '' ? $billingName : $shippingName),
       'detail' => implode(' · ', array_unique($secondaryParts)),
       'profile' => [
+        'customer_name' => $company !== '' ? $company : ($billingName !== '' ? $billingName : $shippingName),
         'source_channel' => (string) $row['source_channel'],
         'social_handle' => $socialHandle,
         'payment_method' => (string) $row['payment_method'],

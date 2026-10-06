@@ -32,6 +32,7 @@ function followup_sanitize_child_source_meta(array $sourceMeta): array
     'upsell_subtotal',
     'shipping_price',
     'customs_ddp_amount',
+    'customs_ddp_enabled',
     'customs_ddp_note',
     'financial_breakdown',
     'payment_lines',

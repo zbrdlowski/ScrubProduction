@@ -3111,6 +3111,15 @@ $(document)
   });
 
 $(document)
+  .off("input.customsDdpAmount", ".edit-customs-ddp-amount")
+  .on("input.customsDdpAmount", ".edit-customs-ddp-amount", function () {
+    var amount = parseFloat(String($(this).val() || "").replace(",", "."));
+    if (amount > 0) {
+      $(this).closest(".order-header-edit").find(".edit-customs-ddp-enabled").prop("checked", true);
+    }
+  });
+
+$(document)
   .off("click.editHeaderSave", ".btn-save-order-header")
   .on("click.editHeaderSave", ".btn-save-order-header", function () {
     var $panel = $(this).closest(".order-header-edit");
@@ -3131,6 +3140,9 @@ $(document)
         delivery: $panel.find(".edit-delivery").val(),
         payment: $panel.find(".edit-payment").val(),
         customs_identifier: $panel.find(".edit-customs-identifier").val(),
+        customs_ddp_enabled: $panel.find(".edit-customs-ddp-enabled").is(":checked") ? 1 : 0,
+        customs_ddp_amount: $panel.find(".edit-customs-ddp-amount").val(),
+        customs_ddp_note: $panel.find(".edit-customs-ddp-note").val(),
         "billing[name]": $panel.find(".edit-billing-name").val(),
         "billing[company]": $panel.find(".edit-billing-company").val(),
         "billing[company_id]": $panel.find(".edit-billing-company-id").val(),
