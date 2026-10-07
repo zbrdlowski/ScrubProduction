@@ -2174,6 +2174,37 @@ if (!$customOrdersDetailRequest && !$customOrdersFullPageDetail) {
     line-height: 1.15;
   }
 
+  .custom-owner-header-form {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    flex: 0 1 260px;
+    min-width: 190px;
+  }
+
+  .custom-owner-header-control {
+    flex: 1 1 auto;
+    min-width: 135px !important;
+  }
+
+  .custom-owner-header-save {
+    width: 31px;
+    height: 31px;
+    padding: 0 !important;
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 31px;
+  }
+
+  .custom-owner-header-badge {
+    display: inline-flex;
+    align-items: center;
+    max-width: 230px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
   .custom-twin-header-controls > .badge {
     flex: 0 0 auto;
     white-space: nowrap;
@@ -4799,6 +4830,38 @@ if (!$customOrdersDetailRequest && !$customOrdersFullPageDetail) {
               <span class="custom-order-header-assigned" data-custom-assigned-cell="<?= (int) $selectedOrder['id'] ?>">
                 <?= customOrdersRenderOrderAssignmentHtml($selectedOrder, (int) $selectedOrder['id'], $customOrdersCanContribute, $customOrdersCurrentUserId) ?>
               </span>
+              <?php
+              $customOwnerEmployeeId = (int) ($selectedOrder['owner_employee_id'] ?? 0);
+              $customOwnerName = trim((string) ($selectedOrder['owner_name'] ?? ''));
+              ?>
+              <?php if ($customOrdersCanManage): ?>
+                <form method="post" action="scripts/custom_orders/assign_owner.php" class="custom-owner-header-form mb-0" title="Lead owner">
+                  <input type="hidden" name="custom_order_id" value="<?= (int) $selectedOrder['id'] ?>">
+                  <label class="sr-only" for="custom-owner-header-<?= (int) $selectedOrder['id'] ?>">Owner</label>
+                  <select id="custom-owner-header-<?= (int) $selectedOrder['id'] ?>" name="owner_employee_id" class="form-control form-control-sm custom-owner-header-control<?= customOrderInvalid($invalidFields, 'owner') ?>" aria-label="Lead owner">
+                    <?php if ($customOwnerEmployeeId > 0 && !isset($customOrderOwnerOptions[$customOwnerEmployeeId])): ?>
+                      <option value="<?= $customOwnerEmployeeId ?>" selected><?= h(($customOwnerName !== '' ? $customOwnerName : ('Employee #' . $customOwnerEmployeeId)) . ' (inactive)') ?></option>
+                    <?php endif; ?>
+                    <?php foreach ($assignableEmployees as $employee): ?>
+                      <?php
+                      $ownerOptionId = (int) ($employee['id'] ?? 0);
+                      $ownerOptionName = trim(((string) ($employee['firstname'] ?? '')) . ' ' . ((string) ($employee['lastname'] ?? '')));
+                      if ($ownerOptionName === '') {
+                        $ownerOptionName = 'Employee #' . $ownerOptionId;
+                      }
+                      ?>
+                      <option value="<?= $ownerOptionId ?>" <?= $customOwnerEmployeeId === $ownerOptionId ? 'selected' : '' ?>><?= h($ownerOptionName) ?></option>
+                    <?php endforeach; ?>
+                  </select>
+                  <button type="submit" class="btn btn-outline-info btn-sm custom-owner-header-save" title="Change owner" aria-label="Change owner">
+                    <i class="fas fa-user-tag" aria-hidden="true"></i>
+                  </button>
+                </form>
+              <?php else: ?>
+                <span class="badge badge-secondary custom-owner-header-badge" title="Lead owner">
+                  <i class="fas fa-user-tag mr-1" aria-hidden="true"></i><?= h($customOwnerName !== '' ? $customOwnerName : 'Unassigned') ?>
+                </span>
+              <?php endif; ?>
               <?php $currentComplexityLevel = (int) ($selectedOrder['complexity_level'] ?? 1); if ($currentComplexityLevel <= 0) { $currentComplexityLevel = 1; } ?>
               <select name="complexity_level" form="custom-twin-header-form-<?= (int) $selectedOrder['id'] ?>" class="form-control form-control-sm custom-complexity-control" title="Complexity Level" aria-label="Complexity Level" <?= $customOrdersCanManage ? '' : 'disabled' ?>>
                 <?php if (!isset($customOrderComplexityOptions[$currentComplexityLevel])): ?>

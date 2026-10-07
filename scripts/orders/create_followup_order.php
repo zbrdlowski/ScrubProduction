@@ -113,13 +113,15 @@ if ($orderId <= 0 || !isset($allowedTypes[$followupType])) {
 }
 
 $isWarrantyClaim = $followupType === 'WARRANTY';
+$isSplitOrder = $followupType === 'SPLIT';
+$isSplitOutsideEu = $isSplitOrder && !ordersIsEuShipping($conn, $orderId);
 $warrantyDdpAmount = $isWarrantyClaim ? 5.00 : 0.0;
+$splitInvoiceAmount = $isSplitOutsideEu ? 5.00 : 0.0;
 if ($isWarrantyClaim) {
   $doNotInvoice = 0;
 }
-
-if ($followupType === 'SPLIT' && $doNotInvoice !== 1) {
-  $doNotInvoice = 1;
+if ($isSplitOrder) {
+  $doNotInvoice = $isSplitOutsideEu ? 0 : 1;
 }
 
 if (!is_array($selectedItemsRaw) || !$selectedItemsRaw) {
@@ -248,6 +250,10 @@ if ($parentCustomOrderId > 0) {
 if ($isWarrantyClaim) {
   $followupMeta['customs_ddp_amount'] = $warrantyDdpAmount;
 }
+if ($isSplitOutsideEu) {
+  $followupMeta['invoice_amount'] = $splitInvoiceAmount;
+  $followupMeta['invoice_reason'] = 'Non-EU order split';
+}
 $sourceMeta['_followup'] = $followupMeta;
 if ($isWarrantyClaim) {
   $sourceMeta['customs_ddp_enabled'] = 1;
@@ -258,11 +264,14 @@ $sourceMetaJson = json_encode($sourceMeta, JSON_UNESCAPED_UNICODE | JSON_UNESCAP
 
 $newTotal = 0.0;
 foreach ($itemsToClone as $item) {
-  $unitPrice = ($doNotInvoice === 1 || $isWarrantyClaim) ? 0.0 : (float) ($item['unit_price'] ?? 0);
+  $unitPrice = ($doNotInvoice === 1 || $isWarrantyClaim || $isSplitOutsideEu) ? 0.0 : (float) ($item['unit_price'] ?? 0);
   $newTotal += $unitPrice * (int) ($item['followup_qty'] ?? 0);
 }
 if ($isWarrantyClaim) {
   $newTotal += $warrantyDdpAmount;
+}
+if ($isSplitOutsideEu) {
+  $newTotal += $splitInvoiceAmount;
 }
 
 $shippingMethod = trim((string) ($sourceOrder['shipping_method'] ?? ''));
@@ -279,6 +288,8 @@ if ($doNotInvoice === 1) {
   $newNoteParts[] = 'Do not invoice';
 } elseif ($isWarrantyClaim) {
   $newNoteParts[] = 'DDP enabled: ' . number_format($warrantyDdpAmount, 2, '.', '') . ' EUR';
+} elseif ($isSplitOutsideEu) {
+  $newNoteParts[] = 'Non-EU split invoice: ' . number_format($splitInvoiceAmount, 2, '.', '') . ' EUR';
 }
 if ($reason !== '') {
   $newNoteParts[] = $reason;
@@ -392,7 +403,7 @@ try {
     $customLabel = (string) ($item['custom_label'] ?? '');
     $itemTypeCode = strtoupper(trim((string) ($item['item_type_code'] ?? 'M')));
     $qty = (int) ($item['followup_qty'] ?? 1);
-    $unitPrice = ($doNotInvoice === 1 || $isWarrantyClaim) ? 0.0 : (float) ($item['unit_price'] ?? 0);
+    $unitPrice = ($doNotInvoice === 1 || $isWarrantyClaim || $isSplitOutsideEu) ? 0.0 : (float) ($item['unit_price'] ?? 0);
     $optionsJson = (string) ($item['options_json'] ?? '{}');
     $internalOptions = followup_decode_json_map((string) ($item['internal_options_json'] ?? '{}'));
     $internalOptions['_followup_parent_item_id'] = (int) ($item['id'] ?? 0);
@@ -490,6 +501,7 @@ try {
       'followup_type' => $followupType,
       'do_not_invoice' => $doNotInvoice === 1 ? 1 : 0,
       'customs_ddp_amount' => $isWarrantyClaim ? $warrantyDdpAmount : 0,
+      'split_invoice_amount' => $isSplitOutsideEu ? $splitInvoiceAmount : 0,
       'reason' => $reason,
       'moved_items' => $movedItems,
     ],
@@ -509,6 +521,7 @@ try {
       'followup_type' => $followupType,
       'do_not_invoice' => $doNotInvoice === 1 ? 1 : 0,
       'customs_ddp_amount' => $isWarrantyClaim ? $warrantyDdpAmount : 0,
+      'split_invoice_amount' => $isSplitOutsideEu ? $splitInvoiceAmount : 0,
       'reason' => $reason,
       'moved_items' => $movedItems,
     ],
@@ -522,6 +535,7 @@ try {
     'order_number' => $newOrderNumber,
     'do_not_invoice' => $doNotInvoice,
     'customs_ddp_amount' => $isWarrantyClaim ? $warrantyDdpAmount : 0,
+    'split_invoice_amount' => $isSplitOutsideEu ? $splitInvoiceAmount : 0,
   ]);
 } catch (Throwable $e) {
   $conn->rollback();

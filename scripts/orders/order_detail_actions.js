@@ -3130,38 +3130,44 @@ $(document)
     var $editBtn = $panel.closest(".order-detail-card").find(".btn-edit-order-header").first();
     $saveBtn.prop("disabled", true).text("Saving...");
 
+    var payload = {
+      order_id: orderId,
+      customer_name: $panel.find(".edit-customer-name").val(),
+      delivery: $panel.find(".edit-delivery").val(),
+      payment: $panel.find(".edit-payment").val(),
+      customs_identifier: $panel.find(".edit-customs-identifier").val(),
+      customs_ddp_enabled: $panel.find(".edit-customs-ddp-enabled").is(":checked") ? 1 : 0,
+      customs_ddp_amount: $panel.find(".edit-customs-ddp-amount").val(),
+      customs_ddp_note: $panel.find(".edit-customs-ddp-note").val(),
+      "billing[name]": $panel.find(".edit-billing-name").val(),
+      "billing[company]": $panel.find(".edit-billing-company").val(),
+      "billing[company_id]": $panel.find(".edit-billing-company-id").val(),
+      "billing[street]": $panel.find(".edit-billing-street").val(),
+      "billing[city]": $panel.find(".edit-billing-city").val(),
+      "billing[zip]": $panel.find(".edit-billing-zip").val(),
+      "billing[country]": $panel.find(".edit-billing-country").val(),
+      "billing[email]": $panel.find(".edit-billing-email").val(),
+      "billing[phone]": $panel.find(".edit-billing-phone").val(),
+      "shipping[name]": $panel.find(".edit-shipping-name").val(),
+      "shipping[company]": $panel.find(".edit-shipping-company").val(),
+      "shipping[company_id]": $panel.find(".edit-shipping-company-id").val(),
+      "shipping[street]": $panel.find(".edit-shipping-street").val(),
+      "shipping[city]": $panel.find(".edit-shipping-city").val(),
+      "shipping[zip]": $panel.find(".edit-shipping-zip").val(),
+      "shipping[country]": $panel.find(".edit-shipping-country").val(),
+      "shipping[email]": $panel.find(".edit-shipping-email").val(),
+      "shipping[phone]": $panel.find(".edit-shipping-phone").val(),
+    };
+    var $ownerSelect = $panel.find(".edit-owner-employee-id");
+    if ($ownerSelect.length && String($ownerSelect.val() || "") !== String($ownerSelect.data("currentOwnerEmployeeId") || "")) {
+      payload.owner_employee_id = $ownerSelect.val();
+    }
+
     $.ajax({
       url: "scripts/orders/update_order_header.php",
       method: "POST",
       dataType: "json",
-      data: {
-        order_id: orderId,
-        customer_name: $panel.find(".edit-customer-name").val(),
-        delivery: $panel.find(".edit-delivery").val(),
-        payment: $panel.find(".edit-payment").val(),
-        customs_identifier: $panel.find(".edit-customs-identifier").val(),
-        customs_ddp_enabled: $panel.find(".edit-customs-ddp-enabled").is(":checked") ? 1 : 0,
-        customs_ddp_amount: $panel.find(".edit-customs-ddp-amount").val(),
-        customs_ddp_note: $panel.find(".edit-customs-ddp-note").val(),
-        "billing[name]": $panel.find(".edit-billing-name").val(),
-        "billing[company]": $panel.find(".edit-billing-company").val(),
-        "billing[company_id]": $panel.find(".edit-billing-company-id").val(),
-        "billing[street]": $panel.find(".edit-billing-street").val(),
-        "billing[city]": $panel.find(".edit-billing-city").val(),
-        "billing[zip]": $panel.find(".edit-billing-zip").val(),
-        "billing[country]": $panel.find(".edit-billing-country").val(),
-        "billing[email]": $panel.find(".edit-billing-email").val(),
-        "billing[phone]": $panel.find(".edit-billing-phone").val(),
-        "shipping[name]": $panel.find(".edit-shipping-name").val(),
-        "shipping[company]": $panel.find(".edit-shipping-company").val(),
-        "shipping[company_id]": $panel.find(".edit-shipping-company-id").val(),
-        "shipping[street]": $panel.find(".edit-shipping-street").val(),
-        "shipping[city]": $panel.find(".edit-shipping-city").val(),
-        "shipping[zip]": $panel.find(".edit-shipping-zip").val(),
-        "shipping[country]": $panel.find(".edit-shipping-country").val(),
-        "shipping[email]": $panel.find(".edit-shipping-email").val(),
-        "shipping[phone]": $panel.find(".edit-shipping-phone").val(),
-      },
+      data: payload,
       success: function (resp) {
         if (!resp || !resp.ok) {
           alert(resp && resp.error ? resp.error : "Save error");

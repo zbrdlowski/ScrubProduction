@@ -4565,40 +4565,46 @@ $deptOptions = [
 
     $btn.prop('disabled', true).text('Saving...');
 
+    const payload = {
+      order_id: orderId,
+      customer_name: $box.find('.edit-customer-name').val(),
+      delivery: $box.find('.edit-delivery').val(),
+      payment: $box.find('.edit-payment').val(),
+      customs_identifier: $box.find('.edit-customs-identifier').val(),
+      customs_ddp_enabled: $box.find('.edit-customs-ddp-enabled').is(':checked') ? 1 : 0,
+      customs_ddp_amount: $box.find('.edit-customs-ddp-amount').val(),
+      customs_ddp_note: $box.find('.edit-customs-ddp-note').val(),
+
+      'billing[name]': $box.find('.edit-billing-name').val(),
+      'billing[company]': $box.find('.edit-billing-company').val(),
+      'billing[company_id]': $box.find('.edit-billing-company-id').val(),
+      'billing[street]': $box.find('.edit-billing-street').val(),
+      'billing[city]': $box.find('.edit-billing-city').val(),
+      'billing[zip]': $box.find('.edit-billing-zip').val(),
+      'billing[country]': $box.find('.edit-billing-country').val(),
+      'billing[email]': $box.find('.edit-billing-email').val(),
+      'billing[phone]': $box.find('.edit-billing-phone').val(),
+
+      'shipping[name]': $box.find('.edit-shipping-name').val(),
+      'shipping[company]': $box.find('.edit-shipping-company').val(),
+      'shipping[company_id]': $box.find('.edit-shipping-company-id').val(),
+      'shipping[street]': $box.find('.edit-shipping-street').val(),
+      'shipping[city]': $box.find('.edit-shipping-city').val(),
+      'shipping[zip]': $box.find('.edit-shipping-zip').val(),
+      'shipping[country]': $box.find('.edit-shipping-country').val(),
+      'shipping[email]': $box.find('.edit-shipping-email').val(),
+      'shipping[phone]': $box.find('.edit-shipping-phone').val()
+    };
+    const $ownerSelect = $box.find('.edit-owner-employee-id');
+    if ($ownerSelect.length && String($ownerSelect.val() || '') !== String($ownerSelect.data('currentOwnerEmployeeId') || '')) {
+      payload.owner_employee_id = $ownerSelect.val();
+    }
+
     $.ajax({
       url: 'scripts/orders/update_order_header.php',
       method: 'POST',
       dataType: 'json',
-      data: {
-        order_id: orderId,
-        customer_name: $box.find('.edit-customer-name').val(),
-        delivery: $box.find('.edit-delivery').val(),
-        payment: $box.find('.edit-payment').val(),
-        customs_identifier: $box.find('.edit-customs-identifier').val(),
-        customs_ddp_enabled: $box.find('.edit-customs-ddp-enabled').is(':checked') ? 1 : 0,
-        customs_ddp_amount: $box.find('.edit-customs-ddp-amount').val(),
-        customs_ddp_note: $box.find('.edit-customs-ddp-note').val(),
-
-        'billing[name]': $box.find('.edit-billing-name').val(),
-        'billing[company]': $box.find('.edit-billing-company').val(),
-        'billing[company_id]': $box.find('.edit-billing-company-id').val(),
-        'billing[street]': $box.find('.edit-billing-street').val(),
-        'billing[city]': $box.find('.edit-billing-city').val(),
-        'billing[zip]': $box.find('.edit-billing-zip').val(),
-        'billing[country]': $box.find('.edit-billing-country').val(),
-        'billing[email]': $box.find('.edit-billing-email').val(),
-        'billing[phone]': $box.find('.edit-billing-phone').val(),
-
-        'shipping[name]': $box.find('.edit-shipping-name').val(),
-        'shipping[company]': $box.find('.edit-shipping-company').val(),
-        'shipping[company_id]': $box.find('.edit-shipping-company-id').val(),
-        'shipping[street]': $box.find('.edit-shipping-street').val(),
-        'shipping[city]': $box.find('.edit-shipping-city').val(),
-        'shipping[zip]': $box.find('.edit-shipping-zip').val(),
-        'shipping[country]': $box.find('.edit-shipping-country').val(),
-        'shipping[email]': $box.find('.edit-shipping-email').val(),
-        'shipping[phone]': $box.find('.edit-shipping-phone').val()
-      },
+      data: payload,
       success: function (resp) {
         if (!resp || !resp.ok) {
           alert('Save error: ' + (resp && resp.error ? resp.error : 'unknown'));
@@ -4827,8 +4833,10 @@ $deptOptions = [
     const $checkbox = $panel.find('.followup-do-not-invoice');
     const $checkboxWrap = $panel.find('.followup-do-not-invoice-wrap');
     const $ddpState = $panel.find('.followup-ddp-state');
+    const $splitInvoiceState = $panel.find('.followup-split-invoice-state');
     const $state = $panel.find('.followup-invoice-state');
     const $hint = $panel.find('.followup-hint');
+    const isEuShipping = String($panel.attr('data-followup-eu-shipping') || '0') === '1';
     const wasLocked = $checkbox.prop('disabled');
 
     if (type === 'WARRANTY') {
@@ -4836,6 +4844,7 @@ $deptOptions = [
       $checkbox.prop('checked', false).prop('disabled', true);
       $checkboxWrap.hide();
       $ddpState.show();
+      $splitInvoiceState.hide();
       $state.text('DDP 5.00 EUR').removeClass('bg-secondary bg-danger').addClass('bg-info');
       $hint.text('Warranty claim creates an invoiceable DDP order with default Customs / DDP value 5.00 EUR.');
       return;
@@ -4843,12 +4852,21 @@ $deptOptions = [
 
     $checkboxWrap.show();
     $ddpState.hide();
+    $splitInvoiceState.hide();
 
     if (type === 'SPLIT') {
-      $checkbox.prop('checked', true).prop('disabled', true);
-      $state.text('Do not invoice').removeClass('bg-secondary bg-info').addClass('bg-danger');
       $panel.find('.followup-item-qty').val(1).prop('readonly', true);
-      $hint.text('Order split moves exactly 1 unit from every selected item and automatically subtracts it from the original order (Q1, Q2, ...).');
+      if (isEuShipping) {
+        $checkbox.prop('checked', true).prop('disabled', true);
+        $state.text('Do not invoice').removeClass('bg-secondary bg-info').addClass('bg-danger');
+        $hint.text('Order split moves exactly 1 unit from every selected item and automatically subtracts it from the original order (Q1, Q2, ...).');
+      } else {
+        $checkbox.prop('checked', false).prop('disabled', true);
+        $checkboxWrap.hide();
+        $splitInvoiceState.show();
+        $state.text('Invoice 5.00 EUR').removeClass('bg-secondary bg-danger').addClass('bg-info');
+        $hint.text('Non-EU split creates an invoiceable 5.00 EUR order and will go through Ready to Invoice before label.');
+      }
       return;
     }
 

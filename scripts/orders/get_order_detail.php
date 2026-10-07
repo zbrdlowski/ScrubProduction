@@ -1187,6 +1187,79 @@ function orderDetailResolveCustomOrderId(mysqli $conn, array $order, int $produc
   return 0;
 }
 
+function orderDetailAssignableEmployees(mysqli $conn, int $currentOwnerId = 0): array
+{
+  $employees = [];
+  $sql = "
+    SELECT id, firstname, lastname, photo, active
+    FROM employees
+    WHERE active = 'Active'" . ($currentOwnerId > 0 ? ' OR id = ?' : '') . "
+    ORDER BY firstname ASC, lastname ASC
+  ";
+
+  $stmt = $conn->prepare($sql);
+  if (!$stmt) {
+    return $employees;
+  }
+
+  if ($currentOwnerId > 0) {
+    $stmt->bind_param('i', $currentOwnerId);
+  }
+
+  $stmt->execute();
+  $res = $stmt->get_result();
+  while ($row = $res->fetch_assoc()) {
+    $employees[] = $row;
+  }
+  $stmt->close();
+
+  return $employees;
+}
+
+function orderDetailLoadCustomOrderOwner(mysqli $conn, int $customOrderId): array
+{
+  $emptyOwner = [
+    'owner_employee_id' => 0,
+    'owner_name' => '',
+    'owner_photo' => '',
+    'owner_active' => '',
+    'owner_assigned_by_name' => '',
+    'owner_assigned_at' => '',
+    'internal_code' => '',
+    'official_order_number' => '',
+  ];
+
+  if ($customOrderId <= 0) {
+    return $emptyOwner;
+  }
+
+  $stmt = $conn->prepare("
+    SELECT co.owner_employee_id,
+           co.owner_assigned_at,
+           co.internal_code,
+           co.official_order_number,
+           TRIM(CONCAT_WS(' ', eo.firstname, eo.lastname)) AS owner_name,
+           eo.photo AS owner_photo,
+           eo.active AS owner_active,
+           TRIM(CONCAT_WS(' ', eab.firstname, eab.lastname)) AS owner_assigned_by_name
+    FROM custom_orders co
+    LEFT JOIN employees eo ON eo.id = co.owner_employee_id
+    LEFT JOIN employees eab ON eab.id = co.owner_assigned_by
+    WHERE co.id = ?
+    LIMIT 1
+  ");
+  if (!$stmt) {
+    return $emptyOwner;
+  }
+
+  $stmt->bind_param('i', $customOrderId);
+  $stmt->execute();
+  $row = $stmt->get_result()->fetch_assoc();
+  $stmt->close();
+
+  return $row ? array_merge($emptyOwner, $row) : $emptyOwner;
+}
+
 function orderDetailLoadCustomOrderNotes(mysqli $conn, int $customOrderId): array
 {
   if ($customOrderId <= 0) {
@@ -1338,6 +1411,7 @@ if (!is_file($connFile)) {
 require_once $connFile;
 require_once __DIR__ . '/access.php';
 require_once $base . '/includes/orders_status_helpers.php';
+require_once $base . '/includes/orders_workflow_helpers.php';
 require_once $base . '/includes/orders_customs_helpers.php';
 require_once $base . '/includes/get_order_detail_product_spec_selects.php';
 require_once $base . '/includes/shipping_methods.php';
@@ -1350,6 +1424,7 @@ $ordersCanWork = auth_can('orders.work');
 $ordersCanManageFinancials = auth_can('orders.financial');
 $ordersCanAdminister = auth_can('orders.admin');
 $ordersCanManageCustomOrders = auth_can('custom_orders.manage') || auth_can('custom_orders.financial');
+$ordersCanManageCustomOrderOwners = auth_can('custom_orders.manage');
 $ordersCanAccessAccounting = auth_can('accounting.view') || auth_can('accounting.export');
 
 $orderId = (int) ($_POST['order_id'] ?? 0);
@@ -1784,6 +1859,16 @@ $linkedCustomOrderId = ($isCustomOrder && !$isFollowupOrder) ? orderDetailResolv
 if (!$isFollowupOrder && $linkedCustomOrderId > 0 && empty($sourceMeta['custom_order_id'])) {
   $sourceMeta['custom_order_id'] = $linkedCustomOrderId;
 }
+$customOrderOwner = orderDetailLoadCustomOrderOwner($conn, $linkedCustomOrderId);
+$customOrderOwnerEmployeeId = (int) ($customOrderOwner['owner_employee_id'] ?? 0);
+$customOrderOwnerName = trim((string) ($customOrderOwner['owner_name'] ?? ''));
+if ($customOrderOwnerName === '' && $customOrderOwnerEmployeeId > 0) {
+  $customOrderOwnerName = 'Employee #' . $customOrderOwnerEmployeeId;
+}
+$orderOwnerAssignableEmployees = ($ordersCanManage && $ordersCanManageCustomOrderOwners && $linkedCustomOrderId > 0)
+  ? orderDetailAssignableEmployees($conn, $customOrderOwnerEmployeeId)
+  : [];
+$orderOwnerCanEdit = $ordersCanManage && $ordersCanManageCustomOrderOwners && $linkedCustomOrderId > 0 && !empty($orderOwnerAssignableEmployees);
 $customOrderAppendOnlyNotes = orderDetailLoadCustomOrderNotes($conn, $linkedCustomOrderId);
 $customOrderNoteAuditViewerEmployeeIds = [3, 5];
 $canViewCustomOrderNoteAudit = $ordersCanAdminister
@@ -1896,6 +1981,7 @@ $followupParentOrderId = (int) ($followupMeta['parent_order_id'] ?? 0);
 $followupParentOrderNumber = trim((string) ($followupMeta['parent_order_number'] ?? ''));
 $followupReason = trim((string) ($followupMeta['reason'] ?? ''));
 $followupDoNotInvoice = !empty($followupMeta['do_not_invoice']);
+$followupInvoiceAmount = orderDetailMoneyValue($followupMeta['invoice_amount'] ?? null) ?? 0.0;
 
 // --- categories ---
 $stmt = $conn->prepare("SELECT c.code
@@ -1933,6 +2019,7 @@ if (!empty($addr['SHIPPING']['country'])) {
 } elseif (!empty($addr['BILLING']['country'])) {
   $orderCountry = strtoupper((string) $addr['BILLING']['country']);
 }
+$orderIsEuShipping = ordersIsEuShipping($conn, $orderId);
 $customsIdentifier = trim((string) ($order['customs_identifier'] ?? ''));
 $customsIdentifierMissing = ordersIsCustomsIdentifierMissing($orderCountry, $customsIdentifier);
 $customsIdentifierLabel = ordersCustomsIdentifierLabel($orderCountry);
@@ -5448,6 +5535,12 @@ ob_start();
                     title="Copy customer phone">📋</button>
                 </div>
               <?php endif; ?>
+              <?php if ($linkedCustomOrderId > 0): ?>
+                <div class="order-summary-line mt-1">
+                  <i class="fas fa-user-tag mr-1"></i><b>Owner:</b>
+                  <?php echo h($customOrderOwnerName !== '' ? $customOrderOwnerName : 'Unassigned'); ?>
+                </div>
+              <?php endif; ?>
             </div>
 
             <div class="order-summary-meta-item">
@@ -5493,6 +5586,8 @@ ob_start();
                     <span class="badge badge-danger">Do not invoice</span>
                   <?php elseif ($followupTypeCode === 'WARRANTY' && $customsDdpEnabled): ?>
                     <span class="badge badge-info">DDP <?php echo number_format($customsDdpAmount, 2, '.', ''); ?><?php echo h($orderCurrencySuffix); ?></span>
+                  <?php elseif ($followupTypeCode === 'SPLIT' && $followupInvoiceAmount > 0.0): ?>
+                    <span class="badge badge-info">Invoice <?php echo number_format($followupInvoiceAmount, 2, '.', ''); ?><?php echo h($orderCurrencySuffix); ?></span>
                   <?php endif; ?>
                 </div>
               <?php endif; ?>
@@ -5528,11 +5623,35 @@ ob_start();
                   <input type="hidden" class="edit-order-id" value="<?php echo (int) $orderId; ?>">
 
                   <div class="form-row">
-                    <div class="form-group col-md-12">
+                    <div class="form-group <?php echo $orderOwnerCanEdit ? 'col-md-8' : 'col-md-12'; ?>">
                       <label>Customer name</label>
                       <input class="form-control form-control-sm edit-customer-name"
                         value="<?php echo h($order['customer_name'] ?? ''); ?>">
                     </div>
+                    <?php if ($orderOwnerCanEdit): ?>
+                      <div class="form-group col-md-4">
+                        <label>Owner</label>
+                        <select class="form-control form-control-sm edit-owner-employee-id"
+                          data-current-owner-employee-id="<?php echo (int) $customOrderOwnerEmployeeId; ?>">
+                          <?php if ($customOrderOwnerEmployeeId <= 0): ?>
+                            <option value="0" selected disabled>Unassigned</option>
+                          <?php endif; ?>
+                          <?php foreach ($orderOwnerAssignableEmployees as $employee): ?>
+                            <?php
+                            $employeeId = (int) ($employee['id'] ?? 0);
+                            $employeeName = trim(((string) ($employee['firstname'] ?? '')) . ' ' . ((string) ($employee['lastname'] ?? '')));
+                            if ($employeeName === '') {
+                              $employeeName = 'Employee #' . $employeeId;
+                            }
+                            $employeeLabel = $employeeName . ((string) ($employee['active'] ?? '') === 'Active' ? '' : ' (inactive)');
+                            ?>
+                            <option value="<?php echo $employeeId; ?>" <?php echo $customOrderOwnerEmployeeId === $employeeId ? 'selected' : ''; ?>>
+                              <?php echo h($employeeLabel); ?>
+                            </option>
+                          <?php endforeach; ?>
+                        </select>
+                      </div>
+                    <?php endif; ?>
                   </div>
 
                   <div class="form-row">
@@ -6280,7 +6399,7 @@ ob_start();
 
         <?php if ($showFollowupPanel): ?>
         <div class="col-lg-4">
-            <div class="order-followup-panel">
+            <div class="order-followup-panel" data-followup-eu-shipping="<?php echo $orderIsEuShipping ? '1' : '0'; ?>">
               <div class="card bg-dark border-info">
             <div class="card-header d-flex align-items-start justify-content-between">
               <div>
@@ -6319,6 +6438,10 @@ ob_start();
                   <div class="followup-ddp-state small text-info mt-1" style="display:none;">
                     <i class="fas fa-file-invoice-dollar mr-1" aria-hidden="true"></i>
                     DDP enabled, default 5.00 EUR
+                  </div>
+                  <div class="followup-split-invoice-state small text-info mt-1" style="display:none;">
+                    <i class="fas fa-file-invoice-dollar mr-1" aria-hidden="true"></i>
+                    Non-EU split invoice, default 5.00 EUR
                   </div>
                 </div>
               </div>

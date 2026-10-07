@@ -25,6 +25,17 @@ $delivery = trim((string)($_POST['delivery'] ?? ''));
 $payment  = trim((string)($_POST['payment'] ?? ''));
 $customerName = trim((string)($_POST['customer_name'] ?? ''));
 $customsIdentifier = trim((string)($_POST['customs_identifier'] ?? ''));
+$ownerEmployeeIdSubmitted = array_key_exists('owner_employee_id', $_POST);
+$ownerEmployeeId = $ownerEmployeeIdSubmitted ? (int)($_POST['owner_employee_id'] ?? 0) : 0;
+if ($ownerEmployeeIdSubmitted && $ownerEmployeeId <= 0) {
+  out(400, ['ok'=>false,'error'=>'Invalid owner']);
+}
+if ($ownerEmployeeIdSubmitted && !auth_can('custom_orders.manage')) {
+  out(403, ['ok'=>false,'error'=>'No permission to change custom order owner.']);
+}
+if ($ownerEmployeeIdSubmitted) {
+  require_once $base . '/scripts/custom_orders/helpers.php';
+}
 
 if (mb_strlen($customsIdentifier) > 128) {
   out(400, ['ok'=>false,'error'=>'Customs / Tax ID is too long (maximum 128 characters)']);
@@ -240,7 +251,7 @@ try {
   }
 
   $customStmt = $conn->prepare("
-    SELECT id
+    SELECT id, owner_employee_id
     FROM custom_orders
     WHERE production_order_id = ?
     LIMIT 1
@@ -252,6 +263,7 @@ try {
     $customStmt->close();
     if ($customRow) {
       $customOrderId = (int)$customRow['id'];
+      $currentOwnerEmployeeId = (int)($customRow['owner_employee_id'] ?? 0);
       $billingName = clean($billing['name'] ?? '');
       $billingCompany = clean($billing['company'] ?? '');
       $billingCompanyId = clean($billing['company_id'] ?? '');
@@ -321,6 +333,9 @@ try {
       $stmt->execute();
       $stmt->close();
 
+      if ($ownerEmployeeIdSubmitted && $ownerEmployeeId !== $currentOwnerEmployeeId) {
+        customOrdersAssignOwner($conn, $customOrderId, $ownerEmployeeId, $userId);
+      }
       if ($customsDdpSubmitted) {
         $ddpStmt = $conn->prepare("
           UPDATE custom_orders
@@ -337,7 +352,11 @@ try {
           $ddpStmt->close();
         }
       }
+    } elseif ($ownerEmployeeIdSubmitted) {
+      throw new Exception('This order is not linked to a custom order owner.');
     }
+  } elseif ($ownerEmployeeIdSubmitted) {
+    throw new Exception($conn->error ?: 'Unable to load custom order owner.');
   }
 
   $conn->commit();
