@@ -11,7 +11,7 @@ $canArrangeProductChartColumns = !empty($_SESSION['user_id']);
 
 // Product chart editacia: iba superadmin alebo konkretne povoleni useri.
 // Rovnake pravidlo musi byt aj v AJAX endpointoch pre meta/model-year/tracking ulozenia.
-$productChartEditorIds = [3, 16, 17];
+$productChartEditorIds = [3, 16, 17, 10];
 $productChartUserId = (int) ($_SESSION['user_id'] ?? 0);
 $productChartPermission = (int) ($_SESSION['permission'] ?? 0);
 $canEditProductChart = $productChartPermission >= 900 || in_array($productChartUserId, $productChartEditorIds, true);
