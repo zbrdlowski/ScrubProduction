@@ -4,7 +4,7 @@ require_once('../includes/conn.php');
 
 $item_id = $_POST['item_id'] ?? null;
 $barcode = $_POST['barcode'] ?? '';
-$new_location = $_POST['new_location'] ?? '';
+$new_location = trim($_POST['new_location'] ?? '');
 $selected = $_POST['selected'] ?? [];
 $qty = $_POST['qty'] ?? [];
 $operator = $_SESSION['name'];
@@ -16,19 +16,19 @@ if (!$item_id || !$new_location || empty($selected)) {
     exit;
 }
 
-// Get new shelf ID or create it
-$stmt = $pdo->prepare("SELECT id FROM shelves WHERE location = :location");
+// Get target shelf ID. Relocation must only use locations that already exist.
+$stmt = $pdo->prepare("SELECT id, location FROM shelves WHERE location = :location LIMIT 1");
 $stmt->execute(['location' => $new_location]);
 $shelf = $stmt->fetch(PDO::FETCH_ASSOC);
 
 if (!$shelf) {
-    // Create new shelf
-    $stmt = $pdo->prepare("INSERT INTO shelves (location) VALUES (:location)");
-    $stmt->execute(['location' => $new_location]);
-    $shelf_id = $pdo->lastInsertId();
-} else {
-    $shelf_id = $shelf['id'];
+    $_SESSION['error'] = "Storage location '" . htmlspecialchars($new_location, ENT_QUOTES, 'UTF-8') . "' does not exist. Relocation was not completed.";
+    header('Location: ../index.php?page=relocate_item');
+    exit;
 }
+
+$shelf_id = $shelf['id'];
+$new_location = $shelf['location'];
 
 // Process each selected stock record
 foreach ($selected as $stock_id) {

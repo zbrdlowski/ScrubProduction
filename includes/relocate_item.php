@@ -34,6 +34,9 @@ $barcode = $_POST['barcode'] ?? '';
 $item_id = null;
 $locations = [];
 
+$stmt = $pdo->query("SELECT location FROM shelves ORDER BY location");
+$shelf_locations = $stmt->fetchAll(PDO::FETCH_COLUMN);
+
 if ($barcode) {
     // Get item ID
     $stmt = $pdo->prepare("SELECT id FROM items WHERE barcode = :barcode");
@@ -90,7 +93,12 @@ if ($barcode) {
 
       <div class="form-group text-center">
         <label for="new_location"></label>
-        <input type="text" name="new_location" class="form-control input-sm" required style="width: 200px; display: inline-block;" placeholder="Scan New Location">
+        <input type="text" name="new_location" id="new_location" list="new_location_list" class="form-control input-sm" required style="width: 200px; display: inline-block;" placeholder="Scan New Location" autocomplete="off">
+        <datalist id="new_location_list">
+          <?php foreach ($shelf_locations as $shelf_location): ?>
+            <option value="<?= htmlspecialchars($shelf_location) ?>"></option>
+          <?php endforeach; ?>
+        </datalist>
       </div>
 
       <button type="submit" class="btn btn-success btn-block">🚚 Relocate Selected Stock</button>
