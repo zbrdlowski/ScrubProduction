@@ -315,7 +315,7 @@ function status_accent_color($status): string
 // ── Label script path (relative to the web root, adjust if needed) ───────────
 define('LABEL_BASE_PATH', 'scripts/labels/');
 
-function item_type_category_badge(array $item, array $order, array $addr, string $orderCountry): string
+function item_type_category_badge(array $item, array $order, array $addr, string $orderCountry, string $orderProductType = ''): string
 {
   static $labelMap = [
     'G' => ['G', 'Graphics', 'label_rtp.php'],
@@ -339,6 +339,8 @@ function item_type_category_badge(array $item, array $order, array $addr, string
   $ship     = trim((string)($order['shipping_method'] ?? $order['shipping_code'] ?? ''));
   $rawDate  = trim((string)($order['created_at'] ?? ''));
   $date     = $rawDate !== '' ? date('d.m.Y', strtotime($rawDate)) : '';
+  $rawImportDate = trim((string)($order['imported_at'] ?? ''));
+  $importDate = $rawImportDate !== '' ? date('d.m.Y', strtotime($rawImportDate)) : '';
   $prodNote = trim((string)($order['production_note'] ?? ''));
   $sourceCode = trim((string)($order['source_code'] ?? ''));
 
@@ -367,10 +369,11 @@ function item_type_category_badge(array $item, array $order, array $addr, string
     'order'        => $orderNum,
     'name'         => $customer,
     'country'      => $orderCountry,
-    'gfp'          => $gfp,
+    'gfp'          => orderProductTypeLabel($orderProductType !== '' ? $orderProductType : $gfp),
     'item'         => $itemTitle,
     'ship'         => $ship,
     'date'         => $date,
+    'importdate'   => $importDate,
     'note'         => $prodNote,
     'extranote'    => '',
     'extra'        => $extra,
@@ -400,6 +403,16 @@ function item_type_category_badge(array $item, array $order, array $addr, string
        . '</a>';
 }
 
+function orderProductTypeLabel(string $type): string
+{
+  static $labels = [
+    'GPF' => 'GFP',
+    'GPSF' => 'GFPS',
+  ];
+
+  $type = strtoupper(trim($type));
+  return $labels[$type] ?? $type;
+}
 function trafficTypesStringFromOrder(array $order, array $items = []): string
 {
     $summary = json_decode((string)($order['traffic_summary_json'] ?? ''), true);
@@ -2229,7 +2242,7 @@ ob_start();
                 <?php endif; ?>
 
                 <td class="text-center">
-                  <?php echo item_type_category_badge($it, $order, $addr, $orderCountry); ?>
+                  <?php echo item_type_category_badge($it, $order, $addr, $orderCountry, $manualTypes ?: $orderTrafficTypes); ?>
                 </td>
 
                 <td style="min-width:220px; display:none;">

@@ -52,6 +52,7 @@ $gfp          = g('gfp');
 $item         = g('item');
 $ship         = g('ship');
 $date         = g('date');
+$importdate   = g('importdate');
 $note         = g('note');
 $extranote    = g('extranote');
 $basematerial = g('basematerial');
@@ -100,7 +101,7 @@ $shipLabel = shipAbbrev($ship);
       <td id="ship"    width="15%"><?= htmlspecialchars($shipLabel) ?></td>
       <td id="ship"    width="15%"><?= htmlspecialchars($date) ?></td>
       <td colspan="2" style="text-align:center; font-size:18px; font-weight:bold; padding:6px;">
-        <?= htmlspecialchars($basematerial) ?>&nbsp;&nbsp;<?= htmlspecialchars($finish) ?>
+        <?= htmlspecialchars($importdate) ?>
       </td>
     </tr>
 
