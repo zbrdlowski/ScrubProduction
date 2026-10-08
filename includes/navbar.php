@@ -134,6 +134,9 @@ if (isset($conn) && $conn instanceof mysqli) {
       <li class="nav-item d-none d-sm-inline-block">
         <a href="?page=product_listing_catalog" class="nav-link">Product database</a>
       </li>
+      <li class="nav-item d-none d-sm-inline-block">
+        <a href="?page=order_search" class="nav-link">Order Search</a>
+      </li>
     </ul>
     <!-- Right navbar links -->
     <ul class="navbar-nav ml-auto">
