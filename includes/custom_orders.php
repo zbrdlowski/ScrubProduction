@@ -2051,9 +2051,11 @@ if (!$customOrdersDetailRequest && !$customOrdersFullPageDetail) {
     display: inline-flex;
     align-items: center;
     justify-content: flex-end;
-    flex-wrap: wrap;
+    flex: 1 1 620px;
+    flex-wrap: nowrap;
     gap: 6px;
     min-width: 0;
+    max-width: 100%;
   }
 
   .custom-official-number-editor {
@@ -2178,13 +2180,13 @@ if (!$customOrdersDetailRequest && !$customOrdersFullPageDetail) {
     display: inline-flex;
     align-items: center;
     gap: 4px;
-    flex: 0 1 260px;
-    min-width: 190px;
+    flex: 0 1 230px;
+    min-width: 165px;
   }
 
   .custom-owner-header-control {
     flex: 1 1 auto;
-    min-width: 135px !important;
+    min-width: 120px !important;
   }
 
   .custom-owner-header-save {
@@ -2216,15 +2218,24 @@ if (!$customOrdersDetailRequest && !$customOrdersFullPageDetail) {
     min-width: 125px !important;
   }
   .custom-twin-header-controls > .custom-complexity-control {
-    flex: 0 1 230px;
-    width: 230px;
-    min-width: 180px !important;
+    flex: 0 1 185px;
+    width: 185px;
+    min-width: 145px !important;
   }
 
   .custom-twin-header-controls > .custom-status-control {
-    flex: 0 1 190px;
-    width: 190px;
-    min-width: 155px !important;
+    flex: 0 1 175px;
+    width: 175px;
+    min-width: 135px !important;
+  }
+
+
+  @media (max-width: 1199.98px) {
+    .custom-twin-header-controls {
+      flex-basis: 100%;
+      justify-content: flex-start;
+      flex-wrap: wrap;
+    }
   }
 
   .custom-twin-order-body {

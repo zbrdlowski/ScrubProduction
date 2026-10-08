@@ -315,7 +315,7 @@ function status_accent_color($status): string
 // ── Label script path (relative to the web root, adjust if needed) ───────────
 define('LABEL_BASE_PATH', 'scripts/labels/');
 
-function item_type_category_badge(array $item, array $order, array $addr, string $orderCountry, string $orderProductType = ''): string
+function item_type_category_badge(array $item, array $order, array $addr, string $orderCountry, string $orderProductType = '', ?string $labelNote = null): string
 {
   static $labelMap = [
     'G' => ['G', 'Graphics', 'label_rtp.php'],
@@ -342,6 +342,7 @@ function item_type_category_badge(array $item, array $order, array $addr, string
   $rawImportDate = trim((string)($order['imported_at'] ?? ''));
   $importDate = $rawImportDate !== '' ? date('d.m.Y', strtotime($rawImportDate)) : '';
   $prodNote = trim((string)($order['production_note'] ?? ''));
+  $labelNote = $labelNote === null ? $prodNote : trim($labelNote);
   $sourceCode = trim((string)($order['source_code'] ?? ''));
 
   // options_json
@@ -374,7 +375,7 @@ function item_type_category_badge(array $item, array $order, array $addr, string
     'ship'         => $ship,
     'date'         => $date,
     'importdate'   => $importDate,
-    'note'         => $prodNote,
+    'note'         => $labelNote,
     'extranote'    => '',
     'extra'        => $extra,
     'basematerial' => $basematerial,
@@ -412,6 +413,75 @@ function orderProductTypeLabel(string $type): string
 
   $type = strtoupper(trim($type));
   return $labels[$type] ?? $type;
+}
+function labelDecodeJsonAssoc($json): array
+{
+  $data = json_decode((string) $json, true);
+  return is_array($data) ? $data : [];
+}
+
+function labelNoteValueFromKeys(array $data, array $keys): string
+{
+  $normalized = [];
+  foreach ($data as $rawKey => $rawValue) {
+    if (is_array($rawValue) || is_object($rawValue) || $rawValue === null) {
+      continue;
+    }
+
+    $value = trim((string) $rawValue);
+    if ($value === '') {
+      continue;
+    }
+
+    $normalizedKey = strtolower(trim((string) $rawKey));
+    $normalizedKey = preg_replace('/[^a-z0-9]+/', '-', $normalizedKey) ?? $normalizedKey;
+    $normalizedKey = trim($normalizedKey, '-');
+    if ($normalizedKey !== '' && !isset($normalized[$normalizedKey])) {
+      $normalized[$normalizedKey] = $value;
+    }
+  }
+
+  foreach ($keys as $key) {
+    if (array_key_exists($key, $data) && !is_array($data[$key]) && !is_object($data[$key]) && $data[$key] !== null) {
+      $value = trim((string) $data[$key]);
+      if ($value !== '') {
+        return $value;
+      }
+    }
+
+    $normalizedKey = strtolower(trim((string) $key));
+    $normalizedKey = preg_replace('/[^a-z0-9]+/', '-', $normalizedKey) ?? $normalizedKey;
+    $normalizedKey = trim($normalizedKey, '-');
+    if ($normalizedKey !== '' && isset($normalized[$normalizedKey])) {
+      return $normalized[$normalizedKey];
+    }
+  }
+
+  return '';
+}
+
+function fittingItemNoteFromItems(array $items): string
+{
+  foreach ($items as $item) {
+    $type = strtoupper(trim((string) ($item['item_type_code'] ?? '')));
+    if ($type !== 'F') {
+      continue;
+    }
+
+    $opts = labelDecodeJsonAssoc($item['options_json'] ?? '');
+    $intOpts = labelDecodeJsonAssoc($item['internal_options_json'] ?? '');
+
+    $note = labelNoteValueFromKeys($intOpts, ['_my_item_note', '_note', '_graphics_note', '_scrub_note']);
+    if ($note === '') {
+      $note = labelNoteValueFromKeys($opts, ['my-item-note', 'my_item_note', 'My Item Note', 'note', 'Note', 'scrub-note', 'scrub_note', 'Scrub note']);
+    }
+
+    if ($note !== '') {
+      return $note;
+    }
+  }
+
+  return '';
 }
 function trafficTypesStringFromOrder(array $order, array $items = []): string
 {
@@ -649,6 +719,7 @@ usort($items, function (array $a, array $b) use ($deptOrder): int {
 });
 
 $orderTrafficTypes = trafficTypesStringFromOrder($order, $items);
+$fittingLabelNote = fittingItemNoteFromItems($items);
 
 $status = (string) ($order['status'] ?? '');
 $badgeClass = status_badge_class($status);
@@ -2242,7 +2313,7 @@ ob_start();
                 <?php endif; ?>
 
                 <td class="text-center">
-                  <?php echo item_type_category_badge($it, $order, $addr, $orderCountry, $manualTypes ?: $orderTrafficTypes); ?>
+                  <?php echo item_type_category_badge($it, $order, $addr, $orderCountry, $manualTypes ?: $orderTrafficTypes, $fittingLabelNote); ?>
                 </td>
 
                 <td style="min-width:220px; display:none;">
