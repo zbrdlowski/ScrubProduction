@@ -9,7 +9,7 @@ function out(int $code, array $payload): void {
     exit;
 }
 
-$productChartEditorIds = [3, 16, 17];
+$productChartEditorIds = [3, 16, 17, 10]; // explicitne povoleni useri (okrem superadmina)
 $productChartUserId = (int)($_SESSION['user_id'] ?? 0);
 $productChartPermission = (int)($_SESSION['permission'] ?? 0);
 $canEditProductChart = $productChartPermission >= 900 || in_array($productChartUserId, $productChartEditorIds, true);

@@ -21,7 +21,7 @@ session_start();
 require_once __DIR__ . '/../includes/conn.php'; // subor je v scripts/, conn.php v includes/ (o uroven vyssie)
 
 // ---- ACL: superadmin alebo explicitne povoleni editori --------------------
-$productChartEditorIds = [3, 16, 17];
+$productChartEditorIds = [3, 16, 17, 10];
 $productChartUserId = (int) ($_SESSION['user_id'] ?? 0);
 $productChartPermission = (int) ($_SESSION['permission'] ?? 0);
 $canEditProductChart = $productChartPermission >= 900 || in_array($productChartUserId, $productChartEditorIds, true);
