@@ -13,6 +13,7 @@ $ordersPermissionMap = [
     'get_order_traffic.php' => 'orders.view',
     'get_print_suggestions.php' => 'orders.view',
     'load_activity_log.php' => 'orders.view',
+    'search_builder.php' => 'orders.view',
     'take_order.php' => 'orders.work',
     'assign_order_item.php' => 'orders.work',
     'remove_order_assignment.php' => 'orders.work',

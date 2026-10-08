@@ -30,6 +30,7 @@ if (empty($_GET['page'])) {
 $pageLabels = [
   'plastics_dashboard' => 'Dashboard',
   'orders' => 'Orders',
+  'order_search' => 'Universal Order Search',
   'order_prepare' => 'Order Queue',
   'scan_form' => 'Scan Items',
   'stock_levels' => 'Stock Levels',

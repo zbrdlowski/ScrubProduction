@@ -346,6 +346,7 @@ function isMenuOpen($pages = [])
           'fetch_data',
           'system',
           'orders',
+          'order_search',
           'custom_orders',
           'orders_g',
           'orders_p',
@@ -370,6 +371,10 @@ function isMenuOpen($pages = [])
                 class="far fa fa-caret-right nav-icon"></i>
               <p>Open Orders</p></a>
             </li>
+            <li class="nav-item"><a href="index.php?page=order_search"
+                class="nav-link <?= isActive('order_search') ?>"><i class="fas fa-search nav-icon"></i>
+                <p>Order Search</p>
+              </a></li>
             <?php endif; ?>
             <?php if ($canSeeCustomOrders): ?>
             <li class="nav-item"><a href="<? echo basename($_SERVER['PHP_SELF']); ?>?page=custom_orders"

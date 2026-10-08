@@ -70,6 +70,7 @@ function auth_page_permission(string $page): ?string
     $map = [
         'orders_dashboard' => 'orders.view',
         'orders' => 'orders.view',
+        'order_search' => 'orders.view',
         'order_export_reset' => 'orders.export_reset',
         'staff_attendance' => 'attendance.view_all',
         'staff_attendance_detail' => 'attendance.view_all',
