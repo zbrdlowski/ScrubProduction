@@ -7398,10 +7398,8 @@ if (!$customOrdersDetailRequest && !$customOrdersFullPageDetail) {
     function initializeCustomContactSuggestions(root) {
       var searchableFields = [
         'customer_name', 'social_handle',
-        'billing_name', 'billing_company', 'billing_company_id', 'billing_street',
-        'billing_city', 'billing_zip', 'billing_country', 'billing_email', 'billing_phone',
-        'shipping_name', 'shipping_company', 'shipping_company_id', 'shipping_street',
-        'shipping_city', 'shipping_zip', 'shipping_country', 'shipping_email', 'shipping_phone'
+        'billing_name', 'billing_company', 'billing_company_id', 'billing_email', 'billing_phone',
+        'shipping_name', 'shipping_company', 'shipping_company_id', 'shipping_email', 'shipping_phone'
       ];
 
       root.querySelectorAll('form[id^="custom-twin-header-form-"]').forEach(function (form) {
