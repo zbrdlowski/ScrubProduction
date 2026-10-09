@@ -47,7 +47,7 @@ function orderSearchFieldRegistry(): array
     'payment_method' => ['label' => 'Payment method', 'group' => 'Order', 'type' => 'text', 'kind' => 'direct', 'expr' => 'o.payment_method', 'operators' => $choice, 'suggest' => true],
     'shipping_method' => ['label' => 'Shipping method', 'group' => 'Order', 'type' => 'text', 'kind' => 'direct', 'expr' => 'o.shipping_method', 'operators' => $choice, 'suggest' => true],
     'customs_identifier' => ['label' => 'Customs identifier', 'group' => 'Order', 'type' => 'text', 'kind' => 'direct', 'expr' => 'o.customs_identifier', 'operators' => $text],
-    'source_meta' => ['label' => 'Order JSON source meta', 'group' => 'Order JSON', 'type' => 'text', 'kind' => 'direct', 'expr' => 'o.source_meta', 'operators' => ['contains', 'is_not_empty'], 'placeholder' => 'raw source_meta text'],
+    'source_meta' => ['label' => 'Order JSON source meta', 'group' => 'Advanced JSON', 'type' => 'text', 'kind' => 'direct', 'expr' => 'o.source_meta', 'operators' => ['contains', 'is_not_empty'], 'placeholder' => 'raw source_meta text'],
 
     'customer_name' => ['label' => 'Customer name', 'group' => 'Customer', 'type' => 'text', 'kind' => 'direct', 'expr' => 'cu.name', 'operators' => $text, 'suggest' => true],
     'customer_email' => ['label' => 'Customer email', 'group' => 'Customer', 'type' => 'text', 'kind' => 'direct', 'expr' => 'cu.email', 'operators' => $text, 'suggest' => true],
@@ -74,8 +74,8 @@ function orderSearchFieldRegistry(): array
     'finish' => ['label' => 'Finish', 'group' => 'Item JSON', 'type' => 'text', 'kind' => 'json_multi', 'operators' => $json, 'from' => 'order_items oi_finish', 'where' => 'oi_finish.order_id = o.id AND oi_finish.deleted_at IS NULL', 'paths' => [['internal_options_json', '$._print_finish'], ['options_json', '$."graphics-finish"'], ['options_json', '$.graphics_finish'], ['options_json', '$.finish']], 'suggest' => true],
     'grip' => ['label' => 'Grip', 'group' => 'Item JSON', 'type' => 'text', 'kind' => 'json_multi', 'operators' => $json, 'from' => 'order_items oi_grip', 'where' => 'oi_grip.order_id = o.id AND oi_grip.deleted_at IS NULL', 'paths' => [['internal_options_json', '$._print_grip'], ['options_json', '$.grip']], 'suggest' => true],
     'midfork' => ['label' => 'Midforks', 'group' => 'Item JSON', 'type' => 'text', 'kind' => 'json_multi', 'operators' => $json, 'from' => 'order_items oi_midfork', 'where' => 'oi_midfork.order_id = o.id AND oi_midfork.deleted_at IS NULL', 'paths' => [['options_json', '$."mid-forks"'], ['options_json', '$."mid-forks-color"'], ['options_json', '$."mid-forks-size"'], ['options_json', '$."4pcs-midfork-size"'], ['options_json', '$."4pcs-midfork-brand-logo"'], ['internal_options_json', '$._graphics_mid_forks_mid_forks_color'], ['internal_options_json', '$._graphics_mid_forks_mid_forks_size'], ['internal_options_json', '$._graphics_4_pcs_fork_stickers_4pcs_midfork_size'], ['internal_options_json', '$._graphics_4_pcs_fork_stickers_4pcs_midfork_brand_logo']], 'suggest' => true],
-    'item_options_text' => ['label' => 'Customer options JSON', 'group' => 'Item JSON', 'type' => 'text', 'kind' => 'exists', 'from' => 'order_items oi_options', 'where' => 'oi_options.order_id = o.id AND oi_options.deleted_at IS NULL', 'expr' => 'oi_options.options_json', 'operators' => ['contains', 'is_not_empty'], 'placeholder' => 'raw options_json text'],
-    'internal_options_text' => ['label' => 'Internal options JSON', 'group' => 'Item JSON', 'type' => 'text', 'kind' => 'exists', 'from' => 'order_items oi_internal', 'where' => 'oi_internal.order_id = o.id AND oi_internal.deleted_at IS NULL', 'expr' => 'oi_internal.internal_options_json', 'operators' => ['contains', 'is_not_empty'], 'placeholder' => 'raw internal_options_json text'],
+    'item_options_text' => ['label' => 'Customer options JSON', 'group' => 'Advanced JSON', 'type' => 'text', 'kind' => 'exists', 'from' => 'order_items oi_options', 'where' => 'oi_options.order_id = o.id AND oi_options.deleted_at IS NULL', 'expr' => 'oi_options.options_json', 'operators' => ['contains', 'is_not_empty'], 'placeholder' => 'raw options_json text'],
+    'internal_options_text' => ['label' => 'Internal options JSON', 'group' => 'Advanced JSON', 'type' => 'text', 'kind' => 'exists', 'from' => 'order_items oi_internal', 'where' => 'oi_internal.order_id = o.id AND oi_internal.deleted_at IS NULL', 'expr' => 'oi_internal.internal_options_json', 'operators' => ['contains', 'is_not_empty'], 'placeholder' => 'raw internal_options_json text'],
 
     'invoice_number' => ['label' => 'Invoice number', 'group' => 'Related', 'type' => 'text', 'kind' => 'exists', 'from' => 'order_invoices oi_inv', 'where' => 'oi_inv.order_id = o.id AND oi_inv.deleted_at IS NULL', 'expr' => 'oi_inv.invoice_number', 'operators' => $text, 'suggest' => true],
     'tracking_number' => ['label' => 'Tracking number', 'group' => 'Related', 'type' => 'text', 'kind' => 'exists', 'from' => 'order_tracking_numbers otn', 'where' => 'otn.order_id = o.id AND otn.deleted_at IS NULL', 'expr' => 'otn.tracking_number', 'operators' => $text],
@@ -86,10 +86,75 @@ function orderSearchFieldRegistry(): array
   return $fields;
 }
 
+function orderSearchFieldHelpMap(): array
+{
+  return [
+    'option_category_info' => [
+      'help' => 'Bike/model fitment text imported from item options. Use this when looking for a brand, model, year range, or model code saved in the order item JSON.',
+      'examples' => ['KTM | EXC', 'Yamaha | YZ125', '6DWJ'],
+    ],
+    'material' => [
+      'help' => 'Graphics print material. This combines production material keys and older customer option aliases into one user-friendly filter.',
+      'examples' => ['Standard', 'Chrome', 'Holochrome', 'Holo chrome'],
+    ],
+    'finish' => [
+      'help' => 'Graphics finish/laminate selected by the customer or production team.',
+      'examples' => ['Matte', 'Gloss', 'Bloom'],
+    ],
+    'grip' => [
+      'help' => 'Grip option for graphics. Values can be simple yes/no style answers or production-specific grip labels.',
+      'examples' => ['Yes', 'No', 'Black'],
+    ],
+    'midfork' => [
+      'help' => 'Midfork and fork-sticker related options, including size, color, and brand-logo variants from older and newer JSON keys.',
+      'examples' => ['mid-forks', 'mid-forks-color', '4pcs-midfork-size'],
+    ],
+    'source_meta' => [
+      'help' => 'Raw order-level JSON imported from the source system. Use only when the friendly fields do not cover the value you need.',
+      'sources' => ['orders.source_meta'],
+      'examples' => ['customs_ddp_enabled', 'financial_breakdown', '_followup'],
+    ],
+    'item_options_text' => [
+      'help' => 'Raw customer-facing item options JSON. This searches the whole JSON text, so it is useful for unknown option keys or one-off imported values.',
+      'sources' => ['order_items.options_json'],
+      'examples' => ['name-color', 'base-material', 'note'],
+    ],
+    'internal_options_text' => [
+      'help' => 'Raw internal production options JSON. This searches the whole JSON text, including internal notes and normalized production keys.',
+      'sources' => ['order_items.internal_options_json'],
+      'examples' => ['_print_material', '_graphics_buyer_note', '_plastics_my_item_note'],
+    ],
+  ];
+}
+
+function orderSearchPublicFieldSources(array $field): array
+{
+  if (!empty($field['paths']) && is_array($field['paths'])) {
+    $sources = [];
+    foreach ($field['paths'] as $pathDef) {
+      if (is_array($pathDef) && count($pathDef) === 2) {
+        $sources[] = (string) $pathDef[0] . ' -> ' . (string) $pathDef[1];
+      }
+    }
+    return $sources;
+  }
+
+  if (!empty($field['from']) && !empty($field['expr'])) {
+    return [(string) $field['from'] . ' -> ' . (string) $field['expr']];
+  }
+
+  if (!empty($field['expr'])) {
+    return [(string) $field['expr']];
+  }
+
+  return [];
+}
 function orderSearchPublicFields(): array
 {
   $out = [];
+  $helpMap = orderSearchFieldHelpMap();
   foreach (orderSearchFieldRegistry() as $key => $field) {
+    $help = $helpMap[$key] ?? [];
     $out[] = [
       'key' => $key,
       'label' => (string) $field['label'],
@@ -98,6 +163,10 @@ function orderSearchPublicFields(): array
       'operators' => array_values($field['operators']),
       'placeholder' => (string) ($field['placeholder'] ?? ''),
       'suggest' => !empty($field['suggest']),
+      'help' => (string) ($help['help'] ?? ''),
+      'sources' => array_values($help['sources'] ?? orderSearchPublicFieldSources($field)),
+      'examples' => array_values($help['examples'] ?? []),
+      'advanced' => ((string) ($field['group'] ?? '') === 'Advanced JSON'),
     ];
   }
   return $out;

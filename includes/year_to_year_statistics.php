@@ -28,7 +28,7 @@ function ytyDailyLimitClass(?int $value): string
     return 'yty-daily-limit-low';
   }
 
-  if ($value <= 60) {
+  if ($value < 60) {
     return 'yty-daily-limit-mid';
   }
 

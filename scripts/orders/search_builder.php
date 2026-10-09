@@ -412,6 +412,392 @@ function orderSearchSuggestJsonPaths(mysqli $conn, array $paths, string $q): arr
   return array_slice(array_values($out), 0, 30);
 }
 
+function orderSearchExplorerSources(): array
+{
+  return [
+    'options_json' => [
+      'label' => 'Customer options JSON',
+      'sql' => "SELECT options_json AS json_text FROM order_items WHERE deleted_at IS NULL AND options_json IS NOT NULL AND options_json <> ''",
+    ],
+    'internal_options_json' => [
+      'label' => 'Internal options JSON',
+      'sql' => "SELECT internal_options_json AS json_text FROM order_items WHERE deleted_at IS NULL AND internal_options_json IS NOT NULL AND internal_options_json <> ''",
+    ],
+    'source_meta' => [
+      'label' => 'Order source_meta JSON',
+      'sql' => "SELECT source_meta AS json_text FROM orders WHERE source_meta IS NOT NULL AND source_meta <> ''",
+    ],
+  ];
+}
+
+function orderSearchJsonExplorerValue($value): string
+{
+  if (is_bool($value)) {
+    return $value ? 'true' : 'false';
+  }
+  if ($value === null) {
+    return 'null';
+  }
+  if (is_int($value) || is_float($value)) {
+    return (string) $value;
+  }
+  if (is_array($value) || is_object($value)) {
+    $encoded = json_encode($value, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PARTIAL_OUTPUT_ON_ERROR);
+    return $encoded === false ? '' : orderSearchTrimSummary($encoded, 120);
+  }
+  return orderSearchTrimSummary((string) $value, 120);
+}
+
+function orderSearchJsonExplorerFlatten($value, string $prefix, array &$out): void
+{
+  if (is_array($value)) {
+    if ($value === []) {
+      if ($prefix !== '') {
+        $out[$prefix][] = '[]';
+      }
+      return;
+    }
+
+    $isList = array_keys($value) === range(0, count($value) - 1);
+    foreach ($value as $key => $child) {
+      $keyPart = $isList ? '[]' : (string) $key;
+      $path = $prefix === '' ? $keyPart : ($isList ? $prefix . '[]' : $prefix . '.' . $keyPart);
+      orderSearchJsonExplorerFlatten($child, $path, $out);
+    }
+    return;
+  }
+
+  if ($prefix === '') {
+    return;
+  }
+  $out[$prefix][] = orderSearchJsonExplorerValue($value);
+}
+
+function orderSearchJsonExplorerAddValue(array &$row, string $value): void
+{
+  $value = trim($value);
+  if ($value === '') {
+    return;
+  }
+  if (!isset($row['example_map'])) {
+    $row['example_map'] = [];
+  }
+  $key = orderSearchLower($value);
+  if (count($row['example_map']) < 5 || isset($row['example_map'][$key])) {
+    $row['example_map'][$key] = $value;
+  }
+}
+
+function orderSearchJsonExplorer(mysqli $conn): void
+{
+  $sources = orderSearchExplorerSources();
+  $requestedSource = trim((string) ($_REQUEST['source'] ?? 'all'));
+  $q = orderSearchLower(trim((string) ($_REQUEST['q'] ?? '')));
+  $limit = max(20, min(800, (int) ($_REQUEST['limit'] ?? 400)));
+  $selectedSources = $requestedSource !== 'all' && isset($sources[$requestedSource])
+    ? [$requestedSource => $sources[$requestedSource]]
+    : $sources;
+
+  $rows = [];
+  $scanned = [];
+  foreach ($selectedSources as $sourceKey => $source) {
+    $scanned[$sourceKey] = 0;
+    $res = $conn->query((string) $source['sql']);
+    if (!$res) {
+      continue;
+    }
+    while ($dbRow = $res->fetch_assoc()) {
+      $json = (string) ($dbRow['json_text'] ?? '');
+      if ($json === '') {
+        continue;
+      }
+      $data = json_decode($json, true);
+      if (!is_array($data)) {
+        continue;
+      }
+      $scanned[$sourceKey]++;
+      $flattened = [];
+      orderSearchJsonExplorerFlatten($data, '', $flattened);
+      foreach ($flattened as $path => $values) {
+        if ($q !== '' && strpos(orderSearchLower($path), $q) === false) {
+          $matchedValue = false;
+          foreach ($values as $value) {
+            if (strpos(orderSearchLower((string) $value), $q) !== false) {
+              $matchedValue = true;
+              break;
+            }
+          }
+          if (!$matchedValue) {
+            continue;
+          }
+        }
+        $rowKey = $sourceKey . '|' . $path;
+        if (!isset($rows[$rowKey])) {
+          $rows[$rowKey] = [
+            'source' => $sourceKey,
+            'source_label' => (string) $source['label'],
+            'path' => $path,
+            'count' => 0,
+            'example_map' => [],
+          ];
+        }
+        $rows[$rowKey]['count']++;
+        foreach ($values as $value) {
+          orderSearchJsonExplorerAddValue($rows[$rowKey], (string) $value);
+        }
+      }
+    }
+    $res->free();
+  }
+
+  usort($rows, static function (array $a, array $b): int {
+    $sourceCompare = strcmp((string) $a['source_label'], (string) $b['source_label']);
+    if ($sourceCompare !== 0) {
+      return $sourceCompare;
+    }
+    $countCompare = ((int) $b['count']) <=> ((int) $a['count']);
+    if ($countCompare !== 0) {
+      return $countCompare;
+    }
+    return strcmp((string) $a['path'], (string) $b['path']);
+  });
+
+  $total = count($rows);
+  $rows = array_slice($rows, 0, $limit);
+  foreach ($rows as &$row) {
+    $examples = array_values($row['example_map'] ?? []);
+    unset($row['example_map']);
+    $row['examples'] = $examples;
+  }
+  unset($row);
+
+  orderSearchOut(200, [
+    'ok' => true,
+    'sources' => array_map(static fn(array $source): string => (string) $source['label'], $sources),
+    'rows' => $rows,
+    'total' => $total,
+    'limit' => $limit,
+    'limited' => $total > count($rows),
+    'scanned' => $scanned,
+  ]);
+}
+function orderSearchJsonFieldValueRows(mysqli $conn, array $field, string $q, int $limit): array
+{
+  $paths = $field['paths'] ?? [];
+  if (!is_array($paths)) {
+    return [];
+  }
+
+  $rows = [];
+  $perPathLimit = max($limit, 40);
+  foreach ($paths as $pathDef) {
+    if (!is_array($pathDef) || count($pathDef) !== 2) {
+      continue;
+    }
+    [$column, $path] = $pathDef;
+    if (!in_array($column, ['options_json', 'internal_options_json'], true)) {
+      continue;
+    }
+
+    $expr = orderSearchJsonExpr((string) $column, (string) $path);
+    $sql = "SELECT val, COUNT(*) AS cnt
+            FROM (SELECT $expr AS val FROM order_items WHERE deleted_at IS NULL) json_values
+            WHERE val IS NOT NULL AND TRIM(CAST(val AS CHAR)) <> ''";
+    $types = '';
+    $params = [];
+    if ($q !== '') {
+      $sql .= " AND LOWER(TRIM(CAST(val AS CHAR))) LIKE ?";
+      $types .= 's';
+      $params[] = '%' . $q . '%';
+    }
+    $sql .= " GROUP BY val ORDER BY cnt DESC, val ASC LIMIT $perPathLimit";
+
+    $stmt = $conn->prepare($sql);
+    if (!$stmt) {
+      continue;
+    }
+    orderSearchBind($stmt, $types, $params);
+    $stmt->execute();
+    $res = $stmt->get_result();
+    while ($row = $res->fetch_assoc()) {
+      $value = orderSearchTrimSummary((string) ($row['val'] ?? ''), 180);
+      if ($value === '') {
+        continue;
+      }
+      $key = orderSearchLower($value);
+      if (!isset($rows[$key])) {
+        $rows[$key] = [
+          'value' => $value,
+          'count' => 0,
+          'sources' => [],
+          'source_map' => [],
+        ];
+      }
+      $rows[$key]['count'] += (int) ($row['cnt'] ?? 0);
+      $source = (string) $column . ' -> ' . (string) $path;
+      $sourceKey = orderSearchLower($source);
+      if (!isset($rows[$key]['source_map'][$sourceKey])) {
+        $rows[$key]['source_map'][$sourceKey] = true;
+        $rows[$key]['sources'][] = $source;
+      }
+    }
+    $stmt->close();
+  }
+
+  $out = array_values($rows);
+  usort($out, static function (array $a, array $b): int {
+    $countCompare = ((int) $b['count']) <=> ((int) $a['count']);
+    if ($countCompare !== 0) {
+      return $countCompare;
+    }
+    return strnatcasecmp((string) $a['value'], (string) $b['value']);
+  });
+
+  foreach ($out as &$row) {
+    unset($row['source_map']);
+  }
+  unset($row);
+
+  return $out;
+}
+
+function orderSearchRawJsonSourceForField(string $fieldKey): string
+{
+  $map = [
+    'source_meta' => 'source_meta',
+    'item_options_text' => 'options_json',
+    'internal_options_text' => 'internal_options_json',
+  ];
+  return (string) ($map[$fieldKey] ?? '');
+}
+
+function orderSearchRawJsonFieldRows(mysqli $conn, string $sourceKey, string $q): array
+{
+  $sources = orderSearchExplorerSources();
+  if (!isset($sources[$sourceKey])) {
+    return [];
+  }
+
+  $rows = [];
+  $res = $conn->query((string) $sources[$sourceKey]['sql']);
+  if (!$res) {
+    return [];
+  }
+
+  while ($dbRow = $res->fetch_assoc()) {
+    $json = (string) ($dbRow['json_text'] ?? '');
+    if ($json === '') {
+      continue;
+    }
+    $data = json_decode($json, true);
+    if (!is_array($data)) {
+      continue;
+    }
+    $flattened = [];
+    orderSearchJsonExplorerFlatten($data, '', $flattened);
+    foreach ($flattened as $path => $values) {
+      if ($q !== '' && strpos(orderSearchLower($path), $q) === false) {
+        $matchedValue = false;
+        foreach ($values as $value) {
+          if (strpos(orderSearchLower((string) $value), $q) !== false) {
+            $matchedValue = true;
+            break;
+          }
+        }
+        if (!$matchedValue) {
+          continue;
+        }
+      }
+      if (!isset($rows[$path])) {
+        $rows[$path] = [
+          'path' => (string) $path,
+          'count' => 0,
+          'examples' => [],
+          'example_map' => [],
+        ];
+      }
+      $rows[$path]['count']++;
+      foreach ($values as $value) {
+        orderSearchJsonExplorerAddValue($rows[$path], (string) $value);
+      }
+    }
+  }
+  $res->free();
+
+  $out = array_values($rows);
+  usort($out, static function (array $a, array $b): int {
+    $countCompare = ((int) $b['count']) <=> ((int) $a['count']);
+    if ($countCompare !== 0) {
+      return $countCompare;
+    }
+    return strnatcasecmp((string) $a['path'], (string) $b['path']);
+  });
+
+  foreach ($out as &$row) {
+    $row['examples'] = array_values($row['example_map'] ?? []);
+    unset($row['example_map']);
+  }
+  unset($row);
+
+  return $out;
+}
+
+function orderSearchFieldValues(mysqli $conn): void
+{
+  $fields = orderSearchFieldRegistry();
+  $fieldKey = trim((string) ($_REQUEST['field'] ?? ''));
+  if (!isset($fields[$fieldKey])) {
+    orderSearchOut(400, ['ok' => false, 'error' => 'Unknown field.']);
+  }
+
+  $field = $fields[$fieldKey];
+  $q = orderSearchLower(trim((string) ($_REQUEST['q'] ?? '')));
+  $limit = max(20, min(200, (int) ($_REQUEST['limit'] ?? 120)));
+  $kind = (string) ($field['kind'] ?? '');
+
+  if ($kind === 'json_multi') {
+    $allRows = orderSearchJsonFieldValueRows($conn, $field, $q, $limit);
+    $total = count($allRows);
+    orderSearchOut(200, [
+      'ok' => true,
+      'mode' => 'values',
+      'field' => $fieldKey,
+      'label' => (string) ($field['label'] ?? $fieldKey),
+      'rows' => array_slice($allRows, 0, $limit),
+      'total' => $total,
+      'limit' => $limit,
+      'limited' => $total > $limit,
+    ]);
+  }
+
+  $sourceKey = orderSearchRawJsonSourceForField($fieldKey);
+  if ($sourceKey !== '') {
+    $allRows = orderSearchRawJsonFieldRows($conn, $sourceKey, $q);
+    $total = count($allRows);
+    orderSearchOut(200, [
+      'ok' => true,
+      'mode' => 'paths',
+      'field' => $fieldKey,
+      'label' => (string) ($field['label'] ?? $fieldKey),
+      'rows' => array_slice($allRows, 0, $limit),
+      'total' => $total,
+      'limit' => $limit,
+      'limited' => $total > $limit,
+    ]);
+  }
+
+  orderSearchOut(200, [
+    'ok' => true,
+    'mode' => 'values',
+    'field' => $fieldKey,
+    'label' => (string) ($field['label'] ?? $fieldKey),
+    'rows' => [],
+    'total' => 0,
+    'limit' => $limit,
+    'limited' => false,
+  ]);
+}
+
 function orderSearchSuggestions(mysqli $conn, string $fieldKey, string $q): array
 {
   $fields = orderSearchFieldRegistry();
@@ -614,10 +1000,16 @@ try {
   if ($action === 'fields') {
     orderSearchOut(200, ['ok' => true, 'fields' => orderSearchPublicFields(), 'operators' => orderSearchOperatorLabels()]);
   }
+  if ($action === 'field_values') {
+    orderSearchFieldValues($conn);
+  }
   if ($action === 'suggest') {
     $field = trim((string) ($_REQUEST['field'] ?? ''));
     $q = trim((string) ($_REQUEST['q'] ?? ''));
     orderSearchOut(200, ['ok' => true, 'items' => orderSearchSuggestions($conn, $field, $q)]);
+  }
+  if ($action === 'json_explorer') {
+    orderSearchJsonExplorer($conn);
   }
   if ($action === 'search') {
     orderSearchRun($conn);
