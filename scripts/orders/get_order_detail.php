@@ -525,7 +525,7 @@ function productSpecFieldMeta(array $definition): array
   return $meta;
 }
 
-function productSpecFieldCurrentValue(array $meta, array $extOptArr, array $internalOptArr, string $sourceCode = ''): string
+function productSpecFieldCurrentValue(array $meta, array $extOptArr, array $internalOptArr, string $sourceCode = '', string $orderBuyerNote = ''): string
 {
   $internalKey = (string) ($meta['internal_key'] ?? '');
   if ($internalKey !== '' && array_key_exists($internalKey, $internalOptArr)) {
@@ -604,10 +604,60 @@ function productSpecFieldCurrentValue(array $meta, array $extOptArr, array $inte
       || preg_match('/(?:^|-)buyer-note$/', $specKeyNormalized)
     )
   ) {
-    return productSpecValueFromKeys($extOptArr, ['note']);
+    $buyerNote = productSpecValueFromKeys($extOptArr, ['buyer-note', 'buyer_note', 'Buyer note', 'Buyer Note', 'note', 'Note']);
+    if ($buyerNote === '') {
+      $buyerNote = orderDetailSourceRawBuyerNoteValue($extOptArr['_source_raw'] ?? null);
+    }
+    return $buyerNote !== '' ? $buyerNote : trim($orderBuyerNote);
   }
 
   return '';
+}
+
+function orderDetailSourceRawBuyerNoteValue($sourceRaw): string
+{
+  if (is_array($sourceRaw)) {
+    $data = $sourceRaw;
+  } elseif (is_string($sourceRaw) && trim($sourceRaw) !== '') {
+    $data = json_decode($sourceRaw, true, 512, JSON_INVALID_UTF8_SUBSTITUTE);
+    if (!is_array($data)) {
+      return '';
+    }
+  } else {
+    return '';
+  }
+
+  return productSpecValueFromKeys($data, [
+    'customer_note',
+    'customer-note',
+    'buyer_note',
+    'buyer-note',
+    'Buyer note',
+    'Buyer Note',
+    'remark',
+    'Remark',
+    'note',
+    'Note',
+  ]);
+}
+
+function orderDetailBuyerNoteValue(array $order, array $sourceMeta): string
+{
+  $note = productSpecValueFromKeys($sourceMeta, [
+    'customer_note',
+    'customer-note',
+    'buyer_note',
+    'buyer-note',
+    'Buyer note',
+    'Buyer Note',
+    'remark',
+    'Remark',
+  ]);
+  if ($note !== '') {
+    return $note;
+  }
+
+  return productSpecValueFromKeys($order, ['note', 'customer_note', 'buyer_note', 'remark']);
 }
 
 function productSpecFieldHasAnyValue(array $meta, array $extOptArr, array $internalOptArr): bool
@@ -1935,6 +1985,7 @@ if (!is_array($sourceMeta)) {
   $sourceMeta = [];
 }
 $sourceMeta = orderDetailSanitizeFollowupSourceMeta($sourceMeta);
+$orderBuyerNote = orderDetailBuyerNoteValue($order, $sourceMeta);
 
 $isCustomOrder = strtoupper(trim((string) ($order['source_code'] ?? ''))) === 'CUSTOM';
 $isFollowupOrder = orderDetailSourceMetaIsFollowup($sourceMeta);
@@ -7102,7 +7153,7 @@ ob_start();
                       continue;
                     }
 
-                    $fieldMeta['current_value'] = productSpecFieldCurrentValue($fieldMeta, $extOptArr, $internalOptArr, (string) ($order['source_code'] ?? ''));
+                    $fieldMeta['current_value'] = productSpecFieldCurrentValue($fieldMeta, $extOptArr, $internalOptArr, (string) ($order['source_code'] ?? ''), $orderBuyerNote);
                     $fieldMeta['has_any_value'] = productSpecFieldHasAnyValue($fieldMeta, $extOptArr, $internalOptArr);
 
                     $fieldRole = productSpecFieldRole($fieldMeta);
