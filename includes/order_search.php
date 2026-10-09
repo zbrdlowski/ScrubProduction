@@ -97,6 +97,45 @@ $orderSearchOperatorsJson = json_encode(orderSearchOperatorLabels(), JSON_UNESCA
     margin: 12px 0 0;
   }
 
+  #orderSearchTable_wrapper .order-search-dt-toolbar {
+    margin: 10px 0 8px;
+  }
+
+  #orderSearchTable_wrapper .dt-buttons {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+
+  #orderSearchTable_wrapper .dt-buttons .btn {
+    margin: 0;
+  }
+
+  #orderSearchTable_wrapper .dataTables_filter {
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+    margin: 0;
+    text-align: right !important;
+  }
+
+  #orderSearchTable_wrapper .dataTables_filter label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0;
+    white-space: nowrap;
+  }
+
+  #orderSearchTable_wrapper .dataTables_filter input {
+    width: 260px;
+    max-width: 100%;
+    margin-left: 0;
+    background-color: #1f252c;
+    border-color: #4b5663;
+    color: #f4f6f9;
+  }
   @media (max-width: 991.98px) {
     .order-search-filter-row {
       grid-template-columns: 1fr;
@@ -409,8 +448,8 @@ $orderSearchOperatorsJson = json_encode(orderSearchOperatorLabels(), JSON_UNESCA
       pageLength: 50,
       order: [],
       lengthChange: true,
-      dom: 'Bfrtip',
-      buttons: ['copy', 'csv', 'excel', 'print', 'colvis'],
+      dom: "<'row order-search-dt-toolbar align-items-center'<'col-sm-12 col-md-6 mb-2 mb-md-0'B><'col-sm-12 col-md-6'f>>rt<'row align-items-center mt-2'<'col-sm-12 col-md-5'i><'col-sm-12 col-md-7'p>>",
+      buttons: ['copy', 'csv', 'excel', 'pdf', 'print'],
       columns: [
         { data: 'order_number', render: renderOrder },
         { data: 'source_code', defaultContent: '' },
