@@ -60,7 +60,7 @@ foreach ($customOrderStatusChoiceCodes as $customOrderStatusChoiceCode) {
   }
 }
 $customOrderTabs = [
-  'all' => ['label' => 'All', 'color' => '#6c757d'],
+  'all' => ['label' => 'All Open', 'color' => '#6c757d'],
   'lead' => ['label' => 'Lead', 'status' => 'LEAD', 'color' => '#6c757d'],
   'open_so' => ['label' => 'Open SO', 'color' => '#3c8dbc'],
   'deposit_paid' => ['label' => 'Deposit Paid', 'status' => 'DEPOSIT_PAID', 'color' => '#6c757d'],
@@ -247,6 +247,7 @@ try {
     $filterWhere[] = "DATE(co.updated_at) <= '{$safeDateTo}'";
   }
 
+  $customOrdersAllOpenWhere = "UPPER(TRIM(COALESCE(co.status, ''))) <> 'EXPORTED'";
   $customOrdersOpenSoWhere = "TRIM(COALESCE(co.official_order_number, '')) <> ''
     AND UPPER(TRIM(COALESCE(co.status, ''))) NOT IN ('LEAD', 'EXPORTED')
     AND (co.production_order_id IS NULL OR co.production_order_id <= 0)";
@@ -268,6 +269,8 @@ try {
     ) AND co.production_order_id IS NULL";
   } elseif ($tabFilter === 'open_so') {
     $where[] = $customOrdersOpenSoWhere;
+  } elseif ($tabFilter === 'all') {
+    $where[] = $customOrdersAllOpenWhere;
   } else {
     $activeTabMeta = $customOrderTabs[$tabFilter] ?? [];
     $tabStatuses = [];
@@ -470,7 +473,7 @@ try {
   $countWhereSql = $filterWhere ? ' WHERE ' . implode(' AND ', $filterWhere) : '';
   $res = $conn->query("
     SELECT
-      COUNT(*) AS all_count,
+      COALESCE(SUM(CASE WHEN {$customOrdersAllOpenWhere} THEN 1 ELSE 0 END), 0) AS all_open_count,
       COALESCE(SUM(CASE WHEN co.status = 'LEAD' THEN 1 ELSE 0 END), 0) AS lead_count,
       COALESCE(SUM(CASE WHEN {$customOrdersOpenSoWhere} THEN 1 ELSE 0 END), 0) AS open_so_count,
       COALESCE(SUM(CASE WHEN co.status = 'DEPOSIT_PAID' THEN 1 ELSE 0 END), 0) AS deposit_paid_count,
@@ -485,7 +488,7 @@ try {
     {$countWhereSql}
   ");
   if ($res && ($row = $res->fetch_assoc())) {
-    $tabCounts['all'] = (int) ($row['all_count'] ?? 0);
+    $tabCounts['all'] = (int) ($row['all_open_count'] ?? 0);
     $tabCounts['lead'] = (int) ($row['lead_count'] ?? 0);
     $tabCounts['open_so'] = (int) ($row['open_so_count'] ?? 0);
     $tabCounts['deposit_paid'] = (int) ($row['deposit_paid_count'] ?? 0);
