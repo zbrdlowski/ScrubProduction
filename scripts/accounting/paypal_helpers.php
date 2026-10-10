@@ -85,7 +85,7 @@ function accounting_paypal_parse_time(string $value): ?string
 function accounting_paypal_normalize_so(string $value): string
 {
     $value = strtoupper(trim($value));
-    if (preg_match('/(SO\d{4,})$/', $value, $match)) {
+    if (preg_match('/(SO\d{4,}(?:-\d+)?)$/', $value, $match)) {
         return $match[1];
     }
     return '';
@@ -190,7 +190,7 @@ function accounting_paypal_extract_reference(array $row): array
         (string) ($row['raw']['Custom Number'] ?? ''),
         $rawInvoice,
     ]);
-    if (preg_match('/\b(?:GO)?(SO\d{4,})\b/i', $text, $match)) {
+    if (preg_match('/\b(?:GO)?(SO\d{4,}(?:-\d+)?)\b/i', $text, $match)) {
         return ['kind' => 'SO', 'value' => strtoupper($match[1])];
     }
     if (preg_match('/\b(20\d{8})\b/', $text, $match)) {
@@ -349,7 +349,140 @@ function accounting_paypal_update_match(PDO $pdo, int $id, array $match): void
     ]);
 }
 
-function accounting_paypal_refresh_matches(PDO $pdo, ?string $from = null, ?string $to = null): array
+function accounting_paypal_log_custom_order_activity(PDO $pdo, int $customOrderId, ?int $actorId, string $action, array $payload, string $note): void
+{
+    if (!accounting_paypal_table_exists($pdo, 'custom_order_activity')) {
+        return;
+    }
+    $stmt = $pdo->prepare('
+        INSERT INTO custom_order_activity (custom_order_id, actor_employee_id, action, payload, note)
+        VALUES (?, ?, ?, ?, ?)
+    ');
+    $stmt->execute([
+        $customOrderId,
+        $actorId && $actorId > 0 ? $actorId : null,
+        $action,
+        json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+        $note,
+    ]);
+}
+
+function accounting_paypal_assign_custom_payment(PDO $pdo, array $row, array $match, ?int $actorId = null): array
+{
+    $result = ['payment' => 'skipped', 'status_updated' => false];
+    $customOrderId = (int) ($match['matched_custom_order_id'] ?? 0);
+    $confidence = (int) ($match['match_confidence'] ?? 0);
+    $transactionId = trim((string) ($row['transaction_id'] ?? ''));
+    $amount = (float) ($row['gross_amount'] ?? 0);
+    $currency = strtoupper(trim((string) ($row['currency'] ?? '')));
+    $transactionDate = trim((string) ($row['transaction_date'] ?? ''));
+    $transactionTime = trim((string) ($row['transaction_time'] ?? ''));
+
+    if ($customOrderId <= 0 || $confidence < 90 || strcasecmp(trim((string) ($row['balance_impact'] ?? '')), 'Credit') !== 0
+        || $transactionId === '' || $amount <= 0 || $currency === '' || $transactionDate === ''
+        || !accounting_paypal_table_exists($pdo, 'custom_order_payments')) {
+        return $result;
+    }
+
+    $existingStmt = $pdo->prepare('
+        SELECT id, custom_order_id
+        FROM custom_order_payments
+        WHERE BINARY TRIM(paypal_transaction_id) = BINARY ?
+        ORDER BY id
+        LIMIT 2
+    ');
+    $existingStmt->execute([$transactionId]);
+    $existing = $existingStmt->fetchAll(PDO::FETCH_ASSOC);
+    if ($existing) {
+        foreach ($existing as $payment) {
+            if ((int) $payment['custom_order_id'] !== $customOrderId) {
+                $result['payment'] = 'conflict';
+                return $result;
+            }
+        }
+        $result['payment'] = 'existing';
+    } else {
+        $manualStmt = $pdo->prepare('
+            SELECT id
+            FROM custom_order_payments
+            WHERE custom_order_id = ?
+              AND (paypal_transaction_id IS NULL OR TRIM(paypal_transaction_id) = \'\')
+              AND ABS(amount - ?) < 0.005
+              AND UPPER(TRIM(currency)) = ?
+              AND DATE(received_at) = ?
+            ORDER BY id
+            LIMIT 2
+        ');
+        $manualStmt->execute([$customOrderId, $amount, $currency, $transactionDate]);
+        $manualMatches = $manualStmt->fetchAll(PDO::FETCH_COLUMN);
+        if (count($manualMatches) > 1) {
+            $result['payment'] = 'conflict';
+            return $result;
+        }
+        if (count($manualMatches) === 1) {
+            $paymentId = (int) $manualMatches[0];
+            $pdo->prepare('
+                UPDATE custom_order_payments
+                SET paypal_transaction_id = ?,
+                    note = CASE WHEN TRIM(COALESCE(note, \'\')) = \'\' THEN ? ELSE note END
+                WHERE id = ?
+            ')->execute([$transactionId, 'Automatic payment assignment', $paymentId]);
+            accounting_paypal_log_custom_order_activity($pdo, $customOrderId, $actorId, 'payment_updated', [
+                'payment_id' => $paymentId,
+                'paypal_transaction_id' => $transactionId,
+                'amount' => $amount,
+                'currency' => $currency,
+                'note' => 'Automatic payment assignment',
+            ], 'PayPal Transaction ID assigned automatically');
+            $result['payment'] = 'linked';
+        } else {
+            $receivedAt = $transactionDate . ' ' . ($transactionTime !== '' ? $transactionTime : '00:00:00');
+            $insert = $pdo->prepare('
+                INSERT INTO custom_order_payments
+                  (custom_order_id, payment_kind, paypal_transaction_id, amount, currency, received_at, note, created_by)
+                VALUES (?, \'DEPOSIT\', ?, ?, ?, ?, ?, ?)
+            ');
+            $insert->execute([
+                $customOrderId,
+                $transactionId,
+                $amount,
+                $currency,
+                $receivedAt,
+                'Automatic payment assignment',
+                $actorId && $actorId > 0 ? $actorId : null,
+            ]);
+            $paymentId = (int) $pdo->lastInsertId();
+            accounting_paypal_log_custom_order_activity($pdo, $customOrderId, $actorId, 'payment_added', [
+                'payment_id' => $paymentId,
+                'kind' => 'DEPOSIT',
+                'paypal_transaction_id' => $transactionId,
+                'amount' => $amount,
+                'currency' => $currency,
+                'note' => 'Automatic payment assignment',
+            ], 'Automatic payment assignment');
+            $result['payment'] = 'added';
+        }
+    }
+
+    $statusStmt = $pdo->prepare('
+        UPDATE custom_orders
+        SET status = \'DEPOSIT_PAID\', updated_by = COALESCE(?, updated_by)
+        WHERE id = ? AND status = \'LEAD\'
+    ');
+    $statusStmt->execute([$actorId && $actorId > 0 ? $actorId : null, $customOrderId]);
+    if ($statusStmt->rowCount() > 0) {
+        accounting_paypal_log_custom_order_activity($pdo, $customOrderId, $actorId, 'status_changed', [
+            'from' => 'LEAD',
+            'to' => 'DEPOSIT_PAID',
+            'paypal_transaction_id' => $transactionId,
+        ], 'Status changed automatically after PayPal payment assignment');
+        $result['status_updated'] = true;
+    }
+
+    return $result;
+}
+
+function accounting_paypal_refresh_matches(PDO $pdo, ?string $from = null, ?string $to = null, ?int $actorId = null): array
 {
     $where = [];
     $params = [];
@@ -375,10 +508,16 @@ function accounting_paypal_refresh_matches(PDO $pdo, ?string $from = null, ?stri
     $matched = 0;
     $review = 0;
     $unmatched = 0;
+    $paymentsAdded = 0;
+    $paymentsLinked = 0;
+    $paymentsExisting = 0;
+    $paymentConflicts = 0;
+    $statusesUpdated = 0;
     foreach ($rows as $row) {
         if (!empty($row['manual_override'])) {
             continue;
         }
+        $wasUnmatched = trim((string) ($row['export_order_number'] ?? '')) === '';
         $raw = json_decode((string) $row['raw_json'], true);
         if (!is_array($raw)) {
             $raw = [];
@@ -420,6 +559,21 @@ function accounting_paypal_refresh_matches(PDO $pdo, ?string $from = null, ?stri
             }
         }
         accounting_paypal_update_match($pdo, (int) $row['id'], $match);
+        $assignment = $wasUnmatched
+            ? accounting_paypal_assign_custom_payment($pdo, $candidateRow, $match, $actorId)
+            : ['payment' => 'skipped', 'status_updated' => false];
+        if ($assignment['payment'] === 'added') {
+            $paymentsAdded++;
+        } elseif ($assignment['payment'] === 'linked') {
+            $paymentsLinked++;
+        } elseif ($assignment['payment'] === 'existing') {
+            $paymentsExisting++;
+        } elseif ($assignment['payment'] === 'conflict') {
+            $paymentConflicts++;
+        }
+        if (!empty($assignment['status_updated'])) {
+            $statusesUpdated++;
+        }
         if (!empty($match['export_order_number'])) {
             $matched++;
             if ((int) $match['match_confidence'] < 90) {
@@ -429,11 +583,20 @@ function accounting_paypal_refresh_matches(PDO $pdo, ?string $from = null, ?stri
             $unmatched++;
         }
     }
-    return ['matched' => $matched, 'review' => $review, 'unmatched' => $unmatched];
+    return [
+        'matched' => $matched,
+        'review' => $review,
+        'unmatched' => $unmatched,
+        'payments_added' => $paymentsAdded,
+        'payments_linked' => $paymentsLinked,
+        'payments_existing' => $paymentsExisting,
+        'payment_conflicts' => $paymentConflicts,
+        'statuses_updated' => $statusesUpdated,
+    ];
 }
 
 function accounting_paypal_valid_export_reference(string $value): bool
 {
     $value = strtoupper(trim($value));
-    return preg_match('/^(SO\d+|20\d{8}|\d{2}-\d{5}-\d{5}|SK-\d+|SC\d+)$/', $value) === 1;
+    return preg_match('/^(SO\d+(?:-\d+)?|20\d{8}|\d{2}-\d{5}-\d{5}|SK-\d+|SC\d+)$/', $value) === 1;
 }

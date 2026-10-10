@@ -116,7 +116,7 @@ try {
     $range = $pdo->prepare('SELECT MIN(transaction_date), DATE_ADD(MAX(transaction_date), INTERVAL 1 DAY) FROM accounting_paypal_transactions WHERE import_id = ?');
     $range->execute([$importId]);
     [$from, $to] = $range->fetch(PDO::FETCH_NUM) ?: [null, null];
-    $refresh = accounting_paypal_refresh_matches($pdo, $from ?: null, $to ?: null);
+    $refresh = accounting_paypal_refresh_matches($pdo, $from ?: null, $to ?: null, (int) ($_SESSION['user_id'] ?? 0) ?: null);
     $counts = $pdo->prepare('
         SELECT
           SUM(export_order_number IS NOT NULL AND export_order_number <> \'\') AS matched_count,
@@ -138,6 +138,9 @@ try {
         'imported' => $imported,
         'duplicates' => $duplicates,
         'matched' => $refresh['matched'],
+        'payments_added' => $refresh['payments_added'],
+        'payments_linked' => $refresh['payments_linked'],
+        'statuses_updated' => $refresh['statuses_updated'],
     ]);
 } catch (Throwable $e) {
     if ($pdo instanceof PDO && $pdo->inTransaction()) {

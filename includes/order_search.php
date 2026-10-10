@@ -331,7 +331,7 @@ $orderSearchOperatorsJson = json_encode(orderSearchOperatorLabels(), JSON_UNESCA
 <div class="order-search-page">
   <div class="order-search-toolbar">
     <div>
-      <h4 class="mb-0">Universal Order Search</h4>
+      <h4 class="mb-0">Advanced Order Search</h4>
     </div>
     <div class="d-flex align-items-center flex-wrap" style="gap:8px;">
       <select id="orderSearchMode" class="form-control form-control-sm" style="width:150px;">

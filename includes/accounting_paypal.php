@@ -170,8 +170,8 @@ $rawExportReady = (int) $stats['unmatched'] === 0 && (int) $stats['review'] === 
 
   <?php if (!empty($_GET['error'])): ?><div class="alert alert-danger"><?= accountingPaypalH($_GET['error']) ?></div><?php endif; ?>
   <?php if (!empty($_GET['existing'])): ?><div class="alert alert-info">Tento PayPal súbor už bol importovaný.</div><?php endif; ?>
-  <?php if (isset($_GET['imported'])): ?><div class="alert alert-success">Importovaných <?= (int) $_GET['imported'] ?> riadkov, duplicít <?= (int) ($_GET['duplicates'] ?? 0) ?>.</div><?php endif; ?>
-  <?php if (!empty($_GET['refreshed'])): ?><div class="alert alert-success">Párovanie bolo obnovené podľa aktuálnych SO čísel.</div><?php endif; ?>
+  <?php if (isset($_GET['imported'])): ?><div class="alert alert-success">Importovaných <?= (int) $_GET['imported'] ?> riadkov, duplicít <?= (int) ($_GET['duplicates'] ?? 0) ?>.<?php if ((int) ($_GET['payments_added'] ?? 0) > 0): ?> Automaticky pridaných platieb: <?= (int) $_GET['payments_added'] ?>.<?php endif; ?><?php if ((int) ($_GET['statuses_updated'] ?? 0) > 0): ?> Stavov zmenených z Lead na Deposit paid: <?= (int) $_GET['statuses_updated'] ?>.<?php endif; ?></div><?php endif; ?>
+  <?php if (!empty($_GET['refreshed'])): ?><div class="alert alert-success">Kontrola dokončená: spárovaných <?= (int) ($_GET['matched'] ?? 0) ?>, zostáva nespárovaných <?= (int) ($_GET['unmatched'] ?? 0) ?>. Nové platby: <?= (int) ($_GET['payments_added'] ?? 0) ?>, doplnené PayPal ID k existujúcej platbe: <?= (int) ($_GET['payments_linked'] ?? 0) ?>, zmenené stavy Lead → Deposit paid: <?= (int) ($_GET['statuses_updated'] ?? 0) ?>.<?php if ((int) ($_GET['payment_conflicts'] ?? 0) > 0): ?> <strong>Nejednoznačné platby na ručnú kontrolu: <?= (int) $_GET['payment_conflicts'] ?>.</strong><?php endif; ?></div><?php endif; ?>
   <?php if (!empty($_GET['saved'])): ?><div class="alert alert-success">Manuálna exportná referencia bola uložená.</div><?php endif; ?>
 
   <?php if (!$schemaReady): ?>
@@ -233,8 +233,8 @@ $rawExportReady = (int) $stats['unmatched'] === 0 && (int) $stats['review'] === 
                 <div class="paypal-secondary-actions">
                   <?php if ($canImportAccounting): ?>
                     <form method="post" action="scripts/accounting/refresh_paypal_matches.php" class="mb-0">
-                      <input type="hidden" name="csrf_token" value="<?= accountingPaypalH($_SESSION['accounting_paypal_csrf']) ?>"><input type="hidden" name="month" value="<?= accountingPaypalH($month) ?>">
-                      <button class="btn btn-sm btn-outline-info"><i class="fas fa-sync-alt mr-1"></i> Obnoviť párovanie<?= accountingPaypalInfo('Použite po pridelení nového SO k leadu. Systém znovu preverí aktuálne SO v databáze.') ?></button>
+                      <input type="hidden" name="csrf_token" value="<?= accountingPaypalH($_SESSION['accounting_paypal_csrf']) ?>"><input type="hidden" name="month" value="<?= accountingPaypalH($month) ?>"><input type="hidden" name="match" value="<?= accountingPaypalH($matchFilter) ?>">
+                      <button class="btn btn-sm btn-outline-info"><i class="fas fa-search mr-1"></i> Vykonať kontrolu<?= accountingPaypalInfo('Znovu vyhľadá zhody podľa aktuálnych SO a CO. Pri jednoznačnej Custom Order platbe doplní chýbajúci záznam bez duplicity; iba stav Lead zmení na Deposit paid.') ?></button>
                     </form>
                   <?php endif; ?>
                   <?php if ($canExportAccounting): ?>
@@ -302,7 +302,7 @@ $rawExportReady = (int) $stats['unmatched'] === 0 && (int) $stats['review'] === 
               <td>
                 <?php if ($canImportAccounting): ?>
                   <form method="post" action="scripts/accounting/update_paypal_match.php" class="form-inline flex-nowrap">
-                    <input type="hidden" name="csrf_token" value="<?= accountingPaypalH($_SESSION['accounting_paypal_csrf']) ?>"><input type="hidden" name="transaction_row_id" value="<?= (int) $row['id'] ?>"><input type="hidden" name="month" value="<?= accountingPaypalH($month) ?>">
+                    <input type="hidden" name="csrf_token" value="<?= accountingPaypalH($_SESSION['accounting_paypal_csrf']) ?>"><input type="hidden" name="transaction_row_id" value="<?= (int) $row['id'] ?>"><input type="hidden" name="month" value="<?= accountingPaypalH($month) ?>"><input type="hidden" name="match" value="<?= accountingPaypalH($matchFilter) ?>">
                     <input class="form-control form-control-sm mr-1" style="width:125px" name="export_order_number" value="<?= accountingPaypalH($row['export_order_number'] ?? '') ?>" placeholder="SO / e-shop / eBay">
                     <button class="btn btn-outline-light btn-sm" title="Uložiť"><i class="fas fa-save"></i></button>
                   </form>

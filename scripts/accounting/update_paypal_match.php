@@ -22,9 +22,13 @@ if (!accounting_payout_user_can_access('accounting.import')) {
     http_response_code(403);
     exit('Forbidden');
 }
+$matchFilter = strtolower(trim((string) ($_POST['match'] ?? 'all')));
+if (!in_array($matchFilter, ['all', 'matched', 'review', 'unmatched'], true)) {
+    $matchFilter = 'all';
+}
 $csrf = (string) ($_POST['csrf_token'] ?? '');
 if (empty($_SESSION['accounting_paypal_csrf']) || !hash_equals((string) $_SESSION['accounting_paypal_csrf'], $csrf)) {
-    accounting_paypal_match_redirect(['error' => 'Neplatná alebo expirovaná požiadavka.']);
+    accounting_paypal_match_redirect(['match' => $matchFilter, 'error' => 'Neplatná alebo expirovaná požiadavka.']);
 }
 $id = (int) ($_POST['transaction_row_id'] ?? 0);
 $month = trim((string) ($_POST['month'] ?? date('Y-m')));
@@ -52,7 +56,7 @@ try {
             WHERE BINARY transaction_id = BINARY ?
         ')->execute([$reference !== '' ? $reference : null, $reference !== '' ? 'MANUAL' : 'MANUAL_UNMATCHED', $reference !== '' ? 100 : 0, $transactionId]);
     }
-    accounting_paypal_match_redirect(['month' => $month, 'saved' => 1]);
+    accounting_paypal_match_redirect(['month' => $month, 'match' => $matchFilter, 'saved' => 1]);
 } catch (Throwable $e) {
-    accounting_paypal_match_redirect(['month' => $month, 'error' => $e->getMessage()]);
+    accounting_paypal_match_redirect(['month' => $month, 'match' => $matchFilter, 'error' => $e->getMessage()]);
 }
