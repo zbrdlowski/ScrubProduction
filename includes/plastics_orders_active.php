@@ -198,7 +198,7 @@ $orders = $stmt->fetchAll(PDO::FETCH_ASSOC);
         <div class="modal-content">
             <div class="modal-header">
                 <h4 class="modal-title" id="bulkEditModalLabel">Edit order number</h4>
-                <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                <button type="button" class="close bulk-edit-close" aria-label="Close">
                     <span aria-hidden="true">&times;</span>
                 </button>
             </div>
@@ -212,7 +212,7 @@ $orders = $stmt->fetchAll(PDO::FETCH_ASSOC);
             </div>
 
             <div class="modal-footer">
-                <button type="button" class="btn btn-default" data-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-default bulk-edit-close">Cancel</button>
                 <button type="button" id="save-bulk-edit-btn" class="btn btn-primary">Save changes</button>
             </div>
         </div>
@@ -285,9 +285,77 @@ $(function () {
 
     updateToggleAllState();
     highlightRows();
+
+    // DataTables detaches rows from pages that are not currently visible.
+    // Put every row back into the form before submitting so all checked IDs
+    // are included in selected_ids[].
+    $('#orderStatusForm').on('submit', function () {
+        table.page.len(-1).draw(false);
+    });
 });
 
 $(document).ready(function() {
+
+    function getSelectedRowCheckboxes() {
+        const table = $('#example9').DataTable();
+        return $('input.rowCheck:checked', table.rows().nodes());
+    }
+
+    function openBulkEditModal() {
+        const $modal = $('#bulkEditModal');
+
+        $('.modal-backdrop').remove();
+        $('<div class="modal-backdrop fade show"></div>').appendTo(document.body);
+
+        $('body').addClass('modal-open');
+        $modal
+            .addClass('show')
+            .css('display', 'block')
+            .attr('aria-hidden', 'false')
+            .attr('aria-modal', 'true');
+
+        $('#new_order_number').trigger('focus');
+    }
+
+    function closeBulkEditModal() {
+        const $modal = $('#bulkEditModal');
+
+        if (!$modal.is(':visible')) {
+            return;
+        }
+
+        $modal
+            .removeClass('show in')
+            .css('display', 'none')
+            .attr('aria-hidden', 'true')
+            .removeAttr('aria-modal');
+
+        $('.modal-backdrop').remove();
+        $('body')
+            .removeClass('modal-open')
+            .css('padding-right', '');
+
+        $('#bulk-edit-btn').trigger('focus');
+    }
+
+    // The global modal dismiss handler is not available reliably on this page,
+    // so keep both close controls and Escape explicitly functional.
+    $('#bulkEditModal').on('click', '.bulk-edit-close', function(e) {
+        e.preventDefault();
+        closeBulkEditModal();
+    });
+
+    $('#bulkEditModal').on('click', function(e) {
+        if (e.target === this) {
+            closeBulkEditModal();
+        }
+    });
+
+    $(document).on('keydown.bulkEditModal', function(e) {
+        if ((e.key === 'Escape' || e.which === 27) && $('#bulkEditModal').is(':visible')) {
+            closeBulkEditModal();
+        }
+    });
 
     // ----------------------------
     // Inline quantity editing
@@ -329,7 +397,7 @@ $(document).ready(function() {
     // Bulk edit order number
     // ----------------------------
     $('#bulk-edit-btn').on('click', function() {
-        let ids = $('.rowCheck:checked').map(function() {
+        let ids = getSelectedRowCheckboxes().map(function() {
             return $(this).val();
         }).get();
 
@@ -340,11 +408,12 @@ $(document).ready(function() {
 
         $('#new_order_number').val('');
         $('#bulk-edit-info').text('Selected rows: ' + ids.length);
-        $('#bulkEditModal').modal('show');
+        openBulkEditModal();
     });
 
     $('#save-bulk-edit-btn').on('click', function() {
-        let ids = $('.rowCheck:checked').map(function() {
+        let $selectedRows = getSelectedRowCheckboxes();
+        let ids = $selectedRows.map(function() {
             return $(this).val();
         }).get();
 
@@ -369,12 +438,12 @@ $(document).ready(function() {
             res = (res || "").trim();
 
             if (res === "OK") {
-                $('.rowCheck:checked').each(function() {
+                $selectedRows.each(function() {
                     let row = $(this).closest('tr');
                     row.find('.order-number-cell').text(newOrderNumber);
                 });
 
-                $('#bulkEditModal').modal('hide');
+                closeBulkEditModal();
             } else {
                 alert("Error updating order number!");
                 console.error("Bulk edit response:", res);

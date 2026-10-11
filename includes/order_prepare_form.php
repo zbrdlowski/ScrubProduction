@@ -1,8 +1,58 @@
 <script src="js/jquery-1.12.4.min.js"></script>
+<link rel="stylesheet" href="assets/css/plastics-workflow.css">
 <style>
-  input[type="checkbox"] {
+  .order-prep-form-page input[type="checkbox"] {
     transform: scale(1.5);
     margin-right: 8px;
+  }
+
+  .order-prep-form-page .order-meta-grid {
+    align-items: end;
+    display: grid;
+    gap: 14px;
+    grid-template-columns: minmax(220px, 360px) minmax(260px, 1fr);
+    margin-bottom: 16px;
+  }
+
+  .order-prep-form-page .order-meta-grid .form-group {
+    margin: 0;
+  }
+
+  .order-prep-form-page .order-meta-grid .form-control {
+    width: 100% !important;
+  }
+
+  .order-prep-form-page .order-context {
+    align-items: center;
+    background: rgba(45, 212, 191, .09);
+    border: 1px solid rgba(45, 212, 191, .2);
+    border-radius: 10px;
+    color: #b8f4e8;
+    display: flex;
+    gap: 10px;
+    min-height: 44px;
+    padding: 10px 13px;
+  }
+
+  .order-prep-form-page .qty-order-input {
+    min-width: 82px;
+    text-align: center;
+    width: 100%;
+  }
+
+  .order-prep-form-page .selection-cell {
+    min-width: 58px;
+    text-align: center;
+  }
+
+  .order-prep-form-page .selection-cell .checkbox {
+    margin: 0;
+  }
+
+  @media (max-width: 720px) {
+    .order-prep-form-page .order-meta-grid {
+      grid-template-columns: 1fr;
+    }
   }
 </style>
 <?php
@@ -55,22 +105,39 @@ $stmt->execute([...$itemIds, $supplier]);
 $items = $stmt->fetchAll(PDO::FETCH_ASSOC);
 ?>
 
-<h3>Prepare Order for <?= htmlspecialchars($supplier) ?></h3>
+<div class="container-fluid plastics-workflow-page order-prep-form-page">
+  <div class="plastics-workflow-hero">
+    <h1>Prepare Supplier Order</h1>
+    <p>Review selected items, confirm quantities and create the order for <?= htmlspecialchars($supplier) ?>.</p>
+  </div>
+
+  <div class="card">
+    <div class="card-header">
+      <i class="fas fa-file-invoice mr-2"></i>
+      Order details
+    </div>
+    <div class="card-body">
 <form method="post" action="scripts/submit_order.php" id="orderForm">
   <input type="hidden" name="supplier" value="<?= htmlspecialchars($supplier) ?>">
     <input type="hidden" name="order_number" id="order_number_hidden">
-  <div class="form-group">
-  <label for="order_number">Order Number:</label>
-  <input type="text" name="order_number" id="order_number" class="form-control input-sm" required style="width: 200px;">
-  
-</div>
-  <table id="orderPrepareTable" class="table table-bordered table-striped">
+  <div class="order-meta-grid">
+    <div class="form-group">
+      <label for="order_number">Order Number</label>
+      <input type="text" name="order_number" id="order_number" class="form-control" required placeholder="Enter supplier order number">
+    </div>
+    <div class="order-context">
+      <i class="fas fa-building"></i>
+      <span><strong><?= htmlspecialchars($supplier) ?></strong> · <?= count($items) ?> selected item<?= count($items) === 1 ? '' : 's' ?></span>
+    </div>
+  </div>
+  <div class="plastics-workflow-table-wrap">
+  <table id="orderPrepareTable" class="table table-bordered table-striped table-hover" style="width: 100%;">
     <thead>
   <tr>
-    <th><center>
+    <th class="selection-cell">
       <label>
         <input type="checkbox" id="toggleAll">     
-      </label></center>
+      </label>
     </th>  
     <th>Brand</th>
     <th>Barcode</th>
@@ -88,7 +155,7 @@ $items = $stmt->fetchAll(PDO::FETCH_ASSOC);
       <?php foreach ($items as $item): ?>
         <tr>
           
-            <td align="center">
+            <td class="selection-cell">
             <div class="checkbox">
                 <label>
                 <input type="checkbox" name="selected[]" value="<?= $item['id'] ?>" checked>
@@ -106,17 +173,24 @@ $items = $stmt->fetchAll(PDO::FETCH_ASSOC);
           <td align="center"><?= (int)$item['quantity_sent'] ?></td>          <!-- Ordered qty -->
           <td>
             <?php $toOrder = $item['moq'] - ($item['quantity'] + $item['quantity_to_order']); ?>
-<input type="number" name="qty[<?= $item['id'] ?>]" value="<?= $toOrder ?>" class="form-control input-sm" min="1">
+<input type="number" name="qty[<?= $item['id'] ?>]" value="<?= $toOrder ?>" class="form-control input-sm qty-order-input" min="1">
 
           </td>
         </tr>
       <?php endforeach; ?>
     </tbody>
   </table>
+  </div>
   <!-- Trigger modal -->
-<button type="button" class="btn btn-success" data-toggle="modal" data-target="#confirmOrderModal">
-  Submit Order
-</button><!-- Confirmation Modal -->
+<div class="plastics-workflow-actions">
+  <button type="button" class="btn btn-success" data-toggle="modal" data-target="#confirmOrderModal">
+    <i class="fas fa-check mr-1"></i>Submit Order
+  </button>
+  <a href="index.php?page=order_prepare&amp;supplier=<?= urlencode($supplier) ?>" class="btn btn-default">
+    <i class="fas fa-arrow-left mr-1"></i>Back to order queue
+  </a>
+</div>
+<!-- Confirmation Modal -->
 <div class="modal fade" id="confirmOrderModal" tabindex="-1" role="dialog" aria-labelledby="confirmOrderModalLabel">
   <div class="modal-dialog" role="document">
     <div class="modal-content">
@@ -142,31 +216,50 @@ $('#confirmSubmit').click(function() {
     return;
   }
   $('#order_number_hidden').val(orderNum);
-  $('#orderForm').submit();
+
+  // DataTables keeps only the current page in the DOM. Render every row before
+  // the native form submit so selected items and their quantities from all
+  // pages are included in the request.
+  if ($.fn.dataTable && $.fn.dataTable.isDataTable('#orderPrepareTable')) {
+    $('#orderPrepareTable').DataTable().page.len(-1).draw(false);
+  }
+
+  document.getElementById('orderForm').submit();
 });
 </script>
 </form>
 <script>
 $(function () {
-  // Cache selectors
   var $toggleAll = $('#toggleAll');
-  var $itemCheckboxes = $("input[name='selected[]']");
+
+  function getAllItemCheckboxes() {
+    if ($.fn.dataTable && $.fn.dataTable.isDataTable('#orderPrepareTable')) {
+      return $($('#orderPrepareTable').DataTable().rows().nodes())
+        .find("input[name='selected[]']");
+    }
+
+    return $("input[name='selected[]']");
+  }
 
   // Initialize toggleAll state on load
+  var $itemCheckboxes = getAllItemCheckboxes();
   $toggleAll.prop('checked', $itemCheckboxes.length === $itemCheckboxes.filter(':checked').length);
 
   // Toggle All handler
   $toggleAll.on('change', function () {
     var checked = $(this).prop('checked');
-    $("input[name='selected[]']").prop('checked', checked);
+    getAllItemCheckboxes().prop('checked', checked);
   });
 
   // Individual checkbox handler (delegated - safe if rows change)
   $(document).on('change', "input[name='selected[]']", function () {
-    var $all = $("input[name='selected[]']");
+    var $all = getAllItemCheckboxes();
     var allCount = $all.length;
     var checkedCount = $all.filter(':checked').length;
     $toggleAll.prop('checked', allCount > 0 && allCount === checkedCount);
   });
 });
 </script>
+</div>
+</div>
+</div>

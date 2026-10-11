@@ -95,7 +95,7 @@ if (!empty($itemsToOrder)):
         echo '<input type="hidden" name="items[]" value="'. htmlspecialchars($item['id']) .'">';
         echo "<!-- Sending item ID: {$item['id']} -->";
     endforeach; 
-    echo '<div class="plastics-workflow-actions is-right"><button type="submit" class="btn btn-warning"><i class="fas fa-file-alt mr-1"></i>Prepare Order</button></div>';
+    echo '<div class="plastics-workflow-actions"><button type="submit" class="btn btn-warning"><i class="fas fa-file-alt mr-1"></i>Prepare Order</button></div>';
     echo '</form><br />';
 endif;
   
