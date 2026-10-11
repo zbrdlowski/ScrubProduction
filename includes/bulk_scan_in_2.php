@@ -126,10 +126,27 @@
     border-left-color: orange;
   }
 </style>
+<link rel="stylesheet" href="assets/css/mobile-stock-scanner.css">
 
 
 
-<div class="container-fluid">
+<div class="container-fluid mobile-scan-page receiving-scan">
+
+  <div class="scan-hero">
+    <h2><i class="fa fa-dolly"></i> A010 Receiving Scanner</h2>
+    <p>Move received stock from the intake area to its warehouse shelf.</p>
+    <div class="fixed-location">
+      <i class="fa fa-map-marker"></i>
+      <div>
+        <small>Fixed source location</small>
+        <strong>A010 · Receiving area</strong>
+      </div>
+    </div>
+    <div class="scan-mode">
+      <span class="scan-mode-dot"></span>
+      Receiving workflow
+    </div>
+  </div>
 
   <?php if (!empty($_SESSION['success'])): ?>
     <div class="alert alert-success"><?= htmlspecialchars($_SESSION['success']);
@@ -139,89 +156,82 @@
     <div class="alert alert-danger"><?= htmlspecialchars($_SESSION['error']);
     unset($_SESSION['error']); ?></div>
   <?php endif; ?>
-  <div class="row">
-    <div class="col-xs-12">
-      <div class="form-group">
-        <label for="scanType">Scan Type</label>
+  <div class="scan-card">
+    <div class="scan-step">
+      <label class="scan-step-label" for="scanType">
+        <span class="scan-step-number">1</span>
+        Operation
+      </label>
         <select id="scanType" class="form-control">
           <option value="from_receiving" selected>Move from Receiving (A010)</option>
           <option value="standard">Standard Stock IN</option>
         </select>
-      </div>
     </div>
-  </div>
 
-  <div class="row">
-    <div class="col-xs-12">
-      <div class="form-group">
-        <label for="orderId">Order #</label>
-        <div class="input-wrap" style="position:relative;">
+    <div class="scan-step">
+      <label class="scan-step-label" for="orderId">
+        <span class="scan-step-number">2</span>
+        Order number
+      </label>
+      <div class="input-wrap">
           <input id="orderId" class="form-control" placeholder="Enter order number (or scan order QR)"
             autocomplete="off" />
-          <span class="clear-x" onclick="$('#orderId').val(''); saveState();"
-            style="position:absolute; right:10px; top:50%; transform:translateY(-50%); cursor:pointer; font-size:20px; color:#999;">
-            ×
-          </span>
-        </div>
+        <span class="clear-x" role="button" aria-label="Clear order number" onclick="$('#orderId').val(''); saveState();">×</span>
       </div>
     </div>
-  </div>
-  <div class="row">
-    <div class="col-xs-12">
-      <div class="form-group">
-        <label for="shelfLocation">Bay / Shelf (scan QR)</label>
-        <div class="input-wrap" style="position:relative;">
-          <input id="shelfLocation" class="form-control" placeholder="Scan shelf QR (e.g. A010)" autocomplete="off" />
 
-          <span class="clear-x" onclick="$('#shelfLocation').val(''); saveState();"
-            style="position:absolute; right:10px; top:50%; transform:translateY(-50%); cursor:pointer; font-size:20px; color:#999;">
-            ×
-          </span>
-
-        </div>
+    <div class="scan-step">
+      <label class="scan-step-label" for="shelfLocation">
+        <span class="scan-step-number">3</span>
+        Destination Bay / Shelf
+      </label>
+      <div class="input-wrap">
+        <input id="shelfLocation" class="form-control" placeholder="Scan destination shelf QR" autocomplete="off" />
+        <span class="clear-x" role="button" aria-label="Clear destination shelf" onclick="$('#shelfLocation').val(''); saveState();">×</span>
       </div>
     </div>
-  </div>
-  <div class="row">
-    <div class="col-xs-12">
-      <div class="form-group">
-        <label for="scanInput">Scan box barcode</label>
-        <input id="scanInput" class="form-control scan-input" placeholder="Scan barcode here — list adds on Enter"
-          autocomplete="off" autofocus />
-        <div class="hint">Tip: your scanner usually sends an Enter after barcode — that will add the item to the list.
-        </div>
-      </div>
-    </div>
-  </div>
 
-  <div class="row">
-    <div class="col-xs-12">
-      <div id="scannedListBox">
-        <div id="scannedList"></div>
+    <div class="scan-step">
+      <label class="scan-step-label" for="scanInput">
+        <span class="scan-step-number">4</span>
+        Scan box barcode
+      </label>
+      <input id="scanInput" class="form-control scan-input" placeholder="Ready to scan…"
+        autocomplete="off" inputmode="none" autofocus />
+      <div class="scan-feedback">
+        <i class="fa fa-wifi"></i>
+        Scanner ready — each Enter adds the barcode.
+      </div>
+      <div class="scan-hint">
+        <i class="fa fa-info-circle"></i>
+        <span>Items are moved from A010 to the destination shelf selected above.</span>
       </div>
     </div>
   </div>
 
-  <div class="row" style="margin-top:12px;">
-    <div class="col-xs-6">
+  <div class="scan-card">
+    <div class="scan-summary">
+      <div class="scan-summary-title"><i class="fa fa-list"></i> Scanned items</div>
+    </div>
+    <div id="scannedListBox">
+      <div id="scannedList"></div>
+    </div>
+
+    <div class="progress">
+      <div id="progressBar" class="progress-bar progress-bar-striped active" role="progressbar" style="width:0%"></div>
+    </div>
+
+    <div id="status"></div>
+
+    <div class="scan-actions">
       <button id="btnClearList" class="btn btn-clear btn-wide btn-block">
-        <i class="glyphicon glyphicon-trash"></i> Clear
+        <i class="fa fa-trash"></i> Clear
       </button>
-    </div>
-
-    <div class="col-xs-6">
       <button id="btnSend" class="btn btn-send btn-wide btn-block">
-        <i class="glyphicon glyphicon-ok"></i> Send <span id="sendCount"></span>
+        <i class="fa fa-paper-plane"></i> Send <span id="sendCount"></span>
       </button>
     </div>
   </div>
-
-  <div class="progress">
-    <div id="progressBar" class="progress-bar progress-bar-striped active" role="progressbar" style="width:0%"></div>
-  </div>
-
-  <div id="status" style="margin-top:10px;"></div>
-</div>
 
 <!-- jQuery (use same jQuery as your app) -->
 <script src="js/jquery-1.12.4.min.js"></script>
@@ -554,10 +564,9 @@ $stmt->execute([
 ]);
 
 ?>
-<hr>
-
+<div class="movements-card">
 <h4><i class="fa fa-history"></i> Last 10 Inventory Movements</h4>
-
+<div class="movements-scroll">
 <table id="example0" class="table table-bordered table-striped">
   <thead>
     <tr>
@@ -575,7 +584,7 @@ $stmt->execute([
 
     <?php while ($row = $stmt->fetch(PDO::FETCH_ASSOC)): ?>
       <tr class="<?= $row['movement_type'] === 'IN' ? 'success' : 'danger' ?>">
-        <td><?= date("d.m.Y H:i", strtotime($row['timestamp'])) ?></td>
+        <td><?= date("d.m.y H:i", strtotime($row['timestamp'])) ?></td>
         <td><?= htmlspecialchars($row['operator']) ?></td>
         <td><?= htmlspecialchars($row['order_id']) ?></td>
         <td><?= htmlspecialchars($row['item_name']) ?></td>
@@ -590,3 +599,6 @@ $stmt->execute([
     <?php endwhile; ?>
   </tbody>
 </table>
+</div>
+</div>
+</div>
