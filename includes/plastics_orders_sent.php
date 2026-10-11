@@ -4,15 +4,20 @@
 <script src="js/vfs_fonts.js"></script>
 <script src="js/buttons.html5.min.js"></script>
 <script src="js/buttons.print.min.js"></script>
+<link rel="stylesheet" href="assets/css/plastics-workflow.css">
 
-<section class="content">
+<section class="content plastics-workflow-page">
  <div class="container-fluid">
+  <div class="plastics-workflow-hero">
+   <div>
+    <h1>Sent Plastic Orders</h1>
+    <p>Track orders sent to suppliers and maintain their order references before receiving.</p>
+   </div>
+  </div>
   <div class="row">
    <div class="col-12">
     <div class="card">
-     <div class="card-header">
-      <h1>Sent Plastics Orders</h1>
-     </div>
+     <div class="card-header"><i class="fas fa-truck" aria-hidden="true"></i><span>Orders sent to suppliers</span></div>
 
      <div class="card-body">
 <?php
@@ -44,33 +49,31 @@ $stmt->execute($params);
 $orders = $stmt->fetchAll(PDO::FETCH_ASSOC);
 ?>
 
-<form method="get" class="form-inline" style="margin-bottom: 15px;">
+<form method="get" class="plastics-workflow-filter-card plastics-workflow-filter-grid">
     <input type="hidden" name="page" value="plastics_orders_sent">
 
-    <label for="order_number">&nbsp;&nbsp;&nbsp;Order #:&nbsp;&nbsp;&nbsp;</label>
-    <select name="order_number" id="order_number" class="form-control input-sm" onchange="this.form.submit()">
-        <option value="">-- All --</option>
-        <?php foreach ($orderNumbers as $num): ?>
-            <option value="<?= htmlspecialchars($num) ?>" <?= $num === $selectedOrder ? 'selected' : '' ?>>
-                <?= htmlspecialchars($num) ?>
-            </option>
-        <?php endforeach; ?>
-    </select>
+    <div class="plastics-workflow-filter-field">
+      <label for="order_number">Order #</label>
+      <select name="order_number" id="order_number" class="form-control input-sm" onchange="this.form.submit()">
+          <option value="">All orders</option>
+          <?php foreach ($orderNumbers as $num): ?>
+              <option value="<?= htmlspecialchars($num) ?>" <?= $num === $selectedOrder ? 'selected' : '' ?>><?= htmlspecialchars($num) ?></option>
+          <?php endforeach; ?>
+      </select>
+    </div>
 
-    &nbsp;&nbsp;
-
-    <label for="main_supplier">&nbsp;&nbsp;&nbsp;&nbsp;Supplier:&nbsp;&nbsp;&nbsp;&nbsp;</label>
-    <select name="main_supplier" id="main_supplier" class="form-control input-sm" onchange="this.form.submit()">
-        <option value="">-- All --</option>
-        <?php foreach ($suppliers as $supplier): ?>
-            <option value="<?= htmlspecialchars($supplier) ?>" <?= $supplier === $selectedSupplier ? 'selected' : '' ?>>
-                <?= htmlspecialchars($supplier) ?>
-            </option>
-        <?php endforeach; ?>
-    </select>
+    <div class="plastics-workflow-filter-field">
+      <label for="main_supplier">Supplier</label>
+      <select name="main_supplier" id="main_supplier" class="form-control input-sm" onchange="this.form.submit()">
+          <option value="">All suppliers</option>
+          <?php foreach ($suppliers as $supplier): ?>
+              <option value="<?= htmlspecialchars($supplier) ?>" <?= $supplier === $selectedSupplier ? 'selected' : '' ?>><?= htmlspecialchars($supplier) ?></option>
+          <?php endforeach; ?>
+      </select>
+    </div>
 </form>
 
-<div style="margin-bottom: 15px;">
+<div class="plastics-workflow-actions">
     <button type="button" id="bulk-edit-btn" class="btn btn-primary">
         <i class="fa fa-edit"></i> Edit selected
     </button>
@@ -80,7 +83,8 @@ $orders = $stmt->fetchAll(PDO::FETCH_ASSOC);
     </button>
 </div>
 
-<table id="example7" class="table table-bordered table-striped">
+<div class="plastics-workflow-table-wrap">
+<table id="plasticsSentTable" class="table table-bordered table-striped table-hover">
     <thead>
         <tr>
             <th style="width:40px; text-align:center;">
@@ -145,13 +149,10 @@ $orders = $stmt->fetchAll(PDO::FETCH_ASSOC);
                 </td>
             </tr>
         <?php endforeach; ?>
-    <?php else: ?>
-        <tr>
-            <td colspan="23">No orders found for selected filters.</td>
-        </tr>
     <?php endif; ?>
     </tbody>
 </table>
+</div>
 
 <link rel="stylesheet" href="js/dataTables.bootstrap.min.css">
 <script src="js/jquery.dataTables.min.js"></script>
@@ -171,7 +172,7 @@ $orders = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
 </div>
 <!-- Bulk edit modal -->
-<div class="modal fade" id="bulkEditModal" tabindex="-1" role="dialog" aria-labelledby="bulkEditModalLabel">
+<div class="modal fade plastics-workflow-page" id="bulkEditModal" tabindex="-1" role="dialog" aria-labelledby="bulkEditModalLabel">
   <div class="modal-dialog" role="document">
     <div class="modal-content">
       <div class="modal-header">
@@ -199,20 +200,32 @@ $orders = $stmt->fetchAll(PDO::FETCH_ASSOC);
 <script>
 $(document).ready(function() {
 
+    const sentOrdersTable = $('#plasticsSentTable').DataTable({
+        order: [],
+        pageLength: 50,
+        lengthMenu: [[25, 50, 100, 250], [25, 50, 100, 250]],
+        scrollX: true,
+        dom: "<'plastics-workflow-dt-toolbar'Bf>rt<'plastics-workflow-dt-footer'lip>",
+        buttons: ['copy', 'csv', 'excel', 'colvis'],
+        language: {
+            emptyTable: 'No orders found for selected filters.'
+        }
+    });
+
     // Toggle all checkboxes
     $('#toggle-all').on('change', function() {
         $('.row-checkbox').prop('checked', $(this).is(':checked'));
     });
 
     // If one row is unchecked manually, uncheck toggle-all
-    $('#example7').on('change', '.row-checkbox', function() {
+    $('#plasticsSentTable').on('change', '.row-checkbox', function() {
         let total = $('.row-checkbox').length;
         let checked = $('.row-checkbox:checked').length;
         $('#toggle-all').prop('checked', total > 0 && total === checked);
     });
 
     // Single delete
-    $('#example7').on('click', '.delete-row', function(e) {
+    $('#plasticsSentTable').on('click', '.delete-row', function(e) {
         e.preventDefault();
         e.stopPropagation();
 

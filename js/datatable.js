@@ -16,8 +16,11 @@ $("#orderPrepareTable").DataTable({
   lengthChange: true,
   autoWidth: false,
   pageLength: 100,
+  language: {
+    emptyTable: "No items need to be ordered."
+  },
   info: true,
-  dom: 'Bfrtip',
+  dom: "<'plastics-workflow-dt-toolbar'Bf>rt<'plastics-workflow-dt-footer'lip>",
   buttons: [
     {
       extend: 'copy',
@@ -38,7 +41,7 @@ $("#orderPrepareTable").DataTable({
       }
     }
   ]
-}).buttons().container().appendTo('#orderPrepareTable_wrapper .col-md-6:eq(0)');
+});
   $(function () {
     $("#example0").DataTable({
       "responsive": true,

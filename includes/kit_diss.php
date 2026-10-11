@@ -1,16 +1,24 @@
-<div class="container-fluid">
+<link rel="stylesheet" href="assets/css/plastics-workflow.css">
+<div class="container-fluid plastics-workflow-page">
+        <div class="plastics-workflow-hero">
+          <div>
+            <h1>Kit Disassembly</h1>
+            <p>Track disassembled kits, editable part references and components that still need to be ordered.</p>
+          </div>
+        </div>
         <div class="row">
           <div class="col-12">
             <div class="card">
-              <div class="card-header">
-                <h1>Dissasembled Kits parts (Kit diss)</h1>
-              </div>
+              <div class="card-header"><i class="fas fa-puzzle-piece" aria-hidden="true"></i><span>Disassembled kit parts</span></div>
               <div class="card-body">  
-  <button class="btn btn-primary" data-toggle="modal" data-target="#addKitModal">
-  + Add Disassembled Kit
-</button>
-  <table id="kitsTable" class="table table-bordered table-striped table-hover">
-    <thead class="text-white" style="background-color:#333940;">
+  <div class="plastics-workflow-actions">
+    <button class="btn btn-primary" data-toggle="modal" data-target="#addKitModal">
+      <i class="fas fa-plus mr-1"></i>Add Disassembled Kit
+    </button>
+  </div>
+  <div class="plastics-workflow-table-wrap">
+  <table id="kitsTable" class="table table-bordered table-striped table-hover" style="width: 100%;">
+    <thead>
       <tr>
         <th>Date Time</th>
         <th>User</th>
@@ -28,6 +36,7 @@
     </thead>
     <tbody></tbody>
   </table>
+  </div>
 </div>
 
   <!-- Delete Confirmation Modal -->
@@ -131,6 +140,11 @@
 
       table = $('#kitsTable').DataTable({
         ajax: 'scripts/fetch_kits.php',
+        pageLength: 50,
+        lengthMenu: [[25, 50, 100, 250], [25, 50, 100, 250]],
+        scrollX: true,
+        dom: "<'plastics-workflow-dt-toolbar'Bf>rt<'plastics-workflow-dt-footer'lip>",
+        buttons: ['copy', 'csv', 'excel', 'colvis'],
         columns: [
         { data: 'timestamp' },
         { data: 'user' },

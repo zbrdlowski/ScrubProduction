@@ -1,4 +1,5 @@
 <!-- ================= DEPENDENCIES ================= -->
+<link rel="stylesheet" href="assets/css/plastics-workflow.css">
 <script src="js/jquery-3.6.0.min.js"></script>
 <script src="js/bootstrap.min.js"></script>
 <link rel="stylesheet" href="js/jquery.dataTables.min.css">
@@ -19,43 +20,53 @@
   });
 }
 </script>
-<div class="container-fluid">
+<div class="container-fluid plastics-workflow-page">
+  <div class="plastics-workflow-hero">
+    <div>
+      <h1>Receive Supply</h1>
+      <p>Receive supplier deliveries by specific order or FIFO and allocate incoming stock to its shelf.</p>
+    </div>
+  </div>
   <div class="row">
     <div class="col-md-12">
 
       <div class="card">
-        <div class="card-header">
-          <h2>Order Receiving Form (Príjemka tovaru)</h2>
-        </div>
+        <div class="card-header"><i class="fas fa-dolly" aria-hidden="true"></i><span>Order receiving form</span></div>
 
         <div class="card-body">
 
 <!-- ================= CONTROLS ================= -->
 
-<div class="form-group">
+<div class="plastics-workflow-filter-card">
+ <div class="plastics-workflow-filter-grid">
+  <div class="plastics-workflow-filter-field">
+    <label for="supplierSelect">Supplier</label>
+    <select id="supplierSelect" class="form-control">
+      <option value="">Choose supplier</option>
+    </select>
+  </div>
 
-  <label><strong>Select Supplier:</strong></label>
-  <select id="supplierSelect" class="form-control">
-    <option value="">-- Choose Supplier --</option>
-  </select>
+  <div class="plastics-workflow-filter-field">
+    <label for="methodSelect">Receiving method</label>
+    <select id="methodSelect" class="form-control">
+      <option value="">Choose method</option>
+      <option value="FIFO">FIFO (Auto allocate)</option>
+      <option value="ORDER">Specific Order</option>
+    </select>
+  </div>
 
-  <label class="mt-2"><strong>Receiving Method:</strong></label>
-  <select id="methodSelect" class="form-control">
-    <option value="">-- Choose method --</option>
-    <option value="FIFO">FIFO (Auto allocate)</option>
-    <option value="ORDER">Specific Order</option>
-  </select>
-
-  <label class="mt-2"><strong>Select Order:</strong></label>
-  <select id="orderSelect" class="form-control" disabled>
-    <option value="">-- Choose Order --</option>
-  </select>
-
+  <div class="plastics-workflow-filter-field">
+    <label for="orderSelect">Order</label>
+    <select id="orderSelect" class="form-control" disabled>
+      <option value="">Choose order</option>
+    </select>
+  </div>
+ </div>
 </div>
 
 <!-- ================= ORDER TABLE ================= -->
 
-<table id="orderTable" class="table table-bordered table-striped" style="display:none;">
+<table id="orderTable" class="table table-bordered table-striped table-hover" style="display:none;">
   <thead>
     <tr>
       <th>Barcode</th>
@@ -69,8 +80,8 @@
 </table>
 
 <div id="bulkSubmit" style="display:none;">
-  <button class="btn btn-success" id="receiveAllBtn">
-    Receive Entire Order
+  <button class="btn btn-success mb-3" id="receiveAllBtn">
+    <i class="fas fa-check-circle mr-1"></i>Receive Entire Order
   </button>
 </div>
 
@@ -78,7 +89,7 @@
 
 <div id="uploadSection" class="card mt-3" style="display:none;">
   <div class="card-header">
-    <strong>Upload Receiving File (.csv or .xlsx)</strong>
+    <i class="fas fa-file-upload" aria-hidden="true"></i><strong>Upload Receiving File (.csv or .xlsx)</strong>
   </div>
 
   <div class="card-body">
@@ -104,8 +115,8 @@
       <div class="col-md-3">
         <label style="visibility:hidden;">buttons</label>
         <div>
-          <button id="previewFileBtn" class="btn btn-info">Preview</button>
-          <button id="uploadFileBtn" class="btn btn-success">Upload & Receive</button>
+          <button id="previewFileBtn" class="btn btn-info"><i class="fas fa-eye mr-1"></i>Preview</button>
+          <button id="uploadFileBtn" class="btn btn-success"><i class="fas fa-upload mr-1"></i>Upload & Receive</button>
         </div>
       </div>
 

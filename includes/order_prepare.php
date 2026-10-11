@@ -1,10 +1,18 @@
 
-<div class="container-fluid">
+<link rel="stylesheet" href="assets/css/plastics-workflow.css">
+<div class="container-fluid plastics-workflow-page">
+        <div class="plastics-workflow-hero">
+          <div>
+            <h1>Order Queue</h1>
+            <p>Review low-stock items and prepare a focused purchase order for the selected supplier.</p>
+          </div>
+        </div>
         <div class="row">
           <div class="col-12">
-            <div class="card">
+            <div class="card plastics-workflow-card">
               <div class="card-header">
-                <h1>Items Needs to be ordered (Order Queue)</h1>
+                <i class="fas fa-clipboard-list" aria-hidden="true"></i>
+                <span>Items that need to be ordered</span>
               </div>
               <div class="card-body">
 <?php
@@ -20,14 +28,15 @@ $supplierStmt = $pdo->query("SELECT DISTINCT main_supplier FROM items WHERE main
 $suppliers = $supplierStmt->fetchAll(PDO::FETCH_COLUMN);
 
 // Handle selected supplier
-$selectedSupplier = $_GET['supplier'] ?? '';
+$selectedSupplier = isset($_GET['supplier']) && is_string($_GET['supplier']) ? trim($_GET['supplier']) : '';
+$itemsToOrder = [];
 ?>
-<h3> select Supplier </h3>
-<div class="row">
-  <div class="col-xs-12 text-right" style="margin-bottom: 10px;">
-    <form method="get" class="form-inline">
+<div class="plastics-workflow-filter-card">
+  <form method="get" class="plastics-workflow-filter-grid">
     <input type="hidden" name="page" value="order_prepare">
-      
+
+    <div class="plastics-workflow-filter-field">
+      <label for="supplier">Supplier</label>
       <select name="supplier" id="supplier" class="form-control input-sm" onchange="this.form.submit()">
         <option value="">-- All Suppliers --</option>
         <?php foreach ($suppliers as $supplier): ?>
@@ -36,8 +45,9 @@ $selectedSupplier = $_GET['supplier'] ?? '';
           </option>
         <?php endforeach; ?>
       </select>
-    </form>
-  </div>
+    </div>
+    <div class="plastics-workflow-note"><i class="fas fa-info-circle mr-1"></i>Selecting a supplier refreshes the order queue.</div>
+  </form>
 </div>
 <?
 if (isset($_GET['supplier'])){  
@@ -85,13 +95,14 @@ if (!empty($itemsToOrder)):
         echo '<input type="hidden" name="items[]" value="'. htmlspecialchars($item['id']) .'">';
         echo "<!-- Sending item ID: {$item['id']} -->";
     endforeach; 
-    echo '<button type="submit" class="btn btn-warning">Prepare Order</button>';
+    echo '<div class="plastics-workflow-actions is-right"><button type="submit" class="btn btn-warning"><i class="fas fa-file-alt mr-1"></i>Prepare Order</button></div>';
     echo '</form><br />';
 endif;
   
 }
 ?>
-<table id="example1" class="table table-bordered table-striped">
+<div class="plastics-workflow-table-wrap">
+<table id="orderPrepareTable" class="table table-bordered table-striped table-hover">
   <thead>
     <tr>
       <th>Barcode</th>
@@ -143,12 +154,11 @@ if (!empty($item['order_numbers'])) {
             </td>
         </tr>
     <?php endforeach; ?>
-<?php else: ?>
-    <tr><td colspan="10">No items need to be ordered.</td></tr>
 <?php endif; ?>
 </tbody>
 
 </table>
+</div>
                 </div>
               <!-- /.card-body -->
             </div>

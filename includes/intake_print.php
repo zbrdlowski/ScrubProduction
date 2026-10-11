@@ -22,14 +22,22 @@
   text-transform: capitalize;
 }
 </style>
-<section class="content">
+<link rel="stylesheet" href="assets/css/plastics-workflow.css">
+<section class="content plastics-workflow-page">
+ <div class="container-fluid">
+  <div class="plastics-workflow-hero">
+    <div>
+      <h1>Print Intake Labels</h1>
+      <p>Review pending intake labels, print the selected batch and add one-off labels when needed.</p>
+    </div>
+  </div>
   <div class="box box-primary">
     <div class="box-header with-border">
-      <h3 class="box-title">Print Intake Labels</h3>
+      <i class="fas fa-print" aria-hidden="true"></i><span>Labels waiting to be printed</span>
     </div>
 
     <div class="box-body">        
-      <table id="intakeLabels" class="table table-bordered table-striped">
+      <table id="intakeLabels" class="table table-bordered table-striped" style="width: 100%;">
         <thead>
           <tr>
             <th><input type="checkbox" id="toggleAll"></th>
@@ -46,18 +54,21 @@
         </thead>
       </table>
     
-      <button id="markPrinted" class="btn btn-success">
-        Mark as Printed
-      </button>
-
-      <button class="btn btn-primary" data-toggle="modal" data-target="#manualLabelModal">
-        <i class="fa fa-plus"></i> Add Label Manually
+      <div class="plastics-workflow-actions mt-3">
+        <button id="markPrinted" class="btn btn-success">
+          <i class="fas fa-check mr-1"></i>Mark as Printed
         </button>
+
+        <button class="btn btn-primary" data-toggle="modal" data-target="#manualLabelModal">
+          <i class="fa fa-plus"></i> Add Label Manually
+        </button>
+      </div>
 
     </div>
   </div>
+ </div>
 </section>
-<div class="modal fade" id="manualLabelModal" tabindex="-1">
+<div class="modal fade plastics-workflow-page" id="manualLabelModal" tabindex="-1">
   <div class="modal-dialog">
     <div class="modal-content">
 
@@ -96,10 +107,12 @@ $(function () {
 
   const table = $('#intakeLabels').DataTable({
     ajax: 'scripts/get_intake_labels.php',
-    responsive: true,
+    responsive: false,
+    scrollX: true,
     pageLength: 50,
+    lengthMenu: [[25, 50, 100, 250], [25, 50, 100, 250]],
     order: [[7, 'asc']],
-    dom: 'Bfrtip',
+    dom: "<'plastics-workflow-dt-toolbar'Bf>rt<'plastics-workflow-dt-footer'lip>",
     buttons: ['excel'],
   columns: [
   {

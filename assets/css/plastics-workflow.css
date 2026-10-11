@@ -1,0 +1,271 @@
+.plastics-workflow-page {
+  --pw-border: rgba(148, 163, 184, .24);
+  --pw-surface: rgba(30, 41, 59, .72);
+  --pw-surface-strong: rgba(22, 34, 53, .94);
+  --pw-muted: #9caec2;
+  --pw-accent: #5eead4;
+}
+
+.plastics-workflow-page .plastics-workflow-hero {
+  align-items: center;
+  background: linear-gradient(125deg, rgba(15, 118, 110, .28), rgba(30, 64, 175, .18));
+  border: 1px solid var(--pw-border);
+  border-radius: 14px;
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 1rem;
+  overflow: hidden;
+  padding: 1.25rem 1.4rem;
+  position: relative;
+}
+
+.plastics-workflow-page .plastics-workflow-hero::after {
+  background: rgba(45, 212, 191, .12);
+  border-radius: 50%;
+  content: '';
+  height: 190px;
+  position: absolute;
+  right: -65px;
+  top: -105px;
+  width: 190px;
+}
+
+.plastics-workflow-page .plastics-workflow-hero h1 {
+  font-size: 1.65rem;
+  font-weight: 700;
+  margin: 0 0 .3rem;
+}
+
+.plastics-workflow-page .plastics-workflow-hero p {
+  color: var(--pw-muted);
+  margin: 0;
+  max-width: 760px;
+}
+
+.plastics-workflow-page .plastics-workflow-card,
+.plastics-workflow-page .card,
+.plastics-workflow-page .box {
+  background: var(--pw-surface);
+  border: 1px solid var(--pw-border);
+  border-radius: 14px;
+  box-shadow: 0 12px 28px rgba(2, 6, 23, .16);
+  overflow: hidden;
+}
+
+.plastics-workflow-page .plastics-workflow-card-body,
+.plastics-workflow-page .card-body,
+.plastics-workflow-page .box-body {
+  padding: 1.1rem 1.2rem 1.2rem;
+}
+
+.plastics-workflow-page .plastics-workflow-section-title,
+.plastics-workflow-page .card-header,
+.plastics-workflow-page .box-header {
+  align-items: center;
+  background: transparent;
+  border-bottom: 1px solid var(--pw-border);
+  display: flex;
+  font-size: 1rem;
+  font-weight: 700;
+  gap: .55rem;
+  margin: 0;
+  padding: .9rem 1.2rem;
+}
+
+.plastics-workflow-page .plastics-workflow-section-title i,
+.plastics-workflow-page .card-header i,
+.plastics-workflow-page .box-header i {
+  color: var(--pw-accent);
+}
+
+.plastics-workflow-page .plastics-workflow-filter-card {
+  background: rgba(15, 23, 42, .26);
+  border: 1px solid var(--pw-border);
+  border-radius: 12px;
+  margin-bottom: 1rem;
+  padding: 1rem;
+}
+
+.plastics-workflow-page .plastics-workflow-filter-grid {
+  align-items: end;
+  display: grid;
+  gap: .85rem 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+.plastics-workflow-page .plastics-workflow-filter-field label,
+.plastics-workflow-page .form-group > label {
+  color: #bfd0e2;
+  display: block;
+  font-size: .78rem;
+  font-weight: 700;
+  letter-spacing: .03em;
+  margin-bottom: .35rem;
+  text-transform: uppercase;
+}
+
+.plastics-workflow-page .form-control {
+  background-color: rgba(15, 23, 42, .72);
+  border-color: rgba(148, 163, 184, .32);
+  border-radius: 8px;
+  color: #edf5fc;
+  min-height: 38px;
+}
+
+.plastics-workflow-page .form-control:focus {
+  border-color: #2dd4bf;
+  box-shadow: 0 0 0 3px rgba(45, 212, 191, .14);
+}
+
+.plastics-workflow-page .plastics-workflow-actions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: .65rem;
+  margin: 0 0 1rem;
+}
+
+.plastics-workflow-page .plastics-workflow-actions.is-right {
+  justify-content: flex-end;
+}
+
+.plastics-workflow-page .btn {
+  border-radius: 8px;
+  font-weight: 700;
+}
+
+.plastics-workflow-page .table-responsive,
+.plastics-workflow-page .plastics-workflow-table-wrap {
+  border: 1px solid var(--pw-border);
+  border-radius: 10px;
+  overflow-x: auto;
+}
+
+.plastics-workflow-page table.table {
+  font-size: .82rem;
+  margin-bottom: 0;
+  width: 100% !important;
+}
+
+.plastics-workflow-page .dataTables_wrapper,
+.plastics-workflow-page .dataTables_scroll,
+.plastics-workflow-page .dataTables_scrollHead,
+.plastics-workflow-page .dataTables_scrollHeadInner,
+.plastics-workflow-page .dataTables_scrollHeadInner table,
+.plastics-workflow-page .dataTables_scrollBody,
+.plastics-workflow-page .dataTables_scrollBody table {
+  width: 100% !important;
+}
+
+.plastics-workflow-page table.table thead th {
+  background: #162235;
+  border-color: rgba(148, 163, 184, .22);
+  color: #dbeafe;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+.plastics-workflow-page table.table td {
+  border-color: rgba(148, 163, 184, .16);
+  vertical-align: middle;
+}
+
+.plastics-workflow-page table.table tbody tr:hover td {
+  background: rgba(45, 212, 191, .055);
+}
+
+.plastics-workflow-page .plastics-workflow-empty {
+  color: var(--pw-muted);
+  padding: 2rem 1rem !important;
+  text-align: center;
+}
+
+.plastics-workflow-page .plastics-workflow-dt-toolbar {
+  align-items: center;
+  display: flex;
+  gap: 1rem;
+  justify-content: space-between;
+  margin-bottom: 1rem;
+  width: 100%;
+}
+
+.plastics-workflow-page .plastics-workflow-dt-toolbar .dt-buttons,
+.plastics-workflow-page .plastics-workflow-dt-toolbar .dataTables_filter {
+  float: none;
+  margin: 0;
+}
+
+.plastics-workflow-page .plastics-workflow-dt-toolbar .dataTables_filter {
+  margin-left: auto;
+}
+
+.plastics-workflow-page .plastics-workflow-dt-toolbar .dataTables_filter label {
+  align-items: center;
+  display: flex;
+  gap: .55rem;
+  margin: 0;
+  white-space: nowrap;
+}
+
+.plastics-workflow-page .plastics-workflow-dt-toolbar .dataTables_filter input {
+  margin-left: 0;
+  min-width: 220px;
+}
+
+.plastics-workflow-page .plastics-workflow-dt-footer {
+  align-items: center;
+  display: flex;
+  gap: 1rem;
+  justify-content: space-between;
+  margin-top: 1rem;
+}
+
+.plastics-workflow-page .plastics-workflow-dt-footer .dataTables_length,
+.plastics-workflow-page .plastics-workflow-dt-footer .dataTables_info,
+.plastics-workflow-page .plastics-workflow-dt-footer .dataTables_paginate {
+  float: none;
+  margin: 0;
+  padding: 0;
+}
+
+.plastics-workflow-page .modal-content {
+  background: #202d40;
+  border: 1px solid var(--pw-border);
+  border-radius: 14px;
+  box-shadow: 0 18px 44px rgba(2, 6, 23, .42);
+  overflow: hidden;
+}
+
+.plastics-workflow-page .modal-header,
+.plastics-workflow-page .modal-footer {
+  border-color: var(--pw-border);
+}
+
+.plastics-workflow-page .plastics-workflow-note {
+  background: rgba(45, 212, 191, .09);
+  border: 1px solid rgba(45, 212, 191, .2);
+  border-radius: 10px;
+  color: #b8f4e8;
+  padding: .75rem .9rem;
+}
+
+@media (max-width: 720px) {
+  .plastics-workflow-page .plastics-workflow-dt-toolbar,
+  .plastics-workflow-page .plastics-workflow-dt-footer {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .plastics-workflow-page .plastics-workflow-dt-toolbar .dataTables_filter {
+    margin-left: 0;
+  }
+
+  .plastics-workflow-page .plastics-workflow-dt-toolbar .dataTables_filter label {
+    justify-content: space-between;
+  }
+
+  .plastics-workflow-page .plastics-workflow-dt-toolbar .dataTables_filter input {
+    min-width: 0;
+    width: 100%;
+  }
+}
