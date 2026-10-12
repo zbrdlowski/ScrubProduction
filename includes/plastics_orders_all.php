@@ -335,6 +335,22 @@ $showingOrderCount = count($orders);
     vertical-align: middle;
   }
 
+  @media (min-width: 721px) and (max-width: 1920px) {
+    .plastics-all-page #plasticsOrdersAllTable {
+      font-size: 12px;
+      line-height: 1.2;
+    }
+
+    .plastics-all-page #plasticsOrdersAllTable > thead > tr > th {
+      padding: 6px 8px;
+    }
+
+    .plastics-all-page #plasticsOrdersAllTable > tbody > tr > td {
+      padding: 5px 8px;
+      white-space: nowrap;
+    }
+  }
+
   .plastics-all-page .plastics-status-badge {
     border-radius: 999px;
     display: inline-block;

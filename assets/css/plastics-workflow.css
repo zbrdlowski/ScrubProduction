@@ -249,6 +249,38 @@
   padding: .75rem .9rem;
 }
 
+/* Keep dense order tables readable on common 1080p/1440p workstations.
+   Full-width 4K layouts retain the roomier default spacing above. */
+@media (min-width: 721px) and (max-width: 1920px) {
+  .plastics-workflow-page table.table {
+    font-size: 12px;
+    line-height: 1.2;
+  }
+
+  .plastics-workflow-page table.table > thead > tr > th {
+    padding: 6px 8px;
+  }
+
+  .plastics-workflow-page table.table > tbody > tr > td {
+    padding: 5px 8px;
+    white-space: nowrap;
+  }
+
+  .plastics-workflow-page table.table td .btn-sm,
+  .plastics-workflow-page table.table td .btn-xs {
+    font-size: 11px;
+    line-height: 1.2;
+    padding: 4px 7px;
+  }
+
+  .plastics-workflow-page table.table td .form-control {
+    font-size: 12px;
+    height: 30px;
+    min-height: 30px;
+    padding: 4px 7px;
+  }
+}
+
 @media (max-width: 720px) {
   .plastics-workflow-page .plastics-workflow-dt-toolbar,
   .plastics-workflow-page .plastics-workflow-dt-footer {
