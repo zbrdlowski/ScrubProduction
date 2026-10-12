@@ -638,6 +638,9 @@ foreach ($rows as $r) {
         </div>
       <?php endif; ?>
 
+<link rel="stylesheet" href="plugins/datatables-bs4/css/dataTables.bootstrap4.min.css">
+<link rel="stylesheet" href="plugins/datatables-responsive/css/responsive.bootstrap4.min.css">
+<link rel="stylesheet" href="plugins/datatables-buttons/css/buttons.bootstrap4.min.css">
 <style>
   #vykazTable {
     border-collapse: separate;
@@ -863,6 +866,9 @@ foreach ($rows as $r) {
                 if ($colKey === 'estimated_time') {
                   $sortSeconds = $dr['estimated_time_seconds'] ?? null;
                   $sortAttribute = ' data-order="' . ($sortSeconds === null ? -1 : (int) $sortSeconds) . '"';
+                } elseif (in_array($colKey, ['order_date', 'completed_at'], true)) {
+                  $sortTimestamp = !empty($dr[$colKey]) ? strtotime((string) $dr[$colKey]) : false;
+                  $sortAttribute = ' data-order="' . ($sortTimestamp === false ? 0 : (int) $sortTimestamp) . '"';
                 } elseif (in_array($colKey, ['unit_price', 'line_total'], true)) {
                   $sortValue = $dr[$colKey . '_value'] ?? null;
                   $sortAttribute = ' data-order="' . ($sortValue === null ? -1 : (float) $sortValue) . '"';
@@ -897,12 +903,18 @@ foreach ($rows as $r) {
             <tr class="job-report-summary-row"
                 data-report-summary="<?= htmlspecialchars($summaryCode, ENT_QUOTES, 'UTF-8') ?>"
                 data-summary-label="<?= htmlspecialchars($summaryLabel, ENT_QUOTES, 'UTF-8') ?>">
-              <th colspan="9" class="text-right">
-                <?= htmlspecialchars($summaryLabel) ?> total
-                <span class="font-weight-normal text-muted" data-summary-detail></span>
-              </th>
-              <th class="text-right" data-summary-total>0.00 €</th>
-              <th></th>
+              <?php foreach (array_keys($reportColumns) as $summaryColKey): ?>
+                <?php if ($summaryColKey === 'item_title'): ?>
+                  <th class="text-right job-report-summary-label-cell">
+                    <?= htmlspecialchars($summaryLabel) ?> total
+                    <span class="font-weight-normal text-muted" data-summary-detail></span>
+                  </th>
+                <?php elseif ($summaryColKey === 'line_total'): ?>
+                  <th class="text-right job-report-summary-total-cell" data-summary-total>0.00 €</th>
+                <?php else: ?>
+                  <th></th>
+                <?php endif; ?>
+              <?php endforeach; ?>
             </tr>
           <?php endforeach; ?>
         </tfoot>
@@ -967,6 +979,17 @@ foreach ($rows as $r) {
     clampDateTo();
 
     <?php if ($hasSubmitted): ?>
+    var jobReportTable = null;
+    var jobReportColumnIndexes = <?= json_encode(range(0, count($reportColumns) - 1)) ?>;
+
+    function jobReportVisibleColumnCount(dataTableApi) {
+      var visibleCount = 0;
+      dataTableApi.columns().every(function () {
+        if (this.visible()) visibleCount += 1;
+      });
+      return visibleCount || 1;
+    }
+
     function addJobReportDaySeparators(dataTableApi) {
       var $body = $(dataTableApi.table().body());
       $body.find('tr.job-report-day-separator-row').remove();
@@ -981,7 +1004,7 @@ foreach ($rows as $r) {
         var dayLabel = String($row.attr('data-report-day-label') || 'Unknown date');
         $('<tr/>', { class: 'job-report-day-separator-row' })
           .append(
-            $('<td/>', { colspan: <?= count($reportColumns) ?> }).append(
+            $('<td/>', { colspan: jobReportVisibleColumnCount(dataTableApi) }).append(
               $('<div/>', { class: 'job-report-day-separator' }).append(
                 $('<span/>').text(dayLabel)
               )
@@ -1030,6 +1053,9 @@ foreach ($rows as $r) {
 
     function jobReportExportOptions() {
       return {
+        columns: function (columnIndex) {
+          return !jobReportTable || jobReportTable.column(columnIndex).visible();
+        },
         customizeData: function (data) {
           var summaryParts = [];
           var grandTotal = 0;
@@ -1045,17 +1071,31 @@ foreach ($rows as $r) {
           });
 
           data.footer = new Array(data.header.length).fill('');
-          if (data.footer.length > 6) {
-            data.footer[6] = summaryParts.join(' | ');
+          if (!data.footer.length) return;
+
+          var summaryColumn = data.header.indexOf('Item');
+          if (summaryColumn === -1) {
+            summaryColumn = data.header.length > 1 ? data.header.length - 2 : 0;
           }
-          if (data.footer.length > 9) {
-            data.footer[9] = grandTotal.toFixed(2) + ' EUR';
+
+          var totalColumn = data.header.indexOf('Total Price');
+          if (totalColumn === -1) {
+            totalColumn = data.header.length - 1;
+          }
+
+          var summaryText = summaryParts.join(' | ');
+          var totalSummaryText = grandTotal.toFixed(2) + ' EUR';
+          if (summaryColumn === totalColumn) {
+            data.footer[summaryColumn] = summaryText ? summaryText + ' | ' + totalSummaryText : totalSummaryText;
+          } else {
+            data.footer[summaryColumn] = summaryText;
+            data.footer[totalColumn] = totalSummaryText;
           }
         }
       };
     }
 
-    $('#vykazTable').DataTable({
+    jobReportTable = $('#vykazTable').DataTable({
       responsive: true,
       info: true,
       searching: true,
@@ -1085,12 +1125,27 @@ foreach ($rows as $r) {
             );
           }
         },
-        "colvis"
+        {
+          extend: "collection",
+          text: "Columns",
+          className: "buttons-colvis",
+          autoClose: false,
+          buttons: [
+            { extend: "columnsToggle", columns: jobReportColumnIndexes },
+            { extend: "colvisRestore", text: "Restore columns" }
+          ]
+        }
       ],
       drawCallback: function () {
         addJobReportDaySeparators(this.api());
         updateJobReportSummary(this.api());
       }
+    });
+
+    $('#vykazTable').on('column-visibility.dt responsive-resize.dt', function () {
+      if (!jobReportTable) return;
+      addJobReportDaySeparators(jobReportTable);
+      updateJobReportSummary(jobReportTable);
     });
     <?php endif; ?>
   });

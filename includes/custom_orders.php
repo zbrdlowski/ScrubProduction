@@ -136,6 +136,7 @@ if ($draftStatusFilter !== '' && isset($customOrderLegacyDraftTabMap[$draftStatu
   $draftStatusFilter = '';
 }
 $query = trim((string) ($_GET['q'] ?? ''));
+$customOrdersSearchActive = $query !== '';
 $difficultyFilter = (int) ($_GET['difficulty'] ?? 0);
 if (!isset($customOrderComplexityOptions[$difficultyFilter])) {
   $difficultyFilter = 0;
@@ -269,7 +270,7 @@ try {
     ) AND co.production_order_id IS NULL";
   } elseif ($tabFilter === 'open_so') {
     $where[] = $customOrdersOpenSoWhere;
-  } elseif ($tabFilter === 'all') {
+  } elseif ($tabFilter === 'all' && !$customOrdersSearchActive) {
     $where[] = $customOrdersAllOpenWhere;
   } else {
     $activeTabMeta = $customOrderTabs[$tabFilter] ?? [];
