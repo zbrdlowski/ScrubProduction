@@ -76,7 +76,7 @@ if (!isset($conn) || !$conn instanceof mysqli) {
 
 $conn->set_charset('utf8mb4');
 const DASHBOARD_EXCLUDE_QUERY = 'CANCELLED,PENDING,SHIPPED,DELIVERED';
-const DASHBOARD_ITEM_STATUS_EXCLUDE_QUERY = 'SHIPPED,CANCELLED,PENDING';
+const DASHBOARD_ITEM_STATUS_EXCLUDE_QUERY = 'CANCELLED,PENDING,SHIPPED,DELIVERED';
 
 $dashboardDepartments = [
   'G' => ['key' => 'G', 'label' => 'Graphic kits', 'legendLabel' => 'Graphics kit', 'type' => 'G', 'filter' => 'G', 'color' => '#17e01f', 'dark' => '#0b8f3a', 'colorClass' => 'green'],
@@ -87,26 +87,26 @@ $dashboardDepartments = [
 
 $dashboardDisplayStatuses = [
   'G' => [
-    ['label' => 'RTP ✗', 'codes' => ['RTP_✗', 'RTP_X', 'RTP X', 'RTP']],
-    ['label' => 'RIP', 'codes' => ['RIP', 'RIPPED']],
+    ['label' => 'RTP ✗', 'codes' => ['RTP_✗']],
+    ['label' => 'RIP', 'codes' => ['RIP']],
     ['label' => 'PRINTED', 'codes' => ['PRINTED']],
     ['label' => 'CUT', 'codes' => ['CUT']],
     ['label' => 'PRODUCED', 'codes' => ['PRODUCED']],
   ],
   'P' => [
     ['label' => 'Check Stock', 'codes' => ['CHECK_STOCK']],
-    ['label' => 'PK ✗', 'codes' => ['PK_✗', 'PK_X', 'PK X']],
+    ['label' => 'PK ✗', 'codes' => ['PK_✗']],
     ['label' => 'Scan Out', 'codes' => ['SCAN_OUT']],
   ],
   'F' => [
-    ['label' => 'FIT ✗', 'codes' => ['FIT_✗', 'FIT_X', 'FIT X']],
+    ['label' => 'FIT ✗', 'codes' => ['FIT_✗']],
     ['label' => 'STARTED', 'codes' => ['STARTED']],
     ['label' => 'CHECK 24', 'codes' => ['CHECK_24']],
     ['label' => 'PHOTO', 'codes' => ['PHOTO']],
     ['label' => 'REPRINT', 'codes' => ['REPRINT']],
   ],
   'S' => [
-    ['label' => 'SEW ✗', 'codes' => ['SEW_✗', 'SEW_X', 'SEW X']],
+    ['label' => 'SEW ✗', 'codes' => ['SEW_✗']],
     ['label' => 'STARTED', 'codes' => ['STARTED']],
     ['label' => 'PRODUCED', 'codes' => ['PRODUCED']],
   ],
@@ -307,18 +307,6 @@ function dashboard_load_item_status_meta(mysqli $conn): array
   }
   return $meta;
 }
-function dashboard_status_label(array $statusMeta, string $department, string $status): string
-{
-  $department = dashboard_normalize_department($department);
-  $status = strtoupper(trim($status));
-  return (string) ($statusMeta[$department][$status]['label'] ?? dashboard_status_fallback_label($status));
-}
-function dashboard_status_sort(array $statusMeta, string $department, string $status): int
-{
-  $department = dashboard_normalize_department($department);
-  $status = strtoupper(trim($status));
-  return (int) ($statusMeta[$department][$status]['sort_order'] ?? 500);
-}
 function dashboard_visible_status_rows(string $department, array $rawCounts, array $displayStatuses): array
 {
   $department = dashboard_normalize_department($department);
@@ -339,38 +327,107 @@ function dashboard_visible_status_rows(string $department, array $rawCounts, arr
   }
   return $rows;
 }
-function dashboard_department_status(string $department, array $items, array $statusMeta): string
+function dashboard_item_status_defaults(array $statusMeta, array $departments): array
 {
-  if (!$items)
-    return 'NEW';
-  $allReady = true;
-  $hasWaiting = false;
-  $hasStarted = false;
-  $bestStatus = '';
-  $bestSort = PHP_INT_MIN;
-  foreach ($items as $item) {
-    $status = strtoupper(trim((string) ($item['status'] ?? 'NEW'))) ?: 'NEW';
-    if ($status === 'WAITING')
-      $hasWaiting = true;
-    if ($status !== 'READY')
-      $allReady = false;
-    if (!in_array($status, ['NEW', 'WAITING'], true))
-      $hasStarted = true;
-    if ($status !== 'READY') {
-      $sortOrder = dashboard_status_sort($statusMeta, $department, $status);
-      if ($sortOrder >= $bestSort) {
-        $bestSort = $sortOrder;
-        $bestStatus = $status;
-      }
-    }
+  $defaults = [];
+  foreach ($departments as $department => $_meta) {
+    $department = dashboard_normalize_department((string) $department);
+    $codes = array_keys($statusMeta[$department] ?? []);
+    $defaults[$department] = $codes[0] ?? 'NEW';
   }
-  if ($hasWaiting)
-    return 'WAITING';
-  if ($allReady)
-    return 'READY';
-  if ($bestStatus !== '')
-    return $bestStatus;
-  return $hasStarted ? 'PROCESSING' : 'NEW';
+  return $defaults;
+}
+function dashboard_fitting_item_condition_sql(string $alias): string
+{
+  $alias = (string) preg_replace('/[^a-zA-Z0-9_]/', '', $alias);
+  if ($alias === '')
+    $alias = 'oi';
+  return "(
+    UPPER(TRIM(COALESCE({$alias}.item_type_code, ''))) = 'F'
+    OR UPPER(COALESCE({$alias}.sku, '')) LIKE 'GFP%'
+    OR UPPER(COALESCE({$alias}.custom_label, '')) LIKE 'GFP%'
+    OR LOWER(COALESCE({$alias}.options_json, '')) LIKE CONCAT('%applyinggraphics', CHAR(34), ':', CHAR(34), 'y%')
+    OR LOWER(COALESCE({$alias}.options_json, '')) LIKE CONCAT('%applyinggraphics', CHAR(34), ':', CHAR(34), 'o%')
+    OR LOWER(COALESCE({$alias}.options_json, '')) LIKE CONCAT('%applyinggraphics', CHAR(34), ':', CHAR(34), 'j%')
+    OR LOWER(COALESCE({$alias}.options_json, '')) LIKE CONCAT('%applyinggraphics', CHAR(34), ':', CHAR(34), 's%')
+    OR LOWER(COALESCE({$alias}.options_json, '')) LIKE CONCAT('%fitting', CHAR(34), ':', CHAR(34), 'y%')
+    OR LOWER(COALESCE({$alias}.options_json, '')) LIKE CONCAT('%fitting', CHAR(34), ':', CHAR(34), 'o%')
+    OR LOWER(COALESCE({$alias}.options_json, '')) LIKE CONCAT('%fitting', CHAR(34), ':', CHAR(34), 'j%')
+    OR LOWER(COALESCE({$alias}.options_json, '')) LIKE CONCAT('%fitting', CHAR(34), ':', CHAR(34), 's%')
+  )";
+}
+function dashboard_department_total_counts(mysqli $conn): array
+{
+  $counts = ['G' => 0, 'P' => 0, 'F' => 0, 'S' => 0];
+  $fitConditionSql = dashboard_fitting_item_condition_sql('oi');
+  $itemTypeSql = "UPPER(TRIM(COALESCE(oi.item_type_code, '')))";
+  $rows = dashboard_rows($conn, "
+    SELECT
+      COUNT(DISTINCT CASE WHEN {$itemTypeSql} = 'G' THEN o.id END) AS G,
+      COUNT(DISTINCT CASE WHEN {$itemTypeSql} IN ('P', 'T', 'M') THEN o.id END) AS P,
+      COUNT(DISTINCT CASE WHEN {$fitConditionSql} THEN o.id END) AS F,
+      COUNT(DISTINCT CASE WHEN {$itemTypeSql} = 'S' THEN o.id END) AS S
+    FROM orders o
+    INNER JOIN order_items oi ON oi.order_id = o.id AND oi.deleted_at IS NULL
+    WHERE " . dashboard_active_order_where());
+  $row = $rows[0] ?? [];
+  foreach ($counts as $department => $_count)
+    $counts[$department] = (int) ($row[$department] ?? 0);
+  return $counts;
+}
+function dashboard_department_item_status_counts(mysqli $conn, array $departments, array $statusDefaults): array
+{
+  $counts = [];
+  foreach ($departments as $department => $_meta)
+    $counts[dashboard_normalize_department((string) $department)] = [];
+
+  $defaultG = $conn->real_escape_string((string) ($statusDefaults['G'] ?? 'NEW'));
+  $defaultP = $conn->real_escape_string((string) ($statusDefaults['P'] ?? 'NEW'));
+  $defaultF = $conn->real_escape_string((string) ($statusDefaults['F'] ?? 'NEW'));
+  $defaultS = $conn->real_escape_string((string) ($statusDefaults['S'] ?? 'NEW'));
+  $departmentSql = "
+    CASE
+      WHEN UPPER(TRIM(COALESCE(oi.item_type_code, ''))) IN ('T', 'M') THEN 'P'
+      ELSE UPPER(TRIM(COALESCE(oi.item_type_code, '')))
+    END";
+  $rawStatusSql = "UPPER(TRIM(COALESCE(oi.status, '')))";
+  $effectiveStatusSql = "
+    CASE
+      WHEN {$rawStatusSql} IN ('', 'NEW') AND {$departmentSql} = 'G' THEN '{$defaultG}'
+      WHEN {$rawStatusSql} IN ('', 'NEW') AND {$departmentSql} = 'P' THEN '{$defaultP}'
+      WHEN {$rawStatusSql} IN ('', 'NEW') AND {$departmentSql} = 'F' THEN '{$defaultF}'
+      WHEN {$rawStatusSql} IN ('', 'NEW') AND {$departmentSql} = 'S' THEN '{$defaultS}'
+      ELSE UPPER(TRIM(COALESCE(oi.status, 'NEW')))
+    END";
+
+  $rows = dashboard_rows($conn, "
+    SELECT
+      {$departmentSql} AS department,
+      {$effectiveStatusSql} AS status_code,
+      COUNT(DISTINCT oi.order_id) AS cnt
+    FROM order_items oi
+    LEFT JOIN orders o ON o.id = oi.order_id
+    WHERE oi.deleted_at IS NULL
+      AND " . dashboard_active_order_where() . "
+    GROUP BY department, status_code");
+  foreach ($rows as $row) {
+    $department = dashboard_normalize_department((string) ($row['department'] ?? ''));
+    $status = strtoupper(trim((string) ($row['status_code'] ?? '')));
+    if ($department === '' || $status === '' || !isset($counts[$department]))
+      continue;
+    $counts[$department][$status] = (int) ($row['cnt'] ?? 0);
+  }
+  return $counts;
+}
+function dashboard_waterproof_seams_count(mysqli $conn): int
+{
+  $rows = dashboard_rows($conn, "SELECT oi.item_type_code, oi.sku, oi.custom_label, oi.options_json, oi.qty FROM orders o INNER JOIN order_items oi ON oi.order_id = o.id AND oi.deleted_at IS NULL WHERE " . dashboard_active_order_where());
+  $count = 0;
+  foreach ($rows as $row) {
+    if (in_array('S', dashboard_item_departments_for_status($row), true) && dashboard_seat_cover_has_waterproof_seams((string) ($row['options_json'] ?? '')))
+      $count += max(1, (int) ($row['qty'] ?? 1));
+  }
+  return $count;
 }
 function dashboard_orders_link(array $params = []): string
 {
@@ -431,37 +488,21 @@ function dashboard_department_status_blocks(mysqli $conn, array $departments, ar
   $blocks = [];
   foreach ($departments as $department => $_meta)
     $blocks[$department] = ['total' => 0, 'statuses' => [], 'ready' => 0, 'waterproof_seams' => 0];
-  $rows = dashboard_rows($conn, "SELECT o.id AS order_id, oi.item_type_code, oi.status, oi.sku, oi.custom_label, oi.options_json, oi.qty FROM orders o INNER JOIN order_items oi ON oi.order_id = o.id AND oi.deleted_at IS NULL WHERE " . dashboard_active_order_where());
-  $itemsByOrderDepartment = [];
-  foreach ($rows as $row) {
-    $orderId = (int) ($row['order_id'] ?? 0);
-    if ($orderId <= 0)
-      continue;
-    $rowDepartments = dashboard_item_departments_for_status($row);
-    if (in_array('S', $rowDepartments, true) && dashboard_seat_cover_has_waterproof_seams((string) ($row['options_json'] ?? ''))) {
-      $blocks['S']['waterproof_seams'] += max(1, (int) ($row['qty'] ?? 1));
-    }
-    foreach ($rowDepartments as $department) {
-      if (!isset($blocks[$department]))
-        continue;
-      $itemsByOrderDepartment[$orderId][$department][] = ['status' => strtoupper(trim((string) ($row['status'] ?? 'NEW'))) ?: 'NEW'];
-    }
-  }
-  foreach ($itemsByOrderDepartment as $departmentsForOrder) {
-    foreach ($departmentsForOrder as $department => $items) {
-      $status = dashboard_department_status($department, $items, $statusMeta);
-      $blocks[$department]['total']++;
-      if ($status === 'READY') {
-        $blocks[$department]['ready']++;
-      } else {
-        $blocks[$department]['statuses'][$status] = ($blocks[$department]['statuses'][$status] ?? 0) + 1;
-      }
-    }
-  }
+
+  $totalCounts = dashboard_department_total_counts($conn);
+  $statusDefaults = dashboard_item_status_defaults($statusMeta, $departments);
+  $itemStatusCounts = dashboard_department_item_status_counts($conn, $departments, $statusDefaults);
+
   foreach ($blocks as $department => &$block) {
-    $block['statuses'] = dashboard_visible_status_rows($department, $block['statuses'], $displayStatuses);
+    $block['total'] = (int) ($totalCounts[$department] ?? 0);
+    $block['ready'] = (int) ($itemStatusCounts[$department]['READY'] ?? 0);
+    $block['statuses'] = dashboard_visible_status_rows($department, $itemStatusCounts[$department] ?? [], $displayStatuses);
   }
   unset($block);
+
+  if (isset($blocks['S']))
+    $blocks['S']['waterproof_seams'] = dashboard_waterproof_seams_count($conn);
+
   return $blocks;
 }
 function dashboard_fetch_shipped_orders(mysqli $conn, DateTimeImmutable $start, DateTimeImmutable $end): array
@@ -1222,7 +1263,7 @@ $updatedAt = date('d.m.Y H:i');
                 ?>
                 <a class="status-row"
                   href="<?php echo dashboard_h(dashboard_status_orders_link($department['key'], $statusCode)); ?>"
-                  title="Open <?php echo dashboard_h($department['label']); ?> orders with status <?php echo dashboard_h($statusLabel); ?>">
+                  title="Open <?php echo dashboard_h($department['label']); ?> orders with at least one item in status <?php echo dashboard_h($statusLabel); ?>">
                   <span class="status-name"><?php echo dashboard_h($statusLabel); ?></span>
                   <span class="status-count"><?php echo $count; ?></span>
                 </a>
@@ -1239,7 +1280,7 @@ $updatedAt = date('d.m.Y H:i');
           </div>
           <a class="ready-row"
             href="<?php echo dashboard_h(dashboard_status_orders_link($department['key'], 'READY')); ?>"
-            title="Open <?php echo dashboard_h($department['label']); ?> orders with status READY">
+            title="Open <?php echo dashboard_h($department['label']); ?> orders with at least one READY item">
             <span>READY</span>
             <span><?php echo (int) $block['ready']; ?></span>
           </a>

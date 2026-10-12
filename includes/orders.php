@@ -940,6 +940,7 @@ $fitWhere = "EXISTS (
   SELECT 1
   FROM order_items oifit
   WHERE oifit.order_id = o.id
+    AND oifit.deleted_at IS NULL
     AND (
       UPPER(TRIM(COALESCE(oifit.item_type_code, ''))) = 'F'
       OR UPPER(COALESCE(oifit.sku, '')) LIKE 'GFP%'
@@ -1000,6 +1001,7 @@ if ($fType !== '') {
       SELECT 1
       FROM order_items oit
       WHERE oit.order_id = o.id
+        AND oit.deleted_at IS NULL
         AND (oit.item_type_code IS NULL OR TRIM(oit.item_type_code) = '')
     )";
   } else {
@@ -1010,6 +1012,7 @@ if ($fType !== '') {
       SELECT 1
       FROM order_items oit
       WHERE oit.order_id = o.id
+        AND oit.deleted_at IS NULL
         AND UPPER(TRIM(COALESCE(oit.item_type_code, ''))) = ?
     )";
       $types .= 's';
