@@ -4831,6 +4831,52 @@ $deptOptions = [
 
   window.reloadOrderDetail = reloadOrderDetail;
 
+  function followupSplitGuardMessage($panel) {
+    return String($panel.attr('data-followup-split-message') || 'Order Split needs at least one active source item with quantity at least 2.');
+  }
+
+  function warnFollowupSplit($panel, message) {
+    const warning = message || followupSplitGuardMessage($panel);
+    if (typeof showOrderActionToast === 'function') {
+      showOrderActionToast('warning', warning, 'Order Split blocked');
+    } else {
+      alert(warning);
+    }
+  }
+
+  function followupSplitAllowed($panel) {
+    return String($panel.attr('data-followup-split-allowed') || '0') === '1';
+  }
+
+  function followupItemSplitEligible($item) {
+    return String($item.attr('data-split-eligible') || '0') === '1';
+  }
+
+  function applyFollowupSplitItemState($panel, isSplit) {
+    $panel.find('.followup-item-check').each(function () {
+      const $check = $(this);
+      const eligible = followupItemSplitEligible($check);
+      const itemId = parseInt($check.data('item-id') || '0', 10);
+      const $qty = $panel.find('.followup-item-qty[data-item-id="' + itemId + '"]');
+      const $row = $check.closest('tr');
+
+      if (isSplit) {
+        $check.prop('disabled', !eligible);
+        if (!eligible) $check.prop('checked', false);
+        $qty.val(eligible ? 1 : '').prop('readonly', true).prop('disabled', !eligible);
+        $row.toggleClass('text-muted', !eligible);
+        return;
+      }
+
+      $check.prop('disabled', false);
+      $qty.prop('disabled', false).prop('readonly', false);
+      if (!String($qty.val() || '').trim()) {
+        $qty.val(parseInt($qty.attr('max') || '1', 10) || 1);
+      }
+      $row.removeClass('text-muted');
+    });
+  }
+
   function applyFollowupTypeState($panel) {
     const type = String($panel.find('.followup-type-select').val() || 'REPEAT').toUpperCase();
     const $checkbox = $panel.find('.followup-do-not-invoice');
@@ -4841,9 +4887,19 @@ $deptOptions = [
     const $hint = $panel.find('.followup-hint');
     const isEuShipping = String($panel.attr('data-followup-eu-shipping') || '0') === '1';
     const wasLocked = $checkbox.prop('disabled');
+    const splitAllowed = followupSplitAllowed($panel);
+    const $typeSelect = $panel.find('.followup-type-select');
+    $typeSelect.find('option[value="SPLIT"]').prop('disabled', !splitAllowed);
+
+    if (type === 'SPLIT' && !splitAllowed) {
+      $typeSelect.val('REPEAT');
+      warnFollowupSplit($panel);
+      applyFollowupTypeState($panel);
+      return;
+    }
 
     if (type === 'WARRANTY') {
-      $panel.find('.followup-item-qty').prop('readonly', false);
+      applyFollowupSplitItemState($panel, false);
       $checkbox.prop('checked', false).prop('disabled', true);
       $checkboxWrap.hide();
       $ddpState.show();
@@ -4858,7 +4914,7 @@ $deptOptions = [
     $splitInvoiceState.hide();
 
     if (type === 'SPLIT') {
-      $panel.find('.followup-item-qty').val(1).prop('readonly', true);
+      applyFollowupSplitItemState($panel, true);
       if (isEuShipping) {
         $checkbox.prop('checked', true).prop('disabled', true);
         $state.text('Do not invoice').removeClass('bg-secondary bg-info').addClass('bg-danger');
@@ -4873,7 +4929,7 @@ $deptOptions = [
       return;
     }
 
-    $panel.find('.followup-item-qty').prop('readonly', false);
+    applyFollowupSplitItemState($panel, false);
     $checkbox.prop('disabled', false);
     if (wasLocked) {
       $checkbox.prop('checked', false);
@@ -4903,10 +4959,23 @@ $deptOptions = [
 
   $(document).on('click', '.btn-followup-select-all', function () {
     const $panel = $(this).closest('.order-followup-panel');
-    const $checks = $panel.find('.followup-item-check');
+    const isSplit = String($panel.find('.followup-type-select').val() || '').toUpperCase() === 'SPLIT';
+    if (isSplit && !followupSplitAllowed($panel)) {
+      warnFollowupSplit($panel);
+      return;
+    }
+
+    const $checks = isSplit
+      ? $panel.find('.followup-item-check[data-split-eligible="1"]')
+      : $panel.find('.followup-item-check');
+    if (!$checks.length) {
+      warnFollowupSplit($panel);
+      return;
+    }
+
     const shouldCheck = $checks.filter(':checked').length !== $checks.length;
     $checks.prop('checked', shouldCheck);
-    if (shouldCheck && String($panel.find('.followup-type-select').val() || '').toUpperCase() === 'SPLIT') {
+    if (shouldCheck && isSplit) {
       $checks.each(function () {
         const itemId = parseInt($(this).data('item-id') || '0', 10);
         $panel.find('.followup-item-qty[data-item-id="' + itemId + '"]').val(1);
@@ -4920,6 +4989,11 @@ $deptOptions = [
     if (!$check.is(':checked')) return;
     const $panel = $check.closest('.order-followup-panel');
     if (String($panel.find('.followup-type-select').val() || '').toUpperCase() !== 'SPLIT') return;
+    if (!followupItemSplitEligible($check)) {
+      $check.prop('checked', false);
+      warnFollowupSplit($panel, 'Order Split can only use items with quantity at least 2.');
+      return;
+    }
 
     const itemId = parseInt($check.data('item-id') || '0', 10);
     $panel.find('.followup-item-qty[data-item-id="' + itemId + '"]').val(1);
@@ -4935,6 +5009,11 @@ $deptOptions = [
     const type = String($panel.find('.followup-type-select').val() || 'REPEAT').toUpperCase();
     const reason = String($panel.find('.followup-reason').val() || '').trim();
     const doNotInvoice = $panel.find('.followup-do-not-invoice').is(':checked') ? 1 : 0;
+    if (type === 'SPLIT' && !followupSplitAllowed($panel)) {
+      warnFollowupSplit($panel);
+      return;
+    }
+
     const payload = {
       order_id: orderId,
       followup_type: type,
@@ -4944,7 +5023,9 @@ $deptOptions = [
 
     let selectedCount = 0;
     $panel.find('.followup-item-check:checked').each(function () {
-      const itemId = parseInt($(this).data('item-id') || '0', 10);
+      const $check = $(this);
+      if (type === 'SPLIT' && !followupItemSplitEligible($check)) return;
+      const itemId = parseInt($check.data('item-id') || '0', 10);
       const qty = type === 'SPLIT'
         ? 1
         : parseInt($panel.find('.followup-item-qty[data-item-id="' + itemId + '"]').val() || '0', 10);
@@ -4954,7 +5035,11 @@ $deptOptions = [
     });
 
     if (!orderId || selectedCount === 0) {
-      alert('Select at least one item for the follow-up order.');
+      if (type === 'SPLIT') {
+        warnFollowupSplit($panel, 'Select at least one item with quantity at least 2 for Order Split.');
+      } else {
+        alert('Select at least one item for the follow-up order.');
+      }
       return;
     }
 

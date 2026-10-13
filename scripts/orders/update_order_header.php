@@ -115,14 +115,27 @@ try {
   if (!is_array($sourceMeta)) {
     $sourceMeta = [];
   }
-  $previousCustomsDdpAmount = orderHeaderMoneyValue($sourceMeta['customs_ddp_amount'] ?? null);
-  if ($previousCustomsDdpAmount === null && isset($sourceMeta['financial_breakdown']) && is_array($sourceMeta['financial_breakdown'])) {
+  $sourceMetaIsFollowup = is_array($sourceMeta['_followup'] ?? null) && !empty($sourceMeta['_followup']['is_followup']);
+  $sourceMetaFollowupType = $sourceMetaIsFollowup
+    ? strtoupper(trim((string) ($sourceMeta['_followup']['type'] ?? '')))
+    : '';
+  $sourceMetaUsesOwnDdp = !$sourceMetaIsFollowup
+    || $sourceMetaFollowupType === 'WARRANTY'
+    || !empty($sourceMeta['_followup']['customs_ddp_manual']);
+
+  $previousCustomsDdpAmount = $sourceMetaUsesOwnDdp
+    ? orderHeaderMoneyValue($sourceMeta['customs_ddp_amount'] ?? null)
+    : null;
+  if ($sourceMetaUsesOwnDdp && $previousCustomsDdpAmount === null && isset($sourceMeta['financial_breakdown']) && is_array($sourceMeta['financial_breakdown'])) {
     $previousCustomsDdpAmount = orderHeaderMoneyValue($sourceMeta['financial_breakdown']['customs_ddp'] ?? null);
   }
   $previousCustomsDdpAmount = max(0.0, round((float) ($previousCustomsDdpAmount ?? 0.0), 2));
   $customsDdpDelta = $customsDdpSubmitted ? round($customsDdpAmount - $previousCustomsDdpAmount, 2) : 0.0;
 
   if ($customsDdpSubmitted) {
+    if (isset($sourceMeta['_followup']) && is_array($sourceMeta['_followup'])) {
+      $sourceMeta['_followup']['customs_ddp_manual'] = true;
+    }
     $sourceMeta['customs_ddp_enabled'] = $customsDdpEnabled ? 1 : 0;
     $sourceMeta['customs_ddp_amount'] = $customsDdpAmount;
     $sourceMeta['customs_ddp_note'] = $customsDdpNote;

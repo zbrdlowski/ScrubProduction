@@ -145,8 +145,9 @@ function order_financial_sanitize_followup_source_meta(array $sourceMeta): array
   }
 
   $followupType = strtoupper(trim((string) ($sourceMeta['_followup']['type'] ?? '')));
+  $followupHasManualDdp = !empty($sourceMeta['_followup']['customs_ddp_manual']);
   $preservedWarrantyDdp = [];
-  if ($followupType === 'WARRANTY') {
+  if ($followupType === 'WARRANTY' || $followupHasManualDdp) {
     foreach (['customs_ddp_amount', 'customs_ddp_enabled', 'customs_ddp_note'] as $ddpKey) {
       if (array_key_exists($ddpKey, $sourceMeta)) {
         $preservedWarrantyDdp[$ddpKey] = $sourceMeta[$ddpKey];
@@ -535,7 +536,12 @@ function order_financial_effective_totals(mysqli $conn, array $order, ?array $so
   if (order_financial_source_meta_is_followup($sourceMeta)) {
     $itemTotal = order_financial_order_items_total($conn, $orderId);
     if ($itemTotal !== null) {
-      $baseTotal = $itemTotal;
+      $followupMeta = is_array($sourceMeta['_followup'] ?? null) ? $sourceMeta['_followup'] : [];
+      $followupInvoiceAmount = order_financial_money_value($followupMeta['invoice_amount'] ?? null);
+      $customsDdp = order_financial_customs_ddp_from_source_meta($sourceMeta);
+      $baseTotal = $itemTotal
+        + max(0.0, round((float) ($followupInvoiceAmount ?? 0.0), 2))
+        + ($customsDdp['enabled'] ? (float) $customsDdp['amount'] : 0.0);
     }
   }
   $providedAdjustmentsTotal = order_financial_money_value($order['financial_adjustments_total'] ?? null);

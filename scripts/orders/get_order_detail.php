@@ -77,8 +77,9 @@ function orderDetailSanitizeFollowupSourceMeta(array $sourceMeta): array
   }
 
   $followupType = strtoupper(trim((string) ($sourceMeta['_followup']['type'] ?? '')));
+  $followupHasManualDdp = !empty($sourceMeta['_followup']['customs_ddp_manual']);
   $preservedWarrantyDdp = [];
-  if ($followupType === 'WARRANTY') {
+  if ($followupType === 'WARRANTY' || $followupHasManualDdp) {
     foreach (['customs_ddp_amount', 'customs_ddp_enabled', 'customs_ddp_note'] as $ddpKey) {
       if (array_key_exists($ddpKey, $sourceMeta)) {
         $preservedWarrantyDdp[$ddpKey] = $sourceMeta[$ddpKey];
@@ -525,7 +526,7 @@ function productSpecFieldMeta(array $definition): array
   return $meta;
 }
 
-function productSpecFieldCurrentValue(array $meta, array $extOptArr, array $internalOptArr, string $sourceCode = '', string $orderBuyerNote = ''): string
+function productSpecFieldCurrentValue(array $meta, array $extOptArr, array $internalOptArr, string $sourceCode = '', string $orderBuyerNote = '', array $sourceMeta = [], string $itemTitle = ''): string
 {
   $internalKey = (string) ($meta['internal_key'] ?? '');
   if ($internalKey !== '' && array_key_exists($internalKey, $internalOptArr)) {
@@ -595,6 +596,64 @@ function productSpecFieldCurrentValue(array $meta, array $extOptArr, array $inte
   $sourceKeyNormalized = productSpecNormalizeKey((string) ($meta['source_key'] ?? ''));
   $labelNormalized = productSpecNormalizeKey((string) ($meta['label'] ?? ''));
   $specKeyNormalized = productSpecNormalizeKey((string) ($meta['spec_key'] ?? ''));
+  $isEbaySource = strpos($sourceCode, 'EBAY') !== false;
+
+  $isMyItemNoteField = (
+    $sourceKeyNormalized === 'my-item-note'
+    || $labelNormalized === 'my-item-note'
+    || $labelNormalized === 'scrub-note'
+    || preg_match('/(?:^|-)my-item-note$/', $specKeyNormalized)
+  );
+  if ($isMyItemNoteField) {
+    $myItemNote = orderDetailSourceRawValueFromKeys($extOptArr['_source_raw'] ?? null, [
+      'my-item-note',
+      'my_item_note',
+      'My item note',
+      'My Item Note',
+      'internal_note',
+      'internal-note',
+      'Internal note',
+      'Internal Note',
+    ]);
+    if ($myItemNote === '' && $isEbaySource) {
+      $myItemNote = productSpecValueFromKeys($sourceMeta, [
+        'my_item_note',
+        'my-item-note',
+        'My item note',
+        'My Item Note',
+        'internal_note',
+        'internal-note',
+        'Internal note',
+        'Internal Note',
+      ]);
+    }
+    if ($myItemNote === '' && $isEbaySource) {
+      $myItemNote = orderDetailEbayMyItemNoteFromTitle($itemTitle, $extOptArr);
+    }
+    return $myItemNote;
+  }
+
+  $isBuyerNoteField = (
+    $sourceKeyNormalized === 'buyer-note'
+    || $labelNormalized === 'buyer-note'
+    || preg_match('/(?:^|-)buyer-note$/', $specKeyNormalized)
+  );
+  if ($isBuyerNoteField) {
+    $buyerNote = orderDetailSourceRawBuyerNoteValue($extOptArr['_source_raw'] ?? null);
+    if ($buyerNote === '') {
+      $buyerNote = productSpecValueFromKeys($sourceMeta, [
+        'customer_note',
+        'customer-note',
+        'buyer_note',
+        'buyer-note',
+        'Buyer note',
+        'Buyer Note',
+      ]);
+    }
+    if ($buyerNote !== '') {
+      return $buyerNote;
+    }
+  }
 
   if (
     strpos($sourceCode, 'SHOPTET') !== false
@@ -614,7 +673,7 @@ function productSpecFieldCurrentValue(array $meta, array $extOptArr, array $inte
   return '';
 }
 
-function orderDetailSourceRawBuyerNoteValue($sourceRaw): string
+function orderDetailSourceRawValueFromKeys($sourceRaw, array $keys): string
 {
   if (is_array($sourceRaw)) {
     $data = $sourceRaw;
@@ -627,7 +686,47 @@ function orderDetailSourceRawBuyerNoteValue($sourceRaw): string
     return '';
   }
 
-  return productSpecValueFromKeys($data, [
+  return productSpecValueFromKeys($data, $keys);
+}
+
+function orderDetailEbayMyItemNoteFromTitle(string $itemTitle, array $extOptArr): string
+{
+  $itemTitle = trim($itemTitle);
+  if ($itemTitle === '') {
+    return '';
+  }
+
+  $sourceTitle = productSpecValueFromKeys($extOptArr, [
+    'Item title',
+    'Item Title',
+    'item_title',
+    'itemName',
+    'item_name',
+  ]);
+
+  if ($sourceTitle === '') {
+    $sourceTitle = orderDetailSourceRawValueFromKeys($extOptArr['_source_raw'] ?? null, [
+      'Item title',
+      'Item Title',
+      'item_title',
+      'itemName',
+      'item_name',
+    ]);
+  }
+
+  if ($sourceTitle === '' || strcasecmp($itemTitle, $sourceTitle) === 0) {
+    return '';
+  }
+
+  $note = preg_replace('/^\s*(?:plastics\s*\+\s*graphics|graphics|plastics|seat\s*cover|fitting)\s*/iu', '', $itemTitle) ?? $itemTitle;
+  $note = trim($note);
+
+  return $note !== '' && strcasecmp($note, $sourceTitle) !== 0 ? $note : '';
+}
+
+function orderDetailSourceRawBuyerNoteValue($sourceRaw): string
+{
+  return orderDetailSourceRawValueFromKeys($sourceRaw, [
     'customer_note',
     'customer-note',
     'buyer_note',
@@ -640,7 +739,6 @@ function orderDetailSourceRawBuyerNoteValue($sourceRaw): string
     'Note',
   ]);
 }
-
 function orderDetailBuyerNoteValue(array $order, array $sourceMeta): string
 {
   $note = productSpecValueFromKeys($sourceMeta, [
@@ -1884,9 +1982,15 @@ function fittingItemNoteFromItems(array $items): string
     $opts = labelDecodeJsonAssoc($item['options_json'] ?? '');
     $intOpts = labelDecodeJsonAssoc($item['internal_options_json'] ?? '');
 
-    $note = labelNoteValueFromKeys($intOpts, ['_my_item_note', '_note', '_graphics_note', '_scrub_note']);
+    $note = labelNoteValueFromKeys($intOpts, ['_fitting_my_item_note', '_my_item_note', '_fitting_note', '_note', '_graphics_my_item_note', '_graphics_note', '_scrub_note']);
     if ($note === '') {
-      $note = labelNoteValueFromKeys($opts, ['my-item-note', 'my_item_note', 'My Item Note', 'note', 'Note', 'scrub-note', 'scrub_note', 'Scrub note']);
+      $note = labelNoteValueFromKeys($opts, ['my-item-note', 'my_item_note', 'My item note', 'My Item Note', 'internal_note', 'internal-note', 'note', 'Note', 'scrub-note', 'scrub_note', 'Scrub note']);
+    }
+    if ($note === '') {
+      $note = orderDetailSourceRawValueFromKeys($opts['_source_raw'] ?? null, ['my-item-note', 'my_item_note', 'My item note', 'My Item Note', 'internal_note', 'internal-note', 'Internal note', 'Internal Note']);
+    }
+    if ($note === '') {
+      $note = orderDetailEbayMyItemNoteFromTitle((string) ($item['title'] ?? ''), $opts);
     }
 
     if ($note !== '') {
@@ -2068,7 +2172,7 @@ $customsDdpEnabled = $customsDdpHasExplicitFlag
 if (!$customsDdpHasExplicitFlag && !$customsDdpEnabled && isset($customFinancialBreakdown['customs_ddp'])) {
   $customsDdpEnabled = (float) $customFinancialBreakdown['customs_ddp'] > 0.0;
 }
-$customsDdpActive = !$isFollowupOrder && ($customsDdpEnabled || $customsDdpAmount > 0.0);
+$customsDdpActive = $customsDdpEnabled || $customsDdpAmount > 0.0;
 $customProductionPaymentLines = [];
 if ($isCustomOrder && !$isFollowupOrder) {
   $customProductionPaymentLines = orderDetailLoadCustomPaymentRows($conn, $linkedCustomOrderId);
@@ -6532,9 +6636,22 @@ ob_start();
           </div>
         </div>
 
+        <?php
+        $followupCanSplit = false;
+        foreach ($items as $followupSplitCandidate) {
+          if ((int) ($followupSplitCandidate['qty'] ?? 0) > 1) {
+            $followupCanSplit = true;
+            break;
+          }
+        }
+        $followupSplitGuardMessage = 'Order Split needs at least one active source item with quantity at least 2.';
+        ?>
         <?php if ($showFollowupPanel): ?>
         <div class="col-lg-4">
-            <div class="order-followup-panel" data-followup-eu-shipping="<?php echo $orderIsEuShipping ? '1' : '0'; ?>">
+            <div class="order-followup-panel"
+              data-followup-eu-shipping="<?php echo $orderIsEuShipping ? '1' : '0'; ?>"
+              data-followup-split-allowed="<?php echo $followupCanSplit ? '1' : '0'; ?>"
+              data-followup-split-message="<?php echo h($followupSplitGuardMessage); ?>">
               <div class="card bg-dark border-info">
             <div class="card-header d-flex align-items-start justify-content-between">
               <div>
@@ -6555,7 +6672,7 @@ ob_start();
                     <option value="REPEAT">Repeat Order</option>
                     <option value="WARRANTY">Warranty Claim</option>
                     <option value="CRASH">Crash Replacement</option>
-                    <option value="SPLIT">Order Split</option>
+                    <option value="SPLIT" <?php echo $followupCanSplit ? '' : 'disabled'; ?>>Order Split<?php echo $followupCanSplit ? '' : ' (Qty >= 2 required)'; ?></option>
                   </select>
                 </div>
                 <div class="form-group col-md-4">
@@ -6604,9 +6721,13 @@ ob_start();
                   </thead>
                   <tbody>
                     <?php foreach ($items as $followupItem): ?>
-                      <tr>
+                      <?php
+                      $followupItemQty = (int) ($followupItem['qty'] ?? 0);
+                      $followupItemSplitEligible = $followupItemQty > 1;
+                      ?>
+                      <tr data-split-eligible="<?php echo $followupItemSplitEligible ? '1' : '0'; ?>">
                         <td class="text-center">
-                          <input type="checkbox" class="followup-item-check" data-item-id="<?php echo (int) $followupItem['id']; ?>" checked>
+                          <input type="checkbox" class="followup-item-check" data-item-id="<?php echo (int) $followupItem['id']; ?>" data-split-eligible="<?php echo $followupItemSplitEligible ? '1' : '0'; ?>" checked>
                         </td>
                         <td><?php echo h((string) ($followupItem['item_type_code'] ?? '')); ?></td>
                         <td>
@@ -6620,12 +6741,13 @@ ob_start();
                             </div>
                           <?php endif; ?>
                         </td>
-                        <td><?php echo (int) ($followupItem['qty'] ?? 0); ?></td>
+                        <td><?php echo $followupItemQty; ?></td>
                         <td>
-                          <input type="number" min="1" max="<?php echo (int) ($followupItem['qty'] ?? 1); ?>"
-                            value="<?php echo (int) ($followupItem['qty'] ?? 1); ?>"
+                          <input type="number" min="1" max="<?php echo max(1, $followupItemQty); ?>"
+                            value="<?php echo max(1, $followupItemQty); ?>"
                             class="form-control form-control-sm followup-item-qty"
-                            data-item-id="<?php echo (int) $followupItem['id']; ?>">
+                            data-item-id="<?php echo (int) $followupItem['id']; ?>"
+                            data-split-eligible="<?php echo $followupItemSplitEligible ? '1' : '0'; ?>">
                         </td>
                       </tr>
                     <?php endforeach; ?>
@@ -7153,7 +7275,7 @@ ob_start();
                       continue;
                     }
 
-                    $fieldMeta['current_value'] = productSpecFieldCurrentValue($fieldMeta, $extOptArr, $internalOptArr, (string) ($order['source_code'] ?? ''), $orderBuyerNote);
+                    $fieldMeta['current_value'] = productSpecFieldCurrentValue($fieldMeta, $extOptArr, $internalOptArr, (string) ($order['source_code'] ?? ''), $orderBuyerNote, $sourceMeta, (string) ($it['title'] ?? ''));
                     $fieldMeta['has_any_value'] = productSpecFieldHasAnyValue($fieldMeta, $extOptArr, $internalOptArr);
 
                     $fieldRole = productSpecFieldRole($fieldMeta);
