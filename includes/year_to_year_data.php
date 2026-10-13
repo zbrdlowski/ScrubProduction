@@ -266,6 +266,9 @@ function ytyFetchLiveDailyStats(mysqli $conn, int $year): array
   $yearStart = sprintf('%04d-01-01', $year);
   $yearEnd = sprintf('%04d-01-01', $year + 1);
   $startDate = max($yearStart, YTY_DARKSCRUB_STATS_START_DATE);
+  if ($startDate >= $yearEnd) {
+    return [];
+  }
 
   $stmt = $conn->prepare("
     SELECT
@@ -394,6 +397,82 @@ function ytyBuildDailyAverages(array $dailyRows): array
   ];
 }
 
+function ytyBuildDailyDepartmentWeeklySeries(array $dailyRows, int $maxWeek = 52): array
+{
+  $departmentMap = [
+    'G' => 'graphics_count',
+    'P' => 'plastics_count',
+    'F' => 'fitting_count',
+    'S' => 'seat_count',
+  ];
+  $maxWeek = min(53, max(1, $maxWeek));
+  $byWeek = [];
+
+  foreach ($dailyRows as $row) {
+    $week = (int) ($row['iso_week'] ?? 0);
+    if ($week < 1 || $week > $maxWeek) {
+      continue;
+    }
+
+    if (!isset($byWeek[$week])) {
+      $byWeek[$week] = array_fill_keys(array_keys($departmentMap), 0);
+    }
+
+    foreach ($departmentMap as $department => $field) {
+      $byWeek[$week][$department] += (int) ($row[$field] ?? 0);
+    }
+  }
+
+  $labels = range(1, $maxWeek);
+  $series = [];
+  foreach ($departmentMap as $department => $field) {
+    $series[$department] = array_fill(0, count($labels), null);
+  }
+
+  foreach ($labels as $idx => $week) {
+    if (!isset($byWeek[$week])) {
+      continue;
+    }
+
+    foreach ($departmentMap as $department => $field) {
+      $series[$department][$idx] = $byWeek[$week][$department] ?? 0;
+    }
+  }
+
+  return [
+    'labels' => array_map('strval', $labels),
+    'series' => $series,
+  ];
+}
+
+function ytyBuildDailyDepartmentWeeklySeriesByYear(
+  mysqli $conn,
+  array $years,
+  int $selectedYear,
+  array $selectedYearRows,
+  int $maxWeek = 52
+): array {
+  $maxWeek = min(53, max(1, $maxWeek));
+  $seriesByYear = [];
+  $scaleSeries = [];
+
+  foreach ($years as $year) {
+    $year = (int) $year;
+    $rows = $year === $selectedYear ? $selectedYearRows : ytyBuildDailyStats($conn, $year);
+    $yearSeries = ytyBuildDailyDepartmentWeeklySeries($rows, $maxWeek);
+    $seriesByYear[(string) $year] = $yearSeries['series'];
+
+    foreach ($yearSeries['series'] as $department => $values) {
+      $scaleSeries[$year . ' ' . $department] = $values;
+    }
+  }
+
+  return [
+    'labels' => array_map('strval', range(1, $maxWeek)),
+    'series_by_year' => $seriesByYear,
+    'scale_series' => $scaleSeries,
+  ];
+}
 function ytyBuildReportData(mysqli $conn, ?int $requestedYear = null): array
 {
   $bootstrap = ytyBootstrap($conn);
@@ -476,6 +555,7 @@ function ytyBuildReportData(mysqli $conn, ?int $requestedYear = null): array
 
   $dailyRows = ytyBuildDailyStats($conn, $selectedYear);
   $dailyAverages = ytyBuildDailyAverages($dailyRows);
+  $dailyDepartmentWeeklySeries = ytyBuildDailyDepartmentWeeklySeriesByYear($conn, $years, $selectedYear, $dailyRows, $maxWeek);
   $transitionLiveProducts = (int) ($live[YTY_TRANSITION_YEAR][YTY_TRANSITION_WEEK]['value'] ?? 0);
 
   return [
@@ -491,6 +571,7 @@ function ytyBuildReportData(mysqli $conn, ?int $requestedYear = null): array
     'live' => $live,
     'daily_rows' => $dailyRows,
     'daily_averages' => $dailyAverages,
+    'daily_department_weekly_series' => $dailyDepartmentWeeklySeries,
     'daily_year' => $selectedYear,
     'transition' => [
       'year' => YTY_TRANSITION_YEAR,

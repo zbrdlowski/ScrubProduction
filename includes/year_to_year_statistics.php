@@ -70,6 +70,11 @@ $latest = $report['latest'];
 $averages = $report['averages'];
 $dailyRows = $report['daily_rows'];
 $dailyAverages = $report['daily_averages'];
+$dailyDepartmentWeeklySeries = $report['daily_department_weekly_series'] ?? [
+  'labels' => [],
+  'series_by_year' => [],
+  'scale_series' => [],
+];
 $dailyYear = (int) ($report['daily_year'] ?? $selectedYear);
 $dailyImportDays = (int) ($dailyAverages['import_days'] ?? count($dailyRows));
 $transition = $report['transition'];
@@ -97,6 +102,13 @@ foreach ($years as $idx => $year) {
   $chartColors[$year] = $palette[$year] ?? $fallbackColors[$idx % count($fallbackColors)];
 }
 
+$departmentColors = [
+  'G' => ['border' => '#34a853', 'fill' => 'rgba(52, 168, 83, 0.12)'],
+  'P' => ['border' => '#4285f4', 'fill' => 'rgba(66, 133, 244, 0.12)'],
+  'F' => ['border' => '#fbbc04', 'fill' => 'rgba(251, 188, 4, 0.12)'],
+  'S' => ['border' => '#ea4335', 'fill' => 'rgba(234, 67, 53, 0.12)'],
+];
+
 $chartPayload = [
   'labels' => array_map('strval', $labels),
   'years' => array_map('strval', $years),
@@ -110,6 +122,10 @@ $chartPayload = [
     array_values($chartColors)
   ),
   'weeklyScaleMax' => ytyChartScaleMax($series),
+  'departmentWeeklyLabels' => $dailyDepartmentWeeklySeries['labels'] ?? [],
+  'departmentWeeklySeriesByYear' => $dailyDepartmentWeeklySeries['series_by_year'] ?? [],
+  'departmentColors' => $departmentColors,
+  'departmentWeeklyScaleMax' => ytyChartScaleMax($dailyDepartmentWeeklySeries['scale_series'] ?? []),
 ];
 ?>
 
@@ -158,6 +174,41 @@ $chartPayload = [
     height: 340px;
   }
 
+  .yty-chart-controls {
+    display: flex;
+    align-items: center;
+    gap: 12px 20px;
+    flex-wrap: wrap;
+    margin-bottom: 12px;
+  }
+
+  .yty-chart-control-group {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  .yty-chart-control-title {
+    color: #adb5bd;
+    font-size: 12px;
+    font-weight: 700;
+  }
+
+  .yty-chart-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    margin: 0;
+    color: #dee2e6;
+    cursor: pointer;
+    font-weight: 400;
+  }
+
+  .yty-chart-toggle input {
+    margin: 0;
+  }
+
   .yty-week-table th,
   .yty-week-table td,
   .yty-daily-table th,
@@ -165,6 +216,34 @@ $chartPayload = [
     text-align: center;
     vertical-align: middle !important;
     white-space: nowrap;
+  }
+
+  .yty-week-table thead th,
+  .yty-daily-table thead th,
+  .yty-floating-table-header thead th {
+    background: #343a40;
+    border-color: #454d55 !important;
+    color: #f8f9fa;
+  }
+
+  .yty-floating-table-header {
+    display: none;
+    position: fixed;
+    left: 0;
+    top: 0;
+    overflow: hidden;
+    pointer-events: none;
+    z-index: 1040;
+    box-shadow: 0 3px 8px rgba(0, 0, 0, .26);
+  }
+
+  .yty-floating-table-header.is-active {
+    display: block;
+  }
+
+  .yty-floating-table-header table {
+    margin-bottom: 0 !important;
+    table-layout: fixed;
   }
 
   .yty-week-table td.is-current-week {
@@ -314,6 +393,47 @@ $chartPayload = [
   </div>
 
   <div class="card card-dark">
+    <div class="card-header">
+      <h3 class="card-title mb-0">Products by Department per Week: <?= (int) $dailyYear ?></h3>
+    </div>
+    <div class="card-body">
+      <div class="yty-chart-controls" id="ytyDepartmentControls">
+        <div class="yty-chart-control-group">
+          <span class="yty-chart-control-title">Years</span>
+          <?php foreach ($years as $year): ?>
+            <label class="yty-chart-toggle">
+              <input
+                type="checkbox"
+                value="<?= (int) $year ?>"
+                data-yty-department-year
+                <?= (int) $year === $selectedYear ? 'checked' : '' ?>
+              >
+              <span><?= (int) $year ?></span>
+            </label>
+          <?php endforeach; ?>
+        </div>
+        <div class="yty-chart-control-group">
+          <span class="yty-chart-control-title">Departments</span>
+          <?php foreach (['G' => 'G', 'P' => 'P', 'F' => 'F', 'S' => 'S'] as $departmentCode => $departmentLabel): ?>
+            <label class="yty-chart-toggle">
+              <input
+                type="checkbox"
+                value="<?= ytyH($departmentCode) ?>"
+                data-yty-department-code
+                checked
+              >
+              <span><?= ytyH($departmentLabel) ?></span>
+            </label>
+          <?php endforeach; ?>
+        </div>
+      </div>
+      <div class="yty-chart-wrap">
+        <canvas id="ytyDepartmentChart"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <div class="card card-dark">
     <div class="card-header d-flex align-items-center justify-content-between flex-wrap">
       <h3 class="card-title mb-0">Daily Values: <?= (int) $dailyYear ?> (<?= ytyNum($dailyImportDays) ?> import days)</h3>
       <span class="yty-muted-note">
@@ -327,16 +447,19 @@ $chartPayload = [
             <th>Import Date</th>
             <th>Day</th>
             <th>Week</th>
+            <th>G / day</th>
+            <th>P / day</th>
+            <th>F / day</th>
+            <th>S / day</th>
             <th>G+P+S / day</th>
             <th>G+P+S / After wknd</th>
-            <th>F / day</th>
             <th>G+F+P+S / day</th>
           </tr>
         </thead>
         <tbody>
           <?php if (!$dailyRows): ?>
             <tr>
-              <td colspan="7" class="text-muted py-4">No daily data for <?= (int) $dailyYear ?> yet.</td>
+              <td colspan="10" class="text-muted py-4">No daily data for <?= (int) $dailyYear ?> yet.</td>
             </tr>
           <?php endif; ?>
           <?php foreach ($dailyRows as $row): ?>
@@ -349,11 +472,14 @@ $chartPayload = [
               <td><?= ytyH(date('d.m.Y', strtotime((string) $row['date']))) ?></td>
               <td><?= ytyH((string) $row['day_label']) ?></td>
               <td><?= (int) $row['iso_week'] ?></td>
+              <td><?= ytyNum((int) ($row['graphics_count'] ?? 0)) ?></td>
+              <td><?= ytyNum((int) ($row['plastics_count'] ?? 0)) ?></td>
+              <td><?= ytyNum((int) ($row['fitting_count'] ?? 0)) ?></td>
+              <td><?= ytyNum((int) ($row['seat_count'] ?? 0)) ?></td>
               <td class="<?= ytyH(ytyDailyLimitClass($productsWithoutFitting)) ?>"><?= ytyNum($productsWithoutFitting) ?></td>
               <td class="<?= ytyH(trim(($afterWeekendCount !== null ? 'is-after-weekend ' : '') . ytyDailyLimitClass($afterWeekendCount === null ? null : (int) $afterWeekendCount))) ?>">
                 <?= $afterWeekendCount !== null ? ytyNum((int) $afterWeekendCount) : '' ?>
               </td>
-              <td><?= ytyNum((int) $row['fitting_count']) ?></td>
               <td class="<?= ytyH(ytyDailyLimitClass($productsWithFitting)) ?>"><?= ytyNum($productsWithFitting) ?></td>
             </tr>
           <?php endforeach; ?>
@@ -403,6 +529,8 @@ $chartPayload = [
 
 <script>
   window.addEventListener('load', function () {
+    initYtyStickyTableHeaders();
+
     if (!window.Chart) {
       return;
     }
@@ -411,6 +539,7 @@ $chartPayload = [
     var gridColor = 'rgba(255,255,255,.10)';
     var tickColor = '#ced4da';
     var weeklyScaleMax = Number(ytyData.weeklyScaleMax || 0);
+    var departmentWeeklyScaleMax = Number(ytyData.departmentWeeklyScaleMax || 0);
 
     function weeklyYAxisTicks() {
       var ticks = { beginAtZero: true, fontColor: tickColor };
@@ -420,10 +549,132 @@ $chartPayload = [
       return ticks;
     }
 
+    function departmentYAxisTicks() {
+      var ticks = { beginAtZero: true, fontColor: tickColor };
+      if (departmentWeeklyScaleMax > 0) {
+        ticks.max = departmentWeeklyScaleMax;
+      }
+      return ticks;
+    }
+
     function valuesFor(year) {
       return (ytyData.series[String(year)] || []).map(function (value) {
         return value === null ? null : Number(value);
       });
+    }
+
+    function initYtyStickyTableHeaders() {
+      var tables = Array.prototype.map.call(
+        document.querySelectorAll('.yty-daily-table, .yty-week-table'),
+        function (table) {
+          return {
+            table: table,
+            wrap: table.closest('.table-responsive') || table.parentNode
+          };
+        }
+      ).filter(function (config) {
+        return config.table && config.table.tHead;
+      });
+
+      if (!tables.length) {
+        return;
+      }
+
+      var floating = document.createElement('div');
+      floating.className = 'yty-floating-table-header';
+      document.body.appendChild(floating);
+
+      var activeTable = null;
+      var activeClone = null;
+      var scheduled = false;
+
+      function stickyTopOffset() {
+        var header = document.querySelector('.main-header');
+        if (!header) {
+          return 0;
+        }
+
+        var style = window.getComputedStyle(header);
+        if (style.position !== 'fixed' && style.position !== 'sticky') {
+          return 0;
+        }
+
+        var rect = header.getBoundingClientRect();
+        return rect.top <= 0 && rect.bottom > 0 ? Math.ceil(rect.bottom) : 0;
+      }
+
+      function syncClone(config) {
+        if (activeTable !== config.table) {
+          floating.innerHTML = '';
+          activeClone = config.table.cloneNode(false);
+          activeClone.removeAttribute('id');
+          activeClone.appendChild(config.table.tHead.cloneNode(true));
+          floating.appendChild(activeClone);
+          activeTable = config.table;
+        }
+
+        var sourceCells = config.table.tHead.rows[0].cells;
+        var cloneCells = activeClone.tHead.rows[0].cells;
+        Array.prototype.forEach.call(sourceCells, function (cell, index) {
+          if (!cloneCells[index]) {
+            return;
+          }
+          var width = cell.getBoundingClientRect().width + 'px';
+          cloneCells[index].style.width = width;
+          cloneCells[index].style.minWidth = width;
+          cloneCells[index].style.maxWidth = width;
+        });
+
+        var tableRect = config.table.getBoundingClientRect();
+        activeClone.style.width = tableRect.width + 'px';
+        activeClone.style.marginLeft = '-' + (config.wrap.scrollLeft || 0) + 'px';
+      }
+
+      function updateStickyHeader() {
+        scheduled = false;
+        var top = stickyTopOffset();
+        var activeConfig = null;
+
+        tables.some(function (config) {
+          var tableRect = config.table.getBoundingClientRect();
+          var headerHeight = config.table.tHead.getBoundingClientRect().height;
+          if (tableRect.top <= top && tableRect.bottom > top + headerHeight) {
+            activeConfig = config;
+            return true;
+          }
+          return false;
+        });
+
+        if (!activeConfig) {
+          floating.classList.remove('is-active');
+          activeTable = null;
+          activeClone = null;
+          floating.innerHTML = '';
+          return;
+        }
+
+        var wrapRect = activeConfig.wrap.getBoundingClientRect();
+        syncClone(activeConfig);
+        floating.style.top = top + 'px';
+        floating.style.left = wrapRect.left + 'px';
+        floating.style.width = wrapRect.width + 'px';
+        floating.classList.add('is-active');
+      }
+
+      function requestStickyUpdate() {
+        if (scheduled) {
+          return;
+        }
+        scheduled = true;
+        window.requestAnimationFrame(updateStickyHeader);
+      }
+
+      window.addEventListener('scroll', requestStickyUpdate, { passive: true });
+      window.addEventListener('resize', requestStickyUpdate);
+      tables.forEach(function (config) {
+        config.wrap.addEventListener('scroll', requestStickyUpdate, { passive: true });
+      });
+      requestStickyUpdate();
     }
 
     var selectedYear = String(ytyData.selectedYear);
@@ -475,6 +726,99 @@ $chartPayload = [
       };
     });
 
+    var departmentKeys = ['G', 'P', 'F', 'S'];
+    var departmentDash = {
+      G: [],
+      P: [6, 4],
+      F: [2, 3],
+      S: [10, 4]
+    };
+
+    function departmentValuesFor(year, department) {
+      var byYear = ytyData.departmentWeeklySeriesByYear || {};
+      var values = ((byYear[String(year)] || {})[department]) || [];
+      return values.map(function (value) {
+        return value === null ? null : Number(value);
+      });
+    }
+
+    var departmentDatasets = [];
+    ytyData.years.forEach(function (year) {
+      departmentKeys.forEach(function (department) {
+        var colors = ytyData.colors[String(year)] || { border: '#5bc0de', fill: 'rgba(91, 192, 222, .12)' };
+        var hidden = String(year) !== selectedYear;
+        departmentDatasets.push({
+          label: String(year) + ' ' + department,
+          data: departmentValuesFor(year, department),
+          borderColor: colors.border,
+          backgroundColor: colors.fill,
+          pointBackgroundColor: colors.border,
+          pointBorderColor: colors.border,
+          pointRadius: 2,
+          pointHoverRadius: 4,
+          borderWidth: 2,
+          borderDash: departmentDash[department] || [],
+          lineTension: 0.25,
+          fill: false,
+          spanGaps: false,
+          hidden: hidden,
+          ytyYear: String(year),
+          ytyDepartment: department
+        });
+      });
+    });
+
+    function checkedValues(selector) {
+      var values = {};
+      Array.prototype.forEach.call(document.querySelectorAll(selector), function (input) {
+        if (input.checked) {
+          values[String(input.value)] = true;
+        }
+      });
+      return values;
+    }
+
+    var departmentCanvas = document.getElementById('ytyDepartmentChart');
+    if (departmentCanvas) {
+      var departmentChart = new Chart(departmentCanvas.getContext('2d'), {
+        type: 'line',
+        data: {
+          labels: ytyData.departmentWeeklyLabels || [],
+          datasets: departmentDatasets
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          legend: { labels: { fontColor: tickColor, boxWidth: 12 } },
+          tooltips: { mode: 'index', intersect: false },
+          hover: { mode: 'nearest', intersect: true },
+          scales: {
+            xAxes: [{ gridLines: { color: 'rgba(255,255,255,.04)' }, ticks: { fontColor: tickColor, maxRotation: 0, autoSkip: true } }],
+            yAxes: [{ gridLines: { color: gridColor }, ticks: departmentYAxisTicks() }]
+          }
+        }
+      });
+
+      function syncDepartmentChartVisibility() {
+        var activeYears = checkedValues('[data-yty-department-year]');
+        var activeDepartments = checkedValues('[data-yty-department-code]');
+        departmentChart.data.datasets.forEach(function (dataset, index) {
+          var shouldHide = !activeYears[dataset.ytyYear] || !activeDepartments[dataset.ytyDepartment];
+          dataset.hidden = shouldHide;
+          departmentChart.getDatasetMeta(index).hidden = shouldHide ? true : null;
+        });
+        departmentChart.update();
+      }
+
+      Array.prototype.forEach.call(
+        document.querySelectorAll('[data-yty-department-year], [data-yty-department-code]'),
+        function (input) {
+          input.addEventListener('change', syncDepartmentChartVisibility);
+        }
+      );
+
+      syncDepartmentChartVisibility();
+    }
     var compareCanvas = document.getElementById('ytyCompareChart');
     if (compareCanvas) {
       new Chart(compareCanvas.getContext('2d'), {
