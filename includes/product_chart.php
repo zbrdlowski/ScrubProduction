@@ -670,12 +670,21 @@ function trackingIsPending(?array $tracking): bool
 <?php
 // ── Počet nedokončených tracking záznamov (pre alert badge) ────────────────
 $trackingPendingCount = 0;
-$resTrackCnt = $conn->query(
+$stmtTrackCnt = $conn->prepare(
     "SELECT COUNT(*) AS cnt FROM scrub_update_tracking
-     WHERE NOT (done_web AND done_ebay AND done_graphics_templates AND done_seatcover_templates AND done_products)"
+     WHERE NOT (done_web AND done_ebay AND done_graphics_templates AND done_seatcover_templates AND done_products)
+       AND (? = '' OR brand = ?)
+       AND (? = '' OR model = ?)
+       AND (? = '' OR rangeyear = ?)"
 );
-if ($resTrackCnt) {
-    $trackingPendingCount = (int) $resTrackCnt->fetch_assoc()['cnt'];
+if ($stmtTrackCnt) {
+    $stmtTrackCnt->bind_param('ssssss', $scrubrand, $scrubrand, $scrubmodel, $scrubmodel, $scrubrange, $scrubrange);
+    $stmtTrackCnt->execute();
+    $resTrackCnt = $stmtTrackCnt->get_result();
+    if ($resTrackCnt) {
+        $trackingPendingCount = (int) $resTrackCnt->fetch_assoc()['cnt'];
+    }
+    $stmtTrackCnt->close();
 }
 ?>
 
@@ -1255,6 +1264,11 @@ if ($resTrackCnt) {
 
 <script>
     window.productChartCanEdit = <?= $canEditProductChart ? 'true' : 'false' ?>;
+    window.productChartTrackingFilters = <?= json_encode([
+        'brand' => $scrubrand,
+        'model' => $scrubmodel,
+        'range' => $scrubrange,
+    ], JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) ?>;
 </script>
 <script src="scripts/product_chart_actions.js?v=<?= (int) @filemtime(__DIR__ . '/../scripts/product_chart_actions.js') ?>"></script>
 <script src="scripts/scrub_model_manage.js?v=<?= (int) @filemtime(__DIR__ . '/../scripts/scrub_model_manage.js') ?>"></script>

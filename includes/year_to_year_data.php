@@ -166,7 +166,10 @@ function ytyFetchLiveOrderStats(mysqli $conn): array
     SELECT
       FLOOR(YEARWEEK(o.imported_at, 3) / 100) AS stat_year,
       MOD(YEARWEEK(o.imported_at, 3), 100) AS iso_week,
-      SUM(COALESCE(NULLIF(oi.qty, 0), 1)) AS product_count
+      SUM(CASE
+        WHEN UPPER(TRIM(COALESCE(oi.item_type_code, ''))) = 'G' THEN 1
+        ELSE COALESCE(NULLIF(oi.qty, 0), 1)
+      END) AS product_count
     FROM order_items oi
     INNER JOIN orders o ON o.id = oi.order_id
     WHERE oi.deleted_at IS NULL
@@ -275,7 +278,7 @@ function ytyFetchLiveDailyStats(mysqli $conn, int $year): array
       DATE(o.imported_at) AS import_day,
       SUM(CASE
         WHEN UPPER(TRIM(COALESCE(oi.item_type_code, ''))) = 'G'
-        THEN COALESCE(NULLIF(oi.qty, 0), 1) ELSE 0 END
+        THEN 1 ELSE 0 END
       ) AS graphics_count,
       SUM(CASE
         WHEN UPPER(TRIM(COALESCE(oi.item_type_code, ''))) = 'P'
@@ -286,16 +289,20 @@ function ytyFetchLiveDailyStats(mysqli $conn, int $year): array
         THEN COALESCE(NULLIF(oi.qty, 0), 1) ELSE 0 END
       ) AS seat_count,
       SUM(CASE
-        WHEN UPPER(TRIM(COALESCE(oi.item_type_code, ''))) IN ('G', 'P', 'S')
-        THEN COALESCE(NULLIF(oi.qty, 0), 1) ELSE 0 END
+        WHEN UPPER(TRIM(COALESCE(oi.item_type_code, ''))) = 'G' THEN 1
+        WHEN UPPER(TRIM(COALESCE(oi.item_type_code, ''))) IN ('P', 'S')
+        THEN COALESCE(NULLIF(oi.qty, 0), 1)
+        ELSE 0 END
       ) AS products_without_fitting,
       SUM(CASE
         WHEN UPPER(TRIM(COALESCE(oi.item_type_code, ''))) = 'F'
         THEN COALESCE(NULLIF(oi.qty, 0), 1) ELSE 0 END
       ) AS fitting_count,
       SUM(CASE
-        WHEN UPPER(TRIM(COALESCE(oi.item_type_code, ''))) IN ('G', 'F', 'P', 'S')
-        THEN COALESCE(NULLIF(oi.qty, 0), 1) ELSE 0 END
+        WHEN UPPER(TRIM(COALESCE(oi.item_type_code, ''))) = 'G' THEN 1
+        WHEN UPPER(TRIM(COALESCE(oi.item_type_code, ''))) IN ('F', 'P', 'S')
+        THEN COALESCE(NULLIF(oi.qty, 0), 1)
+        ELSE 0 END
       ) AS products_with_fitting
     FROM order_items oi
     INNER JOIN orders o ON o.id = oi.order_id

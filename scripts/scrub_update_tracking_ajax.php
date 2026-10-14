@@ -41,34 +41,61 @@ function jexit(array $data): void
 // Whitelist povolených stĺpcov (nikdy nedôveruj $_POST['field'] priamo v SQL)
 const TRACKING_FLAGS = ['done_web', 'done_ebay', 'done_graphics_templates', 'done_seatcover_templates', 'done_products'];
 
+function trackingFilterValue(string $key): string
+{
+    return trim((string)($_REQUEST[$key] ?? ''));
+}
+
 $action = $_REQUEST['action'] ?? '';
 
 switch ($action) {
 
     // ------------------------------------------------------------------
     case 'list_pending':
-        $res = $conn->query(
+        $brandFilter = trackingFilterValue('brand');
+        $modelFilter = trackingFilterValue('model');
+        $rangeFilter = trackingFilterValue('range');
+
+        $stmt = $conn->prepare(
             "SELECT trackid, modelcode, brand, model, rangeyear, new_year,
                     done_web, done_ebay, done_graphics_templates, done_seatcover_templates, done_products,
                     created_at
              FROM scrub_update_tracking
              WHERE NOT (done_web AND done_ebay AND done_graphics_templates AND done_seatcover_templates AND done_products)
+               AND (? = '' OR brand = ?)
+               AND (? = '' OR model = ?)
+               AND (? = '' OR rangeyear = ?)
              ORDER BY created_at DESC"
         );
+        $stmt->bind_param('ssssss', $brandFilter, $brandFilter, $modelFilter, $modelFilter, $rangeFilter, $rangeFilter);
+        $stmt->execute();
+        $res = $stmt->get_result();
         $rows = [];
         while ($r = $res->fetch_assoc()) {
             $rows[] = $r;
         }
+        $stmt->close();
         jexit(['ok' => true, 'rows' => $rows]);
         break;
 
     // ------------------------------------------------------------------
     case 'count_pending':
-        $res = $conn->query(
+        $brandFilter = trackingFilterValue('brand');
+        $modelFilter = trackingFilterValue('model');
+        $rangeFilter = trackingFilterValue('range');
+
+        $stmt = $conn->prepare(
             "SELECT COUNT(*) AS cnt FROM scrub_update_tracking
-             WHERE NOT (done_web AND done_ebay AND done_graphics_templates AND done_seatcover_templates AND done_products)"
+             WHERE NOT (done_web AND done_ebay AND done_graphics_templates AND done_seatcover_templates AND done_products)
+               AND (? = '' OR brand = ?)
+               AND (? = '' OR model = ?)
+               AND (? = '' OR rangeyear = ?)"
         );
+        $stmt->bind_param('ssssss', $brandFilter, $brandFilter, $modelFilter, $modelFilter, $rangeFilter, $rangeFilter);
+        $stmt->execute();
+        $res = $stmt->get_result();
         $row = $res->fetch_assoc();
+        $stmt->close();
         jexit(['ok' => true, 'count' => (int)$row['cnt']]);
         break;
 

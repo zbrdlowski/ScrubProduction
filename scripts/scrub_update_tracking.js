@@ -41,6 +41,19 @@
         return tracking || null;
     }
 
+    function getTrackingFilters() {
+        const filters = window.productChartTrackingFilters || {};
+        return {
+            brand: filters.brand || '',
+            model: filters.model || '',
+            range: filters.range || '',
+        };
+    }
+
+    function trackingRequestData(action) {
+        return Object.assign({ action: action }, getTrackingFilters());
+    }
+
     // ── VIEW renderer ─────────────────────────────────────────────────────
 
     function renderTrackingView(rowkey, tracking) {
@@ -119,7 +132,7 @@
 
     function refreshPendingCount() {
         if (!CAN_EDIT) return;
-        $.get(AJAX_URL, { action: 'count_pending' }, function (resp) {
+        $.get(AJAX_URL, trackingRequestData('count_pending'), function (resp) {
             if (!resp || !resp.ok) return;
             const $badge = $('#trackingPendingBadge');
             $badge.text(resp.count);
@@ -163,7 +176,7 @@
         }
         $body.html('<tr><td colspan="10" class="text-center text-muted py-3">Načítavam…</td></tr>');
 
-        $.get(AJAX_URL, { action: 'list_pending' }, function (resp) {
+        $.get(AJAX_URL, trackingRequestData('list_pending'), function (resp) {
             console.log('[scrub_update_tracking] list_pending odpoveď:', resp);
             if (!resp || !resp.ok) {
                 $body.html('<tr><td colspan="10" class="text-center text-danger py-3">' + (resp && resp.error ? resp.error : 'Chyba') + '</td></tr>');
@@ -365,7 +378,12 @@
                     if (allDone) {
                         $tr.addClass('tracking-row-done');
                         setTimeout(function () {
-                            $tr.fadeOut(300, function () { $(this).remove(); });
+                            $tr.fadeOut(300, function () {
+                                $(this).remove();
+                                if (!$('#tut_body tr[data-trackid]').length) {
+                                    $('#tut_body').html('<tr><td colspan="10" class="text-center text-muted py-3">Žiadne nedokončené updaty 🎉</td></tr>');
+                                }
+                            });
                         }, 500);
                     }
 
