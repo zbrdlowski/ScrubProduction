@@ -41,6 +41,43 @@ function jexit(array $data): void
     exit;
 }
 
+function ensureUpdateTracking(mysqli $conn, string $modelcode, string $brand, string $model, string $rangeyear, int $newyear, ?int $createdBy): int
+{
+    $stmt = $conn->prepare(
+        "SELECT trackid
+         FROM scrub_update_tracking
+         WHERE modelcode = ? AND brand = ? AND model = ? AND new_year = ?
+         ORDER BY trackid DESC
+         LIMIT 1
+         FOR UPDATE"
+    );
+    $stmt->bind_param('sssi', $modelcode, $brand, $model, $newyear);
+    $stmt->execute();
+    $existing = $stmt->get_result()->fetch_assoc();
+    $stmt->close();
+
+    if ($existing) {
+        $trackid = (int) $existing['trackid'];
+        $stmt = $conn->prepare("UPDATE scrub_update_tracking SET rangeyear = ? WHERE trackid = ?");
+        $stmt->bind_param('si', $rangeyear, $trackid);
+        $stmt->execute();
+        $stmt->close();
+        return $trackid;
+    }
+
+    $stmt = $conn->prepare(
+        "INSERT INTO scrub_update_tracking
+            (modelcode, brand, model, rangeyear, new_year, created_by)
+         VALUES (?, ?, ?, ?, ?, ?)"
+    );
+    $stmt->bind_param('ssssii', $modelcode, $brand, $model, $rangeyear, $newyear, $createdBy);
+    $stmt->execute();
+    $trackid = (int) $stmt->insert_id;
+    $stmt->close();
+
+    return $trackid;
+}
+
 $action = $_REQUEST['action'] ?? '';
 
 switch ($action) {
@@ -279,6 +316,14 @@ switch ($action) {
                 $stmtM->bind_param('sssss', $newRangeyear, $brand, $model, $modelcode, $oldRangeyear);
                 $stmtM->execute();
                 $stmtM->close();
+
+                $stmtT = $conn->prepare(
+                    "UPDATE scrub_update_tracking SET rangeyear = ?
+                     WHERE brand = ? AND model = ? AND modelcode = ?"
+                );
+                $stmtT->bind_param('ssss', $newRangeyear, $brand, $model, $modelcode);
+                $stmtT->execute();
+                $stmtT->close();
             }
 
             // 2) Insert nového riadku pre nový rok
@@ -316,17 +361,11 @@ switch ($action) {
             $stmtCheck->close();
             $stmtIns->close();
 
-            // 4) Založ tracking záznam ("nutne premietnuť update aj do Web/eBay/Templates")
-            $createdBy = $_SESSION['user_id'] ?? null;
-            $stmtTrack = $conn->prepare(
-                "INSERT INTO scrub_update_tracking
-                    (modelcode, brand, model, rangeyear, new_year, created_by)
-                 VALUES (?, ?, ?, ?, ?, ?)"
-            );
-            $stmtTrack->bind_param('ssssii', $modelcode, $brand, $model, $newRangeyear, $newyear, $createdBy);
-            $stmtTrack->execute();
-            $newTrackId = $stmtTrack->insert_id;
-            $stmtTrack->close();
+            // 4) Založ tracking záznam ("nutne premietnuť update aj do Web/eBay/Templates").
+            // Ak už pre rovnaký brand/model/modelcode/rok existuje, nevytváraj duplicitu
+            // a zachovaj existujúce checkbox stavy.
+            $createdBy = isset($_SESSION['user_id']) ? (int) $_SESSION['user_id'] : null;
+            $newTrackId = ensureUpdateTracking($conn, $modelcode, $brand, $model, $newRangeyear, $newyear, $createdBy);
 
             $conn->commit();
             jexit([
@@ -537,6 +576,14 @@ switch ($action) {
                     $stmtM->execute();
                     $stmtM->close();
                 }
+
+                $stmtT = $conn->prepare(
+                    "UPDATE scrub_update_tracking SET rangeyear = ?
+                     WHERE brand = ? AND model = ? AND modelcode = ?"
+                );
+                $stmtT->bind_param('ssss', $newRangeyear, $brand, $model, $modelcode);
+                $stmtT->execute();
+                $stmtT->close();
             }
 
             // 3) scrubcompat zmaž len vtedy, ak už žiadny INÝ model (iný brand/model)
@@ -557,10 +604,28 @@ switch ($action) {
                 $stmt->close();
             }
 
+            if (empty($remainingYears)) {
+                $stmt = $conn->prepare(
+                    "DELETE FROM scrub_update_tracking
+                     WHERE modelcode = ? AND brand = ? AND model = ?"
+                );
+                $stmt->bind_param('sss', $modelcode, $brand, $model);
+            } else {
+                $stmt = $conn->prepare(
+                    "DELETE FROM scrub_update_tracking
+                     WHERE modelcode = ? AND brand = ? AND model = ? AND new_year = ?"
+                );
+                $stmt->bind_param('sssi', $modelcode, $brand, $model, $year);
+            }
+            $stmt->execute();
+            $deletedTracking = $stmt->affected_rows;
+            $stmt->close();
+
             $conn->commit();
             jexit([
                 'ok' => true,
                 'deleted_compat' => $deletedCompat,
+                'deleted_tracking' => $deletedTracking,
                 'compat_kept' => $compatKept,
                 'remaining_years' => $remainingYears,
             ]);

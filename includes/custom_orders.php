@@ -253,8 +253,12 @@ try {
     AND UPPER(TRIM(COALESCE(co.status, ''))) NOT IN ('LEAD', 'EXPORTED')
     AND (co.production_order_id IS NULL OR co.production_order_id <= 0)";
 
-  $where = $filterWhere;
-  if ($draftStatusFilter !== '') {
+  if ($selectedOrderId > 0) {
+    $where = ['co.id = ' . (int) $selectedOrderId];
+  } else {
+    $where = $filterWhere;
+  }
+  if ($selectedOrderId <= 0 && $draftStatusFilter !== '') {
     $tabFilter = 'all';
     $safeDraftStatus = $conn->real_escape_string($draftStatusFilter);
     $legacyDraftTypesSql = implode(',', array_map(static function (string $typeCode) use ($conn): string {
@@ -268,11 +272,11 @@ try {
       WHERE draft_item.custom_order_id = co.id
         AND (draft_item.status = '{$safeDraftStatus}'{$legacyDraftClause})
     ) AND co.production_order_id IS NULL";
-  } elseif ($tabFilter === 'open_so') {
+  } elseif ($selectedOrderId <= 0 && $tabFilter === 'open_so') {
     $where[] = $customOrdersOpenSoWhere;
-  } elseif ($tabFilter === 'all' && !$customOrdersSearchActive) {
+  } elseif ($selectedOrderId <= 0 && $tabFilter === 'all' && !$customOrdersSearchActive) {
     $where[] = $customOrdersAllOpenWhere;
-  } else {
+  } elseif ($selectedOrderId <= 0) {
     $activeTabMeta = $customOrderTabs[$tabFilter] ?? [];
     $tabStatuses = [];
     if (!empty($activeTabMeta['statuses']) && is_array($activeTabMeta['statuses'])) {
@@ -1312,6 +1316,9 @@ if ($itemTypeFilter !== '') {
 }
 if ($query !== '') {
   $customOrderActiveFilterBadges[] = ['label' => 'Search', 'display' => '"' . $query . '"'];
+}
+if ($selectedOrderId > 0) {
+  $customOrderActiveFilterBadges[] = ['label' => 'Order ID', 'display' => '#' . $selectedOrderId];
 }
 if ($dateFromFilter !== '') {
   $customOrderActiveFilterBadges[] = ['label' => 'From', 'display' => $dateFromFilter];
