@@ -330,7 +330,7 @@ $accountingOmegaCardUrl = static function (
                   <a class="badge badge-info" href="?page=orders&q=<?= rawurlencode((string) $row['order_number']) ?>">Výroba #<?= (int) $row['matched_order_id'] ?></a>
                 <?php endif; ?>
                 <?php if (!empty($row['matched_custom_order_id'])): ?>
-                  <a class="badge badge-success" href="?page=custom_orders&amp;custom_order_id=<?= (int) $row['matched_custom_order_id'] ?>">Zákazková #<?= (int) $row['matched_custom_order_id'] ?></a>
+                  <a class="badge badge-success" href="?page=custom_orders&amp;custom_order_id=<?= (int) $row['matched_custom_order_id'] ?>&amp;direct_open=1">Zákazková #<?= (int) $row['matched_custom_order_id'] ?></a>
                 <?php endif; ?>
                 <?php if (empty($row['matched_order_id']) && empty($row['matched_custom_order_id'])): ?>
                   <span class="badge badge-danger">Nenájdená</span>

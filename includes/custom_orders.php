@@ -165,6 +165,7 @@ if ($dateToFilter !== '' && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $dateToFilter))
   $dateToFilter = '';
 }
 $selectedOrderId = (int) ($_GET['custom_order_id'] ?? 0);
+$customOrdersDirectOpen = in_array(strtolower(trim((string) ($_GET['direct_open'] ?? ''))), ['1', 'true', 'yes'], true);
 $editItemId = (int) ($_GET['edit_item_id'] ?? 0);
 $focusNoteId = max(0, (int) ($_GET['focus_note_id'] ?? 0));
 $customOrdersFullDetailRequested = in_array(
@@ -253,12 +254,12 @@ try {
     AND UPPER(TRIM(COALESCE(co.status, ''))) NOT IN ('LEAD', 'EXPORTED')
     AND (co.production_order_id IS NULL OR co.production_order_id <= 0)";
 
-  if ($selectedOrderId > 0) {
+  if ($selectedOrderId > 0 && $customOrdersDirectOpen) {
     $where = ['co.id = ' . (int) $selectedOrderId];
   } else {
     $where = $filterWhere;
   }
-  if ($selectedOrderId <= 0 && $draftStatusFilter !== '') {
+  if (!$customOrdersDirectOpen && $draftStatusFilter !== '') {
     $tabFilter = 'all';
     $safeDraftStatus = $conn->real_escape_string($draftStatusFilter);
     $legacyDraftTypesSql = implode(',', array_map(static function (string $typeCode) use ($conn): string {
@@ -272,11 +273,11 @@ try {
       WHERE draft_item.custom_order_id = co.id
         AND (draft_item.status = '{$safeDraftStatus}'{$legacyDraftClause})
     ) AND co.production_order_id IS NULL";
-  } elseif ($selectedOrderId <= 0 && $tabFilter === 'open_so') {
+  } elseif (!$customOrdersDirectOpen && $tabFilter === 'open_so') {
     $where[] = $customOrdersOpenSoWhere;
-  } elseif ($selectedOrderId <= 0 && $tabFilter === 'all' && !$customOrdersSearchActive) {
+  } elseif (!$customOrdersDirectOpen && $tabFilter === 'all' && !$customOrdersSearchActive) {
     $where[] = $customOrdersAllOpenWhere;
-  } elseif ($selectedOrderId <= 0) {
+  } elseif (!$customOrdersDirectOpen) {
     $activeTabMeta = $customOrderTabs[$tabFilter] ?? [];
     $tabStatuses = [];
     if (!empty($activeTabMeta['statuses']) && is_array($activeTabMeta['statuses'])) {
@@ -1317,7 +1318,7 @@ if ($itemTypeFilter !== '') {
 if ($query !== '') {
   $customOrderActiveFilterBadges[] = ['label' => 'Search', 'display' => '"' . $query . '"'];
 }
-if ($selectedOrderId > 0) {
+if ($selectedOrderId > 0 && $customOrdersDirectOpen) {
   $customOrderActiveFilterBadges[] = ['label' => 'Order ID', 'display' => '#' . $selectedOrderId];
 }
 if ($dateFromFilter !== '') {
