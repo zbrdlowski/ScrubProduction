@@ -178,19 +178,16 @@ while ($row = $itemRes->fetch_assoc()) {
 }
 $stmt->close();
 
+$splitSourceTotalQty = 0;
 if ($isSplitOrder) {
-  $splitHasEligibleSourceItem = false;
   foreach ($sourceItems as $sourceItem) {
-    if ((int) ($sourceItem['qty'] ?? 0) > 1) {
-      $splitHasEligibleSourceItem = true;
-      break;
-    }
+    $splitSourceTotalQty += max(0, (int) ($sourceItem['qty'] ?? 0));
   }
 
-  if (!$splitHasEligibleSourceItem) {
+  if ($splitSourceTotalQty <= 1) {
     out_followup(400, [
       'ok' => false,
-      'error' => 'Order Split is allowed only when the source order has at least one active item with quantity at least 2.',
+      'error' => 'Order Split needs at least two total active units on the source order.',
     ]);
   }
 }
@@ -202,12 +199,6 @@ foreach ($selectedItems as $itemId => $qty) {
   }
 
   $sourceQty = max(1, (int) ($sourceItems[$itemId]['qty'] ?? 1));
-  if ($isSplitOrder && $sourceQty <= 1) {
-    out_followup(400, [
-      'ok' => false,
-      'error' => 'Order Split can only move items whose source quantity is at least 2.',
-    ]);
-  }
   $cloneQty = min($qty, $sourceQty);
   if ($cloneQty <= 0) {
     continue;
@@ -219,6 +210,20 @@ foreach ($selectedItems as $itemId => $qty) {
 
 if (!$itemsToClone) {
   out_followup(400, ['ok' => false, 'error' => 'No valid items selected']);
+}
+
+if ($isSplitOrder) {
+  $splitMovedQty = 0;
+  foreach ($itemsToClone as $splitItem) {
+    $splitMovedQty += max(0, (int) ($splitItem['followup_qty'] ?? 0));
+  }
+
+  if ($splitSourceTotalQty - $splitMovedQty <= 0) {
+    out_followup(400, [
+      'ok' => false,
+      'error' => 'Order Split cannot move every remaining item. Leave at least one item or unit on the source order.',
+    ]);
+  }
 }
 
 $stmt = $conn->prepare("

@@ -4832,7 +4832,7 @@ $deptOptions = [
   window.reloadOrderDetail = reloadOrderDetail;
 
   function followupSplitGuardMessage($panel) {
-    return String($panel.attr('data-followup-split-message') || 'Order Split needs at least one active source item with quantity at least 2.');
+    return String($panel.attr('data-followup-split-message') || 'Order Split needs at least two total active units on the source order.');
   }
 
   function warnFollowupSplit($panel, message) {
@@ -4850,6 +4850,22 @@ $deptOptions = [
 
   function followupItemSplitEligible($item) {
     return String($item.attr('data-split-eligible') || '0') === '1';
+  }
+
+  function followupSplitSourceTotalQty($panel) {
+    let total = 0;
+    $panel.find('.followup-item-check').each(function () {
+      total += Math.max(0, parseInt($(this).attr('data-source-qty') || '0', 10) || 0);
+    });
+    return total;
+  }
+
+  function followupSplitSelectedQty($panel) {
+    let total = 0;
+    $panel.find('.followup-item-check:checked').each(function () {
+      if (followupItemSplitEligible($(this))) total += 1;
+    });
+    return total;
   }
 
   function applyFollowupSplitItemState($panel, isSplit) {
@@ -4915,6 +4931,9 @@ $deptOptions = [
 
     if (type === 'SPLIT') {
       applyFollowupSplitItemState($panel, true);
+      if (followupSplitSourceTotalQty($panel) - followupSplitSelectedQty($panel) <= 0) {
+        $panel.find('.followup-item-check:checked[data-split-eligible="1"]').last().prop('checked', false);
+      }
       if (isEuShipping) {
         $checkbox.prop('checked', true).prop('disabled', true);
         $state.text('Do not invoice').removeClass('bg-secondary bg-info').addClass('bg-danger');
@@ -4973,14 +4992,29 @@ $deptOptions = [
       return;
     }
 
+    if (isSplit) {
+      const shouldCheck = $checks.filter(':checked').length === 0;
+      $checks.prop('checked', false);
+
+      if (shouldCheck) {
+        const sourceTotalQty = followupSplitSourceTotalQty($panel);
+        let selectedQty = 0;
+        $checks.each(function () {
+          if (selectedQty + 1 >= sourceTotalQty) return;
+          const $check = $(this);
+          const itemId = parseInt($check.data('item-id') || '0', 10);
+          $check.prop('checked', true);
+          $panel.find('.followup-item-qty[data-item-id="' + itemId + '"]').val(1);
+          selectedQty++;
+        });
+      }
+
+      $(this).text(shouldCheck ? 'Clear all' : 'Select all');
+      return;
+    }
+
     const shouldCheck = $checks.filter(':checked').length !== $checks.length;
     $checks.prop('checked', shouldCheck);
-    if (shouldCheck && isSplit) {
-      $checks.each(function () {
-        const itemId = parseInt($(this).data('item-id') || '0', 10);
-        $panel.find('.followup-item-qty[data-item-id="' + itemId + '"]').val(1);
-      });
-    }
     $(this).text(shouldCheck ? 'Clear all' : 'Select all');
   });
 
@@ -4991,12 +5025,16 @@ $deptOptions = [
     if (String($panel.find('.followup-type-select').val() || '').toUpperCase() !== 'SPLIT') return;
     if (!followupItemSplitEligible($check)) {
       $check.prop('checked', false);
-      warnFollowupSplit($panel, 'Order Split can only use items with quantity at least 2.');
+      warnFollowupSplit($panel, 'Order Split can only use active source items.');
       return;
     }
 
     const itemId = parseInt($check.data('item-id') || '0', 10);
     $panel.find('.followup-item-qty[data-item-id="' + itemId + '"]').val(1);
+    if (followupSplitSourceTotalQty($panel) - followupSplitSelectedQty($panel) <= 0) {
+      $check.prop('checked', false);
+      warnFollowupSplit($panel, 'Order Split cannot move every remaining item. Leave at least one item or unit on the source order.');
+    }
   });
 
   $(document).on('change', '.followup-type-select, .followup-do-not-invoice', function () {
@@ -5036,10 +5074,15 @@ $deptOptions = [
 
     if (!orderId || selectedCount === 0) {
       if (type === 'SPLIT') {
-        warnFollowupSplit($panel, 'Select at least one item with quantity at least 2 for Order Split.');
+        warnFollowupSplit($panel, 'Select at least one item for Order Split.');
       } else {
         alert('Select at least one item for the follow-up order.');
       }
+      return;
+    }
+
+    if (type === 'SPLIT' && followupSplitSourceTotalQty($panel) - selectedCount <= 0) {
+      warnFollowupSplit($panel, 'Order Split cannot move every remaining item. Leave at least one item or unit on the source order.');
       return;
     }
 

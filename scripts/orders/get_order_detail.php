@@ -6637,14 +6637,12 @@ ob_start();
         </div>
 
         <?php
-        $followupCanSplit = false;
+        $followupSplitTotalQty = 0;
         foreach ($items as $followupSplitCandidate) {
-          if ((int) ($followupSplitCandidate['qty'] ?? 0) > 1) {
-            $followupCanSplit = true;
-            break;
-          }
+          $followupSplitTotalQty += max(0, (int) ($followupSplitCandidate['qty'] ?? 0));
         }
-        $followupSplitGuardMessage = 'Order Split needs at least one active source item with quantity at least 2.';
+        $followupCanSplit = $followupSplitTotalQty > 1;
+        $followupSplitGuardMessage = 'Order Split needs at least two total active units on the source order.';
         ?>
         <?php if ($showFollowupPanel): ?>
         <div class="col-lg-4">
@@ -6672,7 +6670,7 @@ ob_start();
                     <option value="REPEAT">Repeat Order</option>
                     <option value="WARRANTY">Warranty Claim</option>
                     <option value="CRASH">Crash Replacement</option>
-                    <option value="SPLIT" <?php echo $followupCanSplit ? '' : 'disabled'; ?>>Order Split<?php echo $followupCanSplit ? '' : ' (Qty >= 2 required)'; ?></option>
+                    <option value="SPLIT" <?php echo $followupCanSplit ? '' : 'disabled'; ?>>Order Split<?php echo $followupCanSplit ? '' : ' (2+ units required)'; ?></option>
                   </select>
                 </div>
                 <div class="form-group col-md-4">
@@ -6723,11 +6721,11 @@ ob_start();
                     <?php foreach ($items as $followupItem): ?>
                       <?php
                       $followupItemQty = (int) ($followupItem['qty'] ?? 0);
-                      $followupItemSplitEligible = $followupItemQty > 1;
+                      $followupItemSplitEligible = $followupItemQty > 0;
                       ?>
                       <tr data-split-eligible="<?php echo $followupItemSplitEligible ? '1' : '0'; ?>">
                         <td class="text-center">
-                          <input type="checkbox" class="followup-item-check" data-item-id="<?php echo (int) $followupItem['id']; ?>" data-split-eligible="<?php echo $followupItemSplitEligible ? '1' : '0'; ?>" checked>
+                          <input type="checkbox" class="followup-item-check" data-item-id="<?php echo (int) $followupItem['id']; ?>" data-source-qty="<?php echo $followupItemQty; ?>" data-split-eligible="<?php echo $followupItemSplitEligible ? '1' : '0'; ?>" checked>
                         </td>
                         <td><?php echo h((string) ($followupItem['item_type_code'] ?? '')); ?></td>
                         <td>
@@ -6747,6 +6745,7 @@ ob_start();
                             value="<?php echo max(1, $followupItemQty); ?>"
                             class="form-control form-control-sm followup-item-qty"
                             data-item-id="<?php echo (int) $followupItem['id']; ?>"
+                            data-source-qty="<?php echo $followupItemQty; ?>"
                             data-split-eligible="<?php echo $followupItemSplitEligible ? '1' : '0'; ?>">
                         </td>
                       </tr>
