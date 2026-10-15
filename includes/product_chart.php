@@ -316,6 +316,53 @@ function trackingIsPending(?array $tracking): bool
         justify-content: center;
     }
 
+    #scrubTable td.product-code-cell {
+        position: relative;
+        min-width: 90px;
+        padding: 0;
+    }
+
+    #scrubTable td .product-code-badge {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        border: 0;
+        border-radius: 4px;
+        background: #2d4560;
+        color: #e0eaf4;
+        font-family: monospace;
+        letter-spacing: 0.04em;
+        cursor: pointer;
+        touch-action: manipulation;
+        transition: background-color 0.15s ease, transform 0.1s ease;
+    }
+
+    #scrubTable td .product-code-badge:hover {
+        background: #3c607e;
+    }
+
+    #scrubTable td .product-code-badge:focus-visible {
+        outline: 2px solid #8dd7f7;
+        outline-offset: -3px;
+    }
+
+    #scrubTable td .product-code-badge:active {
+        transform: scale(0.96);
+    }
+
+    #scrubTable td .product-code-badge.is-copied {
+        background: #218838;
+        color: #fff;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+        #scrubTable td .product-code-badge {
+            transition: none;
+            transform: none;
+        }
+    }
+
     #scrubTable td .badge-pair {
         display: inline-flex;
         align-items: center;
@@ -671,11 +718,17 @@ function trackingIsPending(?array $tracking): bool
 // ── Počet nedokončených tracking záznamov (pre alert badge) ────────────────
 $trackingPendingCount = 0;
 $stmtTrackCnt = $conn->prepare(
-    "SELECT COUNT(*) AS cnt FROM scrub_update_tracking
-     WHERE NOT (done_web AND done_ebay AND done_graphics_templates AND done_seatcover_templates AND done_products)
-       AND (? = '' OR brand = ?)
-       AND (? = '' OR model = ?)
-       AND (? = '' OR rangeyear = ?)"
+    "SELECT COUNT(*) AS cnt
+     FROM scrub_update_tracking t
+     INNER JOIN (
+         SELECT modelcode, brand, model, MAX(trackid) AS max_trackid
+         FROM scrub_update_tracking
+         GROUP BY modelcode, brand, model
+     ) latest ON latest.max_trackid = t.trackid
+     WHERE NOT (t.done_web AND t.done_ebay AND t.done_graphics_templates AND t.done_seatcover_templates AND t.done_products)
+       AND (? = '' OR t.brand = ?)
+       AND (? = '' OR t.model = ?)
+       AND (? = '' OR t.rangeyear = ?)"
 );
 if ($stmtTrackCnt) {
     $stmtTrackCnt->bind_param('ssssss', $scrubrand, $scrubrand, $scrubmodel, $scrubmodel, $scrubrange, $scrubrange);
@@ -910,7 +963,12 @@ if ($stmtTrackCnt) {
                             <td><?= htmlspecialchars($row['brand']) ?></td>
                             <td><?= htmlspecialchars($row['model']) ?></td>
                             <td><?= htmlspecialchars($row['rangeyear']) ?></td>
-                            <td class="text-center"><code><?= htmlspecialchars($code) ?></code></td>
+                            <td class="text-center product-code-cell">
+                                <button type="button" class="badge product-code-badge"
+                                    data-copy="<?= htmlspecialchars($code, ENT_QUOTES, 'UTF-8') ?>"
+                                    title="Kliknutím skopírovať kód"
+                                    aria-label="Skopírovať kód <?= htmlspecialchars($code, ENT_QUOTES, 'UTF-8') ?>"><?= htmlspecialchars($code) ?></button>
+                            </td>
                             <td class="text-center config-status-cell"><?= configBadges($meta) ?></td>
 
                             <td class="text-center graphics-status-cell"><?= badgePair($gfx_avail, $gfx_web, '#') ?></td>
@@ -941,6 +999,7 @@ if ($stmtTrackCnt) {
                     </tr>
                 </tfoot>
             </table>
+            <span id="productChartCopyStatus" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></span>
         </div><!-- /.card-body -->
     </div><!-- /.card -->
 

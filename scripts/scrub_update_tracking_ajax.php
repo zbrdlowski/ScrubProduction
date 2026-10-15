@@ -57,15 +57,20 @@ switch ($action) {
         $rangeFilter = trackingFilterValue('range');
 
         $stmt = $conn->prepare(
-            "SELECT trackid, modelcode, brand, model, rangeyear, new_year,
-                    done_web, done_ebay, done_graphics_templates, done_seatcover_templates, done_products,
-                    created_at
-             FROM scrub_update_tracking
-             WHERE NOT (done_web AND done_ebay AND done_graphics_templates AND done_seatcover_templates AND done_products)
-               AND (? = '' OR brand = ?)
-               AND (? = '' OR model = ?)
-               AND (? = '' OR rangeyear = ?)
-             ORDER BY created_at DESC"
+            "SELECT t.trackid, t.modelcode, t.brand, t.model, t.rangeyear, t.new_year,
+                    t.done_web, t.done_ebay, t.done_graphics_templates, t.done_seatcover_templates, t.done_products,
+                    t.created_at
+             FROM scrub_update_tracking t
+             INNER JOIN (
+                 SELECT modelcode, brand, model, MAX(trackid) AS max_trackid
+                 FROM scrub_update_tracking
+                 GROUP BY modelcode, brand, model
+             ) latest ON latest.max_trackid = t.trackid
+             WHERE NOT (t.done_web AND t.done_ebay AND t.done_graphics_templates AND t.done_seatcover_templates AND t.done_products)
+               AND (? = '' OR t.brand = ?)
+               AND (? = '' OR t.model = ?)
+               AND (? = '' OR t.rangeyear = ?)
+             ORDER BY t.created_at DESC"
         );
         $stmt->bind_param('ssssss', $brandFilter, $brandFilter, $modelFilter, $modelFilter, $rangeFilter, $rangeFilter);
         $stmt->execute();
@@ -85,11 +90,17 @@ switch ($action) {
         $rangeFilter = trackingFilterValue('range');
 
         $stmt = $conn->prepare(
-            "SELECT COUNT(*) AS cnt FROM scrub_update_tracking
-             WHERE NOT (done_web AND done_ebay AND done_graphics_templates AND done_seatcover_templates AND done_products)
-               AND (? = '' OR brand = ?)
-               AND (? = '' OR model = ?)
-               AND (? = '' OR rangeyear = ?)"
+            "SELECT COUNT(*) AS cnt
+             FROM scrub_update_tracking t
+             INNER JOIN (
+                 SELECT modelcode, brand, model, MAX(trackid) AS max_trackid
+                 FROM scrub_update_tracking
+                 GROUP BY modelcode, brand, model
+             ) latest ON latest.max_trackid = t.trackid
+             WHERE NOT (t.done_web AND t.done_ebay AND t.done_graphics_templates AND t.done_seatcover_templates AND t.done_products)
+               AND (? = '' OR t.brand = ?)
+               AND (? = '' OR t.model = ?)
+               AND (? = '' OR t.rangeyear = ?)"
         );
         $stmt->bind_param('ssssss', $brandFilter, $brandFilter, $modelFilter, $modelFilter, $rangeFilter, $rangeFilter);
         $stmt->execute();

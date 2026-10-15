@@ -35,7 +35,30 @@ try {
     }
     $insertItem->close();
 
+    gateAssert(
+        ordersPlasticsGateBlockedStatuses($conn) === ['PLASTICS_IN_STOCK'],
+        'Info policies leaked into plastics blocked statuses.'
+    );
+    gateAssert(
+        ordersPlasticsGateStockCheckStatuses($conn) === ['CHECK_STOCK'],
+        'Info policies leaked into plastics stock-check statuses.'
+    );
+
     gateAssert(ordersApplyPlasticsStockGate($conn, $orderId), 'Gate was not applied.');
+
+    $gateResult = $conn->query("
+        SELECT item_type_code, status FROM order_items
+        WHERE order_id = {$orderId}
+        ORDER BY item_type_code ASC, id ASC
+    ");
+    $gateStatuses = [];
+    while ($gateRow = $gateResult->fetch_assoc()) {
+        $gateStatuses[$gateRow['item_type_code']][] = $gateRow['status'];
+    }
+    gateAssert($gateStatuses['G'] === ['PLASTICS_IN_STOCK'], 'Graphics did not enter the plastics gate.');
+    gateAssert($gateStatuses['S'] === ['PLASTICS_IN_STOCK'], 'Seat cover did not enter the plastics gate.');
+    gateAssert($gateStatuses['F'] === ['PLASTICS_IN_STOCK'], 'Fitting did not enter the plastics gate.');
+    gateAssert($gateStatuses['P'] === ['CHECK_STOCK', 'CHECK_STOCK'], 'Plastics did not enter Check Stock.');
 
     $conn->query("UPDATE orders SET status = 'PENDING' WHERE id = {$orderId}");
     recalculateOrderWorkflow($conn, $orderId);

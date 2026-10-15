@@ -15,6 +15,86 @@ function pcCanEdit() {
     return window.productChartCanEdit === true;
 }
 
+async function pcCopyCode(text) {
+    if (navigator.clipboard && window.isSecureContext) {
+        try {
+            await navigator.clipboard.writeText(text);
+            return;
+        } catch (error) {
+            // Pri odmietnuti Clipboard API skus aj fallback pre HTTP.
+        }
+    }
+
+    const activeElement = document.activeElement;
+    const textarea = document.createElement('textarea');
+    textarea.value = text;
+    textarea.setAttribute('readonly', '');
+    textarea.style.cssText = 'position:fixed;top:0;left:0;width:1px;height:1px;padding:0;border:0;opacity:0;font-size:16px;';
+    // Explicitne zapis len kod ako cisty text, nezavisle od vyberu na stranke.
+    textarea.addEventListener('copy', function (event) {
+        if (event.clipboardData) {
+            event.clipboardData.setData('text/plain', text);
+            event.preventDefault();
+            event.stopPropagation();
+        }
+    });
+    const copyContainer = document.fullscreenElement || document.body;
+    copyContainer.appendChild(textarea);
+
+    try {
+        textarea.focus({ preventScroll: true });
+        textarea.select();
+        textarea.setSelectionRange(0, text.length);
+        if (!document.execCommand('copy')) throw new Error('Copy failed');
+    } finally {
+        textarea.remove();
+        if (activeElement && typeof activeElement.focus === 'function') {
+            activeElement.focus({ preventScroll: true });
+        }
+    }
+}
+
+// Native handler na tabulke funguje aj po prekresleni DataTables a vymene jQuery.
+(function () {
+    const table = document.getElementById('scrubTable');
+    if (!table) return;
+    const feedbackTimers = new WeakMap();
+
+    table.addEventListener('click', async function (event) {
+        const badge = event.target.closest('.product-code-badge');
+        if (!badge || !table.contains(badge)) return;
+        event.preventDefault();
+        event.stopPropagation();
+
+        const code = badge.textContent.trim();
+        if (!code) return;
+        const status = document.getElementById('productChartCopyStatus');
+        if (status) status.textContent = '';
+
+        try {
+            await pcCopyCode(code);
+        } catch (error) {
+            if (status) status.textContent = 'Kód sa nepodarilo skopírovať.';
+            window.prompt('Automatické kopírovanie zlyhalo. Skopírujte tento kód pomocou Ctrl+C:', code);
+            return;
+        }
+
+        if (typeof navigator.vibrate === 'function') {
+            try { navigator.vibrate(18); } catch (error) { /* Haptika je volitelna. */ }
+        }
+
+        clearTimeout(feedbackTimers.get(badge));
+        badge.classList.add('is-copied');
+        badge.title = 'Skopírované: ' + code;
+        if (status) status.textContent = 'Kód ' + code + ' bol skopírovaný.';
+        feedbackTimers.set(badge, setTimeout(function () {
+            badge.classList.remove('is-copied');
+            badge.title = 'Kliknutím skopírovať kód';
+            feedbackTimers.delete(badge);
+        }, 1200));
+    });
+})();
+
 // Detekcia či hodnota je yes/no typ
 function isYesNoValue(val) {
     if (typeof val !== 'string') return false;

@@ -80,9 +80,9 @@ function ordersPlasticsGateSqlStatusList(mysqli $conn, array $statuses): string
 }
 
 /**
- * The preferred blocked status is discovered from Status Policies. A matching
- * policy is one where a plastics item status resolves the order to a non-NEW
- * order status that also exists as a dependent item status for G/S/F.
+ * The blocked status is discovered only from the dedicated plastics stock-check
+ * policy. Other P policies can resolve to status codes also used by G/S/F (for
+ * example INFO_REQUIRED), but those are not part of the plastics gate.
  *
  * @return array<int, string>
  */
@@ -96,7 +96,7 @@ function ordersPlasticsGatePolicyBlockedStatuses(mysqli $conn): array
         return [];
     }
 
-    $result = $conn->query("\n        SELECT\n          UPPER(TRIM(r.result_order_status_code)) AS status_code,\n          MIN(r.priority) AS sort_priority,\n          MIN(r.id) AS sort_rule_id\n        FROM status_workflow_rules r\n        INNER JOIN status_workflow_rule_conditions c ON c.rule_id = r.id\n        WHERE r.active = 1\n          AND UPPER(TRIM(COALESCE(r.result_order_status_code, ''))) NOT IN ('', 'NEW')\n          AND UPPER(c.department) = 'P'\n          AND LOWER(COALESCE(c.condition_type, 'status')) = 'status'\n          AND UPPER(COALESCE(c.operator, '')) IN ('=', 'IN')\n          AND EXISTS (\n            SELECT 1\n            FROM status_definitions sd_order\n            WHERE sd_order.scope = 'order'\n              AND UPPER(sd_order.code) = UPPER(r.result_order_status_code)\n              AND sd_order.active = 1\n          )\n          AND EXISTS (\n            SELECT 1\n            FROM status_definitions sd_item\n            WHERE sd_item.scope = 'item'\n              AND UPPER(sd_item.department) IN ('G', 'S', 'F')\n              AND UPPER(sd_item.code) = UPPER(r.result_order_status_code)\n              AND sd_item.active = 1\n          )\n        GROUP BY UPPER(TRIM(r.result_order_status_code))\n        ORDER BY sort_priority ASC, sort_rule_id ASC\n    ");
+    $result = $conn->query("\n        SELECT\n          UPPER(TRIM(r.result_order_status_code)) AS status_code,\n          MIN(r.priority) AS sort_priority,\n          MIN(r.id) AS sort_rule_id\n        FROM status_workflow_rules r\n        INNER JOIN status_workflow_rule_conditions c ON c.rule_id = r.id\n        WHERE r.active = 1\n          AND r.name = 'Plastics - Check Stock'\n          AND UPPER(TRIM(COALESCE(r.result_order_status_code, ''))) NOT IN ('', 'NEW')\n          AND UPPER(c.department) = 'P'\n          AND LOWER(COALESCE(c.condition_type, 'status')) = 'status'\n          AND UPPER(COALESCE(c.operator, '')) IN ('=', 'IN')\n          AND EXISTS (\n            SELECT 1\n            FROM status_definitions sd_order\n            WHERE sd_order.scope = 'order'\n              AND UPPER(sd_order.code) = UPPER(r.result_order_status_code)\n              AND sd_order.active = 1\n          )\n          AND EXISTS (\n            SELECT 1\n            FROM status_definitions sd_item\n            WHERE sd_item.scope = 'item'\n              AND UPPER(sd_item.department) IN ('G', 'S', 'F')\n              AND UPPER(sd_item.code) = UPPER(r.result_order_status_code)\n              AND sd_item.active = 1\n          )\n        GROUP BY UPPER(TRIM(r.result_order_status_code))\n        ORDER BY sort_priority ASC, sort_rule_id ASC\n    ");
 
     if (!$result instanceof mysqli_result) {
         return [];
