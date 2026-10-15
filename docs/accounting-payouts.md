@@ -10,7 +10,9 @@ Táto stránka slúži na nahratie výpisov platieb z eBay, kontrolu ich párova
 4. Vyberte správny mesiac a kliknite na **Export Vycuc**.
 5. Vytvorený súbor CSV importujte do OMEGY.
 
-Rovnaký alebo časovo sa prekrývajúci výpis môžete nahrať opakovane. Systém už uložené transakcie rozpozná a nevytvorí duplicity.
+Rovnaký alebo časovo sa prekrývajúci výpis môžete nahrať opakovane. Systém už uložené transakcie rozpozná a nevytvorí duplicity. Pri každom nahratí znova skúsi spárovať nespárované platby obsiahnuté vo výpise s objednávkami, ktoré medzičasom pribudli do Darkscrubu. Existujúce spárovania a sumy platieb zostanú zachované.
+
+Ak po importe vidíte nespárované platby, overte, že príslušné objednávky už sú v Darkscrube, a nahrajte znova pôvodný alebo novostiahnutý výpis obsahujúci tieto platby. Výsledok importu uvedie aj počet dodatočne spárovaných už uložených platieb. Platby bez zodpovedajúcej objednávky zostanú nespárované.
 
 ## Čo znamenajú karty
 

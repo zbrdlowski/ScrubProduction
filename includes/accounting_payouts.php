@@ -269,8 +269,12 @@ $accountingCardUrl = static function (string $cardType, string $cardMatch = 'all
       Importované riadky: <b><?= (int) $_GET['imported'] ?></b>,
       spárované s objednávkou: <b><?= (int) ($_GET['matched'] ?? 0) ?></b>,
       preskočené duplicity: <b><?= (int) ($_GET['duplicates'] ?? 0) ?></b>.
+      <?php if ((int) ($_GET['rematched'] ?? 0) > 0): ?>
+        Z toho dodatočne spárované už uložené platby: <b><?= (int) $_GET['rematched'] ?></b>.
+      <?php endif; ?>
       <?php if ((int) ($_GET['existing_files'] ?? 0) > 0): ?>
         Už importované súbory: <b><?= (int) $_GET['existing_files'] ?></b>.
+        Párovanie platieb z nahraných súborov sa skontrolovalo znova.
       <?php endif; ?>
     </div>
   <?php endif; ?>
@@ -286,7 +290,7 @@ $accountingCardUrl = static function (string $cardType, string $cardMatch = 'all
             <label class="accounting-upload-zone d-block" id="payoutDropZone" for="payoutFiles">
               <i class="fas fa-cloud-upload-alt fa-2x text-info mb-2"></i><br>
               Pretiahnite sem alebo vyberte UK a/alebo DE payout CSV<br>
-              <small class="accounting-muted">Súbor sa po importe neuchováva na disku.</small>
+              <small class="accounting-muted">Opakovaný import znova skúsi spárovať nespárované platby. Súbor sa po importe neuchováva na disku.</small>
             </label>
             <input class="form-control-file mt-2" id="payoutFiles" type="file" name="payout_files[]" accept=".csv,text/csv" multiple required>
             <div class="small accounting-muted mt-2" id="payoutFileSelection" aria-live="polite">Nie je vybraný žiadny súbor.</div>

@@ -7,6 +7,7 @@ if (session_status() === PHP_SESSION_NONE) {
 require_once dirname(__DIR__, 2) . '/includes/conn.php';
 require_once __DIR__ . '/access.php';
 require_once __DIR__ . '/payout_helpers.php';
+require_once __DIR__ . '/payout_matching.php';
 
 function accounting_payout_redirect(array $params): void
 {
@@ -67,13 +68,7 @@ $updateImport = $pdo->prepare('
         matched_order_count = :matched_orders
     WHERE id = :id
 ');
-$findOrder = $pdo->prepare('
-    SELECT id
-    FROM orders
-    WHERE external_order_id = :external_number OR order_number = :order_number
-    ORDER BY CASE WHEN external_order_id = :sort_number THEN 0 ELSE 1 END, id DESC
-    LIMIT 1
-');
+$findOrder = accounting_payout_order_match_statement($pdo);
 
 $transactionFields = [
     'source_key', 'source_region', 'transaction_date', 'transaction_type', 'transaction_type_raw',
@@ -100,6 +95,7 @@ $summary = [
     'imported' => 0,
     'duplicates' => 0,
     'matched' => 0,
+    'rematched' => 0,
 ];
 
 try {
@@ -127,7 +123,12 @@ try {
         $parsed = accounting_payout_parse_file($tmpName, basename((string) $originalName));
         $findImport->execute([$parsed['file_hash']]);
         if ($findImport->fetchColumn()) {
+            $pdo->beginTransaction();
+            $fileRematched = accounting_payout_rematch_rows($pdo, $parsed['rows']);
+            $pdo->commit();
             $summary['existing_files']++;
+            $summary['matched'] += $fileRematched;
+            $summary['rematched'] += $fileRematched;
             continue;
         }
 
@@ -179,12 +180,14 @@ try {
             ':matched_orders' => $fileMatched,
             ':id' => $importId,
         ]);
+        $fileRematched = accounting_payout_rematch_rows($pdo, $parsed['rows']);
         $pdo->commit();
 
         $summary['files']++;
         $summary['imported'] += $fileImported;
         $summary['duplicates'] += $fileDuplicates;
-        $summary['matched'] += $fileMatched;
+        $summary['matched'] += $fileMatched + $fileRematched;
+        $summary['rematched'] += $fileRematched;
     }
 } catch (Throwable $e) {
     if ($pdo->inTransaction()) {
@@ -197,6 +200,7 @@ accounting_payout_redirect([
     'imported' => $summary['imported'],
     'duplicates' => $summary['duplicates'],
     'matched' => $summary['matched'],
+    'rematched' => $summary['rematched'],
     'files' => $summary['files'],
     'existing_files' => $summary['existing_files'],
 ]);

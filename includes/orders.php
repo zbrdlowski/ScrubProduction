@@ -606,6 +606,12 @@ if ($fCustomerId > 0) {
 $fStatus = isset($_GET['status']) ? trim((string) $_GET['status']) : '';
 $fItemStatus = isset($_GET['item_status']) ? strtoupper(trim((string) $_GET['item_status'])) : '';
 $fItemDepartment = isset($_GET['item_department']) ? ordersNormalizeDepartmentCode((string) $_GET['item_department']) : '';
+// The dropdown carries both values because departments can share status codes.
+// Keep accepting the separate parameters used by badges and existing links.
+if (strpos($fItemStatus, '|') !== false) {
+  [$itemStatusDepartment, $fItemStatus] = explode('|', $fItemStatus, 2);
+  $fItemDepartment = ordersNormalizeDepartmentCode($itemStatusDepartment);
+}
 $fTrafficDepartment = isset($_GET['traffic_department']) ? ordersNormalizeDepartmentCode((string) $_GET['traffic_department']) : '';
 $fTrafficState = isset($_GET['traffic_state']) ? strtolower(trim((string) $_GET['traffic_state'])) : '';
 $fSource = isset($_GET['source']) ? trim((string) $_GET['source']) : '';
@@ -840,17 +846,32 @@ $itemDepartmentLabels = [
   'F' => 'Item - Fitting (F)',
 ];
 $allowedItemDepartments = ['G', 'S', 'P', 'F'];
+$itemStatusFilterOptions = [];
+foreach ($allowedItemDepartments as $itemDepartment) {
+  $itemStatusFilterOptions[$itemDepartment] = ordersGetItemStatusLabels($conn, $itemDepartment, false);
+}
 if (!in_array($fItemDepartment, $allowedItemDepartments, true)) {
   $fItemDepartment = '';
   $fItemStatus = '';
 }
 if ($fItemDepartment !== '') {
-  $allowedItemStatuses = array_keys(ordersGetItemStatusDefinitions($conn, $fItemDepartment, true));
+  $allowedItemStatuses = array_keys($itemStatusFilterOptions[$fItemDepartment]);
   if (!in_array($fItemStatus, $allowedItemStatuses, true)) {
     $fItemStatus = '';
   }
 } else {
   $fItemStatus = '';
+}
+
+// Normalize dropdown submissions for quick tabs and links built from $_GET.
+$fItemStatusFilter = '';
+if ($fItemStatus !== '' && $fItemDepartment !== '') {
+  $fItemStatusFilter = $fItemDepartment . '|' . $fItemStatus;
+  $_GET['item_status'] = $fItemStatus;
+  $_GET['item_department'] = $fItemDepartment;
+} else {
+  $fItemDepartment = '';
+  unset($_GET['item_status'], $_GET['item_department']);
 }
 
 $allowedTrafficDepartments = ['G', 'P', 'F', 'S'];
@@ -2570,6 +2591,10 @@ $deptOptions = [
 
     <form method="get" class="mb-0" style="min-width:320px; max-width:520px; flex:1;">
       <input type="hidden" name="page" value="<?= htmlspecialchars($page) ?>" />
+      <?php if ($fItemStatusFilter !== ''): ?>
+        <input type="hidden" name="item_status" value="<?= htmlspecialchars($fItemStatus, ENT_QUOTES, 'UTF-8') ?>" />
+        <input type="hidden" name="item_department" value="<?= htmlspecialchars($fItemDepartment, ENT_QUOTES, 'UTF-8') ?>" />
+      <?php endif; ?>
 
       <div class="input-group input-group-sm <?= fActive($fQ) ?>">
         <input class="form-control form-control-sm" name="q" value="<?= htmlspecialchars($fQ) ?>"
@@ -2808,10 +2833,10 @@ $deptOptions = [
         margin-bottom: 10px;
       }
 
-      /* Rovnomerná mriežka — 7 stĺpcov */
+      /* Rovnomerná mriežka — 8 stĺpcov */
       #ordersFilterForm .filter-grid {
         display: grid;
-        grid-template-columns: repeat(7, 1fr);
+        grid-template-columns: repeat(8, minmax(0, 1fr));
         gap: 0 12px;
       }
 
@@ -3188,7 +3213,22 @@ $deptOptions = [
               </select>
             </div>
 
-            <!-- 4. Source -->
+            <!-- 4. Item Status -->
+            <div class="form-group <?= fActive($fItemStatusFilter) ?>">
+              <label class="small mb-1" for="ordersItemStatusFilter">Item Status</label>
+              <select class="form-control form-control-sm" name="item_status" id="ordersItemStatusFilter">
+                <option value="">— All —</option>
+                <?php foreach ($itemStatusFilterOptions as $itemDepartment => $itemStatusLabels): ?>
+                  <optgroup label="<?= htmlspecialchars($itemDepartmentLabels[$itemDepartment], ENT_QUOTES, 'UTF-8') ?>">
+                    <?php foreach ($itemStatusLabels as $itemStatusCode => $itemStatusLabel): ?>
+                      <?= fOpt($itemDepartment . '|' . $itemStatusCode, $itemDepartment . ' - ' . $itemStatusLabel, $fItemStatusFilter) ?>
+                    <?php endforeach; ?>
+                  </optgroup>
+                <?php endforeach; ?>
+              </select>
+            </div>
+
+            <!-- 5. Source -->
             <div class="form-group <?= fActive($fSource) ?>">
               <label class="small mb-1">Source</label>
               <select class="form-control form-control-sm" name="source">
@@ -3204,7 +3244,7 @@ $deptOptions = [
               </select>
             </div>
 
-            <!-- 5. Priority -->
+            <!-- 6. Priority -->
             <div class="form-group <?= fActive($fPriority) ?>">
               <label class="small mb-1">Priority</label>
               <select class="form-control form-control-sm" name="priority">
@@ -3220,7 +3260,7 @@ $deptOptions = [
               </select>
             </div>
 
-            <!-- 6. Category -->
+            <!-- 7. Category -->
             <div class="form-group <?= fActive($fCat) ?>">
               <label class="small mb-1">Category</label>
               <select class="form-control form-control-sm" name="cat">
