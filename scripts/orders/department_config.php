@@ -30,6 +30,9 @@ const DEPT_PREFIX_MAP = [
   'G'     => ['G'],
   'TF'    => ['G','F'],          // TF bez P (len grafika, nie plasty)
 
+  // --- Graphics produced with warehouse preparation ---
+  'G_MC'  => ['G', 'P'],         // Moto Carpet / Bike Mat is prepared in the plastics warehouse
+
   // --- Pure Plastics ---
   'P'     => ['P'],
   'PS'    => ['P', 'S'],     // Plastics + Seat Cover
@@ -164,6 +167,8 @@ function dept_extract_prefix(?string $value): ?string {
  * @return string[]  Napr. ['G', 'P', 'F']
  */
 function dept_get_departments(?string $customLabel, ?string $sku = null): array {
+  $departments = [];
+
   foreach ([$customLabel, $sku] as $candidate) {
     $fullPrefix = dept_extract_prefix($candidate);
     if ($fullPrefix === null) continue;
@@ -173,13 +178,31 @@ function dept_get_departments(?string $customLabel, ?string $sku = null): array 
     $simplePrefix = explode('_', $fullPrefix)[0];
 
     if (isset(DEPT_PREFIX_MAP[$fullPrefix])) {
-      return DEPT_PREFIX_MAP[$fullPrefix];
+      $departments = DEPT_PREFIX_MAP[$fullPrefix];
+      break;
     }
     if (isset(DEPT_PREFIX_MAP[$simplePrefix])) {
-      return DEPT_PREFIX_MAP[$simplePrefix];
+      $departments = DEPT_PREFIX_MAP[$simplePrefix];
+      break;
     }
   }
-  return [];
+
+  // Some product families use a compound prefix without another separator,
+  // for example G_MC004. Merge their configured departments after the generic
+  // classification so an existing combination such as GFP never loses a dept.
+  foreach ([$customLabel, $sku] as $candidate) {
+    $value = strtoupper(trim((string)$candidate));
+    if ($value === '') continue;
+    $value = strtoupper(trim(explode('|', $value)[0]));
+
+    foreach (DEPT_PREFIX_MAP as $configuredPrefix => $configuredDepartments) {
+      if (strpos($configuredPrefix, '_') !== false && strpos($value, $configuredPrefix) === 0) {
+        $departments = array_values(array_unique(array_merge($departments, $configuredDepartments)));
+      }
+    }
+  }
+
+  return $departments;
 }
 
 /**
