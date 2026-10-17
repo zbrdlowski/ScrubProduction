@@ -869,6 +869,26 @@ for ($i = 0; $i < 6; $i++) {
     background: #404852;
   }
 
+  .holiday-floating-table-header {
+    display: none;
+    position: fixed;
+    left: 0;
+    top: 0;
+    overflow: hidden;
+    pointer-events: none;
+    z-index: 1020;
+    background: #404852;
+    box-shadow: 0 3px 8px rgba(0, 0, 0, .28);
+  }
+
+  .holiday-floating-table-header.is-active {
+    display: block;
+  }
+
+  .holiday-floating-table-header .holiday-grid {
+    margin-bottom: 0 !important;
+  }
+
   .holiday-grid {
     table-layout: fixed;
     min-width: 1180px;
@@ -1542,6 +1562,119 @@ for ($i = 0; $i < 6; $i++) {
     if (mainHeader && window.ResizeObserver) {
       new ResizeObserver(updateHolidayStickyTop).observe(mainHeader);
     }
+
+    function initHolidayStickyDateRows() {
+      var tables = Array.prototype.map.call(
+        document.querySelectorAll('.holiday-month-card .holiday-grid'),
+        function (table) {
+          return {
+            table: table,
+            wrap: table.closest('.holiday-table-wrap'),
+            card: table.closest('.holiday-month-card')
+          };
+        }
+      ).filter(function (config) {
+        return config.table && config.table.tHead && config.wrap && config.card;
+      });
+
+      if (!tables.length) {
+        return;
+      }
+
+      var floating = document.createElement('div');
+      floating.className = 'holiday-floating-table-header';
+      floating.setAttribute('aria-hidden', 'true');
+      document.body.appendChild(floating);
+
+      var activeTable = null;
+      var activeClone = null;
+      var scheduled = false;
+
+      function stickyTopOffset() {
+        var value = parseFloat(window.getComputedStyle(holidayPlanner).getPropertyValue('--holiday-sticky-top'));
+        return Number.isFinite(value) ? value : 0;
+      }
+
+      function syncClone(config) {
+        if (activeTable !== config.table) {
+          floating.textContent = '';
+          activeClone = config.table.cloneNode(false);
+          activeClone.removeAttribute('id');
+          activeClone.appendChild(config.table.tHead.cloneNode(true));
+          floating.appendChild(activeClone);
+          activeTable = config.table;
+        }
+
+        var sourceCells = config.table.tHead.rows[0].cells;
+        var cloneCells = activeClone.tHead.rows[0].cells;
+        Array.prototype.forEach.call(sourceCells, function (cell, index) {
+          if (!cloneCells[index]) {
+            return;
+          }
+          var width = cell.getBoundingClientRect().width + 'px';
+          cloneCells[index].style.width = width;
+          cloneCells[index].style.minWidth = width;
+          cloneCells[index].style.maxWidth = width;
+        });
+
+        activeClone.style.width = config.table.getBoundingClientRect().width + 'px';
+        activeClone.style.marginLeft = '-' + config.wrap.scrollLeft + 'px';
+      }
+
+      function updateStickyDateRow() {
+        scheduled = false;
+        var top = stickyTopOffset();
+        var activeConfig = null;
+        var dateRowTop = top;
+
+        tables.some(function (config) {
+          var cardHeader = config.card.querySelector('.card-header');
+          var headerHeight = cardHeader ? cardHeader.getBoundingClientRect().height : 0;
+          var candidateTop = top + headerHeight;
+          var tableRect = config.table.getBoundingClientRect();
+          var dateRowHeight = config.table.tHead.getBoundingClientRect().height;
+
+          if (tableRect.top <= candidateTop && tableRect.bottom > candidateTop + dateRowHeight) {
+            activeConfig = config;
+            dateRowTop = candidateTop;
+            return true;
+          }
+          return false;
+        });
+
+        if (!activeConfig) {
+          floating.classList.remove('is-active');
+          activeTable = null;
+          activeClone = null;
+          floating.textContent = '';
+          return;
+        }
+
+        var wrapRect = activeConfig.wrap.getBoundingClientRect();
+        syncClone(activeConfig);
+        floating.style.top = dateRowTop + 'px';
+        floating.style.left = wrapRect.left + 'px';
+        floating.style.width = wrapRect.width + 'px';
+        floating.classList.add('is-active');
+      }
+
+      function requestStickyDateRowUpdate() {
+        if (scheduled) {
+          return;
+        }
+        scheduled = true;
+        window.requestAnimationFrame(updateStickyDateRow);
+      }
+
+      window.addEventListener('scroll', requestStickyDateRowUpdate, { passive: true });
+      window.addEventListener('resize', requestStickyDateRowUpdate);
+      tables.forEach(function (config) {
+        config.wrap.addEventListener('scroll', requestStickyDateRowUpdate, { passive: true });
+      });
+      requestStickyDateRowUpdate();
+    }
+
+    initHolidayStickyDateRows();
 
     var holidayModalEl = document.getElementById('holidayRequestModal');
 
