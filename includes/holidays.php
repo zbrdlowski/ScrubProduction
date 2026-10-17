@@ -327,7 +327,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $holidayHasTable) {
     holidayRedirect($returnUrl);
   }
 
-  if ($action === 'delete_approved_holiday_day' && $holidayCanManage) {
+  if (in_array($action, ['delete_holiday_day', 'delete_approved_holiday_day'], true) && $holidayCanManage) {
     $requestId = intval($_POST['request_id'] ?? 0);
     $deleteDate = trim($_POST['delete_date'] ?? '');
 
@@ -337,7 +337,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $holidayHasTable) {
 
       $stmt = $conn->prepare("SELECT id, start_date, end_date
           FROM holiday_requests
-          WHERE id=? AND status='approved'
+          WHERE id=? AND status IN ('pending','approved')
           FOR UPDATE");
       if (!$stmt) {
         $operationOk = false;
@@ -358,11 +358,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $holidayHasTable) {
       }
 
       if ($operationOk) {
-        $startDate = $request['start_date'];
-        $endDate = $request['end_date'];
+        // Stored ranges may include weekends or public holidays at either end.
+        $startDate = holidayIsNonWorkingDate($request['start_date'], $holidayPublicHolidays)
+          ? holidayNextWorkingDate($request['start_date'], $holidayPublicHolidays)
+          : $request['start_date'];
+        $endDate = holidayIsNonWorkingDate($request['end_date'], $holidayPublicHolidays)
+          ? holidayPreviousWorkingDate($request['end_date'], $holidayPublicHolidays)
+          : $request['end_date'];
 
         if ($startDate === $endDate) {
-          $stmt = $conn->prepare("DELETE FROM holiday_requests WHERE id=? AND status='approved'");
+          $stmt = $conn->prepare("DELETE FROM holiday_requests WHERE id=? AND status IN ('pending','approved')");
           if ($stmt) {
             $stmt->bind_param('i', $requestId);
             $operationOk = $stmt->execute() && $stmt->affected_rows === 1;
@@ -372,7 +377,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $holidayHasTable) {
           }
         } elseif ($deleteDate === $startDate) {
           $newStart = holidayNextWorkingDate($deleteDate, $holidayPublicHolidays);
-          $stmt = $conn->prepare("UPDATE holiday_requests SET start_date=? WHERE id=? AND status='approved'");
+          $stmt = $conn->prepare("UPDATE holiday_requests SET start_date=? WHERE id=? AND status IN ('pending','approved')");
           if ($stmt) {
             $stmt->bind_param('si', $newStart, $requestId);
             $operationOk = $stmt->execute() && $stmt->affected_rows === 1;
@@ -382,7 +387,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $holidayHasTable) {
           }
         } elseif ($deleteDate === $endDate) {
           $newEnd = holidayPreviousWorkingDate($deleteDate, $holidayPublicHolidays);
-          $stmt = $conn->prepare("UPDATE holiday_requests SET end_date=? WHERE id=? AND status='approved'");
+          $stmt = $conn->prepare("UPDATE holiday_requests SET end_date=? WHERE id=? AND status IN ('pending','approved')");
           if ($stmt) {
             $stmt->bind_param('si', $newEnd, $requestId);
             $operationOk = $stmt->execute() && $stmt->affected_rows === 1;
@@ -399,7 +404,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $holidayHasTable) {
               SELECT employee_id, request_type, status, ?, end_date, note, admin_note,
                      requested_by, reviewed_by, reviewed_at, employee_seen_at, created_at
               FROM holiday_requests
-              WHERE id=? AND status='approved'");
+              WHERE id=? AND status IN ('pending','approved')");
           if ($stmt) {
             $stmt->bind_param('si', $newRightStart, $requestId);
             $operationOk = $stmt->execute() && $stmt->affected_rows === 1;
@@ -409,7 +414,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $holidayHasTable) {
           }
 
           if ($operationOk) {
-            $stmt = $conn->prepare("UPDATE holiday_requests SET end_date=? WHERE id=? AND status='approved'");
+            $stmt = $conn->prepare("UPDATE holiday_requests SET end_date=? WHERE id=? AND status IN ('pending','approved')");
             if ($stmt) {
               $stmt->bind_param('si', $newLeftEnd, $requestId);
               $operationOk = $stmt->execute() && $stmt->affected_rows === 1;
@@ -708,6 +713,8 @@ if ($employeeRes) {
 
 $requestsByEmployeeDate = [];
 $pendingRequests = [];
+$holidayReviewRequests = [];
+$holidayReviewRequestKeys = [];
 $myRequests = [];
 if ($holidayHasTable) {
   $rangeStart = $windowStart->format('Y-m-d');
@@ -738,17 +745,37 @@ if ($holidayHasTable) {
   $stmt->close();
 
   if ($holidayCanManage) {
-    $res = $conn->query("SELECT hr.*, CONCAT_WS(' ', e.firstname, e.lastname) AS employee_name
+    $res = $conn->query("SELECT hr.*, CONCAT_WS(' ', e.firstname, e.lastname) AS employee_name,
+               COALESCE(p.description, 'No department') AS department_name
         FROM holiday_requests hr
         LEFT JOIN employees e ON e.id = hr.employee_id
+        LEFT JOIN position p ON p.id = e.position_id
         WHERE hr.status='pending'
-        ORDER BY hr.created_at ASC
-        LIMIT 50");
+        ORDER BY hr.created_at ASC");
     if ($res) {
       while ($row = $res->fetch_assoc()) {
         $pendingRequests[] = $row;
       }
       $pendingRequests = holidayGroupRequests($pendingRequests, $holidayPublicHolidays);
+      // Keep full request groups, including days outside the displayed six-month window.
+      foreach ($pendingRequests as $request) {
+        if ($request['start_date'] > $rangeEnd || $request['end_date'] < $rangeStart) {
+          continue;
+        }
+        $reviewKey = intval($request['id']);
+        $holidayReviewRequests[$reviewKey] = [
+          'request_ids' => $request['request_ids'],
+          'employee' => $request['employee_name'],
+          'department' => $request['department_name'],
+          'type' => holidayTypeLabel($request['request_type']),
+          'dates' => date('d.m.Y', strtotime($request['start_date'])) . ' - ' . date('d.m.Y', strtotime($request['end_date'])),
+          'note' => (string) ($request['note'] ?? ''),
+        ];
+        foreach ($request['request_ids'] as $requestId) {
+          $holidayReviewRequestKeys[$requestId] = $reviewKey;
+        }
+      }
+      $pendingRequests = array_slice($pendingRequests, 0, 50);
     }
   }
 
@@ -813,14 +840,15 @@ for ($i = 0; $i < 6; $i++) {
     background: #404852;
     border: 1px solid #56616c;
     border-radius: 6px;
-    overflow: hidden;
+    /* Clip rounded corners without creating a scroll container for the header. */
+    overflow: clip;
     box-shadow: 0 0 0 1px rgba(23, 162, 184, .12);
   }
 
   .holiday-month-card .card-header {
     position: sticky;
-    top: 0;
-    z-index: 4;
+    top: var(--holiday-sticky-top, 3.5rem);
+    z-index: 6;
     background: #017da3;
     border-bottom: 1px solid rgba(23, 162, 184, .65);
     color: #f8f9fa;
@@ -968,7 +996,8 @@ for ($i = 0; $i < 6; $i++) {
     padding: 0;
   }
 
-  .holiday-delete-day:hover {
+  .holiday-delete-day:hover,
+  .holiday-delete-day:focus-visible {
     border-color: #dc3545;
     box-shadow: inset 0 0 0 1px #dc3545;
   }
@@ -976,6 +1005,51 @@ for ($i = 0; $i < 6; $i++) {
   .holiday-delete-day .holiday-delete-mark {
     color: #ffb3bb;
     margin-left: 2px;
+  }
+
+  .holiday-cell-badges-stacked {
+    flex-direction: column;
+    height: auto;
+  }
+
+  .holiday-request-actions {
+    display: flex;
+    min-height: 34px;
+    flex: 1 1 0;
+    min-width: 0;
+  }
+
+  .holiday-request-actions .holiday-review-request {
+    padding: 0;
+  }
+
+  .holiday-request-actions .holiday-delete-day-form {
+    flex: 0 0 14px;
+  }
+
+  .holiday-remove-pending-day {
+    width: 100%;
+    border: 1px solid rgba(220, 53, 69, .65);
+    background: rgba(220, 53, 69, .2);
+    color: #ffb3bb;
+    font-size: 14px;
+    font-weight: 700;
+  }
+
+  .holiday-review-request {
+    cursor: pointer;
+    padding: 0 3px;
+  }
+
+  .holiday-review-request:hover,
+  .holiday-review-request:focus-visible {
+    box-shadow: inset 0 0 0 2px #ffc107;
+    outline: none;
+  }
+
+  #holidayReviewNote {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
   }
 
   .holiday-pill-pending {
@@ -1014,7 +1088,7 @@ for ($i = 0; $i < 6; $i++) {
   }
 </style>
 
-<div class="container-fluid">
+<div class="container-fluid holiday-planner">
   <div class="d-flex justify-content-between align-items-center mb-3">
     <h4 class="mb-0" style="color:#e4e6eb;"><i class="far fa-calendar-check mr-2"></i>Holiday planner</h4>
     <button type="button" class="btn btn-primary" id="holidayNewRequestButton"
@@ -1055,7 +1129,8 @@ for ($i = 0; $i < 6; $i++) {
     <span class="holiday-pill holiday-pill-doctor">D</span><span class="text-muted mr-2">Doctor</span>
     <span class="holiday-pill holiday-pill-sick">S</span><span class="text-muted mr-2">Sick</span>
     <?php if ($holidayCanManage): ?>
-      <span class="text-muted"><span class="text-danger">&times;</span> Delete an approved individual day</span>
+      <span class="text-muted mr-2"><i class="fas fa-mouse-pointer mr-1"></i> Click a pending request to approve or reject</span>
+      <span class="text-muted"><span class="text-danger">&times;</span> Remove one day from a request</span>
     <?php endif; ?>
   </div>
 
@@ -1116,7 +1191,7 @@ for ($i = 0; $i < 6; $i++) {
       $cursor->modify('+1 day');
     }
     ?>
-    <div class="card card-outline card-secondary holiday-month-card">
+    <div class="card card-outline card-secondary holiday-month-card" data-holiday-month="<?= $monthStart->format('Y-m') ?>">
       <div class="card-header py-2">
         <h5 class="card-title mb-0"><?= htmlspecialchars($monthStart->format('F Y')) ?></h5>
       </div>
@@ -1149,7 +1224,7 @@ for ($i = 0; $i < 6; $i++) {
                 <td colspan="<?= count($days) + 1 ?>"><?= htmlspecialchars($department) ?></td>
               </tr>
               <?php foreach ($deptEmployees as $employee): ?>
-                <tr>
+                <tr data-holiday-employee-id="<?= intval($employee['id']) ?>">
                   <td class="holiday-employee-col">
                     <?= holidayAvatar($employee['photo'] ?? '', $employee['name']) ?>
                     <?= htmlspecialchars($employee['lastname'] . ' ' . $employee['firstname']) ?>
@@ -1181,7 +1256,7 @@ for ($i = 0; $i < 6; $i++) {
                       : '';
                     ?>
                     <td class="<?= htmlspecialchars(implode(' ', $cellClasses)) ?>" data-date="<?= htmlspecialchars($date) ?>"<?= $cellTooltipAttrs ?>>
-                      <div class="holiday-cell-badges">
+                      <div class="holiday-cell-badges<?= count($cellRequests) > 1 ? ' holiday-cell-badges-stacked' : '' ?>">
                         <?php foreach ($cellRequests as $request): ?>
                           <?php
                           $pillClass = $request['status'] === 'pending' ? 'holiday-pill-pending' : 'holiday-pill-approved';
@@ -1208,10 +1283,31 @@ for ($i = 0; $i < 6; $i++) {
                             ? implode(' | ', $tooltipParts)
                             : holidayTypeLabel($request['request_type']) . ' - ' . $request['status'];
                           ?>
-                          <?php if ($holidayCanManage && $request['status'] === 'approved'): ?>
-                            <form method="POST" class="holiday-delete-day-form"
-                              onsubmit="return confirm('Delete this approved day?');">
-                              <input type="hidden" name="action" value="delete_approved_holiday_day">
+                          <?php if ($holidayCanManage && $request['status'] === 'pending' && isset($holidayReviewRequestKeys[intval($request['id'])])): ?>
+                            <div class="holiday-request-actions">
+                              <button type="button" class="holiday-pill <?= $pillClass ?> holiday-review-request"
+                                data-holiday-review="<?= $holidayReviewRequestKeys[intval($request['id'])] ?>"
+                                aria-haspopup="dialog" aria-controls="holidayReviewModal"
+                                aria-label="<?= htmlspecialchars('Review ' . holidayTypeLabel($request['request_type']) . ' request: ' . $employee['name'], ENT_QUOTES, 'UTF-8') ?>"
+                                title="<?= htmlspecialchars($title . ' | Click to approve or reject this request block', ENT_QUOTES, 'UTF-8') ?>"
+                                data-toggle="tooltip">
+                                <?= htmlspecialchars(holidayCellCode($request['request_type'], $request['status'])) ?>
+                              </button>
+                              <form method="POST" class="holiday-delete-day-form" data-holiday-remove-day
+                                data-confirm="<?= htmlspecialchars('Remove ' . $day->format('d.m.Y') . ' from the request for ' . $employee['name'] . '?', ENT_QUOTES, 'UTF-8') ?>">
+                                <input type="hidden" name="action" value="delete_holiday_day">
+                                <input type="hidden" name="request_id" value="<?= intval($request['id']) ?>">
+                                <input type="hidden" name="delete_date" value="<?= htmlspecialchars($date) ?>">
+                                <input type="hidden" name="return_start" value="<?= htmlspecialchars($windowStart->format('Y-m-01')) ?>">
+                                <button type="submit" class="holiday-delete-day holiday-remove-pending-day"
+                                  aria-label="<?= htmlspecialchars('Remove ' . $day->format('d.m.Y') . ' from the request for ' . $employee['name'], ENT_QUOTES, 'UTF-8') ?>"
+                                  title="Remove this day" data-toggle="tooltip">&times;</button>
+                              </form>
+                            </div>
+                          <?php elseif ($holidayCanManage && $request['status'] === 'approved'): ?>
+                            <form method="POST" class="holiday-delete-day-form" data-holiday-remove-day
+                              data-confirm="<?= htmlspecialchars('Remove ' . $day->format('d.m.Y') . ' from the approved request for ' . $employee['name'] . '?', ENT_QUOTES, 'UTF-8') ?>">
+                              <input type="hidden" name="action" value="delete_holiday_day">
                               <input type="hidden" name="request_id" value="<?= intval($request['id']) ?>">
                               <input type="hidden" name="delete_date" value="<?= htmlspecialchars($date) ?>">
                               <input type="hidden" name="return_start"
@@ -1322,6 +1418,45 @@ for ($i = 0; $i < 6; $i++) {
   </div>
 </div>
 
+<?php if ($holidayCanManage): ?>
+  <script type="application/json" id="holidayReviewData"><?= json_encode($holidayReviewRequests, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_INVALID_UTF8_SUBSTITUTE) ?></script>
+  <div class="modal fade" id="holidayReviewModal" tabindex="-1" role="dialog" aria-labelledby="holidayReviewTitle" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content">
+        <form method="POST" id="holidayReviewForm">
+          <input type="hidden" name="action" value="review_holiday_request">
+          <input type="hidden" name="return_start" value="<?= htmlspecialchars($windowStart->format('Y-m-01')) ?>">
+          <div id="holidayReviewRequestIds"></div>
+          <div class="modal-header bg-info">
+            <h5 class="modal-title text-white" id="holidayReviewTitle">Review time off request</h5>
+            <button type="button" class="close text-white" data-dismiss="modal" data-bs-dismiss="modal"
+              data-holiday-modal-close aria-label="Close">&times;</button>
+          </div>
+          <div class="modal-body">
+            <dl class="row mb-2">
+              <dt class="col-sm-4">Employee</dt><dd class="col-sm-8" id="holidayReviewEmployee"></dd>
+              <dt class="col-sm-4">Department</dt><dd class="col-sm-8" id="holidayReviewDepartment"></dd>
+              <dt class="col-sm-4">Type</dt><dd class="col-sm-8" id="holidayReviewType"></dd>
+              <dt class="col-sm-4">Dates</dt><dd class="col-sm-8" id="holidayReviewDates"></dd>
+            </dl>
+            <div class="mb-3"><strong>Employee note</strong><p class="mb-0" id="holidayReviewNote"></p></div>
+            <div class="form-group">
+              <label for="holidayReviewAdminNote">Admin note</label>
+              <textarea name="admin_note" id="holidayReviewAdminNote" class="form-control" rows="2" placeholder="Optional reason or comment"></textarea>
+            </div>
+            <p class="text-muted small mb-0">Your decision applies to the remaining block of dates shown above. Removed days are excluded.</p>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary mr-auto" data-dismiss="modal" data-bs-dismiss="modal" data-holiday-modal-close>Cancel</button>
+            <button type="submit" name="status" value="rejected" class="btn btn-danger">Reject</button>
+            <button type="submit" name="status" value="approved" class="btn btn-success">Approve</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+<?php endif; ?>
+
 <div class="modal fade" id="holidayRequestModal" tabindex="-1">
   <div class="modal-dialog">
     <div class="modal-content">
@@ -1391,8 +1526,24 @@ for ($i = 0; $i < 6; $i++) {
 
 <script>
   document.addEventListener('DOMContentLoaded', function () {
+    var holidayPlanner = document.querySelector('.holiday-planner');
+    var mainHeader = document.querySelector('.main-header');
+
+    function updateHolidayStickyTop() {
+      var headerPosition = mainHeader ? window.getComputedStyle(mainHeader).position : '';
+      var top = mainHeader && (headerPosition === 'fixed' || headerPosition === 'sticky')
+        ? Math.max(0, mainHeader.getBoundingClientRect().bottom)
+        : 0;
+      holidayPlanner.style.setProperty('--holiday-sticky-top', top + 'px');
+    }
+
+    updateHolidayStickyTop();
+    window.addEventListener('resize', updateHolidayStickyTop);
+    if (mainHeader && window.ResizeObserver) {
+      new ResizeObserver(updateHolidayStickyTop).observe(mainHeader);
+    }
+
     var holidayModalEl = document.getElementById('holidayRequestModal');
-    var $holidayModal = window.jQuery && holidayModalEl ? $(holidayModalEl) : null;
 
     function cleanupHolidayModalBackdrop() {
       document.body.classList.remove('modal-open');
@@ -1402,32 +1553,36 @@ for ($i = 0; $i < 6; $i++) {
       });
     }
 
-    function showHolidayModal() {
+    function showHolidayModal(modalEl) {
+      modalEl = modalEl || holidayModalEl;
+      var $holidayModal = window.jQuery && modalEl ? $(modalEl) : null;
       if ($holidayModal && typeof $holidayModal.modal === 'function') {
         $holidayModal.modal('show');
         return;
       }
 
-      if (window.bootstrap && typeof bootstrap.Modal === 'function' && holidayModalEl) {
+      if (window.bootstrap && typeof bootstrap.Modal === 'function' && modalEl) {
         var modal = typeof bootstrap.Modal.getOrCreateInstance === 'function'
-          ? bootstrap.Modal.getOrCreateInstance(holidayModalEl)
-          : new bootstrap.Modal(holidayModalEl);
+          ? bootstrap.Modal.getOrCreateInstance(modalEl)
+          : new bootstrap.Modal(modalEl);
         modal.show();
         return;
       }
 
-      if (!holidayModalEl) {
+      if (!modalEl) {
         return;
       }
 
-      holidayModalEl.style.display = 'block';
-      holidayModalEl.removeAttribute('aria-hidden');
-      holidayModalEl.setAttribute('aria-modal', 'true');
-      holidayModalEl.classList.add('show');
+      modalEl.style.display = 'block';
+      modalEl.removeAttribute('aria-hidden');
+      modalEl.setAttribute('aria-modal', 'true');
+      modalEl.classList.add('show');
       document.body.classList.add('modal-open');
     }
 
     function hideHolidayModal(event) {
+      var modalEl = event ? event.currentTarget.closest('.modal') : holidayModalEl;
+      var $holidayModal = window.jQuery && modalEl ? $(modalEl) : null;
       if (event) {
         event.preventDefault();
       }
@@ -1437,28 +1592,28 @@ for ($i = 0; $i < 6; $i++) {
         return;
       }
 
-      if (window.bootstrap && typeof bootstrap.Modal === 'function' && holidayModalEl) {
+      if (window.bootstrap && typeof bootstrap.Modal === 'function' && modalEl) {
         var modal = typeof bootstrap.Modal.getInstance === 'function'
-          ? bootstrap.Modal.getInstance(holidayModalEl)
+          ? bootstrap.Modal.getInstance(modalEl)
           : null;
         if (!modal && typeof bootstrap.Modal.getOrCreateInstance === 'function') {
-          modal = bootstrap.Modal.getOrCreateInstance(holidayModalEl);
+          modal = bootstrap.Modal.getOrCreateInstance(modalEl);
         }
         if (!modal) {
-          modal = new bootstrap.Modal(holidayModalEl);
+          modal = new bootstrap.Modal(modalEl);
         }
         modal.hide();
         return;
       }
 
-      if (!holidayModalEl) {
+      if (!modalEl) {
         return;
       }
 
-      holidayModalEl.classList.remove('show');
-      holidayModalEl.style.display = 'none';
-      holidayModalEl.setAttribute('aria-hidden', 'true');
-      holidayModalEl.removeAttribute('aria-modal');
+      modalEl.classList.remove('show');
+      modalEl.style.display = 'none';
+      modalEl.setAttribute('aria-hidden', 'true');
+      modalEl.removeAttribute('aria-modal');
       cleanupHolidayModalBackdrop();
     }
 
@@ -1474,6 +1629,116 @@ for ($i = 0; $i < 6; $i++) {
         container: 'body',
         trigger: 'hover'
       });
+    }
+
+    var reviewModal = document.getElementById('holidayReviewModal');
+    if (reviewModal) {
+      var reviewData = JSON.parse(document.getElementById('holidayReviewData').textContent);
+      var reviewForm = document.getElementById('holidayReviewForm');
+      var reviewTrigger = null;
+      var reviewAnchor = null;
+      var positionKey = 'holiday-review-position:<?= $holidayEmpId ?>:<?= $windowStart->format('Y-m-01') ?>';
+
+      function holidayCalendarAnchor(element) {
+        var cell = element.closest('td');
+        return {
+          month: element.closest('[data-holiday-month]').dataset.holidayMonth,
+          employee: element.closest('[data-holiday-employee-id]').dataset.holidayEmployeeId,
+          date: cell.dataset.date,
+          top: cell.getBoundingClientRect().top
+        };
+      }
+
+      function saveHolidayPosition(anchor) {
+        // Anchor to a cell because reviewing or splitting a request changes the summary above it.
+        var position = { savedAt: Date.now(), anchor: anchor, x: window.scrollX, y: window.scrollY, months: {} };
+        document.querySelectorAll('[data-holiday-month]').forEach(function (card) {
+          position.months[card.dataset.holidayMonth] = card.querySelector('.holiday-table-wrap').scrollLeft;
+        });
+        try {
+          sessionStorage.setItem(positionKey, JSON.stringify(position));
+        } catch (error) {
+          // The form still submits when browser storage is unavailable.
+        }
+      }
+
+      document.querySelectorAll('[data-holiday-remove-day]').forEach(function (form) {
+        form.addEventListener('submit', function (event) {
+          if (!window.confirm(form.dataset.confirm)) {
+            event.preventDefault();
+            return;
+          }
+          saveHolidayPosition(holidayCalendarAnchor(form));
+        });
+      });
+
+      document.querySelectorAll('[data-holiday-review]').forEach(function (button) {
+        button.addEventListener('click', function () {
+          var request = reviewData[button.dataset.holidayReview];
+          if (!request) {
+            return;
+          }
+          reviewForm.reset();
+          var ids = document.getElementById('holidayReviewRequestIds');
+          ids.textContent = '';
+          request.request_ids.forEach(function (id) {
+            var input = document.createElement('input');
+            input.type = 'hidden';
+            input.name = 'request_ids[]';
+            input.value = id;
+            ids.appendChild(input);
+          });
+          ['Employee', 'Department', 'Type', 'Dates', 'Note'].forEach(function (field) {
+            document.getElementById('holidayReview' + field).textContent = request[field.toLowerCase()] || '—';
+          });
+          reviewTrigger = button;
+          reviewAnchor = holidayCalendarAnchor(button);
+          if (window.jQuery && typeof $.fn.tooltip === 'function') {
+            $(button).tooltip('hide');
+          }
+          showHolidayModal(reviewModal);
+        });
+      });
+
+      $(reviewModal).on('hidden.bs.modal', function () {
+        if (reviewTrigger) {
+          reviewTrigger.focus({ preventScroll: true });
+        }
+      });
+
+      reviewForm.addEventListener('submit', function () {
+        saveHolidayPosition(reviewAnchor);
+      });
+
+      try {
+        var savedPosition = JSON.parse(sessionStorage.getItem(positionKey));
+        sessionStorage.removeItem(positionKey);
+        if (savedPosition && Date.now() - savedPosition.savedAt < 300000) {
+          var restoreReviewPosition = function () {
+            var anchorCell = null;
+            document.querySelectorAll('[data-holiday-month]').forEach(function (card) {
+              card.querySelector('.holiday-table-wrap').scrollLeft = savedPosition.months[card.dataset.holidayMonth] || 0;
+              if (savedPosition.anchor && card.dataset.holidayMonth === savedPosition.anchor.month) {
+                card.querySelectorAll('[data-holiday-employee-id]').forEach(function (row) {
+                  if (row.dataset.holidayEmployeeId === savedPosition.anchor.employee) {
+                    anchorCell = Array.from(row.querySelectorAll('[data-date]')).find(function (cell) {
+                      return cell.dataset.date === savedPosition.anchor.date;
+                    });
+                  }
+                });
+              }
+            });
+            var top = anchorCell
+              ? window.scrollY + anchorCell.getBoundingClientRect().top - savedPosition.anchor.top
+              : savedPosition.y;
+            window.scrollTo(savedPosition.x, top);
+          };
+          restoreReviewPosition();
+          window.addEventListener('load', function () { window.requestAnimationFrame(restoreReviewPosition); }, { once: true });
+        }
+      } catch (error) {
+        // Ignore expired or unavailable saved positions.
+      }
     }
 
     $('#holidayNewRequestButton').on('click', function (event) {

@@ -2591,10 +2591,6 @@ $deptOptions = [
 
     <form method="get" class="mb-0" style="min-width:320px; max-width:520px; flex:1;">
       <input type="hidden" name="page" value="<?= htmlspecialchars($page) ?>" />
-      <?php if ($fItemStatusFilter !== ''): ?>
-        <input type="hidden" name="item_status" value="<?= htmlspecialchars($fItemStatus, ENT_QUOTES, 'UTF-8') ?>" />
-        <input type="hidden" name="item_department" value="<?= htmlspecialchars($fItemDepartment, ENT_QUOTES, 'UTF-8') ?>" />
-      <?php endif; ?>
 
       <div class="input-group input-group-sm <?= fActive($fQ) ?>">
         <input class="form-control form-control-sm" name="q" value="<?= htmlspecialchars($fQ) ?>"
