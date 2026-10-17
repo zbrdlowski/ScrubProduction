@@ -80,6 +80,7 @@ if ($schemaReady) {
         $where[] = 'export_order_number IS NOT NULL AND export_order_number <> \'\' AND match_confidence < 90';
     } elseif ($matchFilter === 'unmatched') {
         $where[] = '(export_order_number IS NULL OR export_order_number = \'\')';
+        $where[] = 'transaction_type <> \'User Initiated Withdrawal\'';
     }
     $list = $pdo->prepare('
         SELECT id, transaction_date, transaction_time, payer_name, payer_email, transaction_type,

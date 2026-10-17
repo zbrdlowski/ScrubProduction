@@ -210,43 +210,46 @@ try {
   }
 
   $filterWhere = [];
+  // Status tabs are queue navigation. A one-off text search must not shrink their
+  // badges or follow the user into a different queue; structured filters still do.
+  $statusCountWhere = [];
   if ($query !== '') {
     $safe = '%' . $conn->real_escape_string($query) . '%';
     $filterWhere[] = "(co.internal_code LIKE '$safe' OR co.official_order_number LIKE '$safe' OR co.customer_name LIKE '$safe' OR co.social_handle LIKE '$safe' OR co.customer_email LIKE '$safe' OR co.customer_phone LIKE '$safe' OR co.billing_name LIKE '$safe' OR co.shipping_name LIKE '$safe' OR co.billing_email LIKE '$safe' OR co.shipping_email LIKE '$safe' OR co.billing_phone LIKE '$safe' OR co.shipping_phone LIKE '$safe' OR co.billing_company LIKE '$safe' OR co.shipping_company LIKE '$safe' OR co.billing_company_id LIKE '$safe' OR co.shipping_company_id LIKE '$safe')";
   }
   if ($difficultyFilter > 0) {
-    $filterWhere[] = 'COALESCE(co.complexity_level, 1) = ' . (int) $difficultyFilter;
+    $statusCountWhere[] = $filterWhere[] = 'COALESCE(co.complexity_level, 1) = ' . (int) $difficultyFilter;
   }
   if ($ownerFilter > 0) {
-    $filterWhere[] = 'co.owner_employee_id = ' . (int) $ownerFilter;
+    $statusCountWhere[] = $filterWhere[] = 'co.owner_employee_id = ' . (int) $ownerFilter;
   }
   if ($countryFilter !== '') {
     $safeCountry = $conn->real_escape_string($countryFilter);
-    $filterWhere[] = "UPPER(COALESCE(NULLIF(co.shipping_country, ''), NULLIF(co.customer_country, ''), NULLIF(co.billing_country, ''), '')) = '{$safeCountry}'";
+    $statusCountWhere[] = $filterWhere[] = "UPPER(COALESCE(NULLIF(co.shipping_country, ''), NULLIF(co.customer_country, ''), NULLIF(co.billing_country, ''), '')) = '{$safeCountry}'";
   }
   if ($sourceFilter !== '') {
     $safeSource = $conn->real_escape_string($sourceFilter);
-    $filterWhere[] = "LOWER(TRIM(co.source_channel)) = LOWER('{$safeSource}')";
+    $statusCountWhere[] = $filterWhere[] = "LOWER(TRIM(co.source_channel)) = LOWER('{$safeSource}')";
   }
   if ($paymentFilter !== '') {
     $safePayment = $conn->real_escape_string($paymentFilter);
-    $filterWhere[] = "LOWER(TRIM(co.payment_method)) = LOWER('{$safePayment}')";
+    $statusCountWhere[] = $filterWhere[] = "LOWER(TRIM(co.payment_method)) = LOWER('{$safePayment}')";
   }
   if ($shippingFilter !== '') {
     $safeShipping = $conn->real_escape_string($shippingFilter);
-    $filterWhere[] = "LOWER(TRIM(co.shipping_method)) = LOWER('{$safeShipping}')";
+    $statusCountWhere[] = $filterWhere[] = "LOWER(TRIM(co.shipping_method)) = LOWER('{$safeShipping}')";
   }
   if ($itemTypeFilter !== '') {
     $safeItemType = $conn->real_escape_string($itemTypeFilter);
-    $filterWhere[] = "EXISTS (SELECT 1 FROM custom_order_items filter_item WHERE filter_item.custom_order_id = co.id AND UPPER(filter_item.item_type_code) = '{$safeItemType}')";
+    $statusCountWhere[] = $filterWhere[] = "EXISTS (SELECT 1 FROM custom_order_items filter_item WHERE filter_item.custom_order_id = co.id AND UPPER(filter_item.item_type_code) = '{$safeItemType}')";
   }
   if ($dateFromFilter !== '') {
     $safeDateFrom = $conn->real_escape_string($dateFromFilter);
-    $filterWhere[] = "DATE(co.updated_at) >= '{$safeDateFrom}'";
+    $statusCountWhere[] = $filterWhere[] = "DATE(co.updated_at) >= '{$safeDateFrom}'";
   }
   if ($dateToFilter !== '') {
     $safeDateTo = $conn->real_escape_string($dateToFilter);
-    $filterWhere[] = "DATE(co.updated_at) <= '{$safeDateTo}'";
+    $statusCountWhere[] = $filterWhere[] = "DATE(co.updated_at) <= '{$safeDateTo}'";
   }
 
   $customOrdersAllOpenWhere = "UPPER(TRIM(COALESCE(co.status, ''))) <> 'EXPORTED'";
@@ -476,7 +479,7 @@ try {
     $suggestions[] = $row;
   }
 
-  $countWhereSql = $filterWhere ? ' WHERE ' . implode(' AND ', $filterWhere) : '';
+  $countWhereSql = $statusCountWhere ? ' WHERE ' . implode(' AND ', $statusCountWhere) : '';
   $res = $conn->query("
     SELECT
       COALESCE(SUM(CASE WHEN {$customOrdersAllOpenWhere} THEN 1 ELSE 0 END), 0) AS all_open_count,
@@ -516,7 +519,7 @@ try {
     $legacyDraftCountClause = $legacyDraftTypesSql !== ''
       ? " OR (coi.status = 'DRAFT' AND UPPER(coi.item_type_code) IN ({$legacyDraftTypesSql}))"
       : '';
-    $draftCountWhere = $filterWhere;
+    $draftCountWhere = $statusCountWhere;
     $draftCountWhere[] = "(coi.status IN (" . implode(',', $draftCodes) . "){$legacyDraftCountClause})";
     $draftCountWhere[] = 'co.production_order_id IS NULL';
     $res = $conn->query("
@@ -4213,7 +4216,7 @@ if (!$customOrdersDetailRequest && !$customOrdersFullPageDetail) {
         <?php $tabLabel = (string) ($tabMeta['label'] ?? $tabKey); ?>
         <?php $tabColor = (string) ($tabMeta['color'] ?? '#6c757d'); ?>
         <?php $tabCount = (int) ($tabCounts[$tabKey] ?? 0); ?>
-        <a href="<?= h(customOrderBuildUrl(null, ['tab' => $tabKey === 'all' ? null : $tabKey, 'draft_status' => null, 'custom_order_id' => null, 'edit_item_id' => null], false)) ?>"
+        <a href="<?= h(customOrderBuildUrl(null, ['tab' => $tabKey === 'all' ? null : $tabKey, 'draft_status' => null, 'q' => null, 'custom_order_id' => null, 'edit_item_id' => null], false)) ?>"
           class="custom-status-tab <?= $draftStatusFilter === '' && $tabFilter === $tabKey ? 'active' : '' ?> <?= $tabCount === 0 ? 'is-empty' : 'has-orders' ?>"
           style="--status-color:<?= h($tabColor) ?>;--status-text-color:#fff">
           <span><?= h($tabLabel) ?></span><span class="custom-status-tab-count"><?= $tabCount ?></span>
@@ -4230,7 +4233,7 @@ if (!$customOrdersDetailRequest && !$customOrdersFullPageDetail) {
         <?php $tabCount = (int) ($tabCounts[$tabKey] ?? 0); ?>
         <?php $tabStatuses = !empty($tabMeta['statuses']) && is_array($tabMeta['statuses']) ? $tabMeta['statuses'] : [($tabMeta['status'] ?? '')]; ?>
         <?php $tabStatusTitle = 'Overall status: ' . implode(', ', array_filter(array_map(static function ($status): string { return (string) $status; }, $tabStatuses))); ?>
-        <a href="<?= h(customOrderBuildUrl(null, ['tab' => $tabKey, 'draft_status' => null, 'custom_order_id' => null, 'edit_item_id' => null], false)) ?>"
+        <a href="<?= h(customOrderBuildUrl(null, ['tab' => $tabKey, 'draft_status' => null, 'q' => null, 'custom_order_id' => null, 'edit_item_id' => null], false)) ?>"
           class="custom-status-tab custom-draft-status-tab <?= $draftStatusFilter === '' && $tabFilter === $tabKey ? 'active' : '' ?> <?= $tabCount === 0 ? 'is-empty' : 'has-orders' ?>"
           style="--draft-color:<?= h($tabColor) ?>;--status-color:<?= h($tabColor) ?>;--status-text-color:#fff"
           title="<?= h($tabStatusTitle) ?>">
@@ -4245,7 +4248,7 @@ if (!$customOrdersDetailRequest && !$customOrdersFullPageDetail) {
         <?php $tabLabel = (string) ($tabMeta['label'] ?? $tabKey); ?>
         <?php $tabColor = (string) ($tabMeta['color'] ?? '#6c757d'); ?>
         <?php $tabCount = (int) ($tabCounts[$tabKey] ?? 0); ?>
-        <a href="<?= h(customOrderBuildUrl(null, ['tab' => $tabKey, 'draft_status' => null, 'custom_order_id' => null, 'edit_item_id' => null], false)) ?>"
+        <a href="<?= h(customOrderBuildUrl(null, ['tab' => $tabKey, 'draft_status' => null, 'q' => null, 'custom_order_id' => null, 'edit_item_id' => null], false)) ?>"
           class="custom-status-tab <?= $draftStatusFilter === '' && $tabFilter === $tabKey ? 'active' : '' ?> <?= $tabCount === 0 ? 'is-empty' : 'has-orders' ?>"
           style="--status-color:<?= h($tabColor) ?>;--status-text-color:#fff">
           <span><?= h($tabLabel) ?></span><span class="custom-status-tab-count"><?= $tabCount ?></span>
@@ -4282,6 +4285,34 @@ if (!$customOrdersDetailRequest && !$customOrdersFullPageDetail) {
   </div>
 
   <div class="collapse <?= $customOrdersFilterCollapseShow ?>" id="customOrdersFilterCollapse">
+    <script>
+      (function () {
+        var panel = document.getElementById('customOrdersFilterCollapse');
+        var toggle = document.querySelector('[data-target="#customOrdersFilterCollapse"]');
+        var storageKey = 'custom-orders-filter-expanded:<?= (int) $customOrdersCurrentUserId ?>';
+        if (!panel || !toggle) return;
+
+        try {
+          var storedState = window.localStorage.getItem(storageKey);
+          if (storedState === '1' || storedState === '0') {
+            var expanded = storedState === '1';
+            panel.classList.toggle('show', expanded);
+            toggle.classList.toggle('collapsed', !expanded);
+            toggle.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+          }
+        } catch (storageError) {
+        }
+
+        toggle.addEventListener('click', function () {
+          // Store the intended state immediately. Waiting for Bootstrap's animated
+          // hidden/shown event can lose the preference when a tab is opened next.
+          try {
+            window.localStorage.setItem(storageKey, panel.classList.contains('show') ? '0' : '1');
+          } catch (storageError) {
+          }
+        }, true);
+      })();
+    </script>
     <form method="get" id="customOrdersFilterForm" class="mb-0">
       <input type="hidden" name="page" value="custom_orders">
       <?php if ($tabFilter !== 'all'): ?><input type="hidden" name="tab" value="<?= h($tabFilter) ?>"><?php endif; ?>
