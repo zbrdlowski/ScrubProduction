@@ -3,11 +3,14 @@
 // includes/holidays.php
 // Six-month holiday / time off planning grid.
 
+require_once __DIR__ . '/../scripts/accounting/ui_helpers.php';
+
 $holidayPermission = intval($_SESSION['permission'] ?? 0);
 $holidayDepartmentId = intval($_SESSION['dpt'] ?? 0);
 $holidayCanManage = $holidayPermission === 900
   || ($holidayPermission === 500 && $holidayDepartmentId === 3);
 $holidayEmpId = intval($_SESSION['user_id'] ?? 0);
+$holidayToday = date('Y-m-d');
 
 function holidayTableExists(mysqli $conn, string $table): bool
 {
@@ -275,7 +278,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $holidayHasTable) {
     $end = trim($_POST['end_date'] ?? '');
     $note = trim($_POST['note'] ?? '');
 
-    if ($employeeId > 0 && holidayValidDate($start) && holidayValidDate($end)) {
+    $holidayDatesAllowed = $holidayCanManage
+      || (holidayValidDate($start) && holidayValidDate($end) && $start >= $holidayToday && $end >= $holidayToday);
+
+    if ($employeeId > 0 && holidayValidDate($start) && holidayValidDate($end) && $holidayDatesAllowed) {
       if (strtotime($end) < strtotime($start)) {
         [$start, $end] = [$end, $start];
       }
@@ -809,6 +815,11 @@ for ($i = 0; $i < 6; $i++) {
   $monthEnd = (clone $monthStart)->modify('last day of this month');
   $months[] = [$monthStart, $monthEnd];
 }
+
+$holidayHelpPath = dirname(__DIR__) . DIRECTORY_SEPARATOR . 'docs' . DIRECTORY_SEPARATOR . 'holidays.md';
+$holidayHelpMarkdown = is_file($holidayHelpPath)
+  ? (string) file_get_contents($holidayHelpPath)
+  : '# Návod sa nenašiel';
 ?>
 
 <style>
@@ -1106,17 +1117,69 @@ for ($i = 0; $i < 6; $i++) {
   .holiday-request-table td {
     vertical-align: middle !important;
   }
+
+  .holiday-help-modal .modal-content {
+    background: #f8f9fa;
+    color: #263238;
+  }
+
+  .holiday-help-modal .modal-header,
+  .holiday-help-modal .modal-footer {
+    border-color: #d7dee3;
+  }
+
+  .holiday-help-content {
+    padding: 1.75rem 2.25rem;
+  }
+
+  .holiday-help-content h1 {
+    font-size: 1.75rem;
+    border-bottom: 2px solid #17a2b8;
+    padding-bottom: .65rem;
+    margin-bottom: 1.2rem;
+  }
+
+  .holiday-help-content h2 {
+    font-size: 1.3rem;
+    margin-top: 1.8rem;
+    color: #117486;
+  }
+
+  .holiday-help-content p,
+  .holiday-help-content li {
+    line-height: 1.65;
+  }
+
+  .holiday-help-content code {
+    color: #9c2f5b;
+    background: #e9ecef;
+    padding: .12rem .3rem;
+    border-radius: .2rem;
+  }
+
+  @media (max-width: 575.98px) {
+    .holiday-help-content {
+      padding: 1.15rem;
+    }
+  }
 </style>
 
 <div class="container-fluid holiday-planner">
-  <div class="d-flex justify-content-between align-items-center mb-3">
+  <div class="d-flex flex-wrap justify-content-between align-items-center mb-3" style="gap:8px;">
     <h4 class="mb-0" style="color:#e4e6eb;"><i class="far fa-calendar-check mr-2"></i>Holiday planner</h4>
-    <button type="button" class="btn btn-primary" id="holidayNewRequestButton"
-      data-toggle="modal" data-target="#holidayRequestModal"
-      data-bs-toggle="modal" data-bs-target="#holidayRequestModal"
-      <?= $holidayHasTable ? '' : 'disabled' ?>>
-      <i class="fas fa-plus mr-1"></i> New request
-    </button>
+    <div class="d-flex" style="gap:8px;">
+      <button type="button" class="btn btn-outline-info"
+        data-toggle="modal" data-target="#holidayHelpModal"
+        data-bs-toggle="modal" data-bs-target="#holidayHelpModal">
+        <i class="fas fa-question-circle mr-1"></i> Help
+      </button>
+      <button type="button" class="btn btn-primary" id="holidayNewRequestButton"
+        data-toggle="modal" data-target="#holidayRequestModal"
+        data-bs-toggle="modal" data-bs-target="#holidayRequestModal"
+        <?= $holidayHasTable ? '' : 'disabled' ?>>
+        <i class="fas fa-plus mr-1"></i> New request
+      </button>
+    </div>
   </div>
 
   <?php if (!$holidayHasTable || !$holidayHasEmployeeFlag): ?>
@@ -1254,8 +1317,11 @@ for ($i = 0; $i < 6; $i++) {
                     $date = $day->format('Y-m-d');
                     $isWeekend = intval($day->format('N')) >= 6;
                     $isPublicHoliday = isset($holidayPublicHolidays[$day->format('d-m')]);
-                    $isToday = $date === date('Y-m-d');
+                    $isToday = $date === $holidayToday;
                     $isOwn = intval($employee['id']) === $holidayEmpId;
+                    $isRequestableDate = !$isWeekend
+                      && !$isPublicHoliday
+                      && ($holidayCanManage || $date >= $holidayToday);
                     $cellRequests = $requestsByEmployeeDate[intval($employee['id'])][$date] ?? [];
                     $cellClasses = [];
                     if ($isWeekend) {
@@ -1267,10 +1333,12 @@ for ($i = 0; $i < 6; $i++) {
                     if ($isToday) {
                       $cellClasses[] = 'holiday-day-today';
                     }
-                    if ($isOwn && empty($cellRequests) && $holidayHasTable) {
+                    if ($isOwn && empty($cellRequests) && $holidayHasTable && $isRequestableDate) {
                       $cellClasses[] = 'holiday-cell-own';
                     }
-                    $cellTitle = ($isOwn && empty($cellRequests) && $holidayHasTable) ? $day->format('d.m.Y') : '';
+                    $cellTitle = ($isOwn && empty($cellRequests) && $holidayHasTable && $isRequestableDate)
+                      ? $day->format('d.m.Y')
+                      : '';
                     $cellTooltipAttrs = $cellTitle !== ''
                       ? ' title="' . htmlspecialchars($cellTitle, ENT_QUOTES, 'UTF-8') . '" data-toggle="tooltip" data-bs-toggle="tooltip"'
                       : '';
@@ -1477,6 +1545,28 @@ for ($i = 0; $i < 6; $i++) {
   </div>
 <?php endif; ?>
 
+<div class="modal fade holiday-help-modal" id="holidayHelpModal" tabindex="-1" role="dialog"
+  aria-labelledby="holidayHelpModalTitle" aria-hidden="true">
+  <div class="modal-dialog modal-xl modal-dialog-scrollable" role="document">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="holidayHelpModalTitle">
+          <i class="fas fa-question-circle text-info mr-2"></i>Pomocník – Dovolenky
+        </h5>
+        <button type="button" class="close" data-dismiss="modal" data-bs-dismiss="modal"
+          data-holiday-modal-close aria-label="Zavrieť">&times;</button>
+      </div>
+      <div class="modal-body holiday-help-content">
+        <?= accountingUiRenderMarkdown($holidayHelpMarkdown) ?>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-dismiss="modal" data-bs-dismiss="modal"
+          data-holiday-modal-close>Zavrieť</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div class="modal fade" id="holidayRequestModal" tabindex="-1">
   <div class="modal-dialog">
     <div class="modal-content">
@@ -1509,11 +1599,13 @@ for ($i = 0; $i < 6; $i++) {
           <div class="form-row">
             <div class="form-group col-md-6">
               <label>From</label>
-              <input type="date" name="start_date" id="holidayStartDate" class="form-control" required>
+              <input type="date" name="start_date" id="holidayStartDate" class="form-control"
+                <?= $holidayCanManage ? '' : 'min="' . htmlspecialchars($holidayToday, ENT_QUOTES, 'UTF-8') . '"' ?> required>
             </div>
             <div class="form-group col-md-6">
               <label>To</label>
-              <input type="date" name="end_date" id="holidayEndDate" class="form-control" required>
+              <input type="date" name="end_date" id="holidayEndDate" class="form-control"
+                <?= $holidayCanManage ? '' : 'min="' . htmlspecialchars($holidayToday, ENT_QUOTES, 'UTF-8') . '"' ?> required>
             </div>
           </div>
           <div class="form-group">
