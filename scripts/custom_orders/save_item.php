@@ -156,6 +156,72 @@ $stmt->bind_param('iissssidissssii', $orderId, $lineNo, $type, $sku, $title, $cu
 $stmt->execute();
 $newItemId = (int) $stmt->insert_id;
 $stmt->close();
+
+$autoPlasticsItemId = 0;
+if (dept_is_moto_carpet_graphics_item($type, $sku, $customLabel, (string) $payload['internal_options_json'])) {
+  $autoPlasticsLineNo = customOrdersNextLineNo($conn, $orderId);
+  $autoPlasticsType = 'P';
+  $autoPlasticsUnitPrice = 0.0;
+  $autoPlasticsIsUpsell = 0;
+  $autoPlasticsUpsellSource = 'MOTO_CARPET_AUTO_PLASTICS';
+  $autoPlasticsOptionsJson = dept_moto_carpet_plastics_options_json((string) $payload['options_json'], $lineNo);
+  $autoPlasticsInternalOptionsJson = json_encode([
+    '_custom_source' => 'custom_orders_module',
+  ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+  $autoPlasticsStatus = customOrdersResolveItemStatus($conn, [
+    'item_type_code' => $autoPlasticsType,
+    'sku' => $sku,
+    'custom_label' => $customLabel,
+    'options_json' => $autoPlasticsOptionsJson,
+    'internal_options_json' => $autoPlasticsInternalOptionsJson,
+  ], '');
+
+  $autoStmt = $conn->prepare('
+    INSERT INTO custom_order_items
+      (custom_order_id, line_no, item_type_code, sku, title, custom_label, qty, unit_price, is_upsell, upsell_source, options_json, internal_options_json, status, created_by, updated_by)
+    VALUES
+      (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  ');
+  if (!$autoStmt) {
+    $cleanupStmt = $conn->prepare('DELETE FROM custom_order_items WHERE id = ? AND custom_order_id = ?');
+    if ($cleanupStmt) {
+      $cleanupStmt->bind_param('ii', $newItemId, $orderId);
+      $cleanupStmt->execute();
+      $cleanupStmt->close();
+    }
+    $finish(false, 'Moto Carpet plastics item could not be prepared.', $newItemId);
+  }
+  $autoStmt->bind_param(
+    'iissssidissssii',
+    $orderId,
+    $autoPlasticsLineNo,
+    $autoPlasticsType,
+    $sku,
+    $title,
+    $customLabel,
+    $qty,
+    $autoPlasticsUnitPrice,
+    $autoPlasticsIsUpsell,
+    $autoPlasticsUpsellSource,
+    $autoPlasticsOptionsJson,
+    $autoPlasticsInternalOptionsJson,
+    $autoPlasticsStatus,
+    $userId,
+    $userId
+  );
+  if (!$autoStmt->execute()) {
+    $autoStmt->close();
+    $cleanupStmt = $conn->prepare('DELETE FROM custom_order_items WHERE id = ? AND custom_order_id = ?');
+    if ($cleanupStmt) {
+      $cleanupStmt->bind_param('ii', $newItemId, $orderId);
+      $cleanupStmt->execute();
+      $cleanupStmt->close();
+    }
+    $finish(false, 'Moto Carpet plastics item could not be created.', $newItemId);
+  }
+  $autoPlasticsItemId = (int) $autoStmt->insert_id;
+  $autoStmt->close();
+}
 $newCategoryFields = customOrdersCategoryFieldsFromJson((string) ($payload['options_json'] ?? '{}'));
 
 customOrdersLog(
@@ -170,6 +236,7 @@ customOrdersLog(
     'qty' => $qty,
     'unit_price' => $unitPrice,
     'status' => $itemStatus,
+    'auto_plastics_item_id' => $autoPlasticsItemId ?: null,
     'category_info' => $newCategoryFields['category_info'] ?? '',
   ],
   'Custom item added'

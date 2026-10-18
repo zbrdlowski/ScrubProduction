@@ -106,8 +106,8 @@ const GRAPHICS_SUBCAT_LABELS = [
 
 // ---------------------------------------------------------------------------
 // 3.  UPSELL / AUTO-GENERATED ITEMS
-//     Tieto položky sa vytvárajú automaticky pri importe na základe
-//     checkboxov zákazníka (Shoptet variant fields).
+//     Tieto položky sa vytvárajú automaticky pri importe alebo manuálnom
+//     pridaní produktu na základe jeho typu a konfigurácie.
 //     Nemajú vlastné options formuláre v detaile objednávky.
 //     Definícia tu slúži len ako dokumentácia — samotná logika je v importeri.
 // ---------------------------------------------------------------------------
@@ -119,6 +119,7 @@ const UPSELL_AUTO_TAGS = [
   'SHOPTET_AUTO_GRIP'      => 'Grip Stickers upsell (z checkboxu)',
   'GFP_AUTO_PLASTICS'      => 'Auto-plasty z GFP setu',
   'GFP_AUTO_FITTING'       => 'Auto-fitting z GFP setu',
+  'MOTO_CARPET_AUTO_PLASTICS' => 'Auto-plasty pre Moto Carpet / Bike Mat',
   'SEAT_PATCH_AUTO_GRAPHICS' => 'Auto-patch grafika zo Seat Cover',
 ];
 
@@ -128,6 +129,7 @@ const UPSELL_NO_OPTIONS_FORM_TAGS = [
   //'SHOPTET_AUTO_SEATCOVER',
   'SHOPTET_AUTO_FITTING',
   'SHOPTET_AUTO_GRIP',
+  'MOTO_CARPET_AUTO_PLASTICS',
 ];
 
 // ---------------------------------------------------------------------------
@@ -236,6 +238,44 @@ function dept_get_graphics_subcat(?string $customLabel, ?string $sku = null): ?s
     }
   }
   return null;
+}
+
+/**
+ * Manual Graphics Moto Carpet items need a matching Plastics warehouse row.
+ * The explicit stored subcategory is authoritative; SKU/custom label remain
+ * fallbacks for older/manual callers that do not submit internal options.
+ */
+function dept_is_moto_carpet_graphics_item(
+  ?string $itemTypeCode,
+  ?string $sku = null,
+  ?string $customLabel = null,
+  ?string $internalOptionsJson = null
+): bool {
+  if (strtoupper(trim((string) $itemTypeCode)) !== 'G') {
+    return false;
+  }
+
+  $internalOptions = json_decode((string) $internalOptionsJson, true);
+  if (is_array($internalOptions) && strtoupper(trim((string) ($internalOptions['_subcat'] ?? ''))) === 'MOTO_CARPET') {
+    return true;
+  }
+
+  return dept_get_graphics_subcat($customLabel, $sku) === 'MOTO_CARPET';
+}
+
+/**
+ * Preserve the source item's options and mark its generated Plastics companion.
+ */
+function dept_moto_carpet_plastics_options_json(?string $optionsJson, int $sourceLineNo): string {
+  $options = json_decode((string) $optionsJson, true);
+  if (!is_array($options)) {
+    $options = [];
+  }
+
+  $options['_auto_generated'] = 'MOTO_CARPET_AUTO_PLASTICS';
+  $options['_auto_source_line_no'] = $sourceLineNo;
+
+  return (string) json_encode($options, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE);
 }
 
 /**

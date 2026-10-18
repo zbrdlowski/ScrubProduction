@@ -8,6 +8,7 @@ require_once __DIR__ . '/activity_helper.php';
 require_once __DIR__ . '/category_sync_helper.php';
 require_once dirname(__DIR__, 2) . '/includes/orders_workflow_helpers.php';
 require_once dirname(__DIR__, 2) . '/includes/orders_status_helpers.php';
+require_once dirname(__DIR__, 2) . '/includes/orders_plastics_gate_helpers.php';
 require_once __DIR__ . '/manual_item_builder_helper.php';
 
 function out(array $payload): void {
@@ -130,6 +131,67 @@ if (!$ok) {
 $itemId = (int)$conn->insert_id;
 $stmt->close();
 
+$autoPlasticsItemId = 0;
+if (dept_is_moto_carpet_graphics_item($type, $sku, $customLabel, $internalOptionsJson)) {
+  $autoPlasticsLineNo = $lineNo + 1;
+  $autoPlasticsType = 'P';
+  $autoPlasticsUnitPrice = null;
+  $autoPlasticsOptionsJson = dept_moto_carpet_plastics_options_json($optionsJson, $lineNo);
+  $autoPlasticsInternalOptionsJson = '{}';
+  $autoPlasticsStatus = ordersPlasticsGateDefaultStatusForItem($conn, [
+    'item_type_code' => $autoPlasticsType,
+    'sku' => $sku,
+    'custom_label' => $customLabel,
+    'options_json' => $autoPlasticsOptionsJson,
+    'internal_options_json' => $autoPlasticsInternalOptionsJson,
+  ]);
+
+  $autoStmt = $conn->prepare("INSERT INTO order_items
+      (order_id, line_no, sku, title, custom_label, item_type_code, qty, unit_price, options_json, internal_options_json, status, created_by, updated_by, updated_at)
+    VALUES
+      (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
+  ");
+  if (!$autoStmt) {
+    $error = $conn->error ?: 'Moto Carpet plastics item could not be prepared';
+    $cleanupStmt = $conn->prepare('DELETE FROM order_items WHERE id = ? AND order_id = ?');
+    if ($cleanupStmt) {
+      $cleanupStmt->bind_param('ii', $itemId, $orderId);
+      $cleanupStmt->execute();
+      $cleanupStmt->close();
+    }
+    out(['ok' => false, 'error' => $error]);
+  }
+  $autoStmt->bind_param(
+    'iissssidsssii',
+    $orderId,
+    $autoPlasticsLineNo,
+    $sku,
+    $title,
+    $customLabel,
+    $autoPlasticsType,
+    $qty,
+    $autoPlasticsUnitPrice,
+    $autoPlasticsOptionsJson,
+    $autoPlasticsInternalOptionsJson,
+    $autoPlasticsStatus,
+    $userId,
+    $userId
+  );
+  if (!$autoStmt->execute()) {
+    $error = $autoStmt->error ?: $conn->error ?: 'Moto Carpet plastics item could not be created';
+    $autoStmt->close();
+    $cleanupStmt = $conn->prepare('DELETE FROM order_items WHERE id = ? AND order_id = ?');
+    if ($cleanupStmt) {
+      $cleanupStmt->bind_param('ii', $itemId, $orderId);
+      $cleanupStmt->execute();
+      $cleanupStmt->close();
+    }
+    out(['ok' => false, 'error' => $error]);
+  }
+  $autoPlasticsItemId = (int) $autoStmt->insert_id;
+  $autoStmt->close();
+}
+
 sync_order_categories($conn, $orderId);
 log_order_activity(
   $conn,
@@ -147,10 +209,16 @@ log_order_activity(
     'qty' => $qty,
     'unit_price' => $unitPrice,
     'status' => $itemStatus,
+    'auto_plastics_item_id' => $autoPlasticsItemId ?: null,
     'reason' => $reason
   ],
   'Item added: ' . $title . ' (' . $qty . ' × ' . number_format($unitPrice, 2, '.', '') . ' EUR)'
 );
 
 recalculateOrderWorkflow($conn, $orderId);
-out(['ok' => true, 'item_id' => $itemId, 'order_id' => $orderId]);
+out([
+  'ok' => true,
+  'item_id' => $itemId,
+  'auto_plastics_item_id' => $autoPlasticsItemId ?: null,
+  'order_id' => $orderId,
+]);
