@@ -18,6 +18,7 @@ require_once __DIR__ . '/includes/auth.php';
 require_once __DIR__ . '/scripts/orders/financial_helpers.php';
 require_once __DIR__ . '/includes/orders_multishipping_helpers.php';
 require_once __DIR__ . '/includes/shipping_methods.php';
+require_once __DIR__ . '/includes/orders_address_helpers.php';
 
 if (!isset($conn) || !$conn instanceof mysqli) {
   http_response_code(500);
@@ -229,81 +230,6 @@ function normalizeTypesOrder(string $types): string
   return implode('', $typesArr);
 }
 
-function usStateFromZip(string $zip): string
-{
-  $zip = preg_replace('/\D+/', '', $zip);
-  if (strlen($zip) < 5) {
-    return '';
-  }
-  $n = (int) substr($zip, 0, 5);
-
-  $ranges = [
-    'AL' => [[35000, 36999]], 'AK' => [[99500, 99999]], 'AZ' => [[85000, 86999]],
-    'AR' => [[71600, 72999]], 'CA' => [[90000, 96699]], 'CO' => [[80000, 81999]],
-    'CT' => [[6000, 6999]], 'DE' => [[19700, 19999]],
-    'DC' => [[20000, 20099], [20200, 20599], [56900, 56999]],
-    'FL' => [[32000, 34999]], 'GA' => [[30000, 31999], [39800, 39999]],
-    'HI' => [[96700, 96899]], 'ID' => [[83200, 83999]], 'IL' => [[60000, 62999]],
-    'IN' => [[46000, 47999]], 'IA' => [[50000, 52999]], 'KS' => [[66000, 67999]],
-    'KY' => [[40000, 42999]], 'LA' => [[70000, 71599]], 'ME' => [[3900, 4999]],
-    'MD' => [[20600, 21999]], 'MA' => [[1000, 2799], [5500, 5599]],
-    'MI' => [[48000, 49999]], 'MN' => [[55000, 56799]], 'MS' => [[38600, 39799]],
-    'MO' => [[63000, 65999]], 'MT' => [[59000, 59999]], 'NE' => [[68000, 69999]],
-    'NV' => [[88900, 89999]], 'NH' => [[3000, 3899]], 'NJ' => [[7000, 8999]],
-    'NM' => [[87000, 88499]], 'NY' => [[10000, 14999], [500, 599], [6390, 6390]],
-    'NC' => [[27000, 28999]], 'ND' => [[58000, 58999]], 'OH' => [[43000, 45999]],
-    'OK' => [[73000, 74999]], 'OR' => [[97000, 97999]], 'PA' => [[15000, 19699]],
-    'RI' => [[2800, 2999]], 'SC' => [[29000, 29999]], 'SD' => [[57000, 57999]],
-    'TN' => [[37000, 38599]], 'TX' => [[75000, 79999], [88500, 88599]],
-    'UT' => [[84000, 84999]], 'VT' => [[5000, 5999]], 'VA' => [[20100, 24699]],
-    'WA' => [[98000, 99499]], 'WV' => [[24700, 26999]], 'WI' => [[53000, 54999]],
-    'WY' => [[82000, 83199]],
-  ];
-
-  foreach ($ranges as $state => $rs) {
-    foreach ($rs as $r) {
-      if ($n >= $r[0] && $n <= $r[1]) {
-        return $state;
-      }
-    }
-  }
-
-  return '';
-}
-
-function caProvinceFromPostal(string $postal): string
-{
-  $postal = strtoupper(preg_replace('/[^A-Z0-9]/i', '', $postal));
-  if ($postal === '') {
-    return '';
-  }
-
-  $map = [
-    'A' => 'NL', 'B' => 'NS', 'C' => 'PE', 'E' => 'NB',
-    'G' => 'QC', 'H' => 'QC', 'J' => 'QC',
-    'K' => 'ON', 'L' => 'ON', 'M' => 'ON', 'N' => 'ON', 'P' => 'ON',
-    'R' => 'MB', 'S' => 'SK', 'T' => 'AB', 'V' => 'BC',
-    'X' => 'NT', 'Y' => 'YT',
-  ];
-
-  return $map[substr($postal, 0, 1)] ?? '';
-}
-
-function resolveUsState(array $row): string
-{
-  $country = strtoupper(trim((string) ($row['ship_country'] ?? '')));
-  $zip = (string) ($row['ship_zip'] ?? '');
-
-  if ($country === 'US' || $country === 'USA') {
-    return usStateFromZip($zip);
-  }
-  if ($country === 'CA' || $country === 'CAN') {
-    return caProvinceFromPostal($zip);
-  }
-
-  return '';
-}
-
 function fetchReadyToShipOrders(mysqli $conn, array $aclCats, array $aclTypes, string $fitWhere, string $shippingScopeWhere, bool $lockRows = false): array
 {
   [$aclClauses, $aclTypesStr, $aclParams] = buildAclWhere($conn, $aclCats, $aclTypes, $fitWhere);
@@ -354,6 +280,7 @@ function fetchReadyToShipOrders(mysqli $conn, array $aclCats, array $aclTypes, s
     COALESCE(oa_ship.city, '') AS ship_city,
     COALESCE(oa_ship.zip, '') AS ship_zip,
     COALESCE(oa_ship.country, '') AS ship_country,
+    COALESCE(oa_ship.state, '') AS ship_state,
     COALESCE(oa_ship.phone, '') AS ship_phone,
     COALESCE(oa_ship.email, cu.email, '') AS ship_email,
 
@@ -546,7 +473,7 @@ function buildExportRows(mysqli $conn, array $orders, array $materialMap, string
       'city' => (string) ($row['ship_city'] ?? ''),
       'zip' => (string) ($row['ship_zip'] ?? ''),
       'country' => (string) ($row['ship_country'] ?? ''),
-      'state_code' => resolveUsState($row),
+      'state_code' => ordersResolveAddressState((string) ($row['ship_country'] ?? ''), (string) ($row['ship_state'] ?? ''), (string) ($row['ship_zip'] ?? '')),
       'phone' => (string) ($row['ship_phone'] ?? ''),
       'email' => (string) ($row['ship_email'] ?? ''),
       'ref_number' => $refNumber,

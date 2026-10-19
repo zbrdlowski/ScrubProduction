@@ -4634,6 +4634,10 @@ $deptOptions = [
       'shipping[email]': $box.find('.edit-shipping-email').val(),
       'shipping[phone]': $box.find('.edit-shipping-phone').val()
     };
+    ['billing', 'shipping'].forEach(function (type) {
+      const $state = $box.find('.edit-' + type + '-state:enabled');
+      if ($state.length) payload[type + '[state]'] = $state.val();
+    });
     const $ownerSelect = $box.find('.edit-owner-employee-id');
     if ($ownerSelect.length && String($ownerSelect.val() || '') !== String($ownerSelect.data('currentOwnerEmployeeId') || '')) {
       payload.owner_employee_id = $ownerSelect.val();

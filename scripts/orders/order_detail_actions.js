@@ -2553,7 +2553,7 @@ $(document)
     var raw = String(value || '').trim();
     var upper = raw.toUpperCase();
     var aliases = {
-      UK: 'GB', EN: 'GB', USA: 'US',
+      UK: 'GB', EN: 'GB', USA: 'US', CAN: 'CA', AUS: 'AU',
       'UNITED STATES': 'US', 'UNITED STATES OF AMERICA': 'US',
       'UNITED KINGDOM': 'GB', 'GREAT BRITAIN': 'GB',
       BOSNIA: 'BA', 'BOSNIA AND HERZEGOVINA': 'BA', 'BOSNIA & HERZEGOVINA': 'BA',
@@ -2647,6 +2647,46 @@ $(document)
     select.dataset.countryPopulated = '1';
   }
 
+  function updateOrderDetailStateSelect(countrySelect) {
+    var panel = countrySelect.closest('.order-header-edit');
+    if (!panel) return;
+    var type = countrySelect.classList.contains('edit-billing-country') ? 'billing' : 'shipping';
+    var field = panel.querySelector('[data-order-detail-state-field="' + type + '"]');
+    if (!field) return;
+    var select = field.querySelector('select');
+    var country = normalizeOrderDetailCountryValue(countrySelect.value);
+    if (select.dataset.stateCountry === country) return;
+    var current = select.dataset.stateCountry === undefined ? String(select.value || '').trim() : '';
+    var options = {};
+    try {
+      options = JSON.parse(panel.getAttribute('data-state-options') || '{}')[country] || {};
+    } catch (error) {}
+    select.innerHTML = '';
+    var empty = document.createElement('option');
+    empty.value = '';
+    empty.textContent = 'State / Province';
+    select.appendChild(empty);
+    Object.keys(options).forEach(function (code) {
+      var option = document.createElement('option');
+      option.value = code;
+      option.textContent = code + ' - ' + options[code];
+      select.appendChild(option);
+    });
+    // Keep unrecognized imported values visible until the user corrects them.
+    if (current && !Object.prototype.hasOwnProperty.call(options, current)) {
+      var legacy = document.createElement('option');
+      legacy.value = current;
+      legacy.textContent = current;
+      select.appendChild(legacy);
+    }
+    select.value = current;
+    select.dataset.stateCountry = country;
+    field.hidden = Object.keys(options).length === 0;
+    var row = countrySelect.closest('.custom-country-state-row');
+    if (row) row.classList.toggle('has-state', !field.hidden);
+    select.disabled = field.hidden;
+  }
+
   function initializeOrderDetailCountrySelects(root) {
     root = root && root.querySelectorAll ? root : document;
     root.querySelectorAll('[data-order-detail-country-select]').forEach(function (countrySelect) {
@@ -2655,11 +2695,13 @@ $(document)
         countrySelect.addEventListener('change', function () {
           countrySelect.value = normalizeOrderDetailCountryValue(countrySelect.value);
           updateOrderDetailCountryFlag(countrySelect);
+          updateOrderDetailStateSelect(countrySelect);
           updateOrderDetailCustomsIdentifier(countrySelect.closest('.order-header-edit'));
         });
       }
       populateOrderDetailCountrySelect(countrySelect);
       updateOrderDetailCountryFlag(countrySelect);
+      updateOrderDetailStateSelect(countrySelect);
     });
     root.querySelectorAll('.order-header-edit[data-customs-country-labels]').forEach(function (panel) {
       updateOrderDetailCustomsIdentifier(panel);
@@ -3158,6 +3200,10 @@ $(document)
       "shipping[email]": $panel.find(".edit-shipping-email").val(),
       "shipping[phone]": $panel.find(".edit-shipping-phone").val(),
     };
+    ["billing", "shipping"].forEach(function (type) {
+      var $state = $panel.find(".edit-" + type + "-state:enabled");
+      if ($state.length) payload[type + "[state]"] = $state.val();
+    });
     var $ownerSelect = $panel.find(".edit-owner-employee-id");
     if ($ownerSelect.length && String($ownerSelect.val() || "") !== String($ownerSelect.data("currentOwnerEmployeeId") || "")) {
       payload.owner_employee_id = $ownerSelect.val();

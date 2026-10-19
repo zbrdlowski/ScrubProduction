@@ -1561,6 +1561,7 @@ require_once __DIR__ . '/access.php';
 require_once $base . '/includes/orders_status_helpers.php';
 require_once $base . '/includes/orders_workflow_helpers.php';
 require_once $base . '/includes/orders_customs_helpers.php';
+require_once $base . '/includes/orders_address_helpers.php';
 require_once $base . '/includes/get_order_detail_product_spec_selects.php';
 require_once $base . '/includes/shipping_methods.php';
 require_once __DIR__ . '/department_config.php';
@@ -1678,81 +1679,13 @@ function normalizeUsZipFromAddress(array $a): string
   return '';
 }
 
-// Vracia kód amerického štátu na základe PSČ
-function usStateFromZip(string $zip): string
+function orderDetailAddressState(array $address): string
 {
-  // Odstráni všetky nečíselné znaky
-  $zip = preg_replace('/\D+/', '', $zip);
-  if (strlen($zip) < 5)
-    return '';
-
-  // Extrahuje prvých 5 číslic PSČ
-  $n = (int) substr($zip, 0, 5);
-
-  // Mapy ZIP codes pre jednotlivé štáty USA
-  $ranges = [
-    'AL' => [[35000, 36999]],
-    'AK' => [[99500, 99999]],
-    'AZ' => [[85000, 86999]],
-    'AR' => [[71600, 72999]],
-    'CA' => [[90000, 96699]],
-    'CO' => [[80000, 81999]],
-    'CT' => [[6000, 6999]],
-    'DE' => [[19700, 19999]],
-    'DC' => [[20000, 20099], [20200, 20599], [56900, 56999]],
-    'FL' => [[32000, 34999]],
-    'GA' => [[30000, 31999], [39800, 39999]],
-    'HI' => [[96700, 96899]],
-    'ID' => [[83200, 83999]],
-    'IL' => [[60000, 62999]],
-    'IN' => [[46000, 47999]],
-    'IA' => [[50000, 52999]],
-    'KS' => [[66000, 67999]],
-    'KY' => [[40000, 42999]],
-    'LA' => [[70000, 71599]],
-    'ME' => [[3900, 4999]],
-    'MD' => [[20600, 21999]],
-    'MA' => [[1000, 2799], [5500, 5599]],
-    'MI' => [[48000, 49999]],
-    'MN' => [[55000, 56799]],
-    'MS' => [[38600, 39799]],
-    'MO' => [[63000, 65999]],
-    'MT' => [[59000, 59999]],
-    'NE' => [[68000, 69999]],
-    'NV' => [[88900, 89999]],
-    'NH' => [[3000, 3899]],
-    'NJ' => [[7000, 8999]],
-    'NM' => [[87000, 88499]],
-    'NY' => [[10000, 14999], [500, 599], [6390, 6390]],
-    'NC' => [[27000, 28999]],
-    'ND' => [[58000, 58999]],
-    'OH' => [[43000, 45999]],
-    'OK' => [[73000, 74999]],
-    'OR' => [[97000, 97999]],
-    'PA' => [[15000, 19699]],
-    'RI' => [[2800, 2999]],
-    'SC' => [[29000, 29999]],
-    'SD' => [[57000, 57999]],
-    'TN' => [[37000, 38599]],
-    'TX' => [[75000, 79999], [88500, 88599]],
-    'UT' => [[84000, 84999]],
-    'VT' => [[5000, 5999]],
-    'VA' => [[20100, 24699]],
-    'WA' => [[98000, 99499]],
-    'WV' => [[24700, 26999]],
-    'WI' => [[53000, 54999]],
-    'WY' => [[82000, 83199]],
-  ];
-
-  // Hľadá PSČ v rozsahoch konkrétneho štátu
-  foreach ($ranges as $state => $rs) {
-    foreach ($rs as $r) {
-      if ($n >= $r[0] && $n <= $r[1])
-        return $state;
-    }
-  }
-
-  return '';
+  $country = (string) ($address['country'] ?? '');
+  $zip = ordersAddressCountryCode($country) === 'US'
+    ? normalizeUsZipFromAddress($address)
+    : (string) ($address['zip'] ?? '');
+  return ordersResolveAddressState($country, (string) ($address['state'] ?? ''), $zip);
 }
 
 // Pripraví textovú verziu adresy na kopírovanie
@@ -2238,7 +2171,7 @@ $stmt->close();
 $orderHasPlasticsCategory = in_array('PLASTICS', array_map('strtoupper', $cats), true);
 
 // --- addresses ---
-$stmt = $conn->prepare("SELECT type, name, company, company_id, street, city, zip, country, email, phone
+$stmt = $conn->prepare("SELECT type, name, company, company_id, street, city, zip, country, state, email, phone
 FROM order_addresses
 WHERE order_id=?
 ");
@@ -4758,6 +4691,37 @@ ob_start();
     color: rgba(255, 255, 255, .82);
   }
 
+  .order-header-edit .custom-country-state-row {
+    display: flex;
+    flex-wrap: nowrap;
+    gap: 6px;
+    width: 100%;
+    margin-left: 0;
+    margin-right: 0;
+  }
+
+  .order-header-edit .custom-country-state-row .custom-country-col,
+  .order-header-edit .custom-country-state-row .custom-state-col {
+    min-width: 0;
+    padding-left: 0;
+    padding-right: 0;
+  }
+
+  .order-header-edit .custom-country-state-row .custom-country-col {
+    flex: 1 1 100%;
+    max-width: 100%;
+  }
+
+  .order-header-edit .custom-country-state-row.has-state .custom-country-col {
+    flex: 0 0 calc(58.333333% - 3px);
+    max-width: calc(58.333333% - 3px);
+  }
+
+  .order-header-edit .custom-country-state-row.has-state .custom-state-col {
+    flex: 0 0 calc(41.666667% - 3px);
+    max-width: calc(41.666667% - 3px);
+  }
+
   .custom-country-select-wrap {
     position: relative;
     width: 100%;
@@ -5852,6 +5816,7 @@ ob_start();
 
           <?php if ($ordersCanManage): ?>
             <div class="order-header-edit mt-3" style="display:none;"
+              data-state-options="<?php echo h((string) json_encode(ordersAddressStateOptions(), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)); ?>"
               data-customs-country-labels="<?php echo h((string) json_encode($customsCountryLabels, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)); ?>">
               <div class="card bg-dark border-warning">
                 <div class="card-header">
@@ -5959,12 +5924,28 @@ ob_start();
                         value="<?php echo h($b['city'] ?? ''); ?>">
                       <input class="form-control form-control-sm mb-1 edit-billing-zip" placeholder="ZIP"
                         value="<?php echo h($b['zip'] ?? ''); ?>">
-                      <div class="mb-1 custom-country-select-wrap no-flag">
-                        <span class="custom-country-flag is-empty" data-country-flag aria-hidden="true"></span>
-                        <select class="form-control form-control-sm edit-billing-country custom-country-select"
-                          data-order-detail-country-select data-country-placeholder="Country">
-                          <option value="<?php echo h((string) ($b['country'] ?? '')); ?>" selected><?php echo h((string) ($b['country'] ?? '')); ?></option>
-                        </select>
+                      <?php
+                      $savedState = trim((string) ($b['state'] ?? ''));
+                      $editState = $savedState !== ''
+                        ? (ordersAddressStateCode((string) ($b['country'] ?? ''), $savedState) ?: $savedState)
+                        : orderDetailAddressState($b);
+                      ?>
+                      <div class="mb-1 custom-country-state-row">
+                        <div class="custom-country-col">
+                          <div class="custom-country-select-wrap no-flag">
+                            <span class="custom-country-flag is-empty" data-country-flag aria-hidden="true"></span>
+                            <select class="form-control form-control-sm edit-billing-country custom-country-select"
+                              data-order-detail-country-select data-country-placeholder="Country">
+                              <option value="<?php echo h((string) ($b['country'] ?? '')); ?>" selected><?php echo h((string) ($b['country'] ?? '')); ?></option>
+                            </select>
+                          </div>
+                        </div>
+                        <div class="custom-state-col" data-order-detail-state-field="billing" hidden>
+                          <select id="edit-billing-state-<?php echo (int) $orderId; ?>"
+                            class="form-control form-control-sm edit-billing-state" aria-label="State / Province" disabled>
+                            <option value="<?php echo h($editState); ?>" selected><?php echo h($editState); ?></option>
+                          </select>
+                        </div>
                       </div>
                       <input class="form-control form-control-sm mb-1 edit-billing-email" placeholder="Email"
                         value="<?php echo h($b['email'] ?? ''); ?>">
@@ -5993,12 +5974,28 @@ ob_start();
                         value="<?php echo h($s['city'] ?? ''); ?>">
                       <input class="form-control form-control-sm mb-1 edit-shipping-zip" placeholder="ZIP"
                         value="<?php echo h($s['zip'] ?? ''); ?>">
-                      <div class="mb-1 custom-country-select-wrap no-flag">
-                        <span class="custom-country-flag is-empty" data-country-flag aria-hidden="true"></span>
-                        <select class="form-control form-control-sm edit-shipping-country custom-country-select"
-                          data-order-detail-country-select data-country-placeholder="Country">
-                          <option value="<?php echo h((string) ($s['country'] ?? '')); ?>" selected><?php echo h((string) ($s['country'] ?? '')); ?></option>
-                        </select>
+                      <?php
+                      $savedState = trim((string) ($s['state'] ?? ''));
+                      $editState = $savedState !== ''
+                        ? (ordersAddressStateCode((string) ($s['country'] ?? ''), $savedState) ?: $savedState)
+                        : orderDetailAddressState($s);
+                      ?>
+                      <div class="mb-1 custom-country-state-row">
+                        <div class="custom-country-col">
+                          <div class="custom-country-select-wrap no-flag">
+                            <span class="custom-country-flag is-empty" data-country-flag aria-hidden="true"></span>
+                            <select class="form-control form-control-sm edit-shipping-country custom-country-select"
+                              data-order-detail-country-select data-country-placeholder="Country">
+                              <option value="<?php echo h((string) ($s['country'] ?? '')); ?>" selected><?php echo h((string) ($s['country'] ?? '')); ?></option>
+                            </select>
+                          </div>
+                        </div>
+                        <div class="custom-state-col" data-order-detail-state-field="shipping" hidden>
+                          <select id="edit-shipping-state-<?php echo (int) $orderId; ?>"
+                            class="form-control form-control-sm edit-shipping-state" aria-label="State / Province" disabled>
+                            <option value="<?php echo h($editState); ?>" selected><?php echo h($editState); ?></option>
+                          </select>
+                        </div>
                       </div>
                       <div class="customs-identifier-field<?php echo $customsIdentifierMissing ? ' is-missing' : ''; ?>"
                         data-customs-identifier-field<?php echo ordersRequiresCustomsIdentifier($orderCountry) ? '' : ' hidden'; ?>>
@@ -6031,12 +6028,8 @@ ob_start();
           <?php
           $b = $addr['BILLING'] ?? [];
           $s = $addr['SHIPPING'] ?? [];
-          $billingState = strtoupper((string) ($b['country'] ?? '')) === 'US'
-            ? usStateFromZip(normalizeUsZipFromAddress($b))
-            : '';
-          $shippingState = strtoupper((string) ($s['country'] ?? '')) === 'US'
-            ? usStateFromZip(normalizeUsZipFromAddress($s))
-            : '';
+          $billingState = orderDetailAddressState($b);
+          $shippingState = orderDetailAddressState($s);
           $fullBilling = $b ? addressCopyText($b, $billingState) . (!empty($b['country']) ? "\n" . strtoupper((string) $b['country']) : '') : '';
           $fullShipping = $s ? trim(
             addressCopyText($s, $shippingState) .

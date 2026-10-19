@@ -17,6 +17,7 @@ $base = dirname(__DIR__, 2);
 require_once $base . '/includes/conn.php';
 require_once __DIR__ . '/access.php';
 require_once $base . '/includes/orders_customs_helpers.php';
+require_once $base . '/includes/orders_address_helpers.php';
 
 $orderId = (int)($_POST['order_id'] ?? 0);
 if ($orderId <= 0) out(400, ['ok'=>false,'error'=>'Invalid order_id']);
@@ -91,6 +92,19 @@ if ($customsDdpSubmitted && !$customsDdpEnabled) {
   $customsDdpAmount = 0.0;
   $customsDdpNote = '';
 }
+
+foreach (['billing' => &$billing, 'shipping' => &$shipping] as $type => &$address) {
+  $address['country'] = ordersAddressCountryCode(clean($address['country'] ?? ''));
+  if (array_key_exists('state', $address)) {
+    $rawState = clean($address['state']);
+    $stateCode = ordersAddressStateCode($address['country'], $rawState);
+    if ($rawState !== '' && $stateCode === '') {
+      out(400, ['ok'=>false, 'error'=>'Invalid ' . $type . ' state / province for the selected country.']);
+    }
+    $address['state'] = $stateCode;
+  }
+}
+unset($address);
 
 $conn->begin_transaction();
 
@@ -209,6 +223,7 @@ try {
     'SHIPPING' => $shipping,
   ];
 
+  $addressStateChanges = [];
   foreach ($addressTypes as $type => $a) {
     $name    = clean($a['name'] ?? '');
     $company = clean($a['company'] ?? '');
@@ -221,7 +236,7 @@ try {
     $phone   = clean($a['phone'] ?? '');
 
     $check = $conn->prepare("
-      SELECT id FROM order_addresses
+      SELECT id, country, state FROM order_addresses
       WHERE order_id = ? AND type = ?
       LIMIT 1
     ");
@@ -231,32 +246,37 @@ try {
     $existing = $check->get_result()->fetch_assoc();
     $check->close();
 
+    $countryChanged = $existing && ordersAddressCountryCode((string) ($existing['country'] ?? '')) !== $country;
+    $stateSubmitted = array_key_exists('state', $a);
+    $state = $stateSubmitted ? clean($a['state']) : ($countryChanged ? '' : (string) ($existing['state'] ?? ''));
+    $addressStateChanges[$type] = ($stateSubmitted || $countryChanged) ? $state : null;
+
     if ($existing) {
       $stmt = $conn->prepare("
         UPDATE order_addresses
-        SET name=?, company=?, company_id=?, street=?, city=?, zip=?, country=?, email=?, phone=?
+        SET name=?, company=?, company_id=?, street=?, city=?, zip=?, country=?, state=?, email=?, phone=?
         WHERE id=?
         LIMIT 1
       ");
       if (!$stmt) throw new Exception($conn->error);
       $addrId = (int)$existing['id'];
       $stmt->bind_param(
-        'sssssssssi',
-        $name, $company, $company_id, $street, $city, $zip, $country, $email, $phone, $addrId
+        'ssssssssssi',
+        $name, $company, $company_id, $street, $city, $zip, $country, $state, $email, $phone, $addrId
       );
       $stmt->execute();
       $stmt->close();
     } else {
       $stmt = $conn->prepare("
         INSERT INTO order_addresses
-          (order_id, type, name, company, company_id, street, city, zip, country, email, phone)
+          (order_id, type, name, company, company_id, street, city, zip, country, state, email, phone)
         VALUES
-          (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ");
       if (!$stmt) throw new Exception($conn->error);
       $stmt->bind_param(
-        'issssssssss',
-        $orderId, $type, $name, $company, $company_id, $street, $city, $zip, $country, $email, $phone
+        'isssssssssss',
+        $orderId, $type, $name, $company, $company_id, $street, $city, $zip, $country, $state, $email, $phone
       );
       $stmt->execute();
       $stmt->close();
@@ -284,6 +304,7 @@ try {
       $billingCity = clean($billing['city'] ?? '');
       $billingZip = clean($billing['zip'] ?? '');
       $billingCountry = strtoupper(clean($billing['country'] ?? ''));
+      $billingState = $addressStateChanges['BILLING'];
       $billingEmail = clean($billing['email'] ?? '');
       $billingPhone = clean($billing['phone'] ?? '');
       $shippingName = clean($shipping['name'] ?? '');
@@ -293,6 +314,7 @@ try {
       $shippingCity = clean($shipping['city'] ?? '');
       $shippingZip = clean($shipping['zip'] ?? '');
       $shippingCountry = strtoupper(clean($shipping['country'] ?? ''));
+      $shippingState = $addressStateChanges['SHIPPING'];
       $shippingEmail = clean($shipping['email'] ?? '');
       $shippingPhone = clean($shipping['phone'] ?? '');
       $customerCountry = $shippingCountry !== '' ? $shippingCountry : $billingCountry;
@@ -306,8 +328,8 @@ try {
             customer_country = ?,
             payment_method = ?,
             shipping_method = ?,
-            billing_name = ?, billing_company = ?, billing_company_id = ?, billing_street = ?, billing_city = ?, billing_zip = ?, billing_country = ?, billing_email = ?, billing_phone = ?,
-            shipping_name = ?, shipping_company = ?, shipping_company_id = ?, shipping_street = ?, shipping_city = ?, shipping_zip = ?, shipping_country = ?, shipping_email = ?, shipping_phone = ?,
+            billing_name = ?, billing_company = ?, billing_company_id = ?, billing_street = ?, billing_city = ?, billing_zip = ?, billing_country = ?, billing_state = COALESCE(?, billing_state), billing_email = ?, billing_phone = ?,
+            shipping_name = ?, shipping_company = ?, shipping_company_id = ?, shipping_street = ?, shipping_city = ?, shipping_zip = ?, shipping_country = ?, shipping_state = COALESCE(?, shipping_state), shipping_email = ?, shipping_phone = ?,
             updated_by = ?,
             updated_at = NOW()
         WHERE id = ?
@@ -315,7 +337,7 @@ try {
       ");
       if (!$stmt) throw new Exception($conn->error);
       $stmt->bind_param(
-        'ssssssssssssssssssssssssii',
+        'ssssssssssssssssssssssssssii',
         $customerName,
         $customerEmail,
         $customerPhone,
@@ -329,6 +351,7 @@ try {
         $billingCity,
         $billingZip,
         $billingCountry,
+        $billingState,
         $billingEmail,
         $billingPhone,
         $shippingName,
@@ -338,6 +361,7 @@ try {
         $shippingCity,
         $shippingZip,
         $shippingCountry,
+        $shippingState,
         $shippingEmail,
         $shippingPhone,
         $userId,
