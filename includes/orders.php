@@ -8,6 +8,7 @@ require_once __DIR__ . '/orders_status_helpers.php';
 require_once __DIR__ . '/orders_workflow_helpers.php';
 require_once __DIR__ . '/orders_customs_helpers.php';
 require_once __DIR__ . '/orders_multishipping_helpers.php';
+require_once __DIR__ . '/orders_product_filters.php';
 require_once __DIR__ . '/shipping_methods.php';
 
 if (!isset($conn) || !$conn instanceof mysqli) {
@@ -572,7 +573,7 @@ $allAccess = in_array($dpt, [1, 3, 4, 5, 7], true);
 $page = 'orders';
 $fDept = isset($_GET['dept']) ? (int) $_GET['dept'] : -1;
 $fCat = isset($_GET['cat']) ? trim((string) $_GET['cat']) : '';
-$fType = isset($_GET['type']) ? trim((string) $_GET['type']) : '';
+$fType = isset($_GET['type']) ? strtoupper(trim((string) $_GET['type'])) : '';
 $fQ = isset($_GET['q']) ? trim((string) $_GET['q']) : '';
 $fCustomerId = isset($_GET['customer_id']) ? max(0, (int) $_GET['customer_id']) : 0;
 $fCustomerScope = $fCustomerId > 0 && strtolower(trim((string) ($_GET['customer_scope'] ?? 'open'))) === 'all'
@@ -815,6 +816,8 @@ if ($fDateMode === 'order') {
 // ── Počty objednávok pre jednotlivé taby ──────────────────────────────────────────────────────────
 $quickTabCounts = ordersGetOrderStatusCounts($conn);
 $itemQuickTabCounts = ordersGetItemStatusCounts($conn);
+// Product tabs are temporarily disabled pending team feedback; keep the Item Type filter.
+// $productQuickTabCounts = ordersGetProductFamilyCounts($conn, $defaultHiddenOrderStatuses, $fCustomerId);
 if ($fCustomerId > 0) {
   $quickTabCounts = [];
   $customerStatusCountStmt = $conn->prepare('SELECT UPPER(status) AS status_code, COUNT(*) AS order_count
@@ -902,9 +905,19 @@ $allowedCats = ['GRAPHICS', 'PLASTICS', 'SEATCOVER', 'FITTING'];
 if ($fCat !== '' && !in_array($fCat, $allowedCats, true))
   $fCat = '';
 
-$allowedTypes = ['G', 'T', 'M', 'P', 'S', 'F', '(NULL)'];
+$itemTypeFilterLabels = ordersItemTypeFilterLabels();
+$allowedTypes = array_keys($itemTypeFilterLabels);
 if ($fType !== '' && !in_array($fType, $allowedTypes, true))
   $fType = '';
+if ($fType !== '') {
+  $_GET['type'] = $fType;
+} else {
+  unset($_GET['type']);
+}
+$productFamilyWhere = [];
+foreach (['T', 'M', 'TM'] as $productFamily) {
+  $productFamilyWhere[$productFamily] = ordersProductFamilyWhere($productFamily);
+}
 
 $deptFilter = [
   2 => ['GRAPHICS'],
@@ -1017,7 +1030,9 @@ if ($fCat !== '') {
 }
 
 if ($fType !== '') {
-  if ($fType === '(NULL)') {
+  if (isset($productFamilyWhere[$fType])) {
+    $where[] = $productFamilyWhere[$fType];
+  } elseif ($fType === '(NULL)') {
     $where[] = "EXISTS (
       SELECT 1
       FROM order_items oit
@@ -1451,12 +1466,7 @@ EXISTS (
     )
 ) AS has_gfp,
 
-  EXISTS (
-    SELECT 1
-    FROM order_items oi2
-    WHERE oi2.order_id = o.id
-      AND oi2.item_type_code IN ('T','M')
-  ) AS has_tm,
+  {$productFamilyWhere['TM']} AS has_tm,
 
   (
     SELECT oa.employee_id
@@ -2361,6 +2371,17 @@ $deptOptions = [
     background: rgba(0, 0, 0, .12);
   }
 
+  .orders-product-tabs {
+    flex-wrap: wrap;
+    padding-top: 4px;
+    padding-bottom: 4px;
+  }
+
+  .orders-product-tabs .qtab {
+    margin-bottom: 0;
+    color: rgba(255, 255, 255, .88);
+  }
+
   .orders-tab-row-label {
     position: sticky;
     left: 0;
@@ -2705,6 +2726,17 @@ $deptOptions = [
   $itemQuickTabRows = max(1, (int) ceil($itemQuickTabCount / 12));
   $itemQuickTabRowsMedium = max(1, (int) ceil($itemQuickTabCount / 6));
   $itemQuickTabRowsSmall = max(1, (int) ceil($itemQuickTabCount / 3));
+
+  /* Product tabs temporarily disabled pending team feedback.
+  $productQuickTabs = [];
+  foreach (['T' => 'TFP / Trim Kits', 'M' => 'Bike Mats', 'TM' => 'TFP + Bike Mats'] as $typeCode => $label) {
+    $productQuickTabs[] = [
+      'label' => $label,
+      'params' => ['type' => $typeCode, 'exclude_status' => implode(',', $defaultHiddenOrderStatuses)],
+      'count' => $productQuickTabCounts[$typeCode],
+    ];
+  }
+  */
   ?>
 
   <div class="orders-tab-stack">
@@ -2736,6 +2768,19 @@ $deptOptions = [
         <?php endforeach; ?>
       </div>
     <?php endif; ?>
+    <?php /* Product tabs temporarily disabled pending team feedback.
+    <div class="orders-quicktabs orders-product-tabs" aria-label="Product filters for open orders">
+      <span class="orders-tab-row-label">Products</span>
+      <?php foreach ($productQuickTabs as $tab): ?>
+        <a href="<?= htmlspecialchars(qtabUrl($tab['params']), ENT_QUOTES, 'UTF-8') ?>"
+          class="qtab <?= qtabIsActive($tab['params']) ? 'active' : '' ?> <?= (int)$tab['count'] === 0 ? 'is-empty' : 'has-orders' ?>"
+          style="--status-color:#ffc107;--status-text-color:#212529" title="Open orders: <?= htmlspecialchars($tab['label'], ENT_QUOTES, 'UTF-8') ?>">
+          <?= htmlspecialchars($tab['label'], ENT_QUOTES, 'UTF-8') ?>
+          <span class="qtab-badge"><?= (int)$tab['count'] ?></span>
+        </a>
+      <?php endforeach; ?>
+    </div>
+    */ ?>
   </div>
 
   <div class="card-body">
@@ -2783,7 +2828,7 @@ $deptOptions = [
     if ($fCat !== '')
       $activeFilterBadges[] = ['label' => 'Category', 'display' => $fCat];
     if ($fType !== '')
-      $activeFilterBadges[] = ['label' => 'Type', 'display' => $fType];
+      $activeFilterBadges[] = ['label' => 'Type', 'display' => $itemTypeFilterLabels[$fType]];
     if ($fWorker > 0)
       $activeFilterBadges[] = ['label' => 'Worker', 'display' => ($workerOptions[$fWorker] ?? ('#' . $fWorker))];
     if ($fCountry !== '')
@@ -3057,6 +3102,10 @@ $deptOptions = [
         && count($activeFilterBadges) === 1
       )
       || (
+        in_array($fType, ['T', 'M', 'TM'], true)
+        && count($activeFilterBadges) === 1
+      )
+      || (
         $fExcludeStatuses !== ''
         && empty($fStatus)
         && count($activeFilterBadges) === 0
@@ -3278,8 +3327,8 @@ $deptOptions = [
               <label class="small mb-1">Item Type</label>
               <select class="form-control form-control-sm" name="type">
                 <option value="">— All —</option>
-                <?php foreach (['G', 'T', 'M', 'P', 'S', 'F', '(NULL)'] as $t): ?>
-                  <?= fOpt($t, $t, $fType) ?>
+                <?php foreach ($itemTypeFilterLabels as $t => $typeLabel): ?>
+                  <?= fOpt($t, $typeLabel, $fType) ?>
                 <?php endforeach; ?>
               </select>
             </div>
