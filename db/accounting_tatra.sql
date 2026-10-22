@@ -1,0 +1,41 @@
+CREATE TABLE IF NOT EXISTS accounting_tatra_imports (
+  id bigint unsigned NOT NULL AUTO_INCREMENT,
+  original_filename varchar(255) NOT NULL,
+  file_hash char(64) NOT NULL,
+  source_row_count int unsigned NOT NULL DEFAULT 0,
+  imported_row_count int unsigned NOT NULL DEFAULT 0,
+  duplicate_row_count int unsigned NOT NULL DEFAULT 0,
+  matched_order_count int unsigned NOT NULL DEFAULT 0,
+  imported_by int DEFAULT NULL,
+  imported_at datetime NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_tatra_import_hash (file_hash)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+CREATE TABLE IF NOT EXISTS accounting_tatra_transactions (
+  id bigint unsigned NOT NULL AUTO_INCREMENT,
+  import_id bigint unsigned NOT NULL,
+  source_key char(64) NOT NULL,
+  transaction_date datetime NOT NULL,
+  billing_date date DEFAULT NULL,
+  transaction_type varchar(16) NOT NULL,
+  type_raw varchar(128) NOT NULL,
+  state varchar(64) NOT NULL,
+  order_number varchar(128) DEFAULT NULL,
+  payer_name varchar(255) DEFAULT NULL,
+  service varchar(128) DEFAULT NULL,
+  amount decimal(16,2) NOT NULL,
+  currency varchar(3) NOT NULL,
+  settlement_amount decimal(16,2) NOT NULL,
+  settlement_currency varchar(3) NOT NULL,
+  report_id varchar(128) DEFAULT NULL,
+  payout_reference varchar(128) DEFAULT NULL,
+  matched_order_id bigint(20) DEFAULT NULL,
+  created_at datetime NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_tatra_source_key (source_key),
+  KEY ix_tatra_date_type (transaction_date, transaction_type),
+  KEY ix_tatra_order (matched_order_id),
+  CONSTRAINT fk_tatra_import FOREIGN KEY (import_id) REFERENCES accounting_tatra_imports (id),
+  CONSTRAINT fk_tatra_order FOREIGN KEY (matched_order_id) REFERENCES orders (id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;

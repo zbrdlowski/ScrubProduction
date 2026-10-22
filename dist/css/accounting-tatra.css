@@ -1,0 +1,103 @@
+.accounting-payout-table th { white-space: nowrap; }
+  .accounting-payout-table td { vertical-align: middle; }
+  .accounting-money { font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .accounting-upload-zone { border: 2px dashed #5f6b78; border-radius: .35rem; padding: 1.5rem; text-align: center; cursor: pointer; transition: border-color .15s ease, background-color .15s ease; }
+  .accounting-upload-zone:hover,
+  .accounting-upload-zone.is-dragover { border-color: #17a2b8; background-color: rgba(23, 162, 184, .12); }
+  .accounting-muted { color: #adb5bd; }
+  .accounting-page-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; min-height: 52px; margin-bottom: 1rem; }
+  .accounting-page-heading { min-width: 0; }
+  .accounting-page-heading h1 { line-height: 1.15; }
+  .accounting-page-subtitle { min-height: 1.25em; line-height: 1.25; }
+  .accounting-page-actions { display: flex; flex: 0 0 auto; align-items: flex-start; gap: .5rem; margin-left: 1rem; }
+  .accounting-overview-row { align-items: stretch; }
+  .accounting-overview-column { display: flex; flex-direction: column; }
+  .accounting-overview-column > .card { flex: 1 1 auto; }
+  .accounting-summary-column { display: flex; flex-direction: column; height: 100%; }
+  .accounting-stats-row { flex: 1 1 auto; }
+  .accounting-stats-row > div { display: flex; }
+  .accounting-stat-card {
+    --accounting-accent: #17a2b8;
+    width: 100%;
+    min-height: 104px;
+    margin-bottom: 1rem;
+    overflow: hidden;
+    color: #f8f9fa !important;
+    background: #414950 !important;
+    border-top: 3px solid var(--accounting-accent);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, .24);
+    text-decoration: none !important;
+    transition: background-color .15s ease, box-shadow .15s ease, transform .15s ease;
+  }
+  .accounting-stat-card:hover { color: #fff !important; background: #4a535b !important; transform: translateY(-1px); }
+  .accounting-stat-card:focus { color: #fff !important; outline: 2px solid var(--accounting-accent); outline-offset: 2px; }
+  .accounting-stat-card.is-active { box-shadow: inset 0 0 0 2px var(--accounting-accent), 0 2px 6px rgba(0, 0, 0, .3); }
+  .accounting-stat-card .inner { padding: 13px 12px; }
+  .accounting-stat-card .inner h3 { margin-bottom: .2rem; font-size: 1.75rem; line-height: 1.05; }
+  .accounting-stat-card .inner p { margin: 0; color: #e9ecef; white-space: nowrap; }
+  .accounting-stat-card .icon { top: 9px; right: 12px; color: var(--accounting-accent); opacity: .32; }
+  .accounting-stat-card .icon > i { font-size: 58px; }
+  .accounting-stat-orders { --accounting-accent: #20c6d8; }
+  .accounting-stat-unmatched { --accounting-accent: #ffc107; }
+  .accounting-stat-refunds { --accounting-accent: #adb5bd; }
+  .accounting-stat-fees { --accounting-accent: #b47cff; }
+  .accounting-totals-card { flex: 0 0 auto; }
+  .accounting-payout-table thead th { vertical-align: middle; }
+  #accountingTatraTable_wrapper .accounting-table-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: .75rem;
+    padding: .65rem .75rem;
+  }
+  #accountingTatraTable_wrapper .accounting-table-toolbar .dt-buttons,
+  #accountingTatraTable_wrapper .accounting-table-toolbar .dataTables_filter {
+    float: none;
+    margin: 0;
+  }
+  #accountingTatraTable_wrapper .accounting-table-toolbar .dataTables_filter label {
+    display: flex;
+    align-items: center;
+    gap: .45rem;
+    margin: 0;
+    white-space: nowrap;
+  }
+  #accountingTatraTable_wrapper .accounting-table-toolbar .dataTables_filter input {
+    margin-left: 0;
+  }
+  @media (max-width: 991.98px) {
+    .accounting-summary-column { height: auto; }
+  }
+  @media (max-width: 575.98px) {
+    #accountingTatraTable_wrapper .accounting-table-toolbar {
+      align-items: stretch;
+      flex-direction: column;
+    }
+    #accountingTatraTable_wrapper .accounting-table-toolbar .dataTables_filter label {
+      justify-content: space-between;
+    }
+  }
+  @media (max-width: 767.98px) {
+    .accounting-page-header { flex-direction: column; min-height: 0; gap: .75rem; }
+    .accounting-page-actions { flex-wrap: wrap; margin-left: 0; }
+  }
+
+.tatra-reference { max-width: 230px; overflow-wrap: anywhere; }
+
+.tatra-summary-links { display: flex; flex-wrap: wrap; gap: .25rem 1rem; }
+.tatra-message { min-width: 180px; max-width: 320px; overflow-wrap: anywhere; }
+.tatra-reference { min-width: 100px; }
+.tatra-match-cell { min-width: 160px; }
+.tatra-actions summary { cursor: pointer; color: #63cadb; }
+.tatra-match-form { max-width: 280px; }
+.tatra-match-form label { width: 100%; }
+.tatra-match-form button { margin: .2rem .2rem .2rem 0; }
+.tatra-excluded { color: #adb5bd; }
+#accountingTatraFilters { gap: .4rem 0; }
+#accountingTatraTable .dtr-details { width: 100%; }
+#accountingTatraTable .dtr-data { white-space: normal; overflow-wrap: anywhere; }
+@media (max-width: 575.98px) {
+  #accountingTatraFilters .form-control { width: 100%; margin-right: 0 !important; }
+  .tatra-match-cell { min-width: 125px; }
+  .tatra-message { min-width: 0; }
+}

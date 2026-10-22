@@ -242,6 +242,7 @@ $accountingCardUrl = static function (string $cardType, string $cardMatch = 'all
       <div class="btn-group" role="group" aria-label="Účtovné sekcie">
         <a class="btn btn-success active" href="?page=accounting_payouts" aria-current="page">eBay payouts</a>
         <a class="btn btn-outline-secondary" href="?page=accounting_paypal">PayPal platby</a>
+        <a class="btn btn-outline-secondary" href="?page=accounting_tatra">Tatra B. Payouts</a>
         <a class="btn btn-outline-secondary" href="?page=accounting_omega">OMEGA faktúry</a>
         <a class="btn btn-outline-secondary" href="?page=accounting_omega_export">OMEGA TXT export</a>
       </div>

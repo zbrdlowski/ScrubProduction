@@ -24,6 +24,7 @@ function accountingUiHelpDocuments(): array
     return [
         'payouts' => ['title' => 'eBay payouty', 'file' => 'accounting-payouts.md'],
         'paypal' => ['title' => 'PayPal platby', 'file' => 'accounting-paypal.md'],
+        'tatra' => ['title' => 'Tatra B. Payouts', 'file' => 'accounting-tatra.md'],
         'omega' => ['title' => 'OMEGA faktúry', 'file' => 'accounting-omega.md'],
         'omega_export' => ['title' => 'OMEGA TXT export', 'file' => 'accounting-omega-export.md'],
     ];
@@ -53,6 +54,9 @@ function accountingUiAssets(): string
 {
     return <<<'HTML'
 <style>
+  .accounting-page-actions { flex-wrap:wrap; justify-content:flex-end; max-width:100%; }
+  .accounting-page-actions .btn-group { flex-wrap:wrap; }
+  @media(max-width:767.98px){.accounting-page-actions{justify-content:flex-start}}
   .accounting-info { color:#39c9b5; cursor:help; font-size:.82em; vertical-align:.08em; }
   .accounting-info:focus { outline:2px solid #39c9b5; outline-offset:2px; border-radius:50%; }
   .accounting-tooltip-popover { position:fixed; z-index:2100; width:320px; max-width:calc(100vw - 24px); padding:.5rem .65rem; border-radius:.3rem; background:#111820; color:#fff; box-shadow:0 3px 12px rgba(0,0,0,.4); font-size:.82rem; line-height:1.35; text-align:left; pointer-events:none; transform:translate(-50%, -100%); }

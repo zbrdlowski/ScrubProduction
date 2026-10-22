@@ -77,6 +77,7 @@ function auth_page_permission(string $page): ?string
         'custom_orders' => 'custom_orders.view',
         'accounting_payouts' => 'accounting.view',
         'accounting_paypal' => 'accounting.view',
+        'accounting_tatra' => 'accounting.view',
         'accounting_omega' => 'accounting.view',
         'accounting_omega_export' => 'accounting.view',
         'accounting_help' => 'accounting.view',

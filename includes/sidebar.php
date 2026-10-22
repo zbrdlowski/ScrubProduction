@@ -250,7 +250,7 @@ function isMenuOpen($pages = [])
           }
           ?>
         <?php if ($canSeeAccounting): ?>
-        <li class="nav-item <?= isMenuOpen(['accounting_payouts', 'accounting_paypal', 'accounting_omega', 'accounting_omega_export', 'accounting_help']) ? 'menu-open' : '' ?>">
+        <li class="nav-item <?= isMenuOpen(['accounting_payouts', 'accounting_paypal', 'accounting_tatra', 'accounting_omega', 'accounting_omega_export', 'accounting_help']) ? 'menu-open' : '' ?>">
           <a href="#" class="nav-link" style="background-color:#2a3036;">
             <i class="nav-icon fas fa-calculator" style="color:#20c997;"></i>
             <p>Účtovníctvo<i class="right fas fa-angle-left"></i></p>
@@ -264,6 +264,11 @@ function isMenuOpen($pages = [])
             <li class="nav-item">
               <a href="<?= basename($_SERVER['PHP_SELF']) ?>?page=accounting_paypal" class="nav-link <?= isActive('accounting_paypal') ?>">
                 <i class="fa fa-caret-right nav-icon"></i><p>PayPal platby</p>
+              </a>
+            </li>
+            <li class="nav-item">
+              <a href="<?= basename($_SERVER['PHP_SELF']) ?>?page=accounting_tatra" class="nav-link <?= isActive('accounting_tatra') ?>">
+                <i class="fa fa-caret-right nav-icon"></i><p>Tatra B. Payouts</p>
               </a>
             </li>
             <li class="nav-item">

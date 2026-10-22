@@ -159,6 +159,7 @@ $rawExportReady = (int) $stats['unmatched'] === 0 && (int) $stats['review'] === 
       <div class="btn-group" role="group" aria-label="Účtovné sekcie">
         <a class="btn btn-outline-secondary" href="?page=accounting_payouts">eBay payouty</a>
         <a class="btn btn-success active" href="?page=accounting_paypal" aria-current="page">PayPal platby</a>
+        <a class="btn btn-outline-secondary" href="?page=accounting_tatra">Tatra B. Payouts</a>
         <a class="btn btn-outline-secondary" href="?page=accounting_omega">OMEGA faktúry</a>
         <a class="btn btn-outline-secondary" href="?page=accounting_omega_export">OMEGA TXT export</a>
       </div>

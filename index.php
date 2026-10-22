@@ -81,6 +81,7 @@ $pageLabels = [
   'vykaz_prace' => 'Activity Report',
   'accounting_payouts' => 'eBay payouty',
   'accounting_paypal' => 'PayPal platby',
+  'accounting_tatra' => 'Tatra B. Payouts',
   'accounting_omega' => 'OMEGA faktúry',
   'access_admin' => 'User Permissions',
   'accounting_omega_export' => 'OMEGA TXT export',
