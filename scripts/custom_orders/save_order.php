@@ -179,12 +179,7 @@ if ((int) ($data['billing_same_as_shipping'] ?? 0) === 1) {
 if ($data['customer_name'] === '') {
   $data['customer_name'] = trim((string) ($data['shipping_name'] ?: $data['billing_name']));
 }
-if ($data['customer_email'] === '') {
-  $data['customer_email'] = trim((string) ($data['shipping_email'] ?: $data['billing_email']));
-}
-if ($data['customer_phone'] === '') {
-  $data['customer_phone'] = trim((string) ($data['shipping_phone'] ?: $data['billing_phone']));
-}
+$data = customOrdersApplyContactEdits($data, $_POST);
 
 $postedCustomerCountry = $posted('customer_country');
 $addressCountry = $data['shipping_country'] ?: $data['billing_country'];

@@ -2197,7 +2197,10 @@ $customsIdentifierLabel = ordersCustomsIdentifierLabel($orderCountry);
 $customsCountryLabels = ordersCustomsIdentifierCountryLabels();
 $displayCustomerPhone = '';
 
-if (!empty($addr['SHIPPING']['phone'])) {
+if ($isCustomOrder && is_array($addr['SHIPPING'])) {
+  // Custom orders carry their own contacts; an empty value is an intentional deletion.
+  $displayCustomerPhone = (string) ($addr['SHIPPING']['phone'] ?? '');
+} elseif (!empty($addr['SHIPPING']['phone'])) {
   $displayCustomerPhone = (string) $addr['SHIPPING']['phone'];
 } elseif (!empty($addr['BILLING']['phone'])) {
   $displayCustomerPhone = (string) $addr['BILLING']['phone'];
@@ -2231,7 +2234,7 @@ if ($deliveryContactPhone === '') {
   $deliveryContactPhone = trim($displayCustomerPhone);
 }
 $deliveryEmail = trim((string) ($addr['SHIPPING']['email'] ?? ''));
-if ($deliveryEmail === '') {
+if ($deliveryEmail === '' && !($isCustomOrder && is_array($addr['SHIPPING']))) {
   $deliveryEmail = trim((string) ($order['customer_email'] ?? ($addr['BILLING']['email'] ?? '')));
 }
 

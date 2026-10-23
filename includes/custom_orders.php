@@ -1296,6 +1296,36 @@ function customOrderRenderSpecFieldInput(mysqli $conn, array $definition, array 
 }
 
 $customOrderHelpLang = customOrderResolveHelpLanguage();
+$customOrderExportMissingFields = [];
+if ($selectedOrder) {
+  // Export uses saved values, so warnings must not hide missing data after unsaved edits.
+  $customOrderExportInvalidFields = array_fill_keys(customOrdersExportValidation($selectedOrder)['fields'], true);
+  $customOrderExportFieldLabels = [
+    'official_prefix' => ['Official order number', 'Oficiálne číslo objednávky'],
+    'customer_name' => ['Customer name or nickname', 'Meno zákazníka alebo prezývka'],
+    'shipping_name' => ['Recipient name', 'Meno príjemcu'],
+    'shipping_street' => ['Shipping street and house number', 'Ulica a číslo doručenia'],
+    'shipping_city' => ['Shipping city', 'Mesto doručenia'],
+    'shipping_zip' => ['Shipping postal code / ZIP', 'PSČ doručenia'],
+    'shipping_country' => ['Shipping country', 'Krajina doručenia'],
+    'shipping_state' => ['Shipping state / province', 'Štát / provincia doručenia'],
+  ];
+  foreach ($customOrderExportFieldLabels as $field => $labels) {
+    if (isset($customOrderExportInvalidFields[$field])) {
+      $customOrderExportMissingFields[] = $labels[$customOrderHelpLang === 'en' ? 0 : 1];
+    }
+  }
+  if (empty($selectedOrder['items'])) {
+    $customOrderExportMissingFields[] = $customOrderHelpLang === 'en' ? 'At least one order item' : 'Aspoň jedna položka objednávky';
+  }
+  if (customOrdersContactValue($selectedOrder, 'email') === '') {
+    $customOrderExportMissingFields[] = $customOrderHelpLang === 'en' ? 'Contact email' : 'Kontaktný e-mail';
+  }
+  if (customOrdersContactValue($selectedOrder, 'phone') === '') {
+    $customOrderExportMissingFields[] = $customOrderHelpLang === 'en' ? 'Contact phone number' : 'Kontaktné telefónne číslo';
+  }
+}
+$customOrderExportMissingFieldsJson = json_encode($customOrderExportMissingFields, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE);
 $customOrderActiveFilterBadges = [];
 if ($difficultyFilter > 0) {
   $customOrderActiveFilterBadges[] = ['label' => 'Difficulty', 'display' => customOrderComplexityLabel($difficultyFilter, $customOrderComplexityOptions)];
@@ -4459,8 +4489,8 @@ if (!$customOrdersDetailRequest && !$customOrdersFullPageDetail) {
             <div class="custom-summary-list">
               <div class="custom-summary-row"><strong>Customer</strong><span><?= h(customOrderCustomerDisplay($selectedOrder)) ?></span></div>
               <div class="custom-summary-row"><strong>Handle</strong><span><?= h($selectedOrder['social_handle'] ?: '-') ?></span></div>
-              <div class="custom-summary-row"><strong>Email</strong><span><?= h($selectedOrder['customer_email'] ?: '-') ?></span></div>
-              <div class="custom-summary-row"><strong>Phone</strong><span><?= h($selectedOrder['customer_phone'] ?: $selectedOrder['shipping_phone'] ?: $selectedOrder['billing_phone'] ?: '-') ?></span></div>
+              <div class="custom-summary-row"><strong>Email</strong><span><?= h(customOrdersContactValue($selectedOrder, 'email') ?: '-') ?></span></div>
+              <div class="custom-summary-row"><strong>Phone</strong><span><?= h(customOrdersContactValue($selectedOrder, 'phone') ?: '-') ?></span></div>
               <div class="custom-summary-row"><strong>Country</strong><span><?= h($selectedOrder['shipping_country'] ?: $selectedOrder['customer_country'] ?: $selectedOrder['billing_country'] ?: '-') ?></span></div>
             </div>
           </div>
@@ -4489,7 +4519,7 @@ if (!$customOrdersDetailRequest && !$customOrdersFullPageDetail) {
                 Official No.
               </button>
             <?php endif; ?>
-            <form method="post" action="scripts/custom_orders/export_order.php" class="mb-2 custom-export-production-form" data-export-order-number="<?= h((string) ($selectedOrder['official_order_number'] ?: $selectedOrder['internal_code'])) ?>" data-export-total="<?= h(number_format((float) ($selectedOrder['summary']['gross_total'] ?? 0), 2, '.', '')) ?>" data-export-currency="<?= h((string) ($selectedOrder['currency'] ?: 'EUR')) ?>">
+            <form method="post" action="scripts/custom_orders/export_order.php" class="mb-2 custom-export-production-form" data-export-missing-fields="<?= h($customOrderExportMissingFieldsJson) ?>" data-export-order-number="<?= h((string) ($selectedOrder['official_order_number'] ?: $selectedOrder['internal_code'])) ?>" data-export-total="<?= h(number_format((float) ($selectedOrder['summary']['gross_total'] ?? 0), 2, '.', '')) ?>" data-export-currency="<?= h((string) ($selectedOrder['currency'] ?: 'EUR')) ?>">
               <input type="hidden" name="custom_order_id" value="<?= (int) $selectedOrder['id'] ?>">
               <button type="submit" class="btn btn-primary btn-sm btn-block" <?= (int) ($selectedOrder['production_order_id'] ?? 0) > 0 ? 'disabled' : '' ?>>Export To Production</button>
             </form>
@@ -4852,7 +4882,7 @@ if (!$customOrdersDetailRequest && !$customOrdersFullPageDetail) {
                   <i class="fas fa-hashtag mr-1"></i>Assign Number
                 </button>
               <?php elseif ($customOrdersCanManage && (int) ($selectedOrder['production_order_id'] ?? 0) <= 0): ?>
-                <form method="post" action="scripts/custom_orders/export_order.php" class="mb-0 custom-export-production-form" data-export-order-number="<?= h((string) ($selectedOrder['official_order_number'] ?: $selectedOrder['internal_code'])) ?>" data-export-total="<?= h(number_format((float) ($summary['gross_total'] ?? 0), 2, '.', '')) ?>" data-export-currency="<?= h((string) ($selectedOrder['currency'] ?: 'EUR')) ?>">
+                <form method="post" action="scripts/custom_orders/export_order.php" class="mb-0 custom-export-production-form" data-export-missing-fields="<?= h($customOrderExportMissingFieldsJson) ?>" data-export-order-number="<?= h((string) ($selectedOrder['official_order_number'] ?: $selectedOrder['internal_code'])) ?>" data-export-total="<?= h(number_format((float) ($summary['gross_total'] ?? 0), 2, '.', '')) ?>" data-export-currency="<?= h((string) ($selectedOrder['currency'] ?: 'EUR')) ?>">
                   <input type="hidden" name="custom_order_id" value="<?= (int) $selectedOrder['id'] ?>">
                   <button type="submit" class="btn btn-primary btn-sm">
                     <i class="fas fa-industry mr-1"></i>Export To Production
@@ -6087,15 +6117,49 @@ if (!$customOrdersDetailRequest && !$customOrdersFullPageDetail) {
       });
     }
 
+    function customOrderHeaderSnapshot(form) {
+      return JSON.stringify(Array.from(new FormData(form).entries()));
+    }
+
+    function initializeCustomExportSnapshots(root) {
+      root.querySelectorAll('form[id^="custom-twin-header-form-"]').forEach(function (form) {
+        if (form.dataset.exportSavedSnapshot !== undefined) return;
+        form.dataset.exportSavedSnapshot = customOrderHeaderSnapshot(form);
+      });
+    }
+
     function confirmCustomOrderProductionExport(form) {
+      var orderIdInput = form.querySelector('input[name="custom_order_id"]');
+      var headerForm = orderIdInput ? document.getElementById('custom-twin-header-form-' + orderIdInput.value) : null;
+      if (headerForm && headerForm.dataset.exportSavedSnapshot !== customOrderHeaderSnapshot(headerForm)) {
+        window.alert(customOrdersHelpLang === 'en'
+          ? 'The order has unsaved changes. Click Save changes before exporting to Production.'
+          : 'Objednávka má neuložené zmeny. Pred exportom do Production kliknite na Save changes.');
+        return false;
+      }
       var orderNumber = String(form.getAttribute('data-export-order-number') || 'this custom order').trim();
       var currency = String(form.getAttribute('data-export-currency') || '').trim();
       var total = parseFloat(String(form.getAttribute('data-export-total') || '0').replace(',', '.'));
       if (!Number.isFinite(total)) total = 0;
       var formattedTotal = total.toFixed(2) + (currency ? ' ' + currency : '');
+      var missingFields = JSON.parse(form.getAttribute('data-export-missing-fields') || '[]');
+      var isEnglish = customOrdersHelpLang === 'en';
+      var warnings = [];
 
+      if (missingFields.length > 0) {
+        warnings.push((isEnglish ? 'The saved order is missing:' : 'V uloženej objednávke chýba:') + '\n- ' + missingFields.join('\n- '));
+      }
       if (Math.abs(total) < 0.005) {
-        return window.confirm('Warning: you are about to export ' + orderNumber + ' to Production with zero total value (' + formattedTotal + ').\n\nOK = export anyway\nCancel = go back and fill in the price');
+        warnings.push(isEnglish
+          ? 'The order has zero total value (' + formattedTotal + ').'
+          : 'Objednávka má nulovú celkovú hodnotu (' + formattedTotal + ').');
+      }
+      if (warnings.length > 0) {
+        return window.confirm((isEnglish
+          ? 'Warning before exporting ' + orderNumber + ' to Production!'
+          : 'Upozornenie pred exportom ' + orderNumber + ' do Production!') + '\n\n' + warnings.join('\n\n') + '\n\n' + (isEnglish
+          ? 'By clicking OK, I acknowledge these warnings and accept responsibility for continuing.\nCancel = go back, fill in and save the missing details.'
+          : 'Kliknutím na OK potvrdzujem, že som si prečítal upozornenia a preberám zodpovednosť za pokračovanie.\nZrušiť = vrátim sa, doplním a uložím chýbajúce údaje.'));
       }
 
       return window.confirm(customOrdersHelpLang === 'en'
@@ -7841,6 +7905,7 @@ if (!$customOrdersDetailRequest && !$customOrdersFullPageDetail) {
       initializeCustomCategoryPicker(root);
       initializeCustomOrderPhotos(root);
       initializeCustomContactSuggestions(root);
+      initializeCustomExportSnapshots(root);
       initializeCustomCollapsiblePanels(root);
       initializeCustomNoteReplies(root);
       focusCustomOrderNote(root);
@@ -8232,6 +8297,7 @@ if (!$customOrdersDetailRequest && !$customOrdersFullPageDetail) {
     initializeCustomCategoryPicker(document);
     initializeCustomOrderPhotos(document);
     initializeCustomContactSuggestions(document);
+    initializeCustomExportSnapshots(document);
     initializeNewCustomLeadGuard(document);
     applyCustomOrdersAccess(document);
     initializeCustomCollapsiblePanels(document);

@@ -2496,6 +2496,32 @@ function customOrdersDuplicateOrder(mysqli $conn, int $sourceOrderId, int $userI
   }
 }
 
+function customOrdersApplyContactEdits(array $data, array $posted): array
+{
+  foreach (['email', 'phone'] as $field) {
+    $shippingKey = 'shipping_' . $field;
+    $customerKey = 'customer_' . $field;
+    if (array_key_exists($shippingKey, $posted) && !array_key_exists($customerKey, $posted)) {
+      // The header edits shipping contacts; keep the hidden customer copy in sync, including deletion.
+      $data[$customerKey] = trim((string) ($posted[$shippingKey] ?? ''));
+    }
+  }
+  return $data;
+}
+
+function customOrdersContactValue(array $order, string $field, string $address = 'shipping'): string
+{
+  $key = $address . '_' . $field;
+  // An explicitly empty address contact must not fall back to a stale hidden/customer-directory value.
+  if (array_key_exists($key, $order)) {
+    return trim((string) ($order[$key] ?? ''));
+  }
+  if ($address === 'billing') {
+    return customOrdersContactValue($order, $field);
+  }
+  return trim((string) ($order['customer_' . $field] ?? ''));
+}
+
 function customOrdersExportValidation(array $order): array
 {
   $errors = [];
@@ -2537,7 +2563,7 @@ function customOrdersExportValidation(array $order): array
     $errors[] = 'Shipping state / province is required for this country.';
     $fields[] = 'shipping_state';
   }
-  if (trim((string) ($order['customer_email'] ?? '')) === '' && trim((string) ($order['customer_phone'] ?? '')) === '' && trim((string) ($order['shipping_email'] ?? '')) === '' && trim((string) ($order['shipping_phone'] ?? '')) === '') {
+  if (customOrdersContactValue($order, 'email') === '' && customOrdersContactValue($order, 'phone') === '') {
     $errors[] = 'At least one contact field (email or phone) is required.';
     $fields[] = 'customer_email';
     $fields[] = 'customer_phone';
@@ -2564,14 +2590,8 @@ function customOrdersUpsertCustomer(mysqli $conn, array $order): ?int
   if ($name === '') {
     $name = trim((string) (($order['shipping_name'] ?? '') ?: ($order['billing_name'] ?? '')));
   }
-  $email = trim((string) ($order['customer_email'] ?? ''));
-  if ($email === '') {
-    $email = trim((string) (($order['shipping_email'] ?? '') ?: ($order['billing_email'] ?? '')));
-  }
-  $phone = trim((string) ($order['customer_phone'] ?? ''));
-  if ($phone === '') {
-    $phone = trim((string) (($order['shipping_phone'] ?? '') ?: ($order['billing_phone'] ?? '')));
-  }
+  $email = customOrdersContactValue($order, 'email');
+  $phone = customOrdersContactValue($order, 'phone');
   if ($name === '' && $email === '' && $phone === '') {
     return null;
   }
@@ -2707,14 +2727,8 @@ function customOrdersSyncProductionHeader(mysqli $conn, int $customOrderId, int 
   if ($customerName === '') {
     $customerName = trim((string) (($orderData['shipping_name'] ?? '') ?: ($orderData['billing_name'] ?? '')));
   }
-  $customerEmail = trim((string) ($orderData['customer_email'] ?? ''));
-  if ($customerEmail === '') {
-    $customerEmail = trim((string) (($orderData['shipping_email'] ?? '') ?: ($orderData['billing_email'] ?? '')));
-  }
-  $customerPhone = trim((string) ($orderData['customer_phone'] ?? ''));
-  if ($customerPhone === '') {
-    $customerPhone = trim((string) (($orderData['shipping_phone'] ?? '') ?: ($orderData['billing_phone'] ?? '')));
-  }
+  $customerEmail = customOrdersContactValue($orderData, 'email');
+  $customerPhone = customOrdersContactValue($orderData, 'phone');
 
   $customerId = (int) ($productionOrder['customer_id'] ?? 0);
   if ($customerId > 0) {
@@ -2801,8 +2815,8 @@ function customOrdersSyncProductionHeader(mysqli $conn, int $customOrderId, int 
     'zip' => (string) (($orderData['billing_zip'] ?? '') ?: ($orderData['shipping_zip'] ?? '')),
     'country' => (string) (($orderData['billing_country'] ?? '') ?: ($orderData['shipping_country'] ?? '')),
     'state' => (string) (($orderData['billing_state'] ?? '') ?: ($orderData['shipping_state'] ?? '')),
-    'email' => (string) (($orderData['billing_email'] ?? '') ?: ($orderData['customer_email'] ?? '') ?: ($orderData['shipping_email'] ?? '')),
-    'phone' => (string) (($orderData['billing_phone'] ?? '') ?: ($orderData['customer_phone'] ?? '') ?: ($orderData['shipping_phone'] ?? '')),
+    'email' => customOrdersContactValue($orderData, 'email', 'billing'),
+    'phone' => customOrdersContactValue($orderData, 'phone', 'billing'),
   ]);
 
   customOrdersUpsertProductionAddress($conn, $productionOrderId, 'SHIPPING', [
@@ -2814,8 +2828,8 @@ function customOrdersSyncProductionHeader(mysqli $conn, int $customOrderId, int 
     'zip' => (string) ($orderData['shipping_zip'] ?? ''),
     'country' => (string) ($orderData['shipping_country'] ?? ''),
     'state' => (string) ($orderData['shipping_state'] ?? ''),
-    'email' => (string) (($orderData['shipping_email'] ?? '') ?: ($orderData['customer_email'] ?? '')),
-    'phone' => (string) (($orderData['shipping_phone'] ?? '') ?: ($orderData['customer_phone'] ?? '')),
+    'email' => customOrdersContactValue($orderData, 'email'),
+    'phone' => customOrdersContactValue($orderData, 'phone'),
   ]);
 
   log_order_activity(
@@ -2933,8 +2947,8 @@ function customOrdersExportToProduction(mysqli $conn, int $customOrderId, int $u
     $billingZip = trim((string) ($order['billing_zip'] ?: ($order['shipping_zip'] ?? '')));
     $billingCountry = (string) customOrdersNormalizeCountry((string) ($order['billing_country'] ?: ($order['shipping_country'] ?? '')));
     $billingState = (string) customOrdersNormalizeState((string) ($order['billing_state'] ?: ($order['shipping_state'] ?? '')));
-    $billingEmail = trim((string) ($order['customer_email'] ?: $order['billing_email'] ?: $order['shipping_email']));
-    $billingPhone = trim((string) ($order['customer_phone'] ?: $order['billing_phone'] ?: $order['shipping_phone']));
+    $billingEmail = customOrdersContactValue($order, 'email', 'billing');
+    $billingPhone = customOrdersContactValue($order, 'phone', 'billing');
     $stmt->bind_param('isssssssssss', $productionOrderId, $billingType, $billingName, $billingCompany, $billingCompanyId, $billingStreet, $billingCity, $billingZip, $billingCountry, $billingState, $billingEmail, $billingPhone);
     $stmt->execute();
 
@@ -2947,8 +2961,8 @@ function customOrdersExportToProduction(mysqli $conn, int $customOrderId, int $u
     $shippingZip = trim((string) ($order['shipping_zip'] ?? ''));
     $shippingCountry = (string) customOrdersNormalizeCountry((string) ($order['shipping_country'] ?? ''));
     $shippingState = (string) customOrdersNormalizeState((string) ($order['shipping_state'] ?? ''));
-    $shippingEmail = trim((string) ($order['shipping_email'] ?: $order['customer_email']));
-    $shippingPhone = trim((string) ($order['shipping_phone'] ?: $order['customer_phone']));
+    $shippingEmail = customOrdersContactValue($order, 'email');
+    $shippingPhone = customOrdersContactValue($order, 'phone');
     $stmt->bind_param('isssssssssss', $productionOrderId, $shippingType, $shippingName, $shippingCompany, $shippingCompanyId, $shippingStreet, $shippingCity, $shippingZip, $shippingCountry, $shippingState, $shippingEmail, $shippingPhone);
     $stmt->execute();
     $stmt->close();
