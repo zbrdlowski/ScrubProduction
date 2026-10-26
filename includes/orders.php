@@ -6828,10 +6828,18 @@ $deptOptions = [
           if (!html) html = '<div class="alert alert-warning mb-0">No other READY_TO_SHIP orders were found for this customer.</div>';
           $multishippingCandidates.html(html);
           $multishippingSaveBtn.prop('disabled', !editable || (resp.candidates || []).length < 2).toggleClass('d-none', !editable);
-          $multishippingCancelBtn.toggleClass('d-none', !resp.group || groupStatus !== 'DRAFT');
-          $multishippingUnlockBtn.toggleClass('d-none', !resp.group || groupStatus !== 'EXPORTED');
+          const canUnlock = !!resp.editable && !!resp.group && !!resp.group.can_unlock;
+          $multishippingCancelBtn.toggleClass('d-none', !resp.editable || !resp.group || groupStatus !== 'DRAFT');
+          $multishippingUnlockBtn.toggleClass('d-none', !canUnlock)
+            .text(groupStatus === 'SHIPPED' ? 'Unlock group' : 'Unlock exported group')
+            .data('group-status', groupStatus);
           if (resp.group && !editable) {
-            $multishippingMessage.html('<div class="alert alert-warning py-2">Group status: <strong>' + escapeMultishippingHtml(groupStatus) + '</strong>. Unlock the group before changing it.</div>');
+            const message = !resp.editable ? 'You do not have permission to change this group.'
+              : canUnlock ? (groupStatus === 'SHIPPED'
+                ? 'All member orders are back in Ready for Label. Unlock the group to edit or remove it.'
+                : 'Unlock the group before changing it.')
+              : (resp.group.unlock_error || 'This group cannot be changed.');
+            $multishippingMessage.html('<div class="alert alert-warning py-2">Group status: <strong>' + escapeMultishippingHtml(groupStatus) + '</strong>. ' + escapeMultishippingHtml(message) + '</div>');
           }
         })
         .fail(function (xhr) {
@@ -6873,13 +6881,18 @@ $deptOptions = [
     $multishippingCancelBtn.on('click', function () {
       if (!confirm('Remove this multishipping group?')) return;
       $.post('scripts/orders/multishipping.php', { action: 'cancel', order_id: multishippingOrderId }, null, 'json')
-        .done(function (resp) { if (resp && resp.ok) location.reload(); else alert(resp.error || 'Remove failed.'); });
+        .done(function (resp) { if (resp && resp.ok) location.reload(); else alert((resp && resp.error) || 'Remove failed.'); })
+        .fail(function (xhr) { alert(xhr.responseJSON && xhr.responseJSON.error ? xhr.responseJSON.error : 'Remove failed.'); });
     });
 
     $multishippingUnlockBtn.on('click', function () {
-      if (!confirm('Release the FedEx export lock? Do this only if the generated CSV will not be used.')) return;
+      const message = $(this).data('group-status') === 'SHIPPED'
+        ? 'Reopen this group for editing or removal? Existing tracking history is kept. This does not cancel any FedEx label; cancel an unused label separately.'
+        : 'Release the FedEx export lock? Do this only if the generated CSV will not be used.';
+      if (!confirm(message)) return;
       $.post('scripts/orders/multishipping.php', { action: 'unlock_group', order_id: multishippingOrderId }, null, 'json')
-        .done(function (resp) { if (resp && resp.ok) loadMultishipping(multishippingOrderId); else alert(resp.error || 'Unlock failed.'); });
+        .done(function (resp) { if (resp && resp.ok) loadMultishipping(multishippingOrderId); else alert((resp && resp.error) || 'Unlock failed.'); })
+        .fail(function (xhr) { alert(xhr.responseJSON && xhr.responseJSON.error ? xhr.responseJSON.error : 'Unlock failed.'); });
     });
 
     $(document).on('click', '.js-ms-unlock-order', function () {

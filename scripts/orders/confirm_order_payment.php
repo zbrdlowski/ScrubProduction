@@ -52,7 +52,7 @@ try {
   $conn->begin_transaction();
 
   $stmt = $conn->prepare("
-    SELECT status, order_date, production_started_at, total, currency, source_meta
+    SELECT status, order_date, imported_at, production_started_at, total, currency, source_meta
     FROM orders
     WHERE id = ?
     LIMIT 1
@@ -75,9 +75,11 @@ try {
     throw new RuntimeException('Only a PENDING order can be released after payment');
   }
 
+  // Daily production groups use imported_at; release the order into the queue at payment confirmation.
   $stmt = $conn->prepare("
     UPDATE orders
     SET status = 'NEW',
+        imported_at = NOW(),
         production_started_at = NOW(),
         payment_received_amount = ?,
         status_override = 0,
@@ -97,7 +99,7 @@ try {
   recalculateOrderWorkflow($conn, $orderId);
 
   $stmt = $conn->prepare("
-    SELECT status, production_started_at, payment_received_amount
+    SELECT status, imported_at, production_started_at, payment_received_amount
     FROM orders
     WHERE id = ?
     LIMIT 1
@@ -109,6 +111,7 @@ try {
 
   $newStatus = strtoupper(trim((string) ($updated['status'] ?? 'NEW')));
   $productionStartedAt = (string) ($updated['production_started_at'] ?? '');
+  $importedAt = (string) ($updated['imported_at'] ?? '');
   $sourceMeta = json_decode((string) ($order['source_meta'] ?? ''), true);
   $expectedRaw = is_array($sourceMeta) ? ($sourceMeta['total_price_with_vat'] ?? null) : null;
   $expectedNormalized = trim(str_replace(["\u{00A0}", ' '], '', (string) $expectedRaw));
@@ -133,6 +136,8 @@ try {
       'old_status' => $oldStatus,
       'new_status' => $newStatus,
       'production_started_at' => $productionStartedAt,
+      'previous_imported_at' => $order['imported_at'] ?? null,
+      'imported_at' => $importedAt,
       'expected_amount' => $expectedAmount,
       'received_amount' => $receivedAmount,
       'difference' => $paymentDifference,
@@ -149,6 +154,7 @@ try {
     'order_id' => $orderId,
     'order_status' => $newStatus,
     'production_started_at' => $productionStartedAt,
+    'imported_at' => $importedAt,
     'payment_received_amount' => number_format($receivedAmount, 2, '.', ''),
     'payment_difference' => $paymentDifference,
     'status_html' => ordersRenderStatusChip($conn, $newStatus, 'xs'),

@@ -87,8 +87,10 @@ if ($action === 'fetch') {
   $group = ordersMultishippingGroupForOrder($conn, $orderId);
   $groupId = (int) ($group['id'] ?? 0);
   $selectedMap = [];
+  $members = [];
   if ($groupId > 0) {
-    foreach (ordersMultishippingMembers($conn, $groupId) as $member) {
+    $members = ordersMultishippingMembers($conn, $groupId);
+    foreach ($members as $member) {
       $selectedMap[(int) $member['order_id']] = (int) $member['position'];
     }
   }
@@ -199,6 +201,8 @@ if ($action === 'fetch') {
       'id' => $groupId,
       'status' => (string) $group['status'],
       'tracking_number' => (string) ($group['tracking_number'] ?? ''),
+      'can_unlock' => $canEditMultishipping && ordersMultishippingUnlockError($group, $members) === '',
+      'unlock_error' => ordersMultishippingUnlockError($group, $members),
     ] : null,
     'requested_order_id' => $orderId,
     'candidates' => $output,
@@ -353,26 +357,35 @@ if (in_array($action, ['cancel', 'unlock_group'], true)) {
   $conn->begin_transaction();
   try {
     $order = multishippingLoadOrder($conn, $orderId, true);
-    $group = ordersMultishippingGroupForOrder($conn, $orderId);
+    $group = ordersMultishippingGroupForOrder($conn, $orderId, true);
     if (!$order || !$group) {
       throw new RuntimeException('Multishipping group not found.');
     }
+    if (!$canEditAnyShippingScope && !multishippingOrderMatchesShippingScope($conn, $orderId, $sessionDept)) {
+      throw new RuntimeException('This order belongs to the other shipping workplace.');
+    }
     $groupId = (int) $group['id'];
-    $members = ordersMultishippingMembers($conn, $groupId);
+    $members = ordersMultishippingMembers($conn, $groupId, true);
     $memberIds = array_map(static fn($row) => (int) $row['order_id'], $members);
 
     if ($action === 'unlock_group') {
-      if (strtoupper((string) $group['status']) !== 'EXPORTED') {
-        throw new RuntimeException('Only an exported group can be unlocked.');
+      $unlockError = ordersMultishippingUnlockError($group, $members);
+      if ($unlockError !== '') {
+        throw new RuntimeException($unlockError);
       }
       ordersMultishippingReleaseExportLocks($conn, $memberIds, $userId);
       $stmt = $conn->prepare("UPDATE order_multishipping_groups
-        SET status = 'DRAFT', exported_by = NULL, exported_at = NULL, updated_by = ? WHERE id = ?");
+        SET status = 'DRAFT', exported_by = NULL, exported_at = NULL,
+          tracking_number = NULL, shipped_at = NULL, updated_by = ? WHERE id = ?");
       $stmt->bind_param('ii', $userId, $groupId);
       $stmt->execute();
       $stmt->close();
       foreach ($memberIds as $memberId) {
-        log_order_activity($conn, $memberId, $userId, 'multishipping_unlocked', 'multishipping', $groupId, [], 'FedEx export lock released');
+        log_order_activity($conn, $memberId, $userId, 'multishipping_unlocked', 'multishipping', $groupId, [
+          'previous_status' => $group['status'],
+          'previous_tracking_number' => $group['tracking_number'] ?? null,
+          'previous_shipped_at' => $group['shipped_at'] ?? null,
+        ], 'Multishipping group reopened; FedEx export lock released');
       }
     } else {
       if (strtoupper((string) $group['status']) !== 'DRAFT') {

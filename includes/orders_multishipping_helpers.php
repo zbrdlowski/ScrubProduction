@@ -150,14 +150,14 @@ function ordersShippingScopeWhereSql(int $sessionDept, string $orderAlias = 'o')
   return ordersShippingScopeWhereSqlForScope(ordersShippingScopeFromDepartment($sessionDept), $orderAlias);
 }
 
-function ordersMultishippingGroupForOrder(mysqli $conn, int $orderId): ?array
+function ordersMultishippingGroupForOrder(mysqli $conn, int $orderId, bool $forUpdate = false): ?array
 {
   ordersMultishippingEnsureSchema($conn);
   $stmt = $conn->prepare("SELECT g.*, m.position
     FROM order_multishipping_orders m
     JOIN order_multishipping_groups g ON g.id = m.group_id
     WHERE m.order_id = ? AND g.status <> 'CANCELLED'
-    LIMIT 1");
+    LIMIT 1" . ($forUpdate ? ' FOR UPDATE' : ''));
   $stmt->bind_param('i', $orderId);
   $stmt->execute();
   $row = $stmt->get_result()->fetch_assoc();
@@ -165,7 +165,7 @@ function ordersMultishippingGroupForOrder(mysqli $conn, int $orderId): ?array
   return $row ?: null;
 }
 
-function ordersMultishippingMembers(mysqli $conn, int $groupId): array
+function ordersMultishippingMembers(mysqli $conn, int $groupId, bool $forUpdate = false): array
 {
   ordersMultishippingEnsureSchema($conn);
   $stmt = $conn->prepare("SELECT m.order_id, m.position, o.order_number, o.external_order_id,
@@ -174,7 +174,7 @@ function ordersMultishippingMembers(mysqli $conn, int $groupId): array
     JOIN orders o ON o.id = m.order_id
     LEFT JOIN customers cu ON cu.id = o.customer_id
     WHERE m.group_id = ?
-    ORDER BY m.position ASC, m.order_id ASC");
+    ORDER BY m.position ASC, m.order_id ASC" . ($forUpdate ? ' FOR UPDATE' : ''));
   $stmt->bind_param('i', $groupId);
   $stmt->execute();
   $rows = [];
@@ -184,6 +184,26 @@ function ordersMultishippingMembers(mysqli $conn, int $groupId): array
   }
   $stmt->close();
   return $rows;
+}
+
+function ordersMultishippingUnlockError(array $group, array $members): string
+{
+  $status = strtoupper(trim((string) ($group['status'] ?? '')));
+  if ($status === 'EXPORTED') {
+    return '';
+  }
+  if ($status !== 'SHIPPED') {
+    return 'Only an exported group or a shipped group with all orders back in Ready for Label can be unlocked.';
+  }
+  if (!$members) {
+    return 'This group has no orders to unlock.';
+  }
+  foreach ($members as $member) {
+    if (strtoupper(trim((string) ($member['status'] ?? ''))) !== 'READY_TO_SHIP') {
+      return 'This group is marked SHIPPED. It can only be unlocked when every member order is back in Ready for Label.';
+    }
+  }
+  return '';
 }
 
 function ordersMultishippingMap(mysqli $conn, array $orderIds): array
