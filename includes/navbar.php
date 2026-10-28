@@ -1,11 +1,12 @@
 <?php
 require_once __DIR__ . '/project_filters.php';
 
-$navbarProjectCount = 0;
+$navbarProjects = [];
 $navbarProjectUserId = intval($_SESSION['user_id'] ?? 0);
 if (isset($conn) && $conn instanceof mysqli) {
-    $navbarProjectCount = projectCountActiveForEmployee($conn, $navbarProjectUserId);
+    $navbarProjects = projectGetActiveForEmployee($conn, $navbarProjectUserId);
 }
+$navbarProjectCount = count($navbarProjects);
 
 $holidayNotifCount = 0;
 $holidayNotifText = 'Dovolenky';
@@ -45,6 +46,16 @@ if (isset($conn) && $conn instanceof mysqli) {
       display: block;
       margin-top: 0;
     }
+  }
+
+  .navbar-project-list {
+    max-height: 60vh;
+    overflow-y: auto;
+  }
+
+  .navbar-project-list .dropdown-item {
+    white-space: normal;
+    overflow-wrap: anywhere;
   }
 
   @keyframes navbarAlertBounce {
@@ -137,13 +148,32 @@ if (isset($conn) && $conn instanceof mysqli) {
           <a href="?page=historical_movements" class="dropdown-item">Plastics Order Archive</a>          
         </div>
       </li>
-      <li class="nav-item d-none d-sm-inline-block">
-        <a href="?page=projects" class="nav-link">
+      <li class="nav-item d-none d-sm-inline-block<?= $navbarProjectCount > 0 ? ' dropdown' : '' ?>">
+        <a href="index.php?page=projects" class="nav-link text-nowrap" id="navbarProjectsToggle"
+          <?php if ($navbarProjectCount > 0): ?>
+            data-toggle="dropdown" role="button" aria-haspopup="true" aria-expanded="false" aria-controls="navbarProjectsMenu"
+          <?php endif; ?>>
           Projects
           <?php if ($navbarProjectCount > 0): ?>
             <span class="badge badge-warning ml-1 navbar-badge-bounce"><?= $navbarProjectCount ?></span>
           <?php endif; ?>
         </a>
+        <?php if ($navbarProjectCount > 0): ?>
+          <div class="dropdown-menu dropdown-menu-lg" id="navbarProjectsMenu" aria-labelledby="navbarProjectsToggle">
+            <div class="navbar-project-list">
+              <?php foreach ($navbarProjects as $navbarProjectIndex => $navbarProject): ?>
+                <?php if ($navbarProjectIndex > 0): ?>
+                  <div class="dropdown-divider"></div>
+                <?php endif; ?>
+                <a href="index.php?page=projects&amp;view=<?= intval($navbarProject['id']) ?>" class="dropdown-item">
+                  <?= htmlspecialchars($navbarProject['title'], ENT_QUOTES, 'UTF-8') ?>
+                </a>
+              <?php endforeach; ?>
+            </div>
+            <div class="dropdown-divider"></div>
+            <a href="index.php?page=projects" class="dropdown-item dropdown-footer">See All projects</a>
+          </div>
+        <?php endif; ?>
       </li>
       <li class="nav-item d-none d-sm-inline-block">
         <a href="?page=product_chart" class="nav-link">Model database</a>

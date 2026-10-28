@@ -7,7 +7,8 @@ require_once dirname(__DIR__) . '/includes/project_filters.php';
 // These connection-local temporary tables shadow the application tables.
 // All fixture changes below affect only temporary projects and tasks.
 if (!$conn->query('CREATE TEMPORARY TABLE projects (
-  id INT PRIMARY KEY, assigned_to INT NULL, status VARCHAR(32) NOT NULL
+  id INT PRIMARY KEY, assigned_to INT NULL, status VARCHAR(32) NOT NULL,
+  title VARCHAR(255) NOT NULL DEFAULT \'\', priority VARCHAR(32) NOT NULL DEFAULT \'medium\'
 )') || !$conn->query('CREATE TEMPORARY TABLE project_tasks (
   id INT AUTO_INCREMENT PRIMARY KEY, project_id INT NOT NULL,
   assigned_to INT NULL, status VARCHAR(32) NOT NULL
@@ -44,6 +45,12 @@ try {
     if (projectCountActiveForEmployee($conn, $employeeId) !== count($expected)) {
       throw new RuntimeException($label . ': badge count does not match the active project list.');
     }
+    $menuProjects = projectGetActiveForEmployee($conn, $employeeId);
+    $menuIds = array_map('intval', array_column($menuProjects, 'id'));
+    sort($menuIds);
+    if ($menuIds !== $expected) {
+      throw new RuntimeException($label . ': navbar menu does not match the badge count.');
+    }
   };
 
   // Count each project once. Owners remain responsible even with no tasks or
@@ -52,6 +59,9 @@ try {
   $assertProjects(7, [1, 4, 5, 6, 9], 'Owner and task contribution rules');
   $assertProjects(8, [1, 2, 3, 4, 9, 10, 14], 'Another employee has independent responsibility');
   $assertProjects(999, [], 'Unrelated employee');
+  if (projectGetActiveForEmployee($conn, 0) !== [] || projectGetActiveForEmployee($conn, -1) !== []) {
+    throw new RuntimeException('Invalid employees must have no project menu.');
+  }
   if (projectCountActiveForEmployee($conn, 0) !== 0 || projectCountActiveForEmployee($conn, -1) !== 0) {
     throw new RuntimeException('Invalid employees must have no badge count.');
   }
