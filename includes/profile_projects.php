@@ -109,6 +109,7 @@ if (session_status() === PHP_SESSION_NONE)
 if (!isset($conn))
   include __DIR__ . '/conn.php';
 
+require_once __DIR__ . '/project_filters.php';
 $userId = intval($_SESSION['user_id'] ?? 0);
 
 function ppStatusBadge(string $s): string
@@ -188,6 +189,7 @@ function ppParseParticipants(?string $packed): array
 $projects = [];
 
 if ($userId > 0) {
+  $activeProjectWhere = projectActiveForEmployeeWhere();
   $stmt = $conn->prepare("
     SELECT DISTINCT
       p.*,
@@ -199,7 +201,6 @@ if ($userId > 0) {
       COALESCE(pa.participants, '') AS participants
     FROM projects p
     LEFT JOIN employees e ON e.id = p.assigned_to
-    LEFT JOIN project_tasks user_pt ON user_pt.project_id = p.id
     LEFT JOIN (
       SELECT project_id,
              COUNT(*) AS total_tasks,
@@ -238,8 +239,7 @@ if ($userId > 0) {
       ) participant_rows
       GROUP BY project_id
     ) pa ON pa.project_id = p.id
-    WHERE p.status NOT IN ('done','cancelled')
-      AND (p.assigned_to = ? OR user_pt.assigned_to = ?)
+    WHERE {$activeProjectWhere}
     ORDER BY
       FIELD(p.status,'in_progress','stuck','waiting','done','cancelled'),
       FIELD(p.priority,'urgent','high','medium','low'),

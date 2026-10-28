@@ -2397,11 +2397,38 @@ if ($viewId > 0) {
   <?php endif; ?>
 
   <script>
+    var projectFiltersStorageKey = 'darkscrub.projects.filters:' + window.location.pathname + ':<?= $empId ?>';
+
+    function restoreProjectFilters() {
+      try {
+        var savedFilters = JSON.parse(window.localStorage.getItem(projectFiltersStorageKey));
+        if (!savedFilters || typeof savedFilters !== 'object') {
+          return;
+        }
+
+        var $employeeOption = $('#employeeFilter option').filter(function () {
+          return this.value === savedFilters.employee;
+        });
+        if ($employeeOption.length) {
+          $('#employeeFilter').val(savedFilters.employee);
+        }
+
+        var $statusButton = $('#statusFilter .btn').filter(function () {
+          return $(this).data('filter') === savedFilters.status;
+        });
+        if ($statusButton.length) {
+          $('#statusFilter .btn').removeClass('active');
+          $statusButton.addClass('active');
+        }
+      } catch (e) {
+        // Keep the defaults if storage is unavailable or contains invalid JSON.
+      }
+    }
+
     // ── Filter buttons ──────────────────────────────────────────
     $('#statusFilter .btn').on('click', function () {
       $('#statusFilter .btn').removeClass('active');
       $(this).addClass('active');
-      var filter = $(this).data('filter');
       filterProjects();
     });
 
@@ -2450,6 +2477,15 @@ if ($viewId > 0) {
         var searchMatch = !search || title.indexOf(search) !== -1 || people.indexOf(search) !== -1;
         $(this).toggle(statusMatch && employeeMatch && searchMatch);
       });
+
+      try {
+        window.localStorage.setItem(projectFiltersStorageKey, JSON.stringify({
+          employee: employee,
+          status: filter
+        }));
+      } catch (e) {
+        // Filtering still works when browser storage is unavailable.
+      }
     }
 
     // ── Edit modal ──────────────────────────────────────────────
@@ -2511,6 +2547,7 @@ if ($viewId > 0) {
     });
 
     $(document).ready(function () {
+      restoreProjectFilters();
       filterProjects();
 
       // Small delay so CSS transition is visible

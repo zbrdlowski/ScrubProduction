@@ -1,4 +1,12 @@
 <?php
+require_once __DIR__ . '/project_filters.php';
+
+$navbarProjectCount = 0;
+$navbarProjectUserId = intval($_SESSION['user_id'] ?? 0);
+if (isset($conn) && $conn instanceof mysqli) {
+    $navbarProjectCount = projectCountActiveForEmployee($conn, $navbarProjectUserId);
+}
+
 $holidayNotifCount = 0;
 $holidayNotifText = 'Dovolenky';
 $holidayNotifFooter = 'Otvorit dovolenky';
@@ -66,7 +74,8 @@ if (isset($conn) && $conn instanceof mysqli) {
     }
   }
 
-  .navbar-alert-bounce i {
+  .navbar-alert-bounce i,
+  .navbar-badge-bounce {
     display: inline-block;
     transform-origin: center bottom;
     animation: navbarAlertBounce 1.6s ease-in-out infinite;
@@ -80,13 +89,16 @@ if (isset($conn) && $conn instanceof mysqli) {
   .navbar-alert-bounce:hover i,
   .navbar-alert-bounce:focus i,
   .navbar-alert-bounce:hover .navbar-badge,
-  .navbar-alert-bounce:focus .navbar-badge {
+  .navbar-alert-bounce:focus .navbar-badge,
+  .nav-link:hover .navbar-badge-bounce,
+  .nav-link:focus .navbar-badge-bounce {
     animation-play-state: paused;
   }
 
   @media (prefers-reduced-motion: reduce) {
     .navbar-alert-bounce i,
-    .navbar-alert-bounce .navbar-badge {
+    .navbar-alert-bounce .navbar-badge,
+    .navbar-badge-bounce {
       animation: none;
     }
   }
@@ -126,7 +138,12 @@ if (isset($conn) && $conn instanceof mysqli) {
         </div>
       </li>
       <li class="nav-item d-none d-sm-inline-block">
-        <a href="?page=projects" class="nav-link">Projects</a>
+        <a href="?page=projects" class="nav-link">
+          Projects
+          <?php if ($navbarProjectCount > 0): ?>
+            <span class="badge badge-warning ml-1 navbar-badge-bounce"><?= $navbarProjectCount ?></span>
+          <?php endif; ?>
+        </a>
       </li>
       <li class="nav-item d-none d-sm-inline-block">
         <a href="?page=product_chart" class="nav-link">Model database</a>
