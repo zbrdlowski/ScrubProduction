@@ -7,6 +7,11 @@ if (isset($conn) && $conn instanceof mysqli) {
     $navbarProjects = projectGetActiveForEmployee($conn, $navbarProjectUserId);
 }
 $navbarProjectCount = count($navbarProjects);
+$navbarProjectStatusStyles = [
+    'waiting' => ['secondary', 'Waiting'],
+    'in_progress' => ['primary', 'In Progress'],
+    'stuck' => ['danger', 'Stuck'],
+];
 
 $holidayNotifCount = 0;
 $holidayNotifText = 'Dovolenky';
@@ -56,6 +61,15 @@ if (isset($conn) && $conn instanceof mysqli) {
   .navbar-project-list .dropdown-item {
     white-space: normal;
     overflow-wrap: anywhere;
+  }
+
+  .navbar-project-status {
+    flex: 0 0 76px;
+    margin-top: .2rem;
+  }
+
+  .navbar-project-title {
+    min-width: 0;
   }
 
   @keyframes navbarAlertBounce {
@@ -165,8 +179,12 @@ if (isset($conn) && $conn instanceof mysqli) {
                 <?php if ($navbarProjectIndex > 0): ?>
                   <div class="dropdown-divider"></div>
                 <?php endif; ?>
-                <a href="index.php?page=projects&amp;view=<?= intval($navbarProject['id']) ?>" class="dropdown-item">
-                  <?= htmlspecialchars($navbarProject['title'], ENT_QUOTES, 'UTF-8') ?>
+                <?php $navbarProjectStatus = $navbarProjectStatusStyles[$navbarProject['status'] ?? ''] ?? ['secondary', 'Unknown']; ?>
+                <a href="index.php?page=projects&amp;view=<?= intval($navbarProject['id']) ?>" class="dropdown-item d-flex align-items-start">
+                  <span class="badge badge-<?= $navbarProjectStatus[0] ?> navbar-project-status mr-2" title="Project status">
+                    <?= $navbarProjectStatus[1] ?>
+                  </span>
+                  <span class="navbar-project-title"><?= htmlspecialchars($navbarProject['title'], ENT_QUOTES, 'UTF-8') ?></span>
                 </a>
               <?php endforeach; ?>
             </div>

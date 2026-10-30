@@ -1,9 +1,13 @@
 <?php
 // includes/projects.php
-// Requires: $conn (mysqli), $_SESSION['permission'], $_SESSION['user_id']
+// Requires: $conn (mysqli), an authenticated $_SESSION['user_id'].
 
-$isAdmin = isset($_SESSION['permission']) && intval($_SESSION['permission']) >= 400;
 $empId = intval($_SESSION['user_id'] ?? 0);
+$canManageProjects = $empId > 0;
+if (!$canManageProjects) {
+  http_response_code(403);
+  return;
+}
 
 // ---------- helpers ----------
 function projectStatusBadge(string $s): string
@@ -138,6 +142,26 @@ function projectNormalizeEmployeeId(mysqli $conn, int $employeeId): int
 
   return $exists ? $employeeId : 0;
 }
+function projectStartFromActivity(mysqli $conn, int $projectId, int $actorId, string $reason): void
+{
+  $stmt = $conn->prepare("UPDATE projects SET status='in_progress' WHERE id=? AND status='waiting'");
+  if (!$stmt) {
+    return;
+  }
+  $stmt->bind_param('i', $projectId);
+  $stmt->execute();
+  $changed = $stmt->affected_rows > 0;
+  $stmt->close();
+
+  if ($changed) {
+    require_once dirname(__DIR__) . '/scripts/orders/activity_helper.php';
+    log_order_activity($conn, null, $actorId, 'project_status_autoupdated', 'project', $projectId, [
+      'old_status' => 'waiting',
+      'new_status' => 'in_progress',
+      'reason' => $reason,
+    ]);
+  }
+}
 function projectRedirect(string $url): void
 {
   if (!headers_sent()) {
@@ -158,10 +182,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   $act = $_POST['action'] ?? '';
 
   // ── Create project ──────────────────────────────────────
-  if ($act === 'create_project' && $isAdmin) {
+  if ($act === 'create_project' && $canManageProjects) {
     $title = trim($_POST['title'] ?? '');
     $desc = trim($_POST['description'] ?? '');
-    $status = $_POST['status'] ?? 'waiting';
+    $status = 'waiting';
     $priority = $_POST['priority'] ?? 'medium';
     $start = $_POST['start_date'] ?: null;
     $due = $_POST['due_date'] ?: null;
@@ -206,7 +230,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   }
 
   // ── Edit project ─────────────────────────────────────────
-  if ($act === 'edit_project' && $isAdmin) {
+  if ($act === 'edit_project' && $canManageProjects) {
     $pid = intval($_POST['project_id']);
     $title = trim($_POST['title'] ?? '');
     $desc = trim($_POST['description'] ?? '');
@@ -276,7 +300,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   }
 
   // Change project owner / responsible employee
-  if ($act === 'assign_project' && $isAdmin) {
+  if ($act === 'assign_project' && $canManageProjects) {
     $pid = intval($_POST['project_id']);
     $assignedTo = intval($_POST['assigned_to'] ?? 0) ?: null;
 
@@ -314,7 +338,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   }
 
   // ── Delete project ────────────────────────────────────────
-  if ($act === 'delete_project' && $isAdmin) {
+  if ($act === 'delete_project' && $canManageProjects) {
     $pid = intval($_POST['project_id']);
     if ($pid > 0) {
       $stmt = $conn->prepare("DELETE FROM projects WHERE id=?");
@@ -362,7 +386,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   }
 
   // Edit task
-  if ($act === 'edit_task' && $isAdmin) {
+  if ($act === 'edit_task' && $canManageProjects) {
     $tid = intval($_POST['task_id'] ?? 0);
     $pid = intval($_POST['project_id'] ?? 0);
     $taskTitle = trim($_POST['task_title'] ?? '');
@@ -411,14 +435,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $status = 'waiting';
     }
 
-    if ($tid > 0 && $pid > 0 && ($isAdmin || $empId > 0)) {
-      if ($isAdmin) {
-        $stmt = $conn->prepare("UPDATE project_tasks SET status=? WHERE id=? AND project_id=?");
-        $stmt->bind_param('sii', $status, $tid, $pid);
-      } else {
-        $stmt = $conn->prepare("UPDATE project_tasks SET status=? WHERE id=? AND project_id=? AND assigned_to=?");
-        $stmt->bind_param('siii', $status, $tid, $pid, $empId);
-      }
+    if ($tid > 0 && $pid > 0 && $canManageProjects) {
+      $stmt = $conn->prepare("UPDATE project_tasks SET status=? WHERE id=? AND project_id=?");
+      $stmt->bind_param('sii', $status, $tid, $pid);
 
       $stmt->execute();
       $changed = $stmt->affected_rows > 0;
@@ -465,8 +484,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($currentProjectStatus !== 'done' && $currentProjectStatus !== 'cancelled') {
               $newProjectStatus = 'done';
             }
-          } elseif ($currentProjectStatus === 'done') {
-            // Projekt bol Done, ale niektorá úloha bola odznačená -> vrátiť na In Progress
+          } elseif ($currentProjectStatus === 'done'
+            || ($currentProjectStatus === 'waiting' && $status !== 'waiting')) {
+            // First task activity starts a waiting project; undoing completion reopens it.
             $newProjectStatus = 'in_progress';
           }
 
@@ -493,7 +513,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   }
 
   // ── Delete task ───────────────────────────────────────────
-  if ($act === 'delete_task' && $isAdmin) {
+  if ($act === 'delete_task' && $canManageProjects) {
     $tid = intval($_POST['task_id']);
     $pid = intval($_POST['project_id']);
     if ($tid > 0) {
@@ -530,32 +550,34 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 (project_id, task_id, employee_id, logged_date, hours, note)
                 VALUES (?,?,?,?,?,?)");
       $stmt->bind_param('iiisds', $pid, $tid, $empId, $date, $hours, $note);
-      $stmt->execute();
-      $logId = (int) $conn->insert_id;
+      $logged = $stmt->execute();
       $stmt->close();
 
-      require_once dirname(__DIR__) . '/scripts/orders/activity_helper.php';
-      log_order_activity(
-        $conn,
-        null,
-        $empId,
-        'time_logged',
-        'project',
-        $pid,
-        ['hours' => $hours, 'date' => $date, 'task_id' => $tid],
-        $note
-      );
+      if ($logged) {
+        require_once dirname(__DIR__) . '/scripts/orders/activity_helper.php';
+        log_order_activity(
+          $conn,
+          null,
+          $empId,
+          'time_logged',
+          'project',
+          $pid,
+          ['hours' => $hours, 'date' => $date, 'task_id' => $tid],
+          $note
+        );
+        projectStartFromActivity($conn, $pid, $empId, 'time_logged');
+      }
     }
     projectRedirect($_SERVER['PHP_SELF'] . '?page=projects&view=' . $pid);
   }
 
-  // Edit time log. Admin can edit all rows, users can edit only their own rows.
+  // Every signed-in employee can edit any project time log.
   if ($act === 'edit_time_log') {
     $logId = intval($_POST['time_log_id'] ?? 0);
     $pid = intval($_POST['project_id'] ?? 0);
     $tid = intval($_POST['task_id'] ?? 0) ?: null;
     $postedEmployeeId = intval($_POST['employee_id'] ?? 0) ?: $empId;
-    $targetEmployeeId = $isAdmin ? projectNormalizeEmployeeId($conn, $postedEmployeeId) : $empId;
+    $targetEmployeeId = projectNormalizeEmployeeId($conn, $postedEmployeeId);
     $hours = floatval($_POST['hours'] ?? 0);
     $date = $_POST['logged_date'] ?: date('Y-m-d');
     $note = trim($_POST['log_note'] ?? '');
@@ -563,17 +585,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($logId > 0 && $pid > 0 && $hours > 0 && $targetEmployeeId > 0) {
       $tid = projectNormalizeTaskId($conn, $tid, $pid);
 
-      if ($isAdmin) {
-        $stmt = $conn->prepare("UPDATE project_time_log
-                  SET employee_id=?, task_id=?, logged_date=?, hours=?, note=?
-                  WHERE id=? AND project_id=?");
-        $stmt->bind_param('iisdsii', $targetEmployeeId, $tid, $date, $hours, $note, $logId, $pid);
-      } else {
-        $stmt = $conn->prepare("UPDATE project_time_log
-                  SET task_id=?, logged_date=?, hours=?, note=?
-                  WHERE id=? AND project_id=? AND employee_id=?");
-        $stmt->bind_param('isdsiii', $tid, $date, $hours, $note, $logId, $pid, $empId);
-      }
+      $stmt = $conn->prepare("UPDATE project_time_log
+                SET employee_id=?, task_id=?, logged_date=?, hours=?, note=?
+                WHERE id=? AND project_id=?");
+      $stmt->bind_param('iisdsii', $targetEmployeeId, $tid, $date, $hours, $note, $logId, $pid);
 
       $stmt->execute();
       $changed = $stmt->affected_rows > 0;
@@ -596,19 +611,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     projectRedirect($_SERVER['PHP_SELF'] . '?page=projects&view=' . $pid);
   }
 
-  // Delete time log. Admin can delete all rows, users can delete only their own rows.
+  // Every signed-in employee can delete any project time log.
   if ($act === 'delete_time_log') {
     $logId = intval($_POST['time_log_id'] ?? 0);
     $pid = intval($_POST['project_id'] ?? 0);
 
-    if ($logId > 0 && $pid > 0 && ($isAdmin || $empId > 0)) {
-      if ($isAdmin) {
-        $stmt = $conn->prepare("DELETE FROM project_time_log WHERE id=? AND project_id=?");
-        $stmt->bind_param('ii', $logId, $pid);
-      } else {
-        $stmt = $conn->prepare("DELETE FROM project_time_log WHERE id=? AND project_id=? AND employee_id=?");
-        $stmt->bind_param('iii', $logId, $pid, $empId);
-      }
+    if ($logId > 0 && $pid > 0 && $canManageProjects) {
+      $stmt = $conn->prepare("DELETE FROM project_time_log WHERE id=? AND project_id=?");
+      $stmt->bind_param('ii', $logId, $pid);
 
       $stmt->execute();
       $deleted = $stmt->affected_rows > 0;
@@ -1026,7 +1036,7 @@ if ($viewId > 0) {
         <?php endif; ?>
       </div>
       <div class="col-md-4 text-right">
-        <?php if ($isAdmin): ?>
+        <?php if ($canManageProjects): ?>
           <button class="btn btn-sm btn-warning" data-toggle="modal" data-target="#detailEditProjectModal">
             <i class="fas fa-pencil-alt"></i> Edit
           </button>
@@ -1117,13 +1127,13 @@ if ($viewId > 0) {
                     <th>Priority</th>
                     <th>Due</th>
                     <th>Status</th>
-                    <?php if ($isAdmin): ?>
+                    <?php if ($canManageProjects): ?>
                       <th></th><?php endif; ?>
                   </tr>
                 </thead>
                 <tbody>
                   <?php foreach ($tasks as $t):
-                    $canToggleTask = $isAdmin || intval($t['assigned_to'] ?? 0) === $empId;
+                    $canToggleTask = $canManageProjects;
                     $taskRowClass = '';
                     if ($t['status'] === 'done') {
                       $taskRowClass = 'project-task-done';
@@ -1149,12 +1159,6 @@ if ($viewId > 0) {
                               <i class="fas fa-check"></i>
                             </button>
                           </form>
-                        <?php else: ?>
-                          <button type="button"
-                            class="btn btn-xs <?= $t['status'] === 'done' ? 'btn-success' : 'btn-outline-secondary' ?>"
-                            title="Only assigned user can change this task" disabled>
-                            <i class="fas fa-check"></i>
-                          </button>
                         <?php endif; ?>
                       </td>
                       <td>
@@ -1165,7 +1169,8 @@ if ($viewId > 0) {
                           <?= htmlspecialchars($t['title']) ?>
                         </span>
                         <?php if ($t['notes']): ?>
-                          <br><small class="text-muted"><?= htmlspecialchars(mb_strimwidth($t['notes'], 0, 60, '…')) ?></small>
+                          <br><small class="text-muted" style="cursor:help;"
+                            title="<?= htmlspecialchars($t['notes'], ENT_QUOTES, 'UTF-8') ?>"><?= htmlspecialchars(mb_strimwidth($t['notes'], 0, 60, '…')) ?></small>
                         <?php endif; ?>
                       </td>
                       <td>
@@ -1181,7 +1186,7 @@ if ($viewId > 0) {
                       <td><?= priorityBadge($t['priority']) ?></td>
                       <td><?= $t['due_date'] ? date('d.m.Y', strtotime($t['due_date'])) : '—' ?></td>
                       <td><?= projectStatusBadge($t['status']) ?></td>
-                      <?php if ($isAdmin): ?>
+                      <?php if ($canManageProjects): ?>
                         <td>
                           <div class="d-flex" style="gap:4px;">
                             <button type="button" class="btn btn-xs btn-outline-warning" title="Edit task" onclick="openEditTask(<?= htmlspecialchars(json_encode([
@@ -1238,7 +1243,7 @@ if ($viewId > 0) {
                 </thead>
                 <tbody>
                   <?php foreach ($timeLogs as $tl):
-                    $canEditTimeLog = $isAdmin || intval($tl['employee_id'] ?? 0) === $empId;
+                    $canEditTimeLog = $canManageProjects;
                     ?>
                     <tr>
                       <td>
@@ -1305,7 +1310,7 @@ if ($viewId > 0) {
             <h5 class="card-title mb-0">Project Info</h5>
           </div>
           <div class="card-body">
-            <?php if ($isAdmin): ?>
+            <?php if ($canManageProjects): ?>
               <form method="POST" class="mb-3">
                 <input type="hidden" name="action" value="assign_project">
                 <input type="hidden" name="project_id" value="<?= $viewId ?>">
@@ -1494,7 +1499,7 @@ if ($viewId > 0) {
       </div>
     </div>
 
-    <?php if ($isAdmin): ?>
+    <?php if ($canManageProjects): ?>
       <!-- Edit Task Modal -->
       <div class="modal fade" id="editTaskModal" tabindex="-1">
         <div class="modal-dialog">
@@ -1617,7 +1622,7 @@ if ($viewId > 0) {
               <button type="button" class="close" data-dismiss="modal">&times;</button>
             </div>
             <div class="modal-body">
-              <?php if ($isAdmin): ?>
+              <?php if ($canManageProjects): ?>
                 <div class="form-group">
                   <label>Employee</label>
                   <select name="employee_id" id="editTimeLogEmployeeId" class="form-control form-control-sm">
@@ -1659,7 +1664,7 @@ if ($viewId > 0) {
       </div>
     </div>
 
-    <?php if ($isAdmin): ?>
+    <?php if ($canManageProjects): ?>
       <div class="modal fade" id="detailEditProjectModal" tabindex="-1">
         <div class="modal-dialog modal-lg">
           <div class="modal-content">
@@ -1957,7 +1962,7 @@ if ($viewId > 0) {
     <!-- Header -->
     <div class="d-flex justify-content-between align-items-center mb-3">
       <h4 class="mb-0" style="color:#e4e6eb;"><i class="fas fa-project-diagram mr-2"></i>Projects</h4>
-      <?php if ($isAdmin): ?>
+      <?php if ($canManageProjects): ?>
         <button class="btn btn-primary" data-toggle="modal" data-target="#createProjectModal">
           <i class="fas fa-plus"></i> New Project
         </button>
@@ -2194,7 +2199,7 @@ if ($viewId > 0) {
                 <a href="?page=projects&view=<?= $p['id'] ?>" class="btn btn-xs btn-primary" title="Open">
                   <i class="fas fa-folder-open"></i>
                 </a>
-                <?php if ($isAdmin): ?>
+                <?php if ($canManageProjects): ?>
                   <button class="btn btn-xs btn-warning" title="Edit" onclick="openEditProject(<?= $p['id'] ?>, <?= htmlspecialchars(json_encode([
                       'title' => $p['title'],
                       'description' => $p['description'],
@@ -2222,7 +2227,7 @@ if ($viewId > 0) {
   </div>
 
   <!-- ===== Create Project Modal ===== -->
-  <?php if ($isAdmin): ?>
+  <?php if ($canManageProjects): ?>
     <div class="modal fade" id="createProjectModal" tabindex="-1">
       <div class="modal-dialog modal-lg">
         <div class="modal-content">
@@ -2251,13 +2256,7 @@ if ($viewId > 0) {
               <div class="form-row">
                 <div class="form-group col-md-4">
                   <label>Status</label>
-                  <select name="status" class="form-control form-control-sm">
-                    <option value="waiting">Waiting</option>
-                    <option value="in_progress">In Progress</option>
-                    <option value="stuck">Stuck</option>
-                    <option value="done">Done</option>
-                    <option value="cancelled">Cancelled</option>
-                  </select>
+                  <input type="text" class="form-control form-control-sm" value="Waiting" readonly>
                 </div>
                 <div class="form-group col-md-4">
                   <label>Priority</label>

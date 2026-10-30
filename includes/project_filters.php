@@ -49,7 +49,7 @@ function projectGetActiveForEmployee(mysqli $conn, int $employeeId): array
   }
 
   $where = projectActiveForEmployeeWhere();
-  $stmt = $conn->prepare("SELECT p.id, p.title FROM projects p WHERE {$where}
+  $stmt = $conn->prepare("SELECT p.id, p.title, p.status FROM projects p WHERE {$where}
     ORDER BY FIELD(p.status, 'in_progress', 'stuck', 'waiting'),
              FIELD(p.priority, 'urgent', 'high', 'medium', 'low'), p.id DESC");
   if (!$stmt) {
