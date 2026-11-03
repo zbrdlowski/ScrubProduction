@@ -2895,16 +2895,17 @@ function customOrdersExportToProduction(mysqli $conn, int $customOrderId, int $u
       INSERT INTO orders
         (source_id, external_order_id, order_number, imported_at, order_date, status, currency, total, payment_method, shipping_method, note, source_meta, customer_id, manual_types_override, manual_types_updated_by, manual_types_updated_at)
       VALUES
-        (?, ?, ?, NOW(), NOW(), \'NEW\', ?, ?, \'CUSTOM\', ?, ?, ?, ?, ?, ?, NOW())
+        (?, ?, ?, NOW(), NOW(), \'NEW\', ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
     ');
     $orderNumber = (string) $order['official_order_number'];
     $currency = (string) ($order['currency'] ?? 'EUR');
     $total = (float) ($summary['gross_total'] ?? 0);
+    $paymentMethod = trim((string) ($order['payment_method'] ?? ''));
     $shippingMethod = trim((string) ($order['shipping_method'] ?? ''));
     $note = trim((string) ($order['customer_notes'] ?? ''));
     $sourceMetaJson = json_encode($sourceMeta, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
     $types = (string) ($summary['types'] ?? '');
-    $stmt->bind_param('isssdsssisi', $sourceId, $externalOrderId, $orderNumber, $currency, $total, $shippingMethod, $note, $sourceMetaJson, $customerId, $types, $userId);
+    $stmt->bind_param('isssdssssisi', $sourceId, $externalOrderId, $orderNumber, $currency, $total, $paymentMethod, $shippingMethod, $note, $sourceMetaJson, $customerId, $types, $userId);
     $stmt->execute();
     $productionOrderId = (int) $stmt->insert_id;
     $stmt->close();

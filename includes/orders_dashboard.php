@@ -61,43 +61,39 @@ $shippedToday = dash_scalar($conn, "SELECT COUNT(DISTINCT order_id)
     )
 ");
 
-$deptBlocked = [
-  'G' => dash_scalar($conn, "SELECT COUNT(*) FROM orders
-    WHERE status NOT IN ('SHIPPED','CANCELLED','PENDING','DELIVERED')
-      AND (traffic_summary_json LIKE '%\"G\":\"ORANGE\"%' OR traffic_summary_json LIKE '%\"G\":\"RED\"%')
-  "),
-  'P' => dash_scalar($conn, "SELECT COUNT(*) FROM orders
-    WHERE status NOT IN ('SHIPPED','CANCELLED','PENDING','DELIVERED')
-      AND (traffic_summary_json LIKE '%\"P\":\"ORANGE\"%' OR traffic_summary_json LIKE '%\"P\":\"RED\"%')
-  "),
-  'F' => dash_scalar($conn, "SELECT COUNT(*) FROM orders
-    WHERE status NOT IN ('SHIPPED','CANCELLED','PENDING','DELIVERED')
-      AND (traffic_summary_json LIKE '%\"F\":\"ORANGE\"%' OR traffic_summary_json LIKE '%\"F\":\"RED\"%')
-  "),
-  'S' => dash_scalar($conn, "SELECT COUNT(*) FROM orders
-    WHERE status NOT IN ('SHIPPED','CANCELLED','PENDING','DELIVERED')
-      AND (traffic_summary_json LIKE '%\"S\":\"ORANGE\"%' OR traffic_summary_json LIKE '%\"S\":\"RED\"%')
-  "),
-];
+$paymentPeriod = ($_GET['payment_period'] ?? '') === 'current_year'
+  ? 'current_year'
+  : 'last_12_months';
+$paymentDateFrom = $paymentPeriod === 'current_year'
+  ? 'MAKEDATE(YEAR(CURDATE()), 1)'
+  : 'DATE_SUB(CURDATE(), INTERVAL 12 MONTH)';
 
-$deptActive = [
-  'G' => dash_scalar($conn, "SELECT COUNT(*) FROM orders
-    WHERE status NOT IN ('SHIPPED','CANCELLED','PENDING','DELIVERED')
-      AND traffic_summary_json LIKE '%\"G\":%'
-  "),
-  'P' => dash_scalar($conn, "SELECT COUNT(*) FROM orders
-    WHERE status NOT IN ('SHIPPED','CANCELLED','PENDING','DELIVERED')
-      AND traffic_summary_json LIKE '%\"P\":%'
-  "),
-  'F' => dash_scalar($conn, "SELECT COUNT(*) FROM orders
-    WHERE status NOT IN ('SHIPPED','CANCELLED','PENDING','DELIVERED')
-      AND traffic_summary_json LIKE '%\"F\":%'
-  "),
-  'S' => dash_scalar($conn, "SELECT COUNT(*) FROM orders
-    WHERE status NOT IN ('SHIPPED','CANCELLED','PENDING','DELIVERED')
-      AND traffic_summary_json LIKE '%\"S\":%'
-  "),
+$paymentMethodRows = dash_rows($conn, "SELECT
+    COALESCE(NULLIF(TRIM(payment_method), ''), 'Not specified') AS method,
+    COUNT(*) AS cnt
+  FROM orders
+  WHERE COALESCE(UPPER(status), '') <> 'CANCELLED'
+    AND order_date >= $paymentDateFrom
+    AND order_date < DATE_ADD(CURDATE(), INTERVAL 1 DAY)
+  GROUP BY method
+  ORDER BY cnt DESC, method ASC
+");
+$paymentMethodLabels = [];
+$paymentMethodCounts = [];
+$paymentMethodColors = [];
+$paymentMethodPalette = [
+  '#36a2eb', '#20c997', '#ffc107', '#a78bfa', '#ff6384', '#fd7e14', '#4bc0c0',
+  '#d4e157', '#5c7cfa', '#f78fb3', '#8d6e63', '#80cbc4', '#c5a3ff',
 ];
+$paymentColorIndex = 0;
+foreach ($paymentMethodRows as $paymentMethodRow) {
+  $paymentMethodLabels[] = (string) $paymentMethodRow['method'];
+  $paymentMethodCounts[] = (int) $paymentMethodRow['cnt'];
+  $paymentMethodColors[] = $paymentMethodRow['method'] === 'Not specified'
+    ? '#90a4ae'
+    : $paymentMethodPalette[$paymentColorIndex++ % count($paymentMethodPalette)];
+}
+$paymentMethodTotal = array_sum($paymentMethodCounts);
 
 $workload = dash_rows($conn, "SELECT 
     oi.item_type_code AS type,
@@ -448,6 +444,89 @@ function dashboardInfoIcon(string $tooltip): string
     visibility: visible;
   }
 
+  .payment-method-card-header {
+    gap: 8px;
+  }
+
+  .payment-method-period {
+    margin-left: auto;
+  }
+
+  .payment-method-chart {
+    position: relative;
+    height: 220px;
+    margin-bottom: 16px;
+  }
+
+  .payment-method-total {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    text-align: center;
+    pointer-events: none;
+  }
+
+  .payment-method-total strong {
+    display: block;
+    font-size: 28px;
+    line-height: 1.15;
+  }
+
+  .payment-method-total span {
+    font-size: 12px;
+    color: #adb5bd;
+  }
+
+  .payment-method-legend {
+    max-height: 156px;
+    margin: 0;
+    padding: 0 6px 0 0;
+    overflow-y: auto;
+    list-style: none;
+  }
+
+  .payment-method-legend li {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 0;
+    font-size: 12px;
+    line-height: 1.4;
+  }
+
+  .payment-method-swatch {
+    flex: 0 0 10px;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+  }
+
+  .payment-method-label {
+    flex: 1;
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .payment-method-count {
+    font-weight: 700;
+    white-space: nowrap;
+  }
+
+  .payment-method-share {
+    flex: 0 0 48px;
+    color: #adb5bd;
+    text-align: right;
+  }
+
+  .payment-method-empty {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 320px;
+    text-align: center;
+  }
+
   .addon-sales-card-header {
     gap: 10px;
   }
@@ -714,54 +793,47 @@ function dashboardInfoIcon(string $tooltip): string
   <div class="row">
 
     <!-- LEFT COLUMN -->
-    <div class="col-md-4 d-flex flex-column" style="gap:10px;">
-
+    <div class="col-md-4 d-flex">
       <div class="card card-info flex-fill">
-        <div class="card-header">
+        <div class="card-header d-flex align-items-center flex-wrap payment-method-card-header">
           <h3 class="card-title dashboard-filter-title">
-            Active Work by Department
-            <?= dashboardInfoIcon('Filters open orders that still contain work for the selected department. Pending, shipped, delivered and cancelled orders are excluded.') ?>
+            Payment Methods
+            <?= dashboardInfoIcon('Orders placed in the selected period through today, including shipped and delivered orders. Cancelled orders are excluded. Missing payment methods are shown as Not specified.') ?>
           </h3>
+          <form action="index.php" method="get" class="payment-method-period mb-0">
+            <input type="hidden" name="page" value="orders_dashboard">
+            <label for="paymentMethodPeriod" class="sr-only">Payment method period</label>
+            <select id="paymentMethodPeriod" name="payment_period" class="form-control form-control-sm">
+              <option value="last_12_months" <?= $paymentPeriod === 'last_12_months' ? 'selected' : '' ?>>Last 12 Months</option>
+              <option value="current_year" <?= $paymentPeriod === 'current_year' ? 'selected' : '' ?>>Current Year</option>
+            </select>
+            <noscript><button type="submit" class="btn btn-sm btn-light mt-1">Apply</button></noscript>
+          </form>
         </div>
         <div class="card-body">
-          <a href="index.php?page=orders&amp;traffic_department=G&amp;traffic_state=active" class="btn btn-block btn-outline-info text-left">
-            Graphics <span class="float-right badge badge-info"><?= $deptActive['G'] ?></span>
-          </a>
-          <a href="index.php?page=orders&amp;traffic_department=P&amp;traffic_state=active" class="btn btn-block btn-outline-primary text-left">
-            Plastics <span class="float-right badge badge-primary"><?= $deptActive['P'] ?></span>
-          </a>
-          <a href="index.php?page=orders&amp;traffic_department=F&amp;traffic_state=active" class="btn btn-block btn-outline-danger text-left">
-            Fitting <span class="float-right badge badge-danger"><?= $deptActive['F'] ?></span>
-          </a>
-          <a href="index.php?page=orders&amp;traffic_department=S&amp;traffic_state=active" class="btn btn-block btn-outline-success text-left">
-            Seat Cover <span class="float-right badge badge-success"><?= $deptActive['S'] ?></span>
-          </a>
+          <?php if ($paymentMethodTotal > 0): ?>
+            <div class="payment-method-chart">
+              <canvas id="paymentMethodsChart" role="img" aria-label="Orders by payment method. Counts and percentages are listed below."></canvas>
+              <div class="payment-method-total" aria-hidden="true">
+                <strong><?= number_format($paymentMethodTotal, 0, '.', ' ') ?></strong>
+                <span>orders</span>
+              </div>
+            </div>
+            <ul class="payment-method-legend" tabindex="0" aria-label="Payment methods, order counts and percentages">
+              <?php foreach ($paymentMethodLabels as $paymentIndex => $paymentLabel): ?>
+                <li>
+                  <span class="payment-method-swatch" style="background-color: <?= $paymentMethodColors[$paymentIndex] ?>;" aria-hidden="true"></span>
+                  <span class="payment-method-label"><?= htmlspecialchars($paymentLabel, ENT_QUOTES, 'UTF-8') ?></span>
+                  <span class="payment-method-count"><?= number_format($paymentMethodCounts[$paymentIndex], 0, '.', ' ') ?></span>
+                  <span class="payment-method-share"><?= number_format($paymentMethodCounts[$paymentIndex] / $paymentMethodTotal * 100, 1) ?>%</span>
+                </li>
+              <?php endforeach; ?>
+            </ul>
+          <?php else: ?>
+            <div class="payment-method-empty text-muted">No orders in the selected period.</div>
+          <?php endif; ?>
         </div>
       </div>
-
-      <div class="card card-warning flex-fill">
-        <div class="card-header">
-          <h3 class="card-title dashboard-filter-title">
-            Unfinished Work by Department
-            <?= dashboardInfoIcon('Filters open orders where the selected department is waiting or blocked, based on orange or red traffic status. Pending, shipped, delivered and cancelled orders are excluded.') ?>
-          </h3>
-        </div>
-        <div class="card-body">
-          <a href="index.php?page=orders&amp;traffic_department=G&amp;traffic_state=unfinished" class="btn btn-block btn-outline-warning text-left">
-            Graphics <span class="float-right badge badge-warning"><?= $deptBlocked['G'] ?></span>
-          </a>
-          <a href="index.php?page=orders&amp;traffic_department=P&amp;traffic_state=unfinished" class="btn btn-block btn-outline-warning text-left">
-            Plastics <span class="float-right badge badge-warning"><?= $deptBlocked['P'] ?></span>
-          </a>
-          <a href="index.php?page=orders&amp;traffic_department=F&amp;traffic_state=unfinished" class="btn btn-block btn-outline-warning text-left">
-            Fitting <span class="float-right badge badge-warning"><?= $deptBlocked['F'] ?></span>
-          </a>
-          <a href="index.php?page=orders&amp;traffic_department=S&amp;traffic_state=unfinished" class="btn btn-block btn-outline-warning text-left">
-            Seat Cover <span class="float-right badge badge-warning"><?= $deptBlocked['S'] ?></span>
-          </a>
-        </div>
-      </div>
-
     </div>
 
     <!-- RIGHT COLUMN -->
@@ -772,7 +844,7 @@ function dashboardInfoIcon(string $tooltip): string
           <h3 class="card-title">Orders Last 14 Days</h3>
         </div>
         <div class="card-body d-flex">
-          <div style="flex:1; position:relative;">
+          <div style="flex:1; min-width:0; position:relative;">
             <canvas id="orders14Chart"></canvas>
           </div>
         </div>
@@ -1074,6 +1146,46 @@ function dashboardInfoIcon(string $tooltip): string
 </div>
 <script>
   $(function () {
+    const paymentPeriodSelect = document.getElementById('paymentMethodPeriod');
+    if (paymentPeriodSelect) {
+      paymentPeriodSelect.addEventListener('change', function () {
+        this.form.submit();
+      });
+    }
+
+    const paymentCanvas = document.getElementById('paymentMethodsChart');
+    if (paymentCanvas) {
+      const paymentTotal = <?= $paymentMethodTotal ?>;
+      new Chart(paymentCanvas, {
+        type: 'doughnut',
+        data: {
+          labels: <?= json_encode($paymentMethodLabels, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE) ?>,
+          datasets: [{
+            data: <?= json_encode($paymentMethodCounts) ?>,
+            backgroundColor: <?= json_encode($paymentMethodColors) ?>,
+            borderColor: '#343a40',
+            borderWidth: 2,
+            hoverBorderColor: '#f8f9fa'
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          cutoutPercentage: 70,
+          legend: { display: false },
+          tooltips: {
+            callbacks: {
+              label: function (tooltipItem, data) {
+                const count = Number(data.datasets[tooltipItem.datasetIndex].data[tooltipItem.index]);
+                const percentage = (count / paymentTotal * 100).toFixed(1);
+                return data.labels[tooltipItem.index] + ': ' + count + ' orders (' + percentage + '%)';
+              }
+            }
+          }
+        }
+      });
+    }
+
     const canvas = document.getElementById('orders14Chart');
 
     if (!canvas) {
