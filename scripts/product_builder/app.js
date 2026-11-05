@@ -6,6 +6,7 @@ if (!cfg) return;
 const el = id => document.getElementById(id);
 const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const form = el('pb-product-form');
+const pageMode=cfg.pageMode||'builder';
 // index.php loads Bootstrap 5 and 4. Keep every module modal on one interface.
 const modalInterface=$.fn.modal,modalOpeners=new WeakMap();
 // The bundled Bootstrap Tooltip owns its matching Popper dependency.
@@ -78,14 +79,15 @@ function renderUni() {
 }
 async function loadCategories() {
   const selected=form?el('pb-uni-category').value:'';
-  categories=(await api('categories')).rows; el('pb-stat-categories').textContent=categories.length;
+  categories=(await api('categories')).rows; if(el('pb-stat-categories'))el('pb-stat-categories').textContent=categories.length;
   const brands=[...new Set(categories.map(r=>r.brand))];
   if(form){
     const brand=categories.find(r=>String(r.id)===selected)?.brand||el('pb-uni-brand').value;
     options(el('pb-uni-brand'),brands,'Select a brand…',x=>x,x=>x);el('pb-uni-brand').value=brand;uniBrand(selected);
     el('pb-uni-empty').hidden=categories.length>0;
-    el('pb-brand-list').innerHTML=brands.map(b=>'<option value="'+esc(b)+'"></option>').join('');
-  } renderUni();
+  }
+  if(el('pb-brand-list'))el('pb-brand-list').innerHTML=brands.map(b=>'<option value="'+esc(b)+'"></option>').join('');
+  renderUni();
 }
 const priceFields=Object.keys(cfg.priceFields);
 function priceText(row,channel) {
@@ -111,6 +113,10 @@ function savedBoxText(row) {
 function packagingDetail(row) {
   return '<dl class="pb-packaging-overview"><div><dt>Box</dt><dd>'+savedBoxText(row)+'</dd></div><div><dt title="Total packed weight, including the box">Weight (kg)</dt><dd>'+esc(weightText(row.weight_kg))+'</dd></div></dl>';
 }
+function productAction(row) {
+  if(pageMode==='listings'&&cfg.canEdit)return '<a class="btn btn-sm btn-outline-info" data-product-edit-link="'+esc(row.id)+'" href="index.php?page=product_builder&amp;edit='+encodeURIComponent(row.id)+'">Edit</a>';
+  return '<button type="button" class="btn btn-sm btn-outline-info" data-product="'+esc(row.id)+'">'+(form?'Edit':'Detail')+'</button>';
+}
 function productCreatedDate(value) {
   // Format the database date without converting timezones in the browser.
   const match=String(value||'').match(/^(\d{4})-(\d{2})-(\d{2})(?:[ T]|$)/);
@@ -118,14 +124,15 @@ function productCreatedDate(value) {
   return {key:match[1]+'-'+match[2]+'-'+match[3],short:match[3]+'.'+match[2]+'.'+match[1].slice(-2),label:match[3]+'.'+match[2]+'.'+match[1]};
 }
 async function loadProducts() {
+  if(!el('pb-products'))return;
   const seq=++listSeq,data=await api('products',undefined,{q:el('pb-search').value}); if(seq!==listSeq)return;
-  Object.entries(data.stats).forEach(([k,v])=>{el('pb-stat-'+k).textContent=v;});
+  Object.entries(data.stats).forEach(([k,v])=>{if(el('pb-stat-'+k))el('pb-stat-'+k).textContent=v;});
   let previousDay=null;
   el('pb-products').innerHTML=data.rows.map((r,index)=>{
     const created=productCreatedDate(r.created_at);
     const separator=created.key!==previousDay?'<tr class="pb-day-separator-row"><td colspan="13"><div class="pb-day-separator"><span>'+esc(created.label)+'</span></div></td></tr>':'';
     previousDay=created.key;
-    return separator+'<tr class="pb-product-row'+(index%2===0?' pb-row-tinted':'')+'"><td class="pb-created-column" title="'+esc(r.created_at||'No creation date')+'">'+(created.key?'<time datetime="'+esc(created.key)+'">'+esc(created.short)+'</time>':'—')+'</td><td class="pb-product-identity"><strong>'+esc(r.name)+'</strong><div><code>'+esc(r.sku)+'</code></div></td><td><span class="badge pb-bundle-badge" data-bundle="'+esc(r.bundle_type)+'">'+esc(r.bundle_type)+'</span></td><td><small class="pb-muted">'+(r.category_kind==='universal'?'UNI':'Specific')+'</small><div>'+esc([r.uni_brand||r.brand,r.uni_name||r.model,r.year_range].filter(Boolean).join(' · '))+'</div></td><td><code>'+esc(r.modelcode)+'</code></td>'+priceFields.map(channel=>'<td class="pb-price-column" data-price-cell="'+channel+'">'+esc(priceText(r,channel))+'</td>').join('')+'<td data-box-cell>'+savedBoxText(r)+'</td><td class="pb-price-column" data-weight-cell>'+esc(weightText(r.weight_kg))+'</td><td><button type="button" class="btn btn-sm btn-outline-info pb-expand" data-product-expand="'+r.id+'" aria-expanded="false" aria-controls="pb-list-components-'+r.id+'" aria-label="Show components for '+esc(r.name)+'"><i class="fas fa-chevron-right mr-1" aria-hidden="true"></i> '+Number(r.component_count)+' components</button></td><td><button type="button" class="btn btn-sm btn-outline-info" data-product="'+r.id+'">'+(cfg.canEdit?'Edit':'Detail')+'</button></td></tr><tr id="pb-list-components-'+r.id+'" class="pb-expanded-row" hidden><td colspan="13"><div data-component-detail role="region" aria-label="Components of '+esc(r.name)+'"></div></td></tr>';
+    return separator+'<tr class="pb-product-row'+(index%2===0?' pb-row-tinted':'')+'"><td class="pb-created-column" title="'+esc(r.created_at||'No creation date')+'">'+(created.key?'<time datetime="'+esc(created.key)+'">'+esc(created.short)+'</time>':'—')+'</td><td class="pb-product-identity"><strong>'+esc(r.name)+'</strong><div><code>'+esc(r.sku)+'</code></div></td><td><span class="badge pb-bundle-badge" data-bundle="'+esc(r.bundle_type)+'">'+esc(r.bundle_type)+'</span></td><td><small class="pb-muted">'+(r.category_kind==='universal'?'UNI':'Specific')+'</small><div>'+esc([r.uni_brand||r.brand,r.uni_name||r.model,r.year_range].filter(Boolean).join(' · '))+'</div></td><td><code>'+esc(r.modelcode)+'</code></td>'+priceFields.map(channel=>'<td class="pb-price-column" data-price-cell="'+channel+'">'+esc(priceText(r,channel))+'</td>').join('')+'<td data-box-cell>'+savedBoxText(r)+'</td><td class="pb-price-column" data-weight-cell>'+esc(weightText(r.weight_kg))+'</td><td><button type="button" class="btn btn-sm btn-outline-info pb-expand" data-product-expand="'+r.id+'" aria-expanded="false" aria-controls="pb-list-components-'+r.id+'" aria-label="Show components for '+esc(r.name)+'"><i class="fas fa-chevron-right mr-1" aria-hidden="true"></i> '+Number(r.component_count)+' components</button></td><td>'+productAction(r)+'</td></tr><tr id="pb-list-components-'+r.id+'" class="pb-expanded-row" hidden><td colspan="13"><div data-component-detail role="region" aria-label="Components of '+esc(r.name)+'"></div></td></tr>';
   }).join('')||'<tr><td colspan="13" class="text-center py-4 pb-muted">No products match this selection yet.</td></tr>';
 }
 let designs=[],graphicsVersions=[],designGroup='G',designsReady=false,designLoadSeq=0;
@@ -209,8 +216,8 @@ document.querySelectorAll('[data-design-manager]').forEach(button=>button.addEve
   el('pb-design-search').value='';msg('pb-design-message','');designEditor();renderDesigns();modalAction('pb-design-modal','show');
   try{await loadDesigns();}catch(e){msg('pb-design-message',e.message);}
 }));
-el('pb-design-search').addEventListener('input',renderDesigns);
-el('pb-design-refresh').addEventListener('click',async()=>{
+el('pb-design-search')?.addEventListener('input',renderDesigns);
+el('pb-design-refresh')?.addEventListener('click',async()=>{
   try{await loadDesigns();designEditor();msg('pb-design-message','');}catch(e){msg('pb-design-message',e.message);}
 });
 if(designForm){
@@ -257,8 +264,8 @@ $('#pb-box-modal').on('show.bs.modal',async()=>{
   el('pb-box-search').value='';msg('pb-box-message','');boxEditor();renderBoxes();
   try{await loadBoxes();}catch(e){msg('pb-box-message',e.message);}
 });
-el('pb-box-search').addEventListener('input',renderBoxes);
-el('pb-box-refresh').addEventListener('click',async()=>{
+el('pb-box-search')?.addEventListener('input',renderBoxes);
+el('pb-box-refresh')?.addEventListener('click',async()=>{
   try{await loadBoxes();boxEditor();msg('pb-box-message','');}catch(e){msg('pb-box-message',e.message);}
 });
 if(boxForm){
@@ -403,6 +410,7 @@ function renderComponents() {
 function categoryKind(){el('pb-specific').hidden=kind()!=='specific';el('pb-universal').hidden=kind()!=='universal';summary();}
 function resetProduct(ask=true) {
   if(ask&&dirty&&!confirm('Discard unsaved product changes?'))return;
+  if(ask&&pageMode==='builder'){const url=new URL(window.location.href);url.searchParams.delete('edit');history.replaceState(null,'',url);}
   product=null;specific=null;cache={};bundle='';key=Array.from(crypto.getRandomValues(new Uint8Array(16)),b=>b.toString(16).padStart(2,'0')).join('');form.reset();renderBoxPicker('');
   el('pb-edit-label').textContent='New product';el('pb-cancel').hidden=true;
   el('pb-specific-label').textContent='Category Info · Select brand / model / years';uniBrand();renderComponents();categoryKind();dirty=false;
@@ -487,7 +495,10 @@ if(form){
     if(!el('pb-model-years').value)return;specific={brand:el('pb-model-brand').value,model:el('pb-model-name').value,...JSON.parse(el('pb-model-years').value)};
     el('pb-specific-label').textContent=[specific.brand,specific.model,specific.year_range,specific.modelcode].join(' · ');dirty=true;summary();modalAction('pb-model-modal','hide');
   });
-  const uf=el('pb-uni-form');
+  window.addEventListener('beforeunload',event=>{if(dirty){event.preventDefault();event.returnValue='';}});
+}
+const uf=el('pb-uni-form');
+if(uf){
   function uniEditor(row={}) {
     uf.reset();Array.from(uf.elements).forEach(i=>{if(i.name)i.value=row[i.name]??'';});
     el('pb-uni-edit-title').textContent=row.id?'Edit UNI category':'New UNI category';el('pb-generate-code').disabled=!!row.id;
@@ -516,9 +527,8 @@ if(form){
     try{const r=(await api('import_uni',data)).result;await loadCategories();msg('pb-uni-message','Added: '+r.added+' · Existing skipped: '+r.skipped,true);event.target.reset();el('pb-csv-label').textContent='Choose a CSV file';}
     catch(e){msg('pb-uni-message',e.message);}finally{event.target.inert=false;}
   });
-  window.addEventListener('beforeunload',event=>{if(dirty){event.preventDefault();event.returnValue='';}});
 }
-el('pb-products').addEventListener('click',async event=>{
+el('pb-products')?.addEventListener('click',async event=>{
   const toggle=event.target.closest('[data-product-expand]');
   if(toggle){
     const detail=el(toggle.getAttribute('aria-controls')),content=detail.querySelector('[data-component-detail]');
@@ -542,9 +552,20 @@ el('pb-products').addEventListener('click',async event=>{
   }catch(e){msg('pb-message',e.message);}finally{b.disabled=false;}
 });
 let timer;
-el('pb-search').addEventListener('input',()=>{clearTimeout(timer);timer=setTimeout(()=>loadProducts().catch(e=>msg('pb-message',e.message)),250);});
-el('pb-uni-search').addEventListener('input',renderUni);
+el('pb-search')?.addEventListener('input',()=>{clearTimeout(timer);timer=setTimeout(()=>loadProducts().catch(e=>msg('pb-message',e.message)),250);});
+el('pb-uni-search')?.addEventListener('input',renderUni);
 $('#pb-uni-modal').on('show.bs.modal',()=>loadCategories().catch(e=>msg('pb-uni-message',e.message)));
-Promise.all([loadCategories(),loadProducts(),loadDesigns(),...(form?[loadBoxes()]:[])]).catch(e=>msg('pb-message',e.message));
+const initialLoads=[];
+if(el('pb-uni-modal'))initialLoads.push(loadCategories());
+if(el('pb-design-modal'))initialLoads.push(loadDesigns());
+if(el('pb-products'))initialLoads.push(loadProducts());
+if(form)initialLoads.push(loadBoxes());
+const openProductId=Number(cfg.editProductId||0);
+if(form&&openProductId>0){form.inert=true;el('pb-new').disabled=true;}
+Promise.all(initialLoads).then(async()=>{
+  if(!form||openProductId<=0)return;
+  const row=(await api('product',undefined,{id:openProductId})).product;
+  editProduct(row);el('pb-editor-title').scrollIntoView({behavior:'smooth',block:'start'});
+}).catch(e=>msg('pb-message',e.message)).finally(()=>{if(form){form.inert=false;el('pb-new').disabled=false;}});
 });
 })();

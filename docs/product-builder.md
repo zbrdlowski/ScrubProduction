@@ -1,10 +1,26 @@
 # Produkty a listingy — prvá etapa
 
+## Product database: Builder, Listings a Controls
+
+Rozbaľovacie menu Product database v navbare aj bočnom menu obsahuje:
+
+- **Product Builder** (index.php?page=product_builder): existujúci editor aj výpis. Vyžaduje products.view; zápis naďalej vyžaduje aj products.manage. Malé tlačidlá číselníkov zostávajú dostupné.
+- **Listings** (index.php?page=product_listings): iba výpis, vyhľadávanie, denné skupiny, rozbalené komponenty a detail. Prístup majú všetci prihlásení používatelia. Editorom sa zobrazuje Edit ako odkaz na index.php?page=product_builder&edit=ID; Builder po načítaní otvorí vybraný produkt. Ostatní majú iba čítanie. Nový produkt alebo zrušenie editácie odstráni edit parameter z URL.
+- **Product Controls** (index.php?page=product_controls): väčšie klikateľné bloky UNI categories, Graphics designs, Graphics versions, Seat cover designs a Boxes otvárajú spoločné modaly. Prístup vyžaduje products.view; zmeny vyžadujú aj products.manage. Formulár produktu ani výpis sa na tejto stránke nenačítavajú.
+
+Všetky tri stránky používajú spoločné vykresľovanie v scripts/product_builder/page.php, rovnaké API a existujúce tabuľky. Povolenie pre všetkých sa týka iba prihlásených používateľov a iba GET akcií products/product. Číselníky, vyhľadanie barcode a modelov zostávajú chránené; zápis kontroluje oprávnenia aj CSRF. Používateľské roly sa nemenia.
+
+Pôvodná adresa product_listing_catalog sa cez index.php presmeruje na Listings a starý odkaz je odstránený z navigácie. Staré tabuľky scrub_catalog_products a scrub_catalog_product_listings zostávajú zachované. Nový modul ich nepoužíva; lokálna kontrola našla medzi nimi iba ich vzájomný cudzí kľúč a čítanie/zápis v starom katalógu a jeho CSV importe. Pred odstránením na serveri treba vytvoriť zálohu a overiť prípadných externých používateľov týchto tabuliek; táto aktualizácia ich nemaže.
+
+Nasadenie na aktuálnu inštaláciu: nahrajte celý obsah **.cache/product-builder/product-builder-pages.zip** so zachovaním adresárov a použite Ctrl+F5. Obsahuje 13 súborov: index.php, includes/{auth.php,navbar.php,sidebar.php,product_builder.php,product_listings.php,product_controls.php}, assets/product_builder.css a scripts/product_builder/{page.php,access.php,api.php,app.js,service.php}. Nové spoločné súbory page.php a access.php sú povinné. **SQL import nie je potrebný.** Kompletný product-builder-upload.zip má 24 súborov.
+
+Overenie: php tests/product_builder_pages_test.php (dočasné tabuľky oprávnení, serverové vykreslenie stránok a navigácie) a node tests/product_builder_pages_ui_test.js (simulované API, bežný čitateľ, priamy prechod do editácie, uloženie produktu, všetkých päť editorov číselníkov, modaly, menu a mobil). Testy nemenia reálne používateľské roly, zásoby ani listingy.
+
 ## Dátum vytvorenia a denné skupiny
 
 Saved products má prvý stĺpec Created vo formáte DD.MM.YY; po nabehnutí myšou sa zobrazí celý uložený dátum a čas. Každý deň začína tmavým pásom s dátumom DD.MM.YYYY a modrými čiarami, rovnako ako oddeľovače v Orders.
 
-Server vyberie najviac 100 najnovších výsledkov podľa created_at a tie zobrazí chronologicky od najstarších po najnovšie, v rovnakom smere ako Orders. Pri rovnakom čase rozhoduje ID. Vyhľadávanie sa aplikuje pred limitom; pri úpravách produktu sa jeho deň vytvorenia nemení. Formátovanie v prehliadači nemení časovú zónu uloženého dátumu.
+Server zobrazí najviac 100 najnovších výsledkov podľa created_at, zoradených od najnovších po najstaršie. Najnovší deň aj najnovší listing v každom dni sú navrchu. Pri rovnakom čase rozhoduje ID zostupne. Vyhľadávanie sa aplikuje pred limitom; pri úpravách produktu sa jeho deň vytvorenia nemení. Formátovanie v prehliadači nemení časovú zónu uloženého dátumu.
 
 Nasadenie: nahrajte obsah **.cache/product-builder/product-builder-dates.zip** so zachovaním adresárov a obnovte stránku cez Ctrl+F5. Balík obsahuje includes/product_builder.php, assets/product_builder.css a scripts/product_builder/{app.js,service.php}. SQL import nie je potrebný. Kompletný product-builder-upload.zip je aktualizovaný.
 
@@ -46,7 +62,7 @@ Nasadenie na existujúcu inštaláciu s update 007:
 2. Nahrajte obsah **.cache/product-builder/product-builder-update-008.zip** so zachovaním adresárov. Sedem súborov: includes/product_builder.php, assets/product_builder.css, scripts/product_builder/{api.php,app.js,helpers.php,service.php,boxes.php}.
 3. Obnovte stránku cez Ctrl+F5.
 
-Kompletný inštalačný SQL aj súhrnná aktualizácia zahŕňajú update 008. Diagnostika má 20 kontrol; úplný runtime ZIP obsahuje 19 súborov. Automatický výpočet z hmotností komponentov zostáva ďalšou etapou.
+Kompletný inštalačný SQL aj súhrnná aktualizácia zahŕňajú update 008. Diagnostika má 20 kontrol; úplný runtime ZIP obsahuje 24 súborov. Automatický výpočet z hmotností komponentov zostáva ďalšou etapou.
 
 Overenie: php tests/product_builder_packaging_test.php, php tests/product_builder_update_all_test.php a node tests/product_builder_packaging_ui_test.js. Databázové testy overujú aj zachovanie údajov pri opakovanom importe; UI testy používajú simulované API.
 
@@ -64,7 +80,7 @@ Nasadenie na existujúcu inštaláciu s update 006:
 2. Nahrajte **.cache/product-builder/product-builder-update-007.zip** so zachovaním adresárov. Šesť súborov: includes/product_builder.php, assets/product_builder.css, scripts/product_builder/{api.php,app.js,helpers.php,boxes.php}.
 3. Obnovte stránku cez Ctrl+F5.
 
-Aktuálny kompletný SQL a súhrnná aktualizácia zahŕňajú aj update 008; diagnostika má 20 kontrol. Kompletný runtime ZIP obsahuje 19 súborov.
+Aktuálny kompletný SQL a súhrnná aktualizácia zahŕňajú aj update 008; diagnostika má 20 kontrol. Kompletný runtime ZIP obsahuje 24 súborov.
 
 ## Ceny produktu a platforiem — update 006
 
@@ -85,7 +101,7 @@ Pri neistom stave starších aktualizácií použite aktuálny db/product_builde
 
 Overenie: php tests/product_builder_prices_test.php, php tests/product_builder_update_all_test.php a node tests/product_builder_prices_ui_test.js; prehliadačové testy používajú CLI fixture a simulované API.
 
-Stránka: `index.php?page=product_builder`, samostatná položka **Products & listings** v menu.
+Stránky sú dostupné cez rozbaľovacie menu **Product database**: Product Builder, Listings a Product Controls.
 Modul nepoužíva pôvodný Product Listing Catalog ani tabuľky `scrub_catalog_*`.
 
 Frontend tohto modulu vrátane validácií a hlásení je v angličtine.
@@ -162,7 +178,7 @@ V phpMyAdmin vyberte existujúcu databázu DarkScrub a cez **Import** načítajt
 
 Závisí od existujúcich tabuliek aplikácie `scrubdata`, `auth_permissions`, `auth_roles` a `auth_role_permissions`. Vytvorí šesť nových trvalých tabuliek uvedené nižšie; pomocné tabuľky importu sú dočasné. Opakovaný import zachová existujúce kategórie a ich úpravy. Kolízie modelcode s údajmi servera preskočí a vypíše na konci importu; také kategórie doplňte cez **Manage UNI categories**, kde sa vygeneruje voľný kód. Kontrolný výsledok má byť `expected_seed_categories = 53`, `installed_seed_categories = 53`, `missing_seed_categories = 0`.
 
-Na server nahrajte nasledujúcich 19 súborov do rovnakých relatívnych ciest v koreňovom adresári aplikácie:
+Na server nahrajte nasledujúcich 24 súborov do rovnakých relatívnych ciest v koreňovom adresári aplikácie:
 
 ```text
 index.php
@@ -177,13 +193,18 @@ scripts/product_builder/api.php
 scripts/product_builder/app.js
 scripts/product_builder/helpers.php
 scripts/product_builder/service.php
-scripts/product_builder/specs.php
 scripts/product_builder/csv.php
+scripts/product_builder/specs.php
 scripts/product_builder/designs.php
-scripts/product_builder/graphics_versions.php
-scripts/product_builder/boxes.php
 plugins/select2/css/select2.min.css
 plugins/select2/js/select2.full.min.js
+scripts/product_builder/graphics_versions.php
+scripts/product_builder/boxes.php
+includes/navbar.php
+includes/product_listings.php
+includes/product_controls.php
+scripts/product_builder/page.php
+scripts/product_builder/access.php
 ```
 
 Súbory `includes/conn.php`, testy, CLI inštalátor a zdrojové CSV nie sú súčasťou tohto uploadu. SQL importuje kategórie priamo. Po nasadení otvorte `index.php?page=product_builder`. Administrátor s permission 900 má prístup; ostatným podľa potreby prideľte rolu **Products manager** cez **User Permissions**.

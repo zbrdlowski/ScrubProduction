@@ -78,7 +78,7 @@ const fs=require('fs'),assert=require('assert/strict');
   await page.selectOption('#pb-uni-brand',categories[0].brand);await page.selectOption('#pb-uni-category',String(categories[0].id));
   await page.locator('#pb-save').click();await page.waitForFunction(()=>document.getElementById('pb-edit-label').textContent==='Editing product #77');
   assert.equal(saves,1);assert.equal(await sr.locator('[data-field="design_id"]').inputValue(),String(s.id));
-  await page.locator('[data-product-expand="77"]').click();await page.waitForFunction(()=>document.querySelector('#pb-list-components-77')?.dataset.loaded==='1');
+  await page.locator('[data-product-expand="77"]').click();await page.waitForFunction(()=>document.querySelector('#pb-list-components-77')?.textContent.includes('Design: Renamed G1'));
   assert.ok((await page.locator('#pb-list-components-77').textContent()).includes('Design: Renamed G1'));
   await page.locator('[data-design-manager="G"]').click();await page.locator('#pb-design-search').fill('Renamed G1');
   await page.locator('[data-design-edit="'+g.id+'"]').click();assert.equal(await page.locator('#pb-design-delete').isDisabled(),true);

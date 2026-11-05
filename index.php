@@ -26,6 +26,12 @@ if (empty($_GET['page'])) {
   exit;
 }
 
+// Retired catalogue bookmarks now open the shared listing overview.
+if ($_GET['page'] === 'product_listing_catalog') {
+  header('Location: index.php?page=product_listings');
+  exit;
+}
+
 // Page title mapping - user-friendly names for breadcrumb
 $pageLabels = [
   'plastics_dashboard' => 'Dashboard',
@@ -78,7 +84,9 @@ $pageLabels = [
   'status_policies' => 'Status Policies',
   'order_export_reset' => 'Order Export Reset',
   'product_listing_catalog' => 'Product Listing Catalog',
-  'product_builder' => 'Products & listings',
+  'product_builder' => 'Product Builder',
+  'product_listings' => 'Listings',
+  'product_controls' => 'Product Controls',
   'vykaz_prace' => 'Activity Report',
   'accounting_payouts' => 'eBay payouty',
   'accounting_paypal' => 'PayPal platby',

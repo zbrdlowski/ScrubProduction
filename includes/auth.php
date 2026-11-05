@@ -79,6 +79,8 @@ function auth_page_permission(string $page): ?string
         'staff_attendance_detail' => 'attendance.view_all',
         'custom_orders' => 'custom_orders.view',
         'product_builder' => 'products.view',
+        'product_controls' => 'products.view',
+        'product_listings' => null, // Available to every signed-in employee.
         'accounting_payouts' => 'accounting.view',
         'accounting_paypal' => 'accounting.view',
         'accounting_tatra' => 'accounting.view',

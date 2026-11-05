@@ -50,7 +50,7 @@ const assert = require('assert/strict');
   await page.waitForFunction(()=>document.getElementById('pb-stat-categories').textContent==='53');
   await page.waitForFunction(()=>document.getElementById('pb-stat-total').textContent!=='—');
   assert.equal(await page.locator('#pb-message').isVisible(),false,'First load must have no error banner.');
-  assert.equal(await page.locator('h1').textContent(),'Products & listings');
+  assert.equal(await page.locator('h1').textContent(),'Product Builder');
   const topLayout=await page.evaluate(()=>{const type=document.getElementById('pb-type-panel').getBoundingClientRect(),category=document.getElementById('pb-category-panel').getBoundingClientRect();return {sameRow:Math.abs(type.y-category.y)<2,sideBySide:category.x>=type.right};});
   assert.deepEqual(topLayout,{sameRow:true,sideBySide:true},'Type and compatibility must share one desktop row.');
   assert.equal(await page.locator('#pb-summary').getAttribute('open'),null,'Summary starts collapsed.');

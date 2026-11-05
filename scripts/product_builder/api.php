@@ -11,10 +11,11 @@ if (!isset($_SESSION['permission'])) pb_reply(['ok'=>false,'error'=>'Please sign
 require_once __DIR__ . '/../../includes/conn.php';
 require_once __DIR__ . '/../../includes/auth.php';
 require_once __DIR__ . '/service.php';
+require_once __DIR__ . '/access.php';
 require_once __DIR__ . '/csv.php';
 require_once __DIR__ . '/boxes.php';
-if (!auth_can('products.view')) pb_reply(['ok'=>false,'error'=>'You do not have permission to view products.'],403);
 $action = (string) ($_GET['action'] ?? '');
+if (!pb_can_access_api($_SERVER['REQUEST_METHOD'] ?? '', $action)) pb_reply(['ok'=>false,'error'=>'You do not have permission to perform this action.'],403);
 try {
     if (!pb_schema_ready($pdo)) pb_reply(['ok'=>false,'error'=>'The product database needs to be installed or updated. Contact an administrator.'],503);
     if ($_SERVER['REQUEST_METHOD'] === 'POST') {

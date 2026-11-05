@@ -159,8 +159,8 @@ function pb_product_overview(PDO $pdo, string $query = ''): array
         WHERE p.name LIKE ? OR p.sku LIKE ? OR p.modelcode LIKE ?
         ORDER BY p.created_at DESC,p.id DESC LIMIT 100');
     $stmt->execute([$like, $like, $like]);
-    // Keep the latest 100 matches, then display them chronologically like Orders.
-    $rows = array_reverse($stmt->fetchAll(PDO::FETCH_ASSOC));
+    // Keep the latest 100 matches in descending creation-date order.
+    $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
     // SPECIFIC is reserved in MariaDB. Use unambiguous SQL aliases, then map the API keys.
     $counts = $pdo->query("SELECT COUNT(*) AS total_count,
         COALESCE(SUM(category_kind='specific'),0) AS specific_count,

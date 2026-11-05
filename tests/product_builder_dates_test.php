@@ -22,11 +22,11 @@ $insert->execute(['P_DATE_TIE','Date listing tie',bin2hex(random_bytes(16)),$lat
 $tieId=(int)$pdo->lastInsertId();
 $rows=pb_product_overview($pdo)['rows'];
 dateAssert(count($rows)===100,'The overview still limits the latest matches to 100.');
-dateAssert((int)$rows[0]['id']===$ids[99] && (int)$rows[99]['id']===$tieId,'Newest 100 by creation time appear oldest first, regardless of insertion ID.');
-dateAssert((int)$rows[98]['id']===$ids[1],'Equal timestamps have a stable ascending ID order.');
-for($i=1;$i<count($rows);$i++)dateAssert($rows[$i-1]['created_at']<=$rows[$i]['created_at'],'Creation timestamps are chronological.');
+dateAssert((int)$rows[0]['id']===$tieId && (int)$rows[99]['id']===$ids[99],'Newest 100 by creation time appear newest first, regardless of insertion ID.');
+dateAssert((int)$rows[1]['id']===$ids[1],'Equal timestamps have a stable descending ID order.');
+for($i=1;$i<count($rows);$i++)dateAssert($rows[$i-1]['created_at']>=$rows[$i]['created_at'],'Creation timestamps are newest first.');
 $searched=pb_product_overview($pdo,'Date listing 102');
 dateAssert(count($searched['rows'])===1 && (int)$searched['rows'][0]['id']===$ids[102],'Search applies before selecting the newest matches.');
 dateAssert($searched['rows'][0]['created_at']==='2026-01-01 00:00:00','Recent updates do not replace the creation date.');
 dateAssert(pb_product_overview($pdo,'No such listing')['rows']===[],'Empty search result remains empty.');
-echo "Creation dates: newest 100 selected by creation time, chronological display, timestamp ties, search and independent update dates OK (temporary tables only).\n";
+echo "Creation dates: newest 100 selected by creation time, newest-first display, timestamp ties, search and independent update dates OK (temporary tables only).\n";

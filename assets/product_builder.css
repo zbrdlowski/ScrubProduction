@@ -215,3 +215,17 @@
 .pb-day-separator { display:flex; align-items:center; gap:10px; color:#9ed6ff; font-size:11px; font-weight:700; letter-spacing:.05em; text-transform:uppercase; white-space:nowrap; }
 .pb-day-separator::before,.pb-day-separator::after { content:""; flex:1 1 auto; height:1px; background:linear-gradient(90deg,rgba(63,158,255,.12),rgba(63,158,255,.72)); }
 .pb-day-separator::after { background:linear-gradient(90deg,rgba(63,158,255,.72),rgba(63,158,255,.12)); }
+
+/* Product Controls shares the library modals with Product Builder. */
+.pb-controls-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:18px; margin:22px 0 10px; }
+.pb-control-tile { --control-accent:#65cbdc; display:flex; align-items:center; gap:18px; width:100%; min-height:164px; padding:24px; border:1px solid #56636d; border-top:3px solid var(--control-accent); border-radius:8px; background:#303b44; color:#edf4f7; text-align:left; cursor:pointer; box-shadow:0 3px 10px #0002; }
+.pb-control-tile:hover { background:#3a4b57; border-color:var(--control-accent); }
+.pb-control-tile:focus-visible { outline:2px solid var(--control-accent); outline-offset:3px; }
+.pb-control-icon { flex:0 0 54px; display:flex; align-items:center; justify-content:center; height:54px; border-radius:12px; background:#ffffff0a; color:var(--control-accent); font-size:1.6rem; }
+.pb-control-copy { display:flex; flex-direction:column; gap:8px; min-width:0; }
+.pb-control-copy strong { font-size:1.08rem; font-weight:600; }
+.pb-control-copy>span { color:#bdcbd6; font-size:.85rem; line-height:1.5; }
+.pb-control-arrow { margin-left:auto; color:var(--control-accent); font-size:.85rem; }
+.pb-control-green { --control-accent:#72ce98; }.pb-control-blue { --control-accent:#85b5f3; }.pb-control-gold { --control-accent:#e2bf71; }.pb-control-orange { --control-accent:#eda775; }
+@media(max-width:1199px) { .pb-controls-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+@media(max-width:767px) { .pb-controls-grid { grid-template-columns:minmax(0,1fr); gap:12px; }.pb-control-tile { min-height:130px; padding:18px; } }

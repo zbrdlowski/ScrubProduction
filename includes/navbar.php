@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . '/project_filters.php';
+require_once __DIR__ . '/auth.php';
 
 $navbarProjects = [];
 $navbarProjectUserId = intval($_SESSION['user_id'] ?? 0);
@@ -196,8 +197,13 @@ if (isset($conn) && $conn instanceof mysqli) {
       <li class="nav-item d-none d-sm-inline-block">
         <a href="?page=product_chart" class="nav-link">Model database</a>
       </li>
-      <li class="nav-item d-none d-sm-inline-block">
-        <a href="?page=product_listing_catalog" class="nav-link">Product database</a>
+      <li class="nav-item dropdown d-none d-sm-inline-block main-nav-dropdown">
+        <a href="#" class="nav-link dropdown-toggle" data-toggle="dropdown" role="button" aria-haspopup="true" aria-expanded="false" id="navbarProductDatabase">Product database</a>
+        <div class="dropdown-menu" aria-labelledby="navbarProductDatabase">
+          <?php if (auth_can('products.view')): ?><a href="index.php?page=product_builder" class="dropdown-item">Product Builder</a><?php endif; ?>
+          <a href="index.php?page=product_listings" class="dropdown-item">Listings</a>
+          <?php if (auth_can('products.view')): ?><a href="index.php?page=product_controls" class="dropdown-item">Product Controls</a><?php endif; ?>
+        </div>
       </li>
       <li class="nav-item d-none d-sm-inline-block">
         <a href="?page=order_search" class="nav-link">Order Search</a>

@@ -57,7 +57,7 @@ const {chromium}=require('playwright'),fs=require('fs'),assert=require('assert/s
  await page.locator('#pb-cancel').click();await page.locator('[data-product="501"]').click();
  assert.equal(await first.locator('[data-field="graphics_version_id"]').inputValue(),String(r1.id));assert.equal(await first.locator('[data-field="label"]').inputValue(),'Anomally R1 - team');
  await first.locator('[data-field="label"]').fill('Anomally R1 - team edited');await page.locator('#pb-save').click();await page.waitForFunction(()=>!document.getElementById('pb-product-form').inert);assert.equal(saves,2);
- await page.locator('[data-product-expand="501"]').click();await page.waitForFunction(()=>document.querySelector('#pb-list-components-501')?.dataset.loaded==='1');assert.ok((await page.locator('#pb-list-components-501').textContent()).includes('Version: R1'));
+ await page.locator('[data-product-expand="501"]').click();await page.waitForFunction(()=>document.querySelector('#pb-list-components-501')?.textContent.includes('Version: R1'));assert.ok((await page.locator('#pb-list-components-501').textContent()).includes('Version: R1'));
  await page.locator('[data-design-manager="V"]').click();await page.locator('[data-design-edit="'+r1.id+'"]').click();assert.equal(await page.locator('#pb-design-delete').isDisabled(),true);
  await page.locator('#pb-design-name').fill('R-one');await page.locator('#pb-design-save').click();await page.waitForFunction(()=>document.querySelector('[data-field="graphics_version_id"] option:checked').textContent==='R-one');
  assert.equal(await first.locator('[data-field="label"]').inputValue(),'Anomally R1 - team edited');
