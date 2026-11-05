@@ -1,5 +1,20 @@
 # Produkty a listingy — prvá etapa
 
+## Prepínanie slovenčiny a angličtiny
+
+Product Builder, Listings a Product Controls majú vpravo hore spoločný prepínač SK / EN. Predvolený jazyk je slovenčina. Voľba sa pamätá v relácii a v cookie samostatnej pre konkrétneho prihláseného používateľa v danom prehliadači (jeden rok); neovplyvňuje Custom Orders ani ostatné moduly. Parameter pb_lang povoľuje iba sk alebo en. API dostáva jazyk explicitne, takže aj súbežne otvorené karty vracajú hlásenia vo svojom jazyku.
+
+Preložené sú formuláre, tabuľky, číselníky, modaly, popisy, štandardné možnosti komponentov a validačné/chybové hlásenia. Názvy produktov, dizajnov, kategórií a krabíc, SKU, barcode, modelcode, poznámky a uložené hodnoty možností sa nemenia. Napríklad voľba Matte sa po slovensky zobrazí ako Mat, ale do databázy sa naďalej uloží Matte. Výrobné označenia a vlastné novopridané popisy bez prekladu zostávajú pôvodné.
+
+Prepnutie načíta stránku v druhom jazyku. Pri rozpracovanom produkte alebo číselníku sa vyžiada potvrdenie zahodenia zmien; zrušenie zachová celý formulár. Uložený editovaný produkt sa otvorí aj po prepnutí. Nový produkt ostane novým formulárom. Prepnutie nemení prístupové práva.
+
+Spoločný slovník je scripts/product_builder/locales/sk.json; kľúčom je pôvodný anglický text. PHP helper i18n.php a JavaScript používajú rovnaké texty a pomenované parametre. Údaje sa nikdy neprekladajú plošným nahrádzaním HTML. Nové texty treba obaliť pb_t()/t() a pridať slovenský preklad. Pôvodné translate-backend.cjs a translate-frontend.cjs boli jednorazové migračné pomôcky; znova ich nespúšťajte.
+
+Nasadenie na aktuálnu inštaláciu: obsah **.cache/product-builder/product-builder-language.zip** nahrajte so zachovaním adresárov a obnovte stránku cez Ctrl+F5. Balík obsahuje šesť súborov: assets/product_builder.css, scripts/product_builder/{page.php,app.js,api.php,i18n.php} a scripts/product_builder/locales/sk.json. **SQL import netreba.** Kompletný product-builder-upload.zip obsahuje 26 súborov.
+
+Overenie: php tests/product_builder_i18n_test.php a node tests/product_builder_i18n_ui_test.js (SK/EN, všetky tri stránky a päť číselníkov, kanonické hodnoty pri uložení, cookie, jazyk API, ochrana neuložených zmien, reset validácie a mobil). API na zápis je v prehliadačových testoch simulované; reálne listingy a číselníky sa nemenia.
+
+
 ## Product database: Builder, Listings a Controls
 
 Rozbaľovacie menu Product database v navbare aj bočnom menu obsahuje:
@@ -104,7 +119,7 @@ Overenie: php tests/product_builder_prices_test.php, php tests/product_builder_u
 Stránky sú dostupné cez rozbaľovacie menu **Product database**: Product Builder, Listings a Product Controls.
 Modul nepoužíva pôvodný Product Listing Catalog ani tabuľky `scrub_catalog_*`.
 
-Frontend tohto modulu vrátane validácií a hlásení je v angličtine.
+Frontend tohto modulu vrátane validácií a hlásení podporuje slovenčinu a angličtinu.
 
 ## Funkcie
 

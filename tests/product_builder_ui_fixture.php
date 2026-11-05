@@ -3,6 +3,7 @@ declare(strict_types=1);
 // Static UI fixture only. Never creates an authenticated web session or writes product data.
 if (PHP_SAPI !== 'cli') { http_response_code(404); exit; }
 $_SESSION=['permission'=>900];
+$_GET['pb_lang']=getenv('PRODUCT_BUILDER_TEST_LANGUAGE') ?: 'en';
 require __DIR__.'/../includes/conn.php';
 $target=__DIR__.'/../.cache/product-builder';
 if (!is_dir($target)) mkdir($target,0777,true);

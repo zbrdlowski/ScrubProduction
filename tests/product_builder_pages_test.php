@@ -29,7 +29,7 @@ foreach([999001=>[false,false],999002=>[true,false],999003=>[true,true],999004=>
 }
 function renderProductPage(string $name,array $session,array $query=[]): string {
     global $pdo,$conn;
-    $_SESSION=$session;$_GET=$query;http_response_code(200);
+    $_SESSION=$session;$_GET=$query+['pb_lang'=>'en'];http_response_code(200);
     ob_start();require __DIR__.'/../includes/'.$name.'.php';return ob_get_clean();
 }
 function wrapProductPage(string $html): string {

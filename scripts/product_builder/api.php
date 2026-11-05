@@ -1,10 +1,13 @@
 <?php
 declare(strict_types=1);
 session_start();
+require_once __DIR__ . '/i18n.php';
+$GLOBALS['pbLanguage'] = pb_resolve_language();
 header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-store');
 function pb_reply(array $data, int $status = 200): void
 {
+    if (isset($data['error']) && is_string($data['error'])) $data['error'] = pb_translate_error($data['error']);
     http_response_code($status); echo json_encode($data, JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE); exit;
 }
 if (!isset($_SESSION['permission'])) pb_reply(['ok'=>false,'error'=>'Please sign in to the application.'],401);
