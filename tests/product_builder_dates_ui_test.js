@@ -1,0 +1,31 @@
+const {chromium}=require('playwright'),fs=require('fs'),assert=require('assert/strict');
+(async()=>{const browser=await chromium.launch({channel:'chrome',headless:true});try{
+ const page=await browser.newPage({viewport:{width:1800,height:1000},timezoneId:'America/Los_Angeles'}),errors=[];page.on('pageerror',e=>errors.push(e.message));
+ const categories=JSON.parse(fs.readFileSync('.cache/product-builder/categories.json','utf8'));
+ const base={bundle_type:'P',category_kind:'specific',brand:'KTM',model:'SX / XC-F',year_range:'2011–2012',modelcode:'X6XZ',recommended_price:'199.90',recommended_currency:'EUR',web_price:'199.90',web_currency:'EUR',ebay_price:'209.90',ebay_currency:'USD',amazon_price:'200.00',amazon_currency:'USD',component_count:1,box_id:1,box_name:'A',box_length_cm:61,box_width_cm:41,box_height_cm:21,weight_kg:'7.500',components:[{component_type:'P',label:'Front plate',reference:'KT00295',color:'ORANGE',quantity:1,inventory_supplier:'Polisport',inventory_quantity:8,inventory_status:'matched',options:{}}]};
+ const products=[{...base,id:4,name:'Orange Restyle Plastics kit',sku:'P_690175',created_at:'2026-11-03 23:59:59'},{...base,id:1,name:'Anomally R1 Graphics kit',sku:'G_82D2F406C06D8310A81A',bundle_type:'G',created_at:'2026-11-04 00:00:00'},{...base,id:2,name:'Black Factory Seat cover',sku:'S_A63D74F8B08D416C61E2',bundle_type:'S',created_at:'2026-11-04 16:30:00'},{...base,id:3,name:'Factory Graphics + Fitting + Plastics bundle',sku:'GFP_20F784ABAB33C48219C4',bundle_type:'GFP',created_at:'2026-11-05 09:15:00'}];
+ await page.route('**/scripts/product_builder/api.php?*',async route=>{const url=new URL(route.request().url()),action=url.searchParams.get('action');let body={ok:true};
+  if(action==='categories')body.rows=categories;
+  else if(action==='designs')Object.assign(body,{rows:[],versions:[]});
+  else if(action==='boxes')body.rows=[];
+  else if(action==='products'){const q=(url.searchParams.get('q')||'').toLowerCase();Object.assign(body,{rows:products.filter(p=>p.name.toLowerCase().includes(q)),stats:{total:4,specific:4,universal:0}});}
+  else if(action==='product')body.product=products.find(p=>String(p.id)===url.searchParams.get('id'));
+  else throw Error(action);await route.fulfill({json:body});
+ });
+ await page.goto(process.env.PRODUCT_BUILDER_TEST_URL||'http://localhost/darkscrub/.cache/product-builder/preview.html');await page.locator('[data-product="4"]').waitFor();
+ assert.equal(await page.locator('.pb-products-table>thead th').first().textContent(),'Created');
+ assert.equal(await page.locator('.pb-products-table>thead th').count(),13);
+ assert.deepEqual(await page.locator('.pb-day-separator span').allTextContents(),['03.11.2026','04.11.2026','05.11.2026']);
+ assert.deepEqual(await page.locator('.pb-product-row>.pb-created-column').allTextContents(),['03.11.26','04.11.26','04.11.26','05.11.26'],'Dates retain the database day even in a different browser timezone.');
+ assert.deepEqual(await page.locator('.pb-product-row>.pb-created-column').evaluateAll(cells=>cells.map(c=>c.title)),products.map(p=>p.created_at));
+ assert.deepEqual(await page.locator('.pb-day-separator-row>td').evaluateAll(cells=>cells.map(c=>c.colSpan)),[13,13,13]);
+ assert.deepEqual(await page.locator('#pb-products>tr').evaluateAll(rows=>rows.map(row=>row.classList.contains('pb-day-separator-row')?'day':row.classList.contains('pb-product-row')?'product':'detail')),['day','product','detail','day','product','detail','product','detail','day','product','detail']);
+ const stripes=await page.locator('.pb-product-row>td:first-child').evaluateAll(cells=>cells.map(c=>getComputedStyle(c).backgroundColor));assert.equal(stripes[0],stripes[2]);assert.equal(stripes[1],stripes[3]);assert.notEqual(stripes[0],stripes[1],'Day separator rows cannot disrupt zebra colors.');
+ await page.locator('#pb-saved-products').screenshot({path:'.cache/product-builder/dates-list.png'});
+ await page.locator('[data-product-expand="4"]').click();await page.locator('#pb-list-components-4 .pb-component-details').waitFor();assert.equal(await page.locator('#pb-list-components-4>td').getAttribute('colspan'),'13');
+ assert.equal(await page.locator('.pb-day-separator').count(),3);await page.locator('[data-product-expand="4"]').click();
+ await page.fill('#pb-search','Black Factory');await page.waitForFunction(()=>document.querySelectorAll('.pb-product-row').length===1);assert.deepEqual(await page.locator('.pb-day-separator span').allTextContents(),['04.11.2026']);
+ await page.fill('#pb-search','No such product');await page.waitForFunction(()=>document.querySelector('#pb-products').textContent.includes('No products match'));assert.equal(await page.locator('.pb-day-separator').count(),0);assert.equal(await page.locator('#pb-products>tr>td').getAttribute('colspan'),'13');
+ await page.fill('#pb-search','');await page.waitForFunction(()=>document.querySelectorAll('.pb-product-row').length===4);await page.setViewportSize({width:390,height:900});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
+ assert.deepEqual(errors,[]);console.log('Creation-date UI: first column, day groups, original timezone dates, full timestamp tooltip, colspan, zebra rows, expansion, filtered groups, empty state and mobile OK.');
+}finally{await browser.close();}})().catch(e=>{console.error(e);process.exitCode=1;});

@@ -18,6 +18,7 @@
 
 // ---- Bootstrap (uprav podľa reálneho projektu) ----------------------------
 session_start();
+require_once __DIR__ . '/modelcode_helpers.php';
 require_once __DIR__ . '/../includes/conn.php'; // subor je v scripts/, conn.php v includes/ (o uroven vyssie)
 
 // ---- ACL: superadmin alebo explicitne povoleni editori --------------------
@@ -91,34 +92,9 @@ switch ($action) {
     // Over si vždy proti DB, aby sa nikdy neduplikoval s existujúcim kódom.
     // ------------------------------------------------------------------
     case 'generate_modelcode':
-        $safeChars = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
-        $safeLen = strlen($safeChars);
-        $maxAttempts = 50;
-        $found = null;
-
-        for ($i = 0; $i < $maxAttempts; $i++) {
-            $code = '';
-            for ($j = 0; $j < 4; $j++) {
-                $code .= $safeChars[random_int(0, $safeLen - 1)];
-            }
-            $stmt = $conn->prepare("SELECT COUNT(*) AS cnt FROM scrubdata WHERE modelcode = ?");
-            $stmt->bind_param('s', $code);
-            $stmt->execute();
-            $cnt = (int) $stmt->get_result()->fetch_assoc()['cnt'];
-            $stmt->close();
-            if ($cnt === 0) {
-                $found = $code;
-                break;
-            }
-        }
-
-        if ($found === null) {
-            jexit(['ok' => false, 'error' => 'Nepodarilo sa vygenerovať unikátny kód, skús to znova.']);
-        }
-        jexit(['ok' => true, 'code' => $found]);
+        try { jexit(['ok' => true, 'code' => scrub_generate_modelcode($conn)]); }
+        catch (RuntimeException $e) { jexit(['ok' => false, 'error' => $e->getMessage()]); }
         break;
-
-    // ------------------------------------------------------------------
     case 'search_modelcode':
         $q = trim($_GET['q'] ?? '');
         if ($q === '') {
@@ -265,6 +241,14 @@ switch ($action) {
             jexit(['ok' => false, 'error' => 'Modelcode nesmie mať viac ako 5 znakov (limit stĺpca scrubcompat.compatcode).']);
         }
 
+        // Serialize allocation with UNI categories; existing specific models can share a code.
+        if ((int) $conn->query("SELECT GET_LOCK('darkscrub_modelcode_write', 10)")->fetch_row()[0] !== 1) {
+            jexit(['ok' => false, 'error' => 'Modelcode práve ukladá iný používateľ. Skúste znova.']);
+        }
+        if (scrub_modelcode_uni_exists($conn, $modelcode)) {
+            $conn->query("SELECT RELEASE_LOCK('darkscrub_modelcode_write')");
+            jexit(['ok' => false, 'error' => 'Modelcode patrí UNI kategórii. Vygenerujte nový kód.']);
+        }
         $conn->begin_transaction();
         try {
             // Zamkni existujúce riadky TEJTO KONKRÉTNEJ skupiny (modelcode + brand + model),
@@ -368,6 +352,7 @@ switch ($action) {
             $newTrackId = ensureUpdateTracking($conn, $modelcode, $brand, $model, $newRangeyear, $newyear, $createdBy);
 
             $conn->commit();
+            $conn->query("SELECT RELEASE_LOCK('darkscrub_modelcode_write')");
             jexit([
                 'ok' => true,
                 'new_rangeyear' => $newRangeyear,
@@ -376,6 +361,7 @@ switch ($action) {
             ]);
         } catch (Exception $e) {
             $conn->rollback();
+            $conn->query("SELECT RELEASE_LOCK('darkscrub_modelcode_write')");
             jexit(['ok' => false, 'error' => $e->getMessage()]);
         }
         break;

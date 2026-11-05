@@ -78,6 +78,7 @@ $pageLabels = [
   'status_policies' => 'Status Policies',
   'order_export_reset' => 'Order Export Reset',
   'product_listing_catalog' => 'Product Listing Catalog',
+  'product_builder' => 'Products & listings',
   'vykaz_prace' => 'Activity Report',
   'accounting_payouts' => 'eBay payouty',
   'accounting_paypal' => 'PayPal platby',

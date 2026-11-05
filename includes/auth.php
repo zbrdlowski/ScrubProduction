@@ -26,6 +26,9 @@ function auth_legacy_can(string $permissionKey): bool
 {
     $level = (int) ($_SESSION['permission'] ?? 0);
     $department = (int) ($_SESSION['dpt'] ?? 0);
+    if (in_array($permissionKey, ['products.view', 'products.manage'], true)) {
+        return $level === 900;
+    }
     if ($permissionKey === 'access.manage') {
         return $level === 900;
     }
@@ -75,6 +78,7 @@ function auth_page_permission(string $page): ?string
         'staff_attendance' => 'attendance.view_all',
         'staff_attendance_detail' => 'attendance.view_all',
         'custom_orders' => 'custom_orders.view',
+        'product_builder' => 'products.view',
         'accounting_payouts' => 'accounting.view',
         'accounting_paypal' => 'accounting.view',
         'accounting_tatra' => 'accounting.view',
@@ -189,6 +193,9 @@ function auth_can(string $permissionKey): bool
     }
     $access = auth_access_map(null, $pdo);
     if (!isset($access[$permissionKey])) {
+        if (in_array($permissionKey, ['products.view', 'products.manage'], true)) {
+            return auth_legacy_can($permissionKey);
+        }
         if ($permissionKey === 'attendance.view_all') {
             return auth_legacy_can($permissionKey);
         }

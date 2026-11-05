@@ -581,3 +581,10 @@
         }
     });
 })();
+
+// Open the existing model creation dialog when linked from the product builder.
+$(function () {
+    if (window.productChartCanEdit === true && new URLSearchParams(window.location.search).get('add_model') === '1') {
+        $('#modelYearModal').modal('show');
+    }
+});

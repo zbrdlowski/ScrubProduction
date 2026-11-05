@@ -325,6 +325,11 @@ function isMenuOpen($pages = [])
               </a></li>            
           </ul>
         </li>
+        <?php if (auth_can('products.view')): ?>
+        <li class="nav-item"><a href="index.php?page=product_builder" class="nav-link <?= isActive('product_builder') ?>">
+          <i class="nav-icon fas fa-cubes" style="color:#20c997;"></i><p>Products & listings</p>
+        </a></li>
+        <?php endif; ?>
         <li class="nav-item <?= isMenuOpen([
           'product_listing_catalog'
         ]) ? 'menu-open' : '' ?>">
