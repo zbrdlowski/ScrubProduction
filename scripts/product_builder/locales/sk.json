@@ -453,5 +453,22 @@
   "Font 2": "Písmo 2",
   "Font 3": "Písmo 3",
   "Font 4": "Písmo 4",
-  "Font 5": "Písmo 5"
+  "Font 5": "Písmo 5",
+  "Generate new SKU": "Vygenerovať nové SKU",
+  "Generating SKU…": "Generujem SKU…",
+  "New SKU generated. Save the product to apply it.": "Nové SKU je vygenerované. Zmenu potvrďte uložením produktu.",
+  "Unable to generate an available SKU. Please try again.": "Nepodarilo sa vygenerovať voľné SKU. Skúste znova.",
+  "Enter a shop SKU, leave blank for a new product, or use the wand to generate a replacement. Save the product to apply the change.": "Zadajte SKU z e-shopu, pri novom produkte nechajte pole prázdne alebo prútikom vygenerujte nové SKU. Zmenu potvrďte uložením produktu.",
+  "Rows per page": "Riadkov na stránku",
+  "Listing pages": "Stránky listingov",
+  "First page": "Prvá stránka",
+  "Previous page": "Predchádzajúca stránka",
+  "Next page": "Nasledujúca stránka",
+  "Last page": "Posledná stránka",
+  "Page": "Stránka",
+  "Go to page": "Prejsť na stránku",
+  "of {pages}": "z {pages}",
+  "Showing {from}–{to} of {total} listings.": "Zobrazené {from}–{to} z {total} listingov.",
+  "Retry": "Skúsiť znova",
+  "Select a valid page and page size.": "Zvoľte platnú stránku a počet riadkov na stránku."
 }

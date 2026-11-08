@@ -57,6 +57,18 @@ function pb_delete_uni(PDO $pdo, int $id, int $version): void
         $pdo->prepare('DELETE FROM product_builder_uni_categories WHERE id=?')->execute([$id]); $pdo->commit();
     } catch (Throwable $e) { if ($pdo->inTransaction()) $pdo->rollBack(); throw $e; }
 }
+/** Generate a preview only. The unique SKU constraint is still enforced when saving. */
+function pb_generate_sku(PDO $pdo, string $bundle): string
+{
+    if (!in_array($bundle, pb_bundle_types(), true)) throw new InvalidArgumentException('Select a valid bundle type.');
+    $exists = $pdo->prepare('SELECT 1 FROM product_builder_products WHERE sku=? LIMIT 1');
+    for ($attempt = 0; $attempt < 20; $attempt++) {
+        $sku = $bundle . '_' . strtoupper(bin2hex(random_bytes(10)));
+        $exists->execute([$sku]);
+        if (!$exists->fetchColumn()) return $sku;
+    }
+    throw new InvalidArgumentException('Unable to generate an available SKU. Please try again.');
+}
 function pb_save_product(PDO $pdo, array $data, ?int $userId): array
 {
     $clean = pb_validate_product($data); $id = (int) ($data['id'] ?? 0);
@@ -131,7 +143,7 @@ function pb_save_product(PDO $pdo, array $data, ?int $userId): array
             $pdo->prepare('DELETE FROM product_builder_components WHERE product_id=?')->execute([$id]);
         } else {
             // Generate only for new listings without an existing shop SKU.
-            $sku = $clean['sku'] !== '' ? $clean['sku'] : $clean['bundle_type'] . '_' . strtoupper(bin2hex(random_bytes(10)));
+            $sku = $clean['sku'] !== '' ? $clean['sku'] : pb_generate_sku($pdo, $clean['bundle_type']);
             $stmt = $pdo->prepare('INSERT INTO product_builder_products (name,bundle_type,category_kind,uni_category_id,brand,model,year_range,modelcode,notes,recommended_price,recommended_currency,web_price,web_currency,ebay_price,ebay_currency,amazon_price,amazon_currency,box_id,weight_kg,sku,request_key,created_by) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)');
             $stmt->execute(array_merge($values, [$sku,$requestKey,$userId])); $id = (int) $pdo->lastInsertId();
         }
@@ -147,26 +159,44 @@ function pb_save_product(PDO $pdo, array $data, ?int $userId): array
     }
 }
 
-/** Shared read path for the API and the database regression test. */
-function pb_product_overview(PDO $pdo, string $query = ''): array
+/** Server pagination shared by Builder and Listings; filters apply before the page limit. */
+function pb_product_overview(PDO $pdo, string $query = '', $page = 1, $perPage = 100): array
 {
-    $like = '%' . pb_text($query, 'Search', 150, false) . '%';
+    $page = filter_var($page, FILTER_VALIDATE_INT, ['options'=>['min_range'=>1]]);
+    $perPage = filter_var($perPage, FILTER_VALIDATE_INT);
+    if ($page === false || !in_array($perPage, [25,50,100], true)) throw new InvalidArgumentException('Select a valid page and page size.');
+    $query = pb_text($query, 'Search', 150, false);
+    $like = '%' . $query . '%';
+    // Global statistics remain independent of the search and the current page.
+    $counts = $pdo->query("SELECT COUNT(*) AS total_count,
+        COALESCE(SUM(category_kind='specific'),0) AS specific_count,
+        COALESCE(SUM(category_kind='universal'),0) AS universal_count
+        FROM product_builder_products")->fetch(PDO::FETCH_ASSOC);
+    $total = (int) $counts['total_count'];
+    if ($query !== '') {
+        $count = $pdo->prepare('SELECT COUNT(*) FROM product_builder_products WHERE name LIKE ? OR sku LIKE ? OR modelcode LIKE ?');
+        $count->execute([$like,$like,$like]);
+        $total = (int) $count->fetchColumn();
+    }
+    $pages = max(1, (int) ceil($total / $perPage));
+    $page = min($page, $pages);
+    $offset = ($page - 1) * $perPage;
     $stmt = $pdo->prepare('SELECT p.*,u.brand AS uni_brand,u.category_name AS uni_name,b.name AS box_name,b.length_cm AS box_length_cm,b.width_cm AS box_width_cm,b.height_cm AS box_height_cm,b.weight_kg AS box_weight_kg,
         (SELECT COUNT(*) FROM product_builder_components c WHERE c.product_id=p.id) AS component_count
         FROM product_builder_products p
         LEFT JOIN product_builder_uni_categories u ON u.id=p.uni_category_id
         LEFT JOIN product_builder_boxes b ON b.id=p.box_id
         WHERE p.name LIKE ? OR p.sku LIKE ? OR p.modelcode LIKE ?
-        ORDER BY p.created_at DESC,p.id DESC LIMIT 100');
-    $stmt->execute([$like, $like, $like]);
-    // Keep the latest 100 matches in descending creation-date order.
+        ORDER BY p.created_at DESC,p.id DESC LIMIT ? OFFSET ?');
+    foreach ([1,2,3] as $position) $stmt->bindValue($position, $like, PDO::PARAM_STR);
+    $stmt->bindValue(4, $perPage, PDO::PARAM_INT);
+    $stmt->bindValue(5, $offset, PDO::PARAM_INT);
+    $stmt->execute();
     $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
-    // SPECIFIC is reserved in MariaDB. Use unambiguous SQL aliases, then map the API keys.
-    $counts = $pdo->query("SELECT COUNT(*) AS total_count,
-        COALESCE(SUM(category_kind='specific'),0) AS specific_count,
-        COALESCE(SUM(category_kind='universal'),0) AS universal_count
-        FROM product_builder_products")->fetch(PDO::FETCH_ASSOC);
-    return ['rows' => $rows, 'stats' => [
+    return ['rows' => $rows, 'pagination' => [
+        'page'=>$page, 'per_page'=>$perPage, 'total'=>$total, 'pages'=>$pages,
+        'from'=>count($rows) ? $offset + 1 : 0, 'to'=>count($rows) ? $offset + count($rows) : 0,
+    ], 'stats' => [
         'total' => (int) $counts['total_count'],
         'specific' => (int) $counts['specific_count'],
         'universal' => (int) $counts['universal_count'],
@@ -192,6 +222,8 @@ function pb_product_components(PDO $pdo, int $productId): array
         foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $item) $inventory[$item['id']] = $item;
     }
     foreach ($components as &$component) {
+        // Old Trim Kit rows render as Graphics; a read never rewrites stored listing data.
+        if ($component['component_type'] === 'T') $component['component_type'] = 'G';
         $component['options'] = (object)pb_component_options($component);
         unset($component['options_json']);
         if ($component['component_type'] === 'P') {

@@ -18,6 +18,11 @@ function pb_bundle_types(): array
     }
     return $types;
 }
+/** T identifies a Trim Kit bundle; its graphics are regular G components. */
+function pb_bundle_component_types(string $bundle): array
+{
+    return array_values(array_unique(array_map(static fn(string $type): string => $type === 'T' ? 'G' : $type, str_split($bundle))));
+}
 function pb_text($value, string $label, int $max, bool $required = true): string
 {
     if (!is_scalar($value) && $value !== null) throw new InvalidArgumentException($label . ': invalid value.');
@@ -80,6 +85,7 @@ function pb_validate_product(array $data): array
 {
     $bundle = pb_text($data['bundle_type'] ?? '', 'Bundle type', 5);
     if (!in_array($bundle, pb_bundle_types(), true)) throw new InvalidArgumentException('Select a valid bundle type.');
+    $requiredTypes = pb_bundle_component_types($bundle);
     $kind = $data['category_kind'] ?? '';
     if (!in_array($kind, ['specific','universal'], true)) throw new InvalidArgumentException('Select a category type.');
     $components = $data['components'] ?? [];
@@ -88,7 +94,9 @@ function pb_validate_product(array $data): array
     foreach ($components as $row) {
         if (!is_array($row)) throw new InvalidArgumentException('Invalid component.');
         $type = pb_text($row['component_type'] ?? '', 'Component type', 1);
-        if (strpos($bundle, $type) === false) throw new InvalidArgumentException('The component type is not included in the selected bundle.');
+        // Accept legacy T rows from an older editor, then store the canonical graphics type.
+        if ($type === 'T' && strpos($bundle, 'T') !== false) $type = 'G';
+        if (!in_array($type, $requiredTypes, true)) throw new InvalidArgumentException('The component type is not included in the selected bundle.');
         $quantity = filter_var($row['quantity'] ?? null, FILTER_VALIDATE_INT, ['options'=>['min_range'=>1,'max_range'=>9999]]);
         if ($quantity === false) throw new InvalidArgumentException('Quantity must be a whole number between 1 and 9999.');
         $designId = $row['design_id'] ?? null;
@@ -110,7 +118,7 @@ function pb_validate_product(array $data): array
             'options'=>pb_validate_component_options($row['options'] ?? [])];
         $found[$type] = true;
     }
-    foreach (str_split($bundle) as $type) if (!isset($found[$type])) throw new InvalidArgumentException('Missing component of type ' . $type . '.');
+    foreach ($requiredTypes as $type) if (!isset($found[$type])) throw new InvalidArgumentException('Missing component of type ' . $type . '.');
     $sku = pb_text($data['sku'] ?? '', 'SKU', 80, false);
     if (preg_match('/[\x00-\x1F\x7F]/u', $sku)) throw new InvalidArgumentException('SKU cannot contain control characters.');
     if ((int)($data['id'] ?? 0) > 0 && array_key_exists('sku', $data) && $sku === '') throw new InvalidArgumentException('Enter the product SKU.');

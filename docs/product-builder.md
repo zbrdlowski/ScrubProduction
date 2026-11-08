@@ -1,4 +1,41 @@
+## Stránkovanie všetkých listingov
+
+Listings aj výpis v Product Builderi sprístupňujú všetky záznamy cez serverové stránkovanie. Hore aj dole sú tlačidlá prvá/predchádzajúca/nasledujúca/posledná stránka, pole na priamy prechod na číslo stránky a voľba 25, 50 alebo 100 riadkov (predvolene 100). Počet výsledkov a zobrazený rozsah sú vždy uvedené pri ovládaní. Ovládanie podporuje SK/EN a mobil.
+
+API products prijíma page a per_page; SQL používa LIMIT a OFFSET iba pre aktuálnu stránku. Odpoveď obsahuje pagination s page, per_page, total, pages, from a to. Vyhľadávanie podľa názvu, SKU a modelcode filtruje celú databázu pred výpočtom počtu strán a limitom. Zmena vyhľadávania alebo veľkosti stránky začína prvou stránkou. Príliš vysoké číslo stránky sa upraví na poslednú; neplatné parametre server odmietne. Globálne štatistiky zostávajú nezávislé od filtra.
+
+Poradie created_at DESC, id DESC a oddeľovače dní sú zachované. Komponenty aj editácia fungujú na každej stránke. Oprávnenia sa nemenia. Oneskorená odpoveď neprepíše novšie vyhľadávanie; chyba sa zobrazí vo výpise s tlačidlom Skúsiť znova. Tisíce listingov sa neposielajú do prehliadača naraz.
+
+Nasadenie: nahrajte obsah **.cache/product-builder/product-builder-pagination.zip** so zachovaním adresárov a obnovte stránku cez Ctrl+F5. Balík obsahuje sedem súborov: assets/product_builder.css, scripts/product_builder/{helpers.php,service.php,api.php,page.php,app.js} a scripts/product_builder/locales/sk.json. Zahrnuté sú aj predchádzajúce úpravy SKU a Trim Kit. **SQL import nie je potrebný.** Kompletný product-builder-upload.zip je aktualizovaný.
+
+Overenie: php tests/product_builder_pagination_test.php prechádza všetkých 2 507 testovacích listingov v dočasných tabuľkách, kontroluje poradie, počty, filtrovanie, prázdne výsledky a parametre. node tests/product_builder_pagination_ui_test.js overuje stránky, najstarší listing, detail/editáciu, veľkosti strán, priame skoky, filtrovanie, oneskorené odpovede, opakovanie načítania, oba jazyky a mobil. Prešli aj existujúce testy dátumových skupín a stránok/práv.
+
+## Vygenerovanie nového SKU pri existujúcom listingu
+
+V editácii je vedľa SKU tlačidlo s prútikom **Vygenerovať nové SKU / Generate new SKU**. Postup: otvoriť listing cez Upraviť, kliknúť na prútik a následne na Uložiť zmeny produktu. Kliknutie vytvorí iba návrh vo formulári; pôvodné SKU v databáze sa zmení až pri úspešnom uložení. Zrušenie editácie ponechá pôvodné SKU. Návrh možno ďalej upraviť ručne.
+
+Prefix zodpovedá aktuálnemu bundle, napríklad P_, G_ alebo TFP_, nasledovaný 20 náhodnými hexadecimálnymi znakmi. Server overí dostupnosť návrhu; pri uložení jedinečnosť znovu chráni databáza. Pre nový produkt naďalej funguje automatické generovanie pri uložení prázdneho SKU. Pri existujúcom produkte treba použiť prútik alebo zadať SKU ručne.
+
+Počas generovania je uloženie pozastavené. Oneskorená odpoveď neprepíše novšiu ručnú úpravu, zmenený bundle ani iný otvorený produkt. Chyba generovania zachová obsah poľa. Akcia používa existujúce oprávnenia editora a CSRF ochranu; na stránkach iba na čítanie sa nezobrazuje.
+
+Nasadenie na aktuálnu inštaláciu: obsah **.cache/product-builder/product-builder-sku-generation.zip** nahrajte so zachovaním adresárov a použite Ctrl+F5. Obsahuje sedem súborov: assets/product_builder.css, scripts/product_builder/{helpers.php,service.php,api.php,page.php,app.js} a scripts/product_builder/locales/sk.json. Zahrnuté je aj predchádzajúce mapovanie Trim Kit komponentov. **SQL import nie je potrebný.** Kompletný product-builder-upload.zip je tiež aktualizovaný.
+
+Overenie: php tests/product_builder_sku_generation_test.php (dočasné tabuľky, návrh bez zápisu, prefixy, kolízia pri uložení, zachovanie dát) a node tests/product_builder_sku_generation_ui_test.js (návrh/uloženie/zrušenie, chyba, oneskorené odpovede, ručné úpravy, SK/EN a mobil). Reálne listingy sa pri testoch nemenia.
+
 # Produkty a listingy — prvá etapa
+
+## Trim Kit bundle: TFP používa grafiku, fitting a plasty
+
+Písmeno T označuje Trim Kit na úrovni bundle a SKU. Skutočný komponent je grafika G: TFP má G + F + P, TFPS má G + F + P + S, samostatné T má G a TP má G + P. Polia grafiky, knižnica Graphics designs, verzie a nastavenia sú rovnaké ako pri GFP. Seat cover sa pridáva iba pri bundle obsahujúcom S. Dropdown zobrazuje napríklad TFP · Trim Kit (Graphics + Fitting + Plastics), v slovenskej verzii s preloženými názvami.
+
+Mapovanie pochádza zo serverovej funkcie pb_bundle_component_types() a rovnaké pravidlá používa formulár aj validácia. Kódy bundle, automatický prefix TFP_/TFPS_ a existujúce SKU sa nemenia. Prepínanie medzi TFP, GFP a TFPS zachová rozpracované komponenty. Historické kombinácie obsahujúce G aj T zobrazujú jednu skupinu grafiky; všetky pôvodné riadky zostávajú zachované.
+
+Staršie komponenty uložené ako T sa pri čítaní/otvorení mapujú na G bez zápisu do databázy. Zachovajú sa názov, referencia, poznámky, množstvo a nastavenia; pri ďalšom explicitnom uložení sa zapíše typ G. Server prijíma aj T z pôvodného editora, pokiaľ zvolený bundle obsahuje T, a pred kontrolou dizajnu a verzie ho normalizuje na G. Dizajn Seat Covers sa pre trim grafiku odmietne.
+
+Nasadenie na aktuálnu inštaláciu: nahrajte obsah **.cache/product-builder/product-builder-trim-kit.zip** so zachovaním adresárov a použite Ctrl+F5. Obsahuje štyri súbory: scripts/product_builder/{helpers.php,service.php,page.php,app.js}. **SQL import nie je potrebný.** Súhrnný product-builder-upload.zip je tiež aktualizovaný.
+
+Overenie: php tests/product_builder_trim_kit_test.php (dočasné tabuľky, ukladanie TFP/TFPS, povinné komponenty, skupina dizajnu, verzie, SKU a staršie T záznamy) a node tests/product_builder_trim_kit_ui_test.js (celý formulár, barcode, prepínanie bundle, dizajn/verzia, uloženie/otvorenie, výpis, SK/EN a mobil). Reálne produkty ani zásoby testy nemenia.
+
 
 ## Prepínanie slovenčiny a angličtiny
 
@@ -35,7 +72,7 @@ Overenie: php tests/product_builder_pages_test.php (dočasné tabuľky oprávnen
 
 Saved products má prvý stĺpec Created vo formáte DD.MM.YY; po nabehnutí myšou sa zobrazí celý uložený dátum a čas. Každý deň začína tmavým pásom s dátumom DD.MM.YYYY a modrými čiarami, rovnako ako oddeľovače v Orders.
 
-Server zobrazí najviac 100 najnovších výsledkov podľa created_at, zoradených od najnovších po najstaršie. Najnovší deň aj najnovší listing v každom dni sú navrchu. Pri rovnakom čase rozhoduje ID zostupne. Vyhľadávanie sa aplikuje pred limitom; pri úpravách produktu sa jeho deň vytvorenia nemení. Formátovanie v prehliadači nemení časovú zónu uloženého dátumu.
+Výpis používa stránkovanie po 25, 50 alebo 100 výsledkoch podľa created_at, zoradených od najnovších po najstaršie. Najnovší deň aj najnovší listing v každom dni sú navrchu. Pri rovnakom čase rozhoduje ID zostupne. Vyhľadávanie sa aplikuje pred stránkovaním; pri úpravách produktu sa jeho deň vytvorenia nemení. Formátovanie v prehliadači nemení časovú zónu uloženého dátumu.
 
 Nasadenie: nahrajte obsah **.cache/product-builder/product-builder-dates.zip** so zachovaním adresárov a obnovte stránku cez Ctrl+F5. Balík obsahuje includes/product_builder.php, assets/product_builder.css a scripts/product_builder/{app.js,service.php}. SQL import nie je potrebný. Kompletný product-builder-upload.zip je aktualizovaný.
 

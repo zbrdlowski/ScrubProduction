@@ -37,6 +37,7 @@ try {
         if ($action === 'save_uni') pb_reply(['ok'=>true,'id'=>pb_save_uni($pdo,$conn,$data)]);
         if ($action === 'delete_uni') { pb_delete_uni($pdo,(int) ($data['id'] ?? 0),(int) ($data['version'] ?? 0)); pb_reply(['ok'=>true]); }
         if ($action === 'generate_modelcode') pb_reply(['ok'=>true,'code'=>scrub_generate_modelcode($conn)]);
+        if ($action === 'generate_sku') pb_reply(['ok'=>true,'sku'=>pb_generate_sku($pdo,pb_text($data['bundle_type'] ?? '', 'Bundle type', 5))]);
         if ($action === 'save_product') pb_reply(['ok'=>true,'product'=>pb_save_product($pdo,$data,(int) ($_SESSION['user_id'] ?? 0) ?: null)]);
         if ($action === 'import_uni') {
             $file = $_FILES['csv'] ?? [];
@@ -66,7 +67,7 @@ try {
             pb_reply(['ok'=>true,'product'=>$row]);
         }
         if ($action === 'products') {
-            pb_reply(['ok' => true] + pb_product_overview($pdo, pb_text($_GET['q'] ?? '', 'Search', 150, false)));
+            pb_reply(['ok' => true] + pb_product_overview($pdo, pb_text($_GET['q'] ?? '', 'Search', 150, false), $_GET['page'] ?? 1, $_GET['per_page'] ?? 100));
         }
     } else pb_reply(['ok'=>false,'error'=>'Method not allowed.'],405);
     pb_reply(['ok'=>false,'error'=>'Unknown action.'],400);

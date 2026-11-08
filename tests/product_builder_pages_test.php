@@ -23,7 +23,7 @@ foreach([999001=>[false,false],999002=>[true,false],999003=>[true,true],999004=>
     $_SESSION=['permission'=>100,'user_id'=>$id,'name'=>'Test user'];
     pagesAssert(pb_can_access_api('GET','products')&&pb_can_access_api('GET','product'),'All signed-in users can read listings and components.');
     foreach(['categories','designs','boxes','models','plastic_item'] as $action)pagesAssert(pb_can_access_api('GET',$action)===$view,'Protected library/inventory read: '.$action);
-    foreach(['save_product','save_uni','delete_uni','import_uni','generate_modelcode','save_design','delete_design','save_box','delete_box','save_graphics_version','delete_graphics_version'] as $action)pagesAssert(pb_can_access_api('POST',$action)===$manage,'Protected write: '.$action);
+    foreach(['save_product','save_uni','delete_uni','import_uni','generate_modelcode','generate_sku','save_design','delete_design','save_box','delete_box','save_graphics_version','delete_graphics_version'] as $action)pagesAssert(pb_can_access_api('POST',$action)===$manage,'Protected write: '.$action);
     pagesAssert(pb_can_access_api('POST','products')===$manage,'Read whitelist must not grant POST access.');
     pagesAssert(pb_can_manage_products()===$manage,'Editor permission requires both Builder access and manage.');
 }

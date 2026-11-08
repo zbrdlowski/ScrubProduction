@@ -21,7 +21,7 @@ if (empty($_SESSION['product_builder_csrf'])) $_SESSION['product_builder_csrf'] 
 if (!function_exists('pb_h')) { function pb_h($value): string { return htmlspecialchars((string) $value, ENT_QUOTES, 'UTF-8'); } }
 ?>
 <link rel="stylesheet" href="plugins/select2/css/select2.min.css">
-<link rel="stylesheet" href="assets/product_builder.css?v=17">
+<link rel="stylesheet" href="assets/product_builder.css?v=19">
 <div class="container-fluid pb-page" id="product-builder" lang="<?= pb_language() ?>">
   <div class="pb-language-bar"><div class="btn-group btn-group-sm" role="group" aria-label="<?= pb_h(pb_t('Language')) ?>">
     <?php foreach (['sk'=>'SK','en'=>'EN'] as $language=>$languageLabel): $query=['page'=>'product_'.$pbPageMode,'pb_lang'=>$language]; if($pbEditProductId>0)$query['edit']=$pbEditProductId; ?>
@@ -53,8 +53,8 @@ if (!function_exists('pb_h')) { function pb_h($value): string { return htmlspeci
           <div class="form-row">
             <div class="col-md-6 form-group mb-md-0"><label for="pb-bundle"><?= pb_h(pb_t('Bundle type')) ?> <span class="text-info">*</span></label>
               <select id="pb-bundle" class="form-control form-control-sm" required><option value=""><?= pb_h(pb_t('Select a product type…')) ?></option>
-              <?php foreach (pb_bundle_types() as $bundle): $labels = []; foreach (str_split($bundle) as $letter) $labels[] = pb_component_types()[$letter]; ?>
-              <option value="<?= $bundle ?>"><?= $bundle ?> · <?= pb_h(implode(' + ', array_map('pb_t', $labels))) ?></option><?php endforeach; ?></select>
+              <?php foreach (pb_bundle_types() as $bundle): $labels = []; foreach (pb_bundle_component_types($bundle) as $letter) $labels[] = pb_component_types()[$letter]; $bundleLabel = implode(' + ', array_map('pb_t', $labels)); if (strpos($bundle, 'T') !== false) $bundleLabel = pb_t('Trim Kit') . ' (' . $bundleLabel . ')'; ?>
+              <option value="<?= $bundle ?>"><?= $bundle ?> · <?= pb_h($bundleLabel) ?></option><?php endforeach; ?></select>
             </div>
             <div class="col-md-6 form-group mb-0"><label for="pb-name"><?= pb_h(pb_t('Product name')) ?> <span class="text-info">*</span></label><input class="form-control form-control-sm" id="pb-name" maxlength="255" required placeholder="<?= pb_h(pb_t('e.g. KTM Graphics + Plastics kit')) ?>"></div>
           </div>
@@ -90,8 +90,8 @@ if (!function_exists('pb_h')) { function pb_h($value): string { return htmlspeci
       <div class="pb-summary-grid"><div><span class="pb-muted"><?= pb_h(pb_t('Bundle type')) ?></span><strong id="pb-summary-bundle"><?= pb_h(pb_t('Not selected')) ?></strong></div><div><span class="pb-muted"><?= pb_h(pb_t('Category')) ?></span><span id="pb-summary-category"><?= pb_h(pb_t('Not selected')) ?></span></div><div><span class="pb-muted">Modelcode</span><code id="pb-summary-code">—</code></div></div>
     </details>
     <div class="pb-save-bar">
-      <div class="pb-sku-control"><label for="pb-sku"><?= pb_h(pb_t('Product SKU')) ?> <i class="fas fa-info-circle pb-muted ml-1" title="<?= pb_h(pb_t('Enter an existing shop SKU, or leave blank to generate one for a new product.')) ?>" aria-hidden="true"></i></label><input id="pb-sku" class="form-control form-control-sm" maxlength="80" placeholder="<?= pb_h(pb_t('Generate automatically')) ?>" aria-describedby="pb-sku-help"></div>
-      <small class="sr-only" id="pb-sku-help"><?= pb_h(pb_t('Enter an existing shop SKU, or leave blank to generate one for a new product.')) ?></small>
+      <div class="pb-sku-control"><label for="pb-sku"><?= pb_h(pb_t('Product SKU')) ?> <i class="fas fa-info-circle pb-muted ml-1" title="<?= pb_h(pb_t('Enter a shop SKU, leave blank for a new product, or use the wand to generate a replacement. Save the product to apply the change.')) ?>" aria-hidden="true"></i></label><div class="pb-sku-inputs"><input id="pb-sku" class="form-control form-control-sm" maxlength="80" placeholder="<?= pb_h(pb_t('Generate automatically')) ?>" aria-describedby="pb-sku-help"><button type="button" id="pb-generate-sku" class="btn btn-sm btn-outline-info" disabled title="<?= pb_h(pb_t('Generate new SKU')) ?>" aria-label="<?= pb_h(pb_t('Generate new SKU')) ?>"><i class="fas fa-magic" aria-hidden="true"></i></button></div><span id="pb-sku-status" class="sr-only" role="status"></span></div>
+      <small class="sr-only" id="pb-sku-help"><?= pb_h(pb_t('Enter a shop SKU, leave blank for a new product, or use the wand to generate a replacement. Save the product to apply the change.')) ?></small>
       <div class="pb-pricing-grid" id="pb-pricing-panel" role="group" aria-label="<?= pb_h(pb_t('Product prices')) ?>">
           <?php foreach (pb_price_fields() as $priceKey=>$priceLabel): ?>
           <div class="pb-price-field"><label for="pb-<?= $priceKey ?>-price"><?= pb_h(pb_t($priceLabel)) ?><?php if ($priceKey === 'recommended'): ?> <span class="text-info">*</span><?php endif; ?></label>
@@ -125,9 +125,21 @@ if (!function_exists('pb_h')) { function pb_h($value): string { return htmlspeci
   </div>
   <?php endif; ?>
   <?php if ($pbShowListings): ?>
+  <?php $pbRenderPagination = static function (string $position): void { ?>
+    <div class="pb-list-pagination <?= $position === 'bottom' ? 'card-footer' : 'pb-pagination-top' ?>" data-list-pagination>
+      <span class="pb-muted pb-list-range" data-list-range role="status"><?= pb_h(pb_t('Loading products…')) ?></span>
+      <label class="pb-page-size"><?= pb_h(pb_t('Rows per page')) ?><select class="form-control form-control-sm" data-list-page-size disabled><?php foreach ([25,50,100] as $size): ?><option value="<?= $size ?>"<?= $size === 100 ? ' selected' : '' ?>><?= $size ?></option><?php endforeach; ?></select></label>
+      <nav class="pb-page-navigation" aria-label="<?= pb_h(pb_t('Listing pages')) ?>">
+        <?php foreach (['first'=>['First page','angle-double-left'],'previous'=>['Previous page','angle-left']] as $action=>$button): ?><button type="button" class="btn btn-sm btn-outline-info" data-list-page="<?= $action ?>" title="<?= pb_h(pb_t($button[0])) ?>" aria-label="<?= pb_h(pb_t($button[0])) ?>" disabled><i class="fas fa-<?= $button[1] ?>" aria-hidden="true"></i></button><?php endforeach; ?>
+        <label class="pb-page-number"><?= pb_h(pb_t('Page')) ?><input type="number" class="form-control form-control-sm" data-list-page-number min="1" max="1" step="1" value="1" aria-label="<?= pb_h(pb_t('Go to page')) ?>" disabled><span data-list-page-count><?= pb_h(pb_t('of {pages}', ['pages'=>1])) ?></span></label>
+        <?php foreach (['next'=>['Next page','angle-right'],'last'=>['Last page','angle-double-right']] as $action=>$button): ?><button type="button" class="btn btn-sm btn-outline-info" data-list-page="<?= $action ?>" title="<?= pb_h(pb_t($button[0])) ?>" aria-label="<?= pb_h(pb_t($button[0])) ?>" disabled><i class="fas fa-<?= $button[1] ?>" aria-hidden="true"></i></button><?php endforeach; ?>
+      </nav>
+    </div>
+  <?php }; ?>
   <section class="card pb-panel pb-list-panel" id="pb-saved-products" aria-labelledby="pb-list-title"><div class="card-header pb-list-header"><h2 class="card-title" id="pb-list-title"><i class="fas fa-table mr-2" aria-hidden="true"></i><?= pb_h(pb_t('Saved products')) ?></h2><input type="search" id="pb-search" class="form-control form-control-sm" maxlength="150" aria-label="<?= pb_h(pb_t('Search products')) ?>" placeholder="<?= pb_h(pb_t('Name, SKU or modelcode…')) ?>"></div>
+    <?php $pbRenderPagination('top'); ?>
     <div class="table-responsive"><table class="table table-bordered table-hover table-sm mb-0 pb-table pb-products-table"><thead><tr><th class="pb-created-column" title="<?= pb_h(pb_t('Listing creation date')) ?>"><?= pb_h(pb_t('Created')) ?></th><th><?= pb_h(pb_t('Product / SKU')) ?></th><th><?= pb_h(pb_t('Bundle')) ?></th><th><?= pb_h(pb_t('Category')) ?></th><th>Modelcode</th><?php foreach (pb_price_fields() as $priceLabel): ?><th class="pb-price-column"><?= pb_h(pb_t($priceLabel)) ?></th><?php endforeach; ?><th><?= pb_h(pb_t('Box')) ?></th><th class="pb-price-column" title="<?= pb_h(pb_t('Total packed weight, including the box')) ?>"><?= pb_h(pb_t('Weight (kg)')) ?></th><th><?= pb_h(pb_t('Components')) ?></th><th><?= pb_h(pb_t('Actions')) ?></th></tr></thead><tbody id="pb-products"><tr><td colspan="13" class="pb-muted"><?= pb_h(pb_t('Loading products…')) ?></td></tr></tbody></table></div>
-    <div class="card-footer small pb-muted"><?= pb_h(pb_t('Showing up to 100 of the most recent results.')) ?></div>
+    <?php $pbRenderPagination('bottom'); ?>
   </section>
   <?php endif; ?>
 </div>
@@ -195,6 +207,6 @@ if (!function_exists('pb_h')) { function pb_h($value): string { return htmlspeci
 <?php if ($pbShowListings): ?>
 <div class="modal fade pb-modal" lang="<?= pb_language() ?>" id="pb-detail-modal" tabindex="-1" role="dialog" aria-labelledby="pb-detail-title"><div class="modal-dialog modal-lg"><div class="modal-content"><div class="modal-header"><h3 class="modal-title h5" id="pb-detail-title"><?= pb_h(pb_t('Product details')) ?></h3><button type="button" class="close" data-dismiss="modal" aria-label="<?= pb_h(pb_t('Close')) ?>">&times;</button></div><div class="modal-body" id="pb-detail"></div></div></div></div>
 <?php endif; ?>
-<script>window.productBuilderConfig = <?= json_encode(['language'=>pb_language(),'languageCookie'=>pb_language_cookie(),'translations'=>pb_language()==='sk'?pb_i18n_dictionary():new stdClass(),'pageMode'=>$pbPageMode,'editProductId'=>$pbEditProductId,'csrf'=>$_SESSION['product_builder_csrf'],'canEdit'=>$pbCanEdit,'types'=>pb_component_types(),'priceFields'=>pb_price_fields(),'specFields'=>pb_component_spec_fields($conn),'requestKey'=>bin2hex(random_bytes(16))], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;</script>
+<script>window.productBuilderConfig = <?= json_encode(['language'=>pb_language(),'languageCookie'=>pb_language_cookie(),'translations'=>pb_language()==='sk'?pb_i18n_dictionary():new stdClass(),'pageMode'=>$pbPageMode,'editProductId'=>$pbEditProductId,'csrf'=>$_SESSION['product_builder_csrf'],'canEdit'=>$pbCanEdit,'types'=>pb_component_types(),'bundleComponents'=>array_combine(pb_bundle_types(),array_map('pb_bundle_component_types',pb_bundle_types())),'priceFields'=>pb_price_fields(),'specFields'=>pb_component_spec_fields($conn),'requestKey'=>bin2hex(random_bytes(16))], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;</script>
 <script defer src="plugins/select2/js/select2.full.min.js"></script>
-<script src="scripts/product_builder/app.js?v=16"></script>
+<script src="scripts/product_builder/app.js?v=19"></script>
