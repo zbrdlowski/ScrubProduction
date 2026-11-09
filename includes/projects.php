@@ -865,6 +865,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     opacity: 0.72;
   }
 
+  #projectsTable .project-row-complete {
+    background: rgba(40, 167, 69, 0.14) !important;
+  }
+
+  #projectsTable .project-row-complete:hover {
+    background: rgba(40, 167, 69, 0.22) !important;
+  }
+
   .project-avatar-group {
     display: flex;
     align-items: center;
@@ -2121,6 +2129,9 @@ if ($viewId > 0) {
               $rowClasses[] = 'project-row-done';
             } elseif ($p['priority'] === 'urgent') {
               $rowClasses[] = 'project-row-urgent';
+            }
+            if ($pct == 100) {
+              $rowClasses[] = 'project-row-complete';
             }
             ?>
             <tr class="<?= implode(' ', $rowClasses) ?>" data-status="<?= $p['status'] ?>"

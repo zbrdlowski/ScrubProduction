@@ -32,7 +32,7 @@ const {chromium}=require('playwright'),fs=require('fs'),assert=require('assert/s
  for(const [key,amount,currency] of [['recommended','149,90','EUR'],['web','129.50','GBP'],['ebay','0.00','USD'],['amazon','189.99','CAD']]){await page.fill('#pb-'+key+'-price',amount);await page.selectOption('#pb-'+key+'-currency',currency);}
  const save=async count=>{await page.locator('#pb-save').click();await page.waitForFunction(()=>!document.getElementById('pb-product-form').inert);assert.equal(saves,count);await page.waitForFunction(()=>document.querySelector('[data-price-cell="recommended"]').textContent===document.getElementById('pb-recommended-price').value+' EUR');};
  await save(1);assert.deepEqual(await page.locator('[data-price-cell]').allTextContents(),['149.90 EUR','129.50 GBP','0.00 USD','189.99 CAD']);
- await page.locator('[data-product-expand="701"]').click();await page.waitForSelector('#pb-list-components-701 .pb-component-details');assert.equal(await page.locator('#pb-list-components-701>td').getAttribute('colspan'),'13');
+ await page.locator('[data-product-expand="701"]').click();await page.waitForSelector('#pb-list-components-701 .pb-component-details');assert.equal(await page.locator('#pb-list-components-701>td').getAttribute('colspan'),'12');
  await page.locator('[data-product-expand="701"]').click();
  const boxes=await page.locator('.pb-price-field').evaluateAll(nodes=>nodes.map(el=>({x:el.getBoundingClientRect().x,y:el.getBoundingClientRect().y})));assert.ok(boxes.every(b=>Math.abs(b.y-boxes[0].y)<2),'Four prices share one row on desktop.');
  assert.equal(await page.locator('.pb-save-bar #pb-pricing-panel').count(),1,'Prices belong to the SKU/save bar.');

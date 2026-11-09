@@ -91,22 +91,28 @@ function uniSelection() {
   if(r){i.title=r.included_models||t("Included models have not been specified yet.");uniTooltip=new Tooltip(i,{trigger:'hover focus',container:'body',html:false});}
   el('pb-uni-meta').textContent=r?t('Modelcode: {code} · No license: {unlicensed} · Licensed: {licensed}',{code:r.modelcode,unlicensed:r.price_unlicensed??'—',licensed:r.price_licensed??'—'}):''; summary();
 }
-function uniBrand(id='') {
+function uniBrand(id='',missingLabel='') {
   const rows=categories.filter(r=>r.brand===el('pb-uni-brand').value);
   options(el('pb-uni-category'),rows,rows.length?t("Select a category…"):t("Select a brand first…"),r=>r.id,r=>r.category_name);
+  if(id&&missingLabel&&!rows.some(r=>String(r.id)===String(id))){el('pb-uni-category').add(new Option(missingLabel,id));el('pb-uni-category').disabled=false;}
   el('pb-uni-category').value=id; uniSelection();
 }
 function renderUni() {
   const q=el('pb-uni-search').value.toLocaleLowerCase();
   el('pb-uni-rows').innerHTML=categories.filter(r=>[r.brand,r.category_name,r.modelcode,r.included_models].join(' ').toLocaleLowerCase().includes(q)).map(r=>'<tr><td><strong>'+esc(r.brand)+'</strong><div class="pb-muted">'+esc(r.category_name)+'</div></td><td><code>'+esc(r.modelcode)+'</code></td><td class="pb-coverage">'+esc(r.included_models||'—')+'</td><td>'+(cfg.canEdit?'<button class="btn btn-sm btn-outline-info" type="button" data-uni-edit="'+r.id+("\">"+esc(t("Edit"))+"</button>"):'')+'</td></tr>').join('')||("<tr><td colspan=\"4\" class=\"pb-muted py-4\">"+esc(t("No categories match this selection."))+"</td></tr>");
 }
+let categoryLoadSeq=0;
 async function loadCategories() {
+  const seq=++categoryLoadSeq,data=await api('categories');if(seq!==categoryLoadSeq)return;
+  // Read the current selection after the request: the user may have changed it meanwhile.
   const selected=form?el('pb-uni-category').value:'';
-  categories=(await api('categories')).rows; if(el('pb-stat-categories'))el('pb-stat-categories').textContent=categories.length;
+  categories=data.rows; if(el('pb-stat-categories'))el('pb-stat-categories').textContent=categories.length;
   const brands=[...new Set(categories.map(r=>r.brand))];
   if(form){
     const brand=categories.find(r=>String(r.id)===selected)?.brand||el('pb-uni-brand').value;
-    options(el('pb-uni-brand'),brands,t("Select a brand…"),x=>x,x=>x);el('pb-uni-brand').value=brand;uniBrand(selected);
+    options(el('pb-uni-brand'),brands,t("Select a brand…"),x=>x,x=>x);
+    if(brand&&!brands.includes(brand)){el('pb-uni-brand').add(new Option(brand,brand));el('pb-uni-brand').disabled=false;}
+    el('pb-uni-brand').value=brand;uniBrand(selected,t('Unavailable category #{id}',{id:selected}));
     el('pb-uni-empty').hidden=categories.length>0;
   }
   if(el('pb-brand-list'))el('pb-brand-list').innerHTML=brands.map(b=>'<option value="'+esc(b)+'"></option>').join('');
@@ -132,6 +138,38 @@ function savedBoxText(row) {
   if(!row.box_id)return '—';
   const dimensions=['box_length_cm','box_width_cm','box_height_cm'].map(key=>row[key]);
   return '<span>'+esc(row.box_name||t('Box #{id}',{id:row.box_id}))+'</span>'+(dimensions.every(value=>value!==null&&value!==undefined)?'<div class="pb-muted small">'+dimensions.map(value=>esc(Number(value))).join(' × ')+' cm</div>':'');
+}
+function packagingCell(row) {
+  return savedBoxText(row)+'<div class="pb-box-weight small" title="'+esc(t('Total packed weight, including the box'))+'"><span class="pb-muted">'+esc(t('Weight'))+': </span><span data-weight-value>'+esc(weightText(row.weight_kg))+'</span></div>';
+}
+function copyableCode(value,kind) {
+  if(value===null||value===undefined||value==='')return '<code>—</code>';
+  const label=t(kind==='sku'?'Copy SKU':'Copy modelcode');
+  return '<span class="pb-code-copy"><code>'+esc(value)+'</code><button type="button" class="btn pb-copy-code" data-pb-copy="'+esc(value)+'" title="'+esc(label)+'" aria-label="'+esc(label)+'"><i class="far fa-copy" aria-hidden="true"></i></button></span>';
+}
+async function copyListingCode(text) {
+  if(navigator.clipboard&&window.isSecureContext){try{await navigator.clipboard.writeText(text);return;}catch(_){} }
+  // Match the existing Product Chart fallback for HTTP and denied Clipboard API access.
+  const previousFocus=document.activeElement,textarea=document.createElement('textarea');
+  textarea.value=text;textarea.readOnly=true;textarea.style.cssText='position:fixed;top:0;left:0;width:1px;height:1px;padding:0;border:0;opacity:0;font-size:16px';
+  textarea.addEventListener('copy',event=>{if(event.clipboardData){event.clipboardData.setData('text/plain',text);event.preventDefault();event.stopPropagation();}});
+  document.body.appendChild(textarea);
+  try{textarea.focus({preventScroll:true});textarea.select();textarea.setSelectionRange(0,text.length);if(!document.execCommand('copy'))throw new Error('Copy failed');}
+  finally{textarea.remove();previousFocus?.focus({preventScroll:true});}
+}
+const copyFeedbackTimers=new WeakMap();
+async function copyCodeButton(button) {
+  if(button.dataset.copyPending)return;
+  const label=button.dataset.copyLabel||button.getAttribute('aria-label');button.dataset.copyLabel=label;
+  clearTimeout(copyFeedbackTimers.get(button));button.dataset.copyPending='1';button.setAttribute('aria-busy','true');
+  let success=false;
+  try{await copyListingCode(button.dataset.pbCopy);success=true;try{navigator.vibrate?.(25);}catch(_){} }
+  catch(_){}
+  const feedback=t(success?'Copied!':'Copy failed. Select and copy the code manually.');
+  button.classList.toggle('pb-copy-success',success);button.classList.toggle('pb-copy-failed',!success);
+  button.querySelector('i').className=success?'fas fa-check':'fas fa-exclamation-triangle';button.title=feedback;button.setAttribute('aria-label',feedback);
+  el('pb-copy-status').textContent=feedback;delete button.dataset.copyPending;button.setAttribute('aria-busy','false');
+  copyFeedbackTimers.set(button,setTimeout(()=>{if(!button.isConnected)return;button.classList.remove('pb-copy-success','pb-copy-failed');button.querySelector('i').className='far fa-copy';button.title=label;button.setAttribute('aria-label',label);},1800));
 }
 function packagingDetail(row) {
   return ("<dl class=\"pb-packaging-overview\"><div><dt>"+esc(t("Box"))+"</dt><dd>")+savedBoxText(row)+("</dd></div><div><dt title=\""+esc(t("Total packed weight, including the box"))+"\">"+esc(t("Weight (kg)"))+"</dt><dd>")+esc(weightText(row.weight_kg))+'</dd></div></dl>';
@@ -159,7 +197,7 @@ function renderPagination() {
 }
 function showListLoading() {
   listLoading=true;renderPagination();
-  el('pb-products').innerHTML='<tr><td colspan="13" class="text-center py-4 pb-muted">'+esc(t('Loading products…'))+'</td></tr>';
+  el('pb-products').innerHTML='<tr><td colspan="12" class="text-center py-4 pb-muted">'+esc(t('Loading products…'))+'</td></tr>';
 }
 async function loadProducts({page=listPage,perPage=listPerPage}={}) {
   if(!el('pb-products'))return;
@@ -172,14 +210,14 @@ async function loadProducts({page=listPage,perPage=listPerPage}={}) {
     let previousDay=null;
     el('pb-products').innerHTML=data.rows.map((r,index)=>{
       const created=productCreatedDate(r.created_at);
-      const separator=created.key!==previousDay?'<tr class="pb-day-separator-row"><td colspan="13"><div class="pb-day-separator"><span>'+esc(created.label)+'</span></div></td></tr>':'';
+      const separator=created.key!==previousDay?'<tr class="pb-day-separator-row"><td colspan="12"><div class="pb-day-separator"><span>'+esc(created.label)+'</span></div></td></tr>':'';
       previousDay=created.key;
-      return separator+'<tr class="pb-product-row'+(index%2===0?' pb-row-tinted':'')+'"><td class="pb-created-column" title="'+esc(r.created_at||t("No creation date"))+'">'+(created.key?'<time datetime="'+esc(created.key)+'">'+esc(created.short)+'</time>':'—')+'</td><td class="pb-product-identity"><strong>'+esc(r.name)+'</strong><div><code>'+esc(r.sku)+'</code></div></td><td><span class="badge pb-bundle-badge" data-bundle="'+esc(r.bundle_type)+'">'+esc(r.bundle_type)+'</span></td><td><small class="pb-muted">'+(r.category_kind==='universal'?'UNI':t("Specific"))+'</small><div>'+esc([r.uni_brand||r.brand,r.uni_name||r.model,r.year_range].filter(Boolean).join(' · '))+'</div></td><td><code>'+esc(r.modelcode)+'</code></td>'+priceFields.map(channel=>'<td class="pb-price-column" data-price-cell="'+channel+'">'+esc(priceText(r,channel))+'</td>').join('')+'<td data-box-cell>'+savedBoxText(r)+'</td><td class="pb-price-column" data-weight-cell>'+esc(weightText(r.weight_kg))+'</td><td><button type="button" class="btn btn-sm btn-outline-info pb-expand" data-product-expand="'+r.id+'" aria-expanded="false" aria-controls="pb-list-components-'+r.id+'" aria-label="'+esc(t('Show components for {name}',{name:r.name}))+'"><i class="fas fa-chevron-right mr-1" aria-hidden="true"></i> '+esc(t('{count} components',{count:Number(r.component_count)}))+'</button></td><td>'+productAction(r)+'</td></tr><tr id="pb-list-components-'+r.id+'" class="pb-expanded-row" hidden><td colspan="13"><div data-component-detail role="region" aria-label="'+esc(t('Components of {name}',{name:r.name}))+'"></div></td></tr>';
-    }).join('')||("<tr><td colspan=\"13\" class=\"text-center py-4 pb-muted\">"+esc(t("No products match this selection yet."))+"</td></tr>");
+      return separator+'<tr class="pb-product-row'+(index%2===0?' pb-row-tinted':'')+'"><td class="pb-created-column" title="'+esc(r.created_at||t("No creation date"))+'">'+(created.key?'<time datetime="'+esc(created.key)+'">'+esc(created.short)+'</time>':'—')+'</td><td class="pb-product-identity"><strong>'+esc(r.name)+'</strong><div>'+copyableCode(r.sku,'sku')+'</div></td><td><span class="badge pb-bundle-badge" data-bundle="'+esc(r.bundle_type)+'">'+esc(r.bundle_type)+'</span></td><td><small class="pb-muted">'+(r.category_kind==='universal'?'UNI':t("Specific"))+'</small><div>'+esc([r.uni_brand||r.brand,r.uni_name||r.model,r.year_range].filter(Boolean).join(' · '))+'</div></td><td>'+copyableCode(r.modelcode,'modelcode')+'</td>'+priceFields.map(channel=>'<td class="pb-price-column" data-price-cell="'+channel+'">'+esc(priceText(r,channel))+'</td>').join('')+'<td data-box-cell>'+packagingCell(r)+'</td><td><button type="button" class="btn btn-sm btn-outline-info pb-expand" data-product-expand="'+r.id+'" aria-expanded="false" aria-controls="pb-list-components-'+r.id+'" aria-label="'+esc(t('Show components for {name}',{name:r.name}))+'"><i class="fas fa-chevron-right mr-1" aria-hidden="true"></i> '+esc(t('{count} components',{count:Number(r.component_count)}))+'</button></td><td>'+productAction(r)+'</td></tr><tr id="pb-list-components-'+r.id+'" class="pb-expanded-row" hidden><td colspan="12"><div data-component-detail role="region" aria-label="'+esc(t('Components of {name}',{name:r.name}))+'"></div></td></tr>';
+    }).join('')||("<tr><td colspan=\"12\" class=\"text-center py-4 pb-muted\">"+esc(t("No products match this selection yet."))+"</td></tr>");
   } catch(e) {
     if(seq!==listSeq)return;
     listLoaded=false;
-    el('pb-products').innerHTML='<tr><td colspan="13" class="text-center py-4">'+esc(e.message)+' <button type="button" class="btn btn-sm btn-outline-info ml-2" data-list-retry>'+esc(t('Retry'))+'</button></td></tr>';
+    el('pb-products').innerHTML='<tr><td colspan="12" class="text-center py-4">'+esc(e.message)+' <button type="button" class="btn btn-sm btn-outline-info ml-2" data-list-retry>'+esc(t('Retry'))+'</button></td></tr>';
     // Keep list failures beside the retry button; a successful retry clears them.
   } finally {
     if(seq===listSeq){listLoading=false;renderPagination();}
@@ -225,13 +263,20 @@ function destroyDesignPickers(root) {
 }
 function refreshDesignPickers() {
   if(!form)return;
-  el('pb-components').querySelectorAll('[data-field="design_id"]').forEach(select=>{
-    const row=select.closest('[data-component-row]'),value=select.value,name=select.selectedOptions[0]?.textContent;
-    destroyDesignPickers(select.parentElement);
-    select.parentElement.outerHTML=designPicker(row.dataset.componentRow,{design_id:value,design_name:name});
-  });
-  el('pb-components').querySelectorAll('[data-field="graphics_version_id"]').forEach(select=>{
-    select.parentElement.outerHTML=graphicsVersionPicker({graphics_version_id:select.value,graphics_version_name:select.selectedOptions[0]?.textContent});
+  el('pb-components').querySelectorAll('[data-field="design_id"],[data-field="graphics_version_id"]').forEach(select=>{
+    const isDesign=select.dataset.field==='design_id',value=select.value,name=select.selectedOptions[0]?.textContent;
+    const enhanced=isDesign&&$(select).hasClass('select2-hidden-accessible');
+    const open=enhanced&&$(select).next('.select2-container').hasClass('select2-container--open');
+    const search=open?$('.select2-container--open .select2-search__field').val():'';
+    if(open)$(select).select2('close');
+    const rows=isDesign?designs.filter(d=>d.component_type===select.closest('[data-component-row]').dataset.componentRow):graphicsVersions;
+    select.replaceChildren(new Option(t(isDesign?'Select a design…':'Select…'),''));
+    rows.forEach(row=>select.add(new Option(row.name,String(row.id))));
+    if(value&&!rows.some(row=>String(row.id)===value))select.add(new Option(name||t(isDesign?'Unavailable design #{id}':'Unavailable version #{id}',{id:value}),value));
+    select.value=value;select.disabled=!designsReady;
+    // Update Select2 only; never fire the component-name generator or mark the draft dirty.
+    if(enhanced)$(select).trigger('change.select2');
+    if(open){$(select).select2('open');$('.select2-container--open .select2-search__field').val(search).trigger('input');}
   });
   initDesignPickers();
 }
@@ -286,7 +331,12 @@ if(designForm){
   });
 }
 
-let boxes=[],boxLoadSeq=0,boxesReady=false;
+let boxes=[],boxLoadSeq=0,boxesReady=false,productWeightEdited=false;
+function prefillBoxWeight() {
+  if(product||productWeightEdited)return;
+  const box=boxes.find(row=>String(row.id)===el('pb-product-box').value),input=el('pb-product-weight');
+  input.value=box?.weight_kg??'';input.setCustomValidity('');delete input.dataset.pbValidity;
+}
 function renderBoxPicker(selected) {
   const select=el('pb-product-box');if(!select)return;
   selected=String(selected??select.value??'');
@@ -483,7 +533,7 @@ function resetProduct(ask=true) {
   if(ask&&dirty&&!confirm(t("Discard unsaved product changes?")))return;
   if(ask&&pageMode==='builder'){const url=new URL(window.location.href);url.searchParams.delete('edit');history.replaceState(null,'',url);}
   cancelSkuGeneration();
-  product=null;specific=null;cache={};bundle='';key=Array.from(crypto.getRandomValues(new Uint8Array(16)),b=>b.toString(16).padStart(2,'0')).join('');form.reset();renderBoxPicker('');
+  productWeightEdited=false;product=null;specific=null;cache={};bundle='';key=Array.from(crypto.getRandomValues(new Uint8Array(16)),b=>b.toString(16).padStart(2,'0')).join('');form.reset();renderBoxPicker('');
   el('pb-edit-label').textContent=t("New product");el('pb-cancel').hidden=true;
   el('pb-specific-label').textContent=t("Category Info · Select brand / model / years");uniBrand();renderComponents();categoryKind();dirty=false;
 }
@@ -525,7 +575,8 @@ if(form){
   form.addEventListener('input',()=>{dirty=true;});form.addEventListener('change',()=>{dirty=true;});
   el('pb-sku').addEventListener('input',()=>{cancelSkuGeneration();summary();});
   el('pb-generate-sku').addEventListener('click',generateSku);
-  el('pb-product-box').addEventListener('change',()=>{el('pb-product-box').title=el('pb-product-box').selectedOptions[0]?.textContent||'';});
+  el('pb-product-box').addEventListener('change',()=>{el('pb-product-box').title=el('pb-product-box').selectedOptions[0]?.textContent||'';prefillBoxWeight();});
+  el('pb-product-weight').addEventListener('input',()=>{productWeightEdited=true;});
   for(const eventName of ['input','change'])el('pb-components').addEventListener(eventName,event=>{
     const row=event.target.closest('[data-component-row="P"]');
     if(row&&event.target.dataset.field==='reference')lookupPlastic(row,{immediate:eventName==='change'});
@@ -602,6 +653,7 @@ if(uf){
   });
 }
 el('pb-products')?.addEventListener('click',async event=>{
+  const copy=event.target.closest('[data-pb-copy]');if(copy){event.preventDefault();await copyCodeButton(copy);return;}
   const toggle=event.target.closest('[data-product-expand]');
   if(toggle){
     const detail=el(toggle.getAttribute('aria-controls')),content=detail.querySelector('[data-component-detail]');
@@ -652,6 +704,41 @@ el('pb-saved-products')?.addEventListener('keydown',event=>{
 });
 el('pb-uni-search')?.addEventListener('input',renderUni);
 $('#pb-uni-modal').on('show.bs.modal',()=>loadCategories().catch(e=>msg('pb-uni-message',e.message)));
+// Returning from another tab refreshes the libraries, never the product or listing table.
+let librariesInitialized=false,libraryRefreshTask=null,libraryRefreshTimer=null,libraryRefreshPending=false,libraryRefreshManual=false;
+const refreshLibrariesButton=el('pb-refresh-libraries');
+async function refreshLibraries(manual) {
+  refreshLibrariesButton.disabled=true;refreshLibrariesButton.setAttribute('aria-busy','true');
+  const status=el('pb-library-status');
+  if(manual){status.textContent=t('Refreshing libraries…');status.className='small pb-muted mb-2';status.hidden=false;}
+  const task=Promise.allSettled([loadCategories(),loadDesigns(),loadBoxes()]);libraryRefreshTask=task;
+  const results=await task;
+  const failed=results.some(result=>result.status==='rejected');
+  if(failed){status.textContent=t('Some libraries could not be refreshed. Your draft is preserved. Try Refresh libraries again.');status.className='small text-warning mb-2';status.hidden=false;}
+  else if(manual){status.textContent=t('Libraries refreshed. Your draft is preserved.');status.className='small text-info mb-2';status.hidden=false;}
+  else{status.textContent='';status.hidden=true;}
+  libraryRefreshTask=null;refreshLibrariesButton.disabled=false;refreshLibrariesButton.setAttribute('aria-busy','false');
+}
+function runLibraryRefresh() {
+  if(!libraryRefreshPending||document.visibilityState==='hidden')return;
+  // Do not interfere with initial loading or an active product/library save.
+  if(!librariesInitialized||libraryRefreshTask||form.inert||document.querySelector('.pb-modal form[inert]')){
+    libraryRefreshTimer=setTimeout(runLibraryRefresh,250);return;
+  }
+  const manual=libraryRefreshManual;libraryRefreshPending=false;libraryRefreshManual=false;
+  refreshLibraries(manual);
+}
+function queueLibraryRefresh(manual=false) {
+  if(!form||!refreshLibrariesButton)return;
+  libraryRefreshPending=true;libraryRefreshManual=libraryRefreshManual||manual;
+  clearTimeout(libraryRefreshTimer);libraryRefreshTimer=setTimeout(runLibraryRefresh,manual?0:200);
+}
+if(form&&refreshLibrariesButton){
+  refreshLibrariesButton.addEventListener('click',()=>queueLibraryRefresh(true));
+  window.addEventListener('focus',()=>queueLibraryRefresh());
+  document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')queueLibraryRefresh();});
+  window.addEventListener('pageshow',event=>{if(event.persisted)queueLibraryRefresh();});
+}
 const initialLoads=[];
 if(el('pb-uni-modal'))initialLoads.push(loadCategories());
 if(el('pb-design-modal'))initialLoads.push(loadDesigns());
@@ -663,6 +750,6 @@ Promise.all(initialLoads).then(async()=>{
   if(!form||openProductId<=0)return;
   const row=(await api('product',undefined,{id:openProductId})).product;
   editProduct(row);el('pb-editor-title').scrollIntoView({behavior:'smooth',block:'start'});
-}).catch(e=>msg('pb-message',e.message)).finally(()=>{if(form){form.inert=false;el('pb-new').disabled=false;}});
+}).catch(e=>msg('pb-message',e.message)).finally(()=>{librariesInitialized=true;if(form){form.inert=false;el('pb-new').disabled=false;if(refreshLibrariesButton)refreshLibrariesButton.disabled=false;}});
 });
 })();

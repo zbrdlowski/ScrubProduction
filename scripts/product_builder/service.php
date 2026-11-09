@@ -167,6 +167,18 @@ function pb_product_overview(PDO $pdo, string $query = '', $page = 1, $perPage =
     if ($page === false || !in_array($perPage, [25,50,100], true)) throw new InvalidArgumentException('Select a valid page and page size.');
     $query = pb_text($query, 'Search', 150, false);
     $like = '%' . $query . '%';
+    $params = [$like,$like,$like];
+    // Match the Category text shown in the table, including current UNI names.
+    // Spaces and the middle-dot separators are interchangeable; terms may span fields.
+    $categoryText = "REPLACE(REPLACE(REPLACE(CONCAT_WS(' ',COALESCE(NULLIF(u.brand,''),p.brand),COALESCE(NULLIF(u.category_name,''),p.model),NULLIF(p.year_range,'')),'–','-'),'—','-'),'‑','-')";
+    $terms = preg_split('/[\s·]+/u', str_replace(['–','—','‑'], '-', $query), -1, PREG_SPLIT_NO_EMPTY);
+    $categoryParts = [];
+    foreach (array_unique($terms) as $term) {
+        $categoryParts[] = $categoryText . " LIKE ? ESCAPE '!'";
+        $params[] = '%' . str_replace(['!','%','_'], ['!!','!%','!_'], $term) . '%';
+    }
+    $where = '(p.name LIKE ? OR p.sku LIKE ? OR p.modelcode LIKE ?' . ($categoryParts ? ' OR (' . implode(' AND ', $categoryParts) . ')' : '') . ')';
+    $from = ' FROM product_builder_products p LEFT JOIN product_builder_uni_categories u ON u.id=p.uni_category_id';
     // Global statistics remain independent of the search and the current page.
     $counts = $pdo->query("SELECT COUNT(*) AS total_count,
         COALESCE(SUM(category_kind='specific'),0) AS specific_count,
@@ -174,8 +186,8 @@ function pb_product_overview(PDO $pdo, string $query = '', $page = 1, $perPage =
         FROM product_builder_products")->fetch(PDO::FETCH_ASSOC);
     $total = (int) $counts['total_count'];
     if ($query !== '') {
-        $count = $pdo->prepare('SELECT COUNT(*) FROM product_builder_products WHERE name LIKE ? OR sku LIKE ? OR modelcode LIKE ?');
-        $count->execute([$like,$like,$like]);
+        $count = $pdo->prepare('SELECT COUNT(*)' . $from . ' WHERE ' . $where);
+        $count->execute($params);
         $total = (int) $count->fetchColumn();
     }
     $pages = max(1, (int) ceil($total / $perPage));
@@ -183,14 +195,11 @@ function pb_product_overview(PDO $pdo, string $query = '', $page = 1, $perPage =
     $offset = ($page - 1) * $perPage;
     $stmt = $pdo->prepare('SELECT p.*,u.brand AS uni_brand,u.category_name AS uni_name,b.name AS box_name,b.length_cm AS box_length_cm,b.width_cm AS box_width_cm,b.height_cm AS box_height_cm,b.weight_kg AS box_weight_kg,
         (SELECT COUNT(*) FROM product_builder_components c WHERE c.product_id=p.id) AS component_count
-        FROM product_builder_products p
-        LEFT JOIN product_builder_uni_categories u ON u.id=p.uni_category_id
-        LEFT JOIN product_builder_boxes b ON b.id=p.box_id
-        WHERE p.name LIKE ? OR p.sku LIKE ? OR p.modelcode LIKE ?
-        ORDER BY p.created_at DESC,p.id DESC LIMIT ? OFFSET ?');
-    foreach ([1,2,3] as $position) $stmt->bindValue($position, $like, PDO::PARAM_STR);
-    $stmt->bindValue(4, $perPage, PDO::PARAM_INT);
-    $stmt->bindValue(5, $offset, PDO::PARAM_INT);
+        ' . $from . ' LEFT JOIN product_builder_boxes b ON b.id=p.box_id
+        WHERE ' . $where . ' ORDER BY p.created_at DESC,p.id DESC LIMIT ? OFFSET ?');
+    foreach ($params as $index=>$value) $stmt->bindValue($index + 1, $value, PDO::PARAM_STR);
+    $stmt->bindValue(count($params) + 1, $perPage, PDO::PARAM_INT);
+    $stmt->bindValue(count($params) + 2, $offset, PDO::PARAM_INT);
     $stmt->execute();
     $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
     return ['rows' => $rows, 'pagination' => [

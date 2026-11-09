@@ -470,5 +470,17 @@
   "of {pages}": "z {pages}",
   "Showing {from}–{to} of {total} listings.": "Zobrazené {from}–{to} z {total} listingov.",
   "Retry": "Skúsiť znova",
-  "Select a valid page and page size.": "Zvoľte platnú stránku a počet riadkov na stránku."
+  "Select a valid page and page size.": "Zvoľte platnú stránku a počet riadkov na stránku.",
+  "Unavailable category #{id}": "Nedostupná kategória č. {id}",
+  "Refresh libraries": "Obnoviť číselníky",
+  "Refresh categories, designs, versions and boxes without reloading the page.": "Obnoviť kategórie, dizajny, verzie a krabice bez opätovného načítania stránky.",
+  "Refreshing libraries…": "Obnovujem číselníky…",
+  "Libraries refreshed. Your draft is preserved.": "Číselníky sú obnovené. Rozpracované údaje zostali zachované.",
+  "Some libraries could not be refreshed. Your draft is preserved. Try Refresh libraries again.": "Niektoré číselníky sa nepodarilo obnoviť. Rozpracované údaje zostali zachované. Kliknite znova na Obnoviť číselníky.",
+  "Copy SKU": "Kopírovať SKU",
+  "Copy modelcode": "Kopírovať modelcode",
+  "Copied!": "Skopírované!",
+  "Copy failed. Select and copy the code manually.": "Kopírovanie sa nepodarilo. Označte a skopírujte kód ručne.",
+  "Weight": "Hmotnosť",
+  "Name, SKU, modelcode or category…": "Názov, SKU, modelcode alebo kategória…"
 }

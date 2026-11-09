@@ -21,7 +21,7 @@ if (empty($_SESSION['product_builder_csrf'])) $_SESSION['product_builder_csrf'] 
 if (!function_exists('pb_h')) { function pb_h($value): string { return htmlspecialchars((string) $value, ENT_QUOTES, 'UTF-8'); } }
 ?>
 <link rel="stylesheet" href="plugins/select2/css/select2.min.css">
-<link rel="stylesheet" href="assets/product_builder.css?v=19">
+<link rel="stylesheet" href="assets/product_builder.css?v=20">
 <div class="container-fluid pb-page" id="product-builder" lang="<?= pb_language() ?>">
   <div class="pb-language-bar"><div class="btn-group btn-group-sm" role="group" aria-label="<?= pb_h(pb_t('Language')) ?>">
     <?php foreach (['sk'=>'SK','en'=>'EN'] as $language=>$languageLabel): $query=['page'=>'product_'.$pbPageMode,'pb_lang'=>$language]; if($pbEditProductId>0)$query['edit']=$pbEditProductId; ?>
@@ -33,7 +33,7 @@ if (!function_exists('pb_h')) { function pb_h($value): string { return htmlspeci
     <?php if ($pbShowBuilder): ?><div class="pb-actions"><button class="btn btn-outline-info" data-toggle="modal" data-target="#pb-uni-modal" <?= !$pbReady ? 'disabled' : '' ?>><i class="fas fa-layer-group mr-1"></i> <?= pb_h(pb_t('UNI categories')) ?></button>
     <?php foreach (['G'=>'Graphics','V'=>'Graphics versions','S'=>'Seat Covers'] as $designType=>$designTitle): ?><button type="button" class="btn btn-outline-info" data-design-manager="<?= $designType ?>" <?= !$pbReady ? 'disabled' : '' ?>><i class="fas fa-palette mr-1" aria-hidden="true"></i> <?= pb_h(pb_t($designTitle)) ?></button><?php endforeach; ?>
     <button type="button" class="btn btn-outline-info" data-toggle="modal" data-target="#pb-box-modal" <?= !$pbReady ? 'disabled' : '' ?>><i class="fas fa-box mr-1" aria-hidden="true"></i> <?= pb_h(pb_t('Boxes')) ?></button>
-    <?php if ($pbCanEdit): ?><button type="button" class="btn btn-success" id="pb-new" <?= !$pbReady ? 'disabled' : '' ?>><i class="fas fa-plus mr-1"></i> <?= pb_h(pb_t('New product')) ?></button><?php endif; ?></div><?php endif; ?>
+    <?php if ($pbCanEdit): ?><button type="button" class="btn btn-outline-info" id="pb-refresh-libraries" disabled title="<?= pb_h(pb_t('Refresh categories, designs, versions and boxes without reloading the page.')) ?>"><i class="fas fa-sync-alt mr-1" aria-hidden="true"></i> <?= pb_h(pb_t('Refresh libraries')) ?></button><button type="button" class="btn btn-success" id="pb-new" <?= !$pbReady ? 'disabled' : '' ?>><i class="fas fa-plus mr-1"></i> <?= pb_h(pb_t('New product')) ?></button><?php endif; ?></div><?php endif; ?>
   </header>
   <?php if (!$pbReady): ?><div class="alert alert-warning"><?= pb_h(pb_t('The product database needs to be installed or updated. Ask an administrator to import the product builder SQL installation or update.')) ?></div><?php return; endif; ?>
   <?php if ($pbShowBuilder): ?><div class="pb-stats" aria-label="<?= pb_h(pb_t('Product statistics')) ?>">
@@ -42,6 +42,7 @@ if (!function_exists('pb_h')) { function pb_h($value): string { return htmlspeci
     <?php endforeach; ?>
   </div>
   <?php endif; ?>
+  <?php if ($pbShowBuilder && $pbCanEdit): ?><div id="pb-library-status" class="small pb-muted mb-2" role="status" hidden></div><?php endif; ?>
   <div id="pb-message" class="alert" role="status" hidden></div>
   <?php if ($pbShowBuilder && $pbCanEdit): ?>
   <form id="pb-product-form">
@@ -136,9 +137,10 @@ if (!function_exists('pb_h')) { function pb_h($value): string { return htmlspeci
       </nav>
     </div>
   <?php }; ?>
-  <section class="card pb-panel pb-list-panel" id="pb-saved-products" aria-labelledby="pb-list-title"><div class="card-header pb-list-header"><h2 class="card-title" id="pb-list-title"><i class="fas fa-table mr-2" aria-hidden="true"></i><?= pb_h(pb_t('Saved products')) ?></h2><input type="search" id="pb-search" class="form-control form-control-sm" maxlength="150" aria-label="<?= pb_h(pb_t('Search products')) ?>" placeholder="<?= pb_h(pb_t('Name, SKU or modelcode…')) ?>"></div>
+  <section class="card pb-panel pb-list-panel" id="pb-saved-products" aria-labelledby="pb-list-title"><div class="card-header pb-list-header"><h2 class="card-title" id="pb-list-title"><i class="fas fa-table mr-2" aria-hidden="true"></i><?= pb_h(pb_t('Saved products')) ?></h2><input type="search" id="pb-search" class="form-control form-control-sm" maxlength="150" aria-label="<?= pb_h(pb_t('Search products')) ?>" placeholder="<?= pb_h(pb_t('Name, SKU, modelcode or category…')) ?>"></div>
+    <span id="pb-copy-status" class="sr-only" role="status" aria-live="polite"></span>
     <?php $pbRenderPagination('top'); ?>
-    <div class="table-responsive"><table class="table table-bordered table-hover table-sm mb-0 pb-table pb-products-table"><thead><tr><th class="pb-created-column" title="<?= pb_h(pb_t('Listing creation date')) ?>"><?= pb_h(pb_t('Created')) ?></th><th><?= pb_h(pb_t('Product / SKU')) ?></th><th><?= pb_h(pb_t('Bundle')) ?></th><th><?= pb_h(pb_t('Category')) ?></th><th>Modelcode</th><?php foreach (pb_price_fields() as $priceLabel): ?><th class="pb-price-column"><?= pb_h(pb_t($priceLabel)) ?></th><?php endforeach; ?><th><?= pb_h(pb_t('Box')) ?></th><th class="pb-price-column" title="<?= pb_h(pb_t('Total packed weight, including the box')) ?>"><?= pb_h(pb_t('Weight (kg)')) ?></th><th><?= pb_h(pb_t('Components')) ?></th><th><?= pb_h(pb_t('Actions')) ?></th></tr></thead><tbody id="pb-products"><tr><td colspan="13" class="pb-muted"><?= pb_h(pb_t('Loading products…')) ?></td></tr></tbody></table></div>
+    <div class="table-responsive"><table class="table table-bordered table-hover table-sm mb-0 pb-table pb-products-table"><thead><tr><th class="pb-created-column" title="<?= pb_h(pb_t('Listing creation date')) ?>"><?= pb_h(pb_t('Created')) ?></th><th><?= pb_h(pb_t('Product / SKU')) ?></th><th><?= pb_h(pb_t('Bundle')) ?></th><th><?= pb_h(pb_t('Category')) ?></th><th>Modelcode</th><?php foreach (pb_price_fields() as $priceLabel): ?><th class="pb-price-column"><?= pb_h(pb_t($priceLabel)) ?></th><?php endforeach; ?><th><?= pb_h(pb_t('Box')) ?></th><th><?= pb_h(pb_t('Components')) ?></th><th><?= pb_h(pb_t('Actions')) ?></th></tr></thead><tbody id="pb-products"><tr><td colspan="12" class="pb-muted"><?= pb_h(pb_t('Loading products…')) ?></td></tr></tbody></table></div>
     <?php $pbRenderPagination('bottom'); ?>
   </section>
   <?php endif; ?>
@@ -209,4 +211,4 @@ if (!function_exists('pb_h')) { function pb_h($value): string { return htmlspeci
 <?php endif; ?>
 <script>window.productBuilderConfig = <?= json_encode(['language'=>pb_language(),'languageCookie'=>pb_language_cookie(),'translations'=>pb_language()==='sk'?pb_i18n_dictionary():new stdClass(),'pageMode'=>$pbPageMode,'editProductId'=>$pbEditProductId,'csrf'=>$_SESSION['product_builder_csrf'],'canEdit'=>$pbCanEdit,'types'=>pb_component_types(),'bundleComponents'=>array_combine(pb_bundle_types(),array_map('pb_bundle_component_types',pb_bundle_types())),'priceFields'=>pb_price_fields(),'specFields'=>pb_component_spec_fields($conn),'requestKey'=>bin2hex(random_bytes(16))], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;</script>
 <script defer src="plugins/select2/js/select2.full.min.js"></script>
-<script src="scripts/product_builder/app.js?v=19"></script>
+<script src="scripts/product_builder/app.js?v=21"></script>

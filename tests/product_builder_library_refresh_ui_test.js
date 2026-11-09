@@ -1,0 +1,59 @@
+const {chromium}=require('playwright'),assert=require('assert/strict');
+(async()=>{const browser=await chromium.launch({channel:'chrome',headless:true});try{
+ const context=await browser.newContext({viewport:{width:1650,height:1050}}),errors=[],requests=[];let nextId=100,listing=null,failDesigns=false,holdCategories=false,releaseCategories=null;
+ let designs=[{id:21,component_type:'G',name:'Anomally',version:1,usage_count:0},{id:22,component_type:'S',name:'Factory',version:1,usage_count:0}];
+ let versions=[{id:31,name:'R1',sort_order:1,version:1,usage_count:0},{id:32,name:'R2',sort_order:2,version:1,usage_count:0}];
+ let categories=[{id:11,brand:'KTM',category_name:'Default',modelcode:'AB23',included_models:'All KTM',version:1,usage_count:0},{id:12,brand:'KTM',category_name:'Small',modelcode:'AB24',included_models:'Small KTM',version:1,usage_count:0}];
+ let boxes=[{id:41,name:'Box A',length_cm:60,width_cm:40,height_cm:20,weight_kg:'0.5',version:1,usage_count:0}];
+ await context.route('**/scripts/product_builder/api.php?*',async route=>{
+  const req=route.request(),action=new URL(req.url()).searchParams.get('action'),data=req.method()==='POST'?JSON.parse(req.postData()):{};requests.push({action,method:req.method(),page:req.frame().page()});let body={ok:true},status=200;
+  if(action==='categories'){body.rows=structuredClone(categories);if(holdCategories){holdCategories=false;await new Promise(resolve=>releaseCategories=resolve);}}
+  else if(action==='designs'){if(failDesigns){status=503;body={ok:false,error:'Temporary design failure'};}else Object.assign(body,{rows:designs,versions});}
+  else if(action==='boxes')body.rows=boxes;
+  else if(action==='products')Object.assign(body,{rows:listing?[listing]:[],stats:{total:listing?1:0,specific:0,universal:listing?1:0}});
+  else if(action==='save_design'){const id=nextId++;designs.push({...data,id,version:1,usage_count:0});body.id=id;}
+  else if(action==='save_product'){listing={...data,id:801,sku:data.sku,version:Number(data.version||0)+1,component_count:data.components.length,created_at:'2026-11-09 12:00:00'};body.product={id:801,sku:listing.sku};}
+  else if(action==='product')body.product=listing;
+  else throw Error('Unexpected action '+action);
+  await route.fulfill({status,json:body});
+ });
+ const builder=await context.newPage();builder.on('pageerror',e=>errors.push(e.message));let dialogs=0;builder.on('dialog',d=>{dialogs++;d.dismiss();});
+ const base='http://localhost/darkscrub/.cache/product-builder/';await builder.goto(base+'i18n-builder-sk.html');await builder.waitForFunction(()=>!document.querySelector('#pb-refresh-libraries').disabled);
+ await builder.selectOption('#pb-bundle','GFPS');await builder.fill('#pb-name','Keep listing draft');await builder.fill('#pb-sku','MY-EXISTING-SKU');await builder.fill('#pb-recommended-price','199.90');await builder.fill('#pb-ebay-price','209.90');await builder.selectOption('#pb-ebay-currency','USD');await builder.selectOption('#pb-product-box','41');await builder.fill('#pb-product-weight','7.500');await builder.fill('#pb-notes','Keep product note');
+ await builder.locator('[name="category_kind"][value="universal"]').check();await builder.selectOption('#pb-uni-brand','KTM');await builder.selectOption('#pb-uni-category','11');
+ const g=builder.locator('[data-component-row="G"]'),seat=builder.locator('[data-component-row="S"]');
+ await g.locator('[data-field="design_id"]').selectOption('21');await g.locator('[data-field="graphics_version_id"]').selectOption('31');await g.locator('[data-field="label"]').fill('Anomally R1 - custom suffix');await g.locator('[data-field="reference"]').fill('MY-G-REF');await g.locator('[data-field="quantity"]').fill('2');await g.locator('[data-spec="graphics_finish"]').selectOption('Matte');
+ await seat.locator('[data-field="design_id"]').selectOption('22');await seat.locator('[data-field="label"]').fill('Custom seat label');await seat.locator('[data-spec="seat_waterproof_seams"]').selectOption('✓');await builder.locator('[data-component-row="P"] [data-field="label"]').fill('Plastics label');await builder.locator('[data-component-row="P"] [data-field="color"]').fill('ORANGE');
+ const snapshot=()=>builder.locator('#pb-product-form').evaluate(form=>Array.from(form.querySelectorAll('input,select,textarea')).map(e=>({id:e.id,field:e.dataset.field,spec:e.dataset.spec,type:e.type,value:e.value,checked:e.checked})));
+ const original=await snapshot(),initialProducts=requests.filter(r=>r.page===builder&&r.action==='products').length;
+ await g.locator('.select2-selection').click();await builder.locator('.select2-container--open .select2-search__field').fill('Anom');
+ const controls=await context.newPage();controls.on('pageerror',e=>errors.push(e.message));await controls.goto(base+'i18n-controls-en.html');await controls.bringToFront();
+ await controls.locator('[data-design-manager="G"]').click();await controls.fill('#pb-design-name','Anomally Fresh');await controls.locator('#pb-design-save').click();await controls.waitForFunction(()=>document.querySelector('#pb-design-message').textContent==='Design saved.'&&!document.querySelector('#pb-design-form').inert);
+ const freshId=String(designs.find(d=>d.name==='Anomally Fresh').id);await builder.bringToFront();
+ // Headless Playwright keeps every tab focused; dispatch the native return event explicitly.
+ await builder.evaluate(()=>window.dispatchEvent(new Event('focus')));
+ await builder.waitForFunction(id=>!!document.querySelector('[data-component-row="G"] [data-field="design_id"] option[value="'+id+'"]'),freshId);
+
+ assert.deepEqual(await snapshot(),original,'Returning after adding a design preserves every draft field.');
+ assert.equal(await builder.locator('.select2-container--open .select2-search__field').inputValue(),'Anom');await builder.getByRole('option',{name:'Anomally Fresh',exact:true}).click();assert.equal(await g.locator('[data-field="label"]').inputValue(),'Anomally Fresh R1 - custom suffix');
+ assert.equal(requests.filter(r=>r.page===builder&&r.action==='products').length,initialProducts,'Library refresh does not reload products.');assert.equal(requests.filter(r=>r.page===builder&&r.method==='POST').length,0);
+ const preserved=await snapshot();designs.push({id:201,component_type:'S',name:'New seat design',version:1});versions.push({id:33,name:'R3',sort_order:3,version:1});categories.push({id:13,brand:'Honda',category_name:'New category',modelcode:'AB25',version:1});boxes.push({...boxes[0],id:42,name:'New box'});
+ const refresh=async()=>{await builder.locator('#pb-refresh-libraries').click();await builder.waitForFunction(()=>document.querySelector('#pb-library-status').textContent.includes('Číselníky sú obnovené')&&document.querySelector('#pb-refresh-libraries').getAttribute('aria-busy')==='false');};
+ await refresh();assert.deepEqual(await snapshot(),preserved);assert.equal(await seat.locator('[data-field="design_id"] option[value="201"]').count(),1);assert.equal(await g.locator('[data-field="graphics_version_id"] option[value="33"]').count(),1);assert.equal(await builder.locator('#pb-uni-brand option[value="Honda"]').count(),1);assert.equal(await builder.locator('#pb-product-box option[value="42"]').count(),1);
+ // Selections made while the refresh is in flight win over the previous selection.
+ holdCategories=true;await builder.locator('#pb-refresh-libraries').click();for(let i=0;!releaseCategories&&i<200;i++)await new Promise(r=>setTimeout(r,10));assert.ok(releaseCategories);
+ await builder.selectOption('#pb-uni-category','12');await g.locator('[data-field="graphics_version_id"]').selectOption('32');await builder.fill('#pb-name','Changed during refresh');const during=await snapshot();releaseCategories();releaseCategories=null;await builder.waitForFunction(()=>document.querySelector('#pb-refresh-libraries').getAttribute('aria-busy')==='false');assert.deepEqual(await snapshot(),during);
+ // Selected removed entries remain selected; refreshing never picks another value.
+ const removedDesign=designs.find(d=>String(d.id)===freshId);designs=designs.filter(d=>String(d.id)!==freshId);const removedBox=boxes.shift();await refresh();assert.deepEqual(await snapshot(),during);designs.push(removedDesign);boxes.unshift(removedBox);
+ const missingCategory=categories.find(c=>c.id===12);categories=categories.filter(c=>c.id!==12);await refresh();assert.deepEqual(await snapshot(),during);assert.equal(await builder.locator('#pb-save').isDisabled(),true);assert.match(await builder.locator('#pb-uni-category option:checked').textContent(),/Nedostupná/);categories.push(missingCategory);await refresh();assert.deepEqual(await snapshot(),during);
+ failDesigns=true;await builder.locator('#pb-refresh-libraries').click();await builder.waitForFunction(()=>document.querySelector('#pb-library-status').classList.contains('text-warning'));assert.deepEqual(await snapshot(),during);failDesigns=false;await refresh();assert.equal(await builder.locator('#pb-library-status').evaluate(e=>e.classList.contains('text-warning')),false);
+ // A background update must not clear an unsaved library editor either.
+ await builder.locator('[data-design-manager="G"]').click();await builder.fill('#pb-design-name','Unsaved library design');const refreshedCategories=builder.waitForResponse(r=>r.url().includes('action=categories'));await builder.evaluate(()=>document.dispatchEvent(new Event('visibilitychange')));await refreshedCategories;await builder.waitForFunction(()=>document.querySelector('#pb-refresh-libraries').getAttribute('aria-busy')==='false');assert.equal(await builder.locator('#pb-design-name').inputValue(),'Unsaved library design');await builder.locator('#pb-design-modal .close').click();await builder.waitForFunction(()=>!document.querySelector('.modal-backdrop'));
+ await builder.locator('#pb-new').click();assert.equal(dialogs,1,'Refresh preserves the dirty-draft warning.');assert.deepEqual(await snapshot(),during);
+ await builder.locator('#pb-save').click();await builder.waitForFunction(()=>document.querySelector('#pb-message').classList.contains('alert-success')&&!document.querySelector('#pb-product-form').inert);assert.equal(listing.components.find(c=>c.component_type==='G').design_id,freshId);assert.equal(listing.components.find(c=>c.component_type==='G').label,'Anomally Fresh R2 - custom suffix');assert.equal(listing.sku,'MY-EXISTING-SKU');assert.equal(listing.uni_category_id,'12');assert.equal(listing.ebay_currency,'USD');
+ const saved=await snapshot();await refresh();assert.deepEqual(await snapshot(),saved);const before=dialogs;await builder.locator('#pb-new').click();assert.equal(dialogs,before,'Refreshing a clean saved listing must not make it dirty.');
+ await builder.locator('.pb-header').screenshot({path:'.cache/product-builder/library-refresh-header.png'});await builder.setViewportSize({width:390,height:900});assert.equal(await builder.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
+ await builder.goto(base+'i18n-builder-en.html');await builder.waitForFunction(()=>!document.querySelector('#pb-refresh-libraries').disabled);assert.equal((await builder.locator('#pb-refresh-libraries').innerText()).trim(),'Refresh libraries');
+ const reader=await context.newPage();reader.on('pageerror',e=>errors.push(e.message));await reader.goto(base+'listings-reader.html');await reader.locator('[data-product="801"]').waitFor();assert.equal(await reader.locator('#pb-refresh-libraries').count(),0);assert.deepEqual([...new Set(requests.filter(r=>r.page===reader).map(r=>r.action))],['products']);
+ assert.deepEqual(errors,[]);console.log('Library refresh: second-tab design creation and return event, preserved full draft/search/selections, all libraries, slow response, removal, failure/retry, dirty flags, saved payload, SK/EN, reader access and mobile OK.');
+}finally{await browser.close();}})().catch(e=>{console.error(e);process.exitCode=1;});

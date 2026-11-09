@@ -137,7 +137,7 @@
 .pb-price-inputs { display:grid; grid-template-columns:minmax(0,1fr) 78px; gap:5px; }
 .pb-price-inputs input { text-align:right; font-variant-numeric:tabular-nums; min-width:0; }
 .pb-price-inputs select { padding-left:.35rem; }
-.pb-table .pb-price-column { text-align:right; white-space:nowrap; font-variant-numeric:tabular-nums; }
+.pb-table .pb-price-column { text-align:center; white-space:nowrap; font-variant-numeric:tabular-nums; }
 .pb-price-overview { font-size:.85rem; }.pb-price-overview dt { color:#b9c3cd; }.pb-price-overview dd { font-variant-numeric:tabular-nums; }
 @media(max-width:1000px) { .pb-pricing-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } }
 @media(max-width:479px) { .pb-pricing-grid { grid-template-columns:minmax(0,1fr); gap:10px; } }
@@ -210,7 +210,7 @@
 }
 
 /* Creation-day groups mirror the import-day separators in Orders. */
-.pb-products-table .pb-created-column { text-align:center; white-space:nowrap; min-width:82px; font-variant-numeric:tabular-nums; }
+.pb-products-table .pb-created-column { text-align:center; white-space:nowrap; width:1%; min-width:0; font-variant-numeric:tabular-nums; }
 .pb-products-table>tbody>.pb-day-separator-row>td { padding:7px 0 6px; border-top:0; border-bottom:0; background:#171b20; }
 .pb-day-separator { display:flex; align-items:center; gap:10px; color:#9ed6ff; font-size:11px; font-weight:700; letter-spacing:.05em; text-transform:uppercase; white-space:nowrap; }
 .pb-day-separator::before,.pb-day-separator::after { content:""; flex:1 1 auto; height:1px; background:linear-gradient(90deg,rgba(63,158,255,.12),rgba(63,158,255,.72)); }
@@ -248,3 +248,17 @@
 .pb-list-pagination .pb-page-number input{width:66px;text-align:center}
 .pb-page-navigation .btn{min-width:28px}
 @media(max-width:767px){.pb-list-pagination{gap:10px;padding:10px}.pb-list-range{flex-basis:100%}.pb-page-navigation{flex-wrap:wrap}.pb-list-pagination .pb-page-number input{width:58px}}
+
+/* Compact date and copy actions in the shared saved-products table. */
+.pb-products-table>thead>tr>th.pb-created-column,.pb-products-table>tbody>.pb-product-row>td.pb-created-column{padding-left:.35rem;padding-right:.35rem}
+.pb-code-copy{display:inline-flex;align-items:center;gap:5px;max-width:100%;vertical-align:middle}
+.pb-code-copy code{min-width:0;overflow-wrap:anywhere}
+.pb-products-table .pb-product-identity .pb-code-copy code{margin-top:0}
+.pb-product-identity .pb-code-copy{margin-top:3px}
+.pb-products-table .pb-product-row .pb-copy-code{flex:none;padding:3px 5px;font-size:.75rem;line-height:1.2;color:#86d9e5;border:1px solid transparent;background:transparent}
+.pb-products-table .pb-product-row .pb-copy-code:hover,.pb-copy-code:focus-visible{border-color:#86d9e5;background:#ffffff0d}
+.pb-products-table .pb-product-row .pb-copy-code.pb-copy-success{color:#77e0aa;animation:pb-copy-pulse .22s ease-out}
+.pb-products-table .pb-product-row .pb-copy-code.pb-copy-failed{color:#ffc107}
+.pb-box-weight{margin-top:3px;font-variant-numeric:tabular-nums;white-space:nowrap}
+@keyframes pb-copy-pulse{50%{transform:scale(1.18)}}
+@media(prefers-reduced-motion:reduce){.pb-products-table .pb-product-row .pb-copy-code.pb-copy-success{animation:none}}

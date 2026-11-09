@@ -44,7 +44,7 @@ const {chromium}=require('playwright'),fs=require('fs'),assert=require('assert/s
  assert.equal(await second.locator('[data-field="label"]').inputValue(),'Anomally R10');
  await page.selectOption('#pb-bundle','S');await page.selectOption('#pb-bundle','GS');assert.equal(await first.locator('[data-field="label"]').inputValue(),'Anomally R1 - team');assert.equal(await second.locator('[data-field="graphics_version_id"]').inputValue(),String(r10.id));
  await page.locator('[data-design-manager="V"]').click();await page.waitForFunction(()=>document.getElementById('pb-design-count').textContent==='12 of 12 versions');
- assert.equal(await page.locator('#pb-design-title').textContent(),'Graphics versions');assert.equal(await page.locator('#pb-version-order').isVisible(),true);
+ await page.locator('#pb-version-order').waitFor({state:'visible'});assert.equal(await page.locator('#pb-design-title').textContent(),'Graphics versions');assert.equal(await page.locator('#pb-version-order').isVisible(),true);
  await page.locator('#pb-design-name').fill('ST');await page.locator('#pb-design-save').click();await page.waitForFunction(()=>document.getElementById('pb-design-message').textContent.includes('already exists'));
  await page.locator('#pb-design-name').fill('R11');await page.locator('#pb-version-order').fill('13');await page.locator('#pb-design-save').click();await page.waitForFunction(()=>document.getElementById('pb-design-message').textContent==='Version saved.');
  assert.equal(await first.locator('[data-field="graphics_version_id"] option').count(),14);assert.equal(await first.locator('[data-field="label"]').inputValue(),'Anomally R1 - team');

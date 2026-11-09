@@ -1,8 +1,42 @@
+## Vyhľadávanie podľa stĺpca Category
+
+Vyhľadávanie v Builderi aj Listings zahŕňa okrem názvu, SKU a modelcode aj značku, model alebo UNI kategóriu a roky zobrazené v stĺpci Category. Nájde napríklad KTM, SX 50, KTM 2016-2023, celý text KTM · SX 50 · 2016-2023, Kawasaki · Default alebo Husaberg · TE · 2013-2014. Bodky · aj viacnásobné medzery slúžia ako oddeľovače; pomlčky v rokoch sa normalizujú. Všetky zadané časti kategórie musia sedieť na rovnaký listing.
+
+UNI kategórie používajú aktuálny názov a značku z číselníka, rovnako ako výpis; po premenovaní sa hľadá podľa nového zobrazeného textu. Rovnaká SQL podmienka sa aplikuje na výber riadkov aj počet výsledkov, takže vyhľadávanie funguje cez celú databázu a správne stránkuje. Pôvodné vyhľadávanie názvu, SKU a modelcode zostáva dostupné. Placeholder je preložený do SK/EN.
+
+Nasadenie na aktuálnu inštaláciu: nahrajte obsah **.cache/product-builder/product-builder-category-search.zip** so zachovaním adresárov. Obsahuje päť súborov: assets/product_builder.css, scripts/product_builder/{service.php,page.php,app.js} a scripts/product_builder/locales/sk.json; zahŕňa aj posledné úpravy stĺpcov a obnovovania číselníkov. **SQL import nie je potrebný.** Po uložení rozpracovaného formulára obnovte stránku. Kompletný product-builder-upload.zip je aktualizovaný.
+
+Overenie: php tests/product_builder_category_search_test.php (dočasné tabuľky, všetky uvedené príklady, čiastkové aj skopírované kategórie, rôzne pomlčky, premenovanie UNI, presné počty a dve stránky výsledkov). Prešli aj existujúce databázové testy stránkovania 2 507 listingov, dátumového poradia a renderovania SK/EN.
+
+## Kompaktné stĺpce, kopírovanie kódov a predvyplnená hmotnosť
+
+Saved products v Builderi aj Listings má úzky stĺpec Created podľa šírky dátumu. Recommended price, Web, eBay a Amazon sú vycentrované vrátane hlavičiek. Samostatný stĺpec Weight (kg) je odstránený; uložená celková hmotnosť produktu sa zobrazuje pod názvom a rozmermi v stĺpci Box. Tabuľka, denné oddeľovače a rozbalené detaily používajú 12 stĺpcov.
+
+Pri SKU aj Modelcode je rovnaká ikonka kopírovania. Skopíruje iba presný kód, zobrazí zelenú fajku, krátku animáciu a prístupné hlásenie. Na zariadeniach/prehliadačoch podporujúcich navigator.vibrate po úspešnom kopírovaní požiada o 25 ms vibráciu. Preferencia obmedzených animácií vypína animáciu. Clipboard API má fallback pre HTTP alebo odmietnuté oprávnenie; chyba nezobrazí falošné potvrdenie úspechu. Kopírovanie funguje aj používateľom s prístupom iba na čítanie.
+
+Pri NOVOM produkte výber krabice predvyplní Weight (kg) z product_builder_boxes.weight_kg, vrátane nuly. Kým používateľ hmotnosť ručne neupraví, zmena krabice upraví aj tento návrh; odobratie krabice ho vyprázdni. Ručná úprava (aj zámerné vymazanie poľa) má prednosť. Editácia existujúceho produktu a obnova číselníkov jeho hmotnosť neprepisujú. Nový prázdny formulár obnoví predvyplňovanie. Uložená hmotnosť zostáva samostatnou hodnotou product_builder_products.weight_kg.
+
+Nasadenie: nahrajte obsah **.cache/product-builder/product-builder-listing-columns.zip** so zachovaním adresárov. Obsahuje štyri súbory: assets/product_builder.css, scripts/product_builder/{app.js,page.php} a scripts/product_builder/locales/sk.json. **SQL import nie je potrebný.** Po uložení rozpracovaného formulára jednorazovo obnovte stránku cez Ctrl+F5. Kompletný product-builder-upload.zip je tiež aktualizovaný.
+
+Overenie: node tests/product_builder_listing_columns_ui_test.js (šírka a zarovnanie, kopírovanie/fallback/chyba, vizuálna odozva a volanie vibrácie, nula, ručné prepísanie, uloženie/otvorenie, SK/EN, čitateľ a mobil). Schránka aj vibrácie sú v teste simulované. Prešli aj existujúce prehliadačové testy balenia, dátumov a cien. Reálne listingy ani používateľskú schránku testy nemenia.
+
+## Obnovenie číselníkov bez straty rozpracovaného listingu
+
+Product Builder po návrate na kartu alebo do okna obnoví UNI kategórie, dizajny grafiky a poťahov sedadiel, verzie grafiky a krabice. Hore pri tlačidlách číselníkov je aj **Obnoviť číselníky / Refresh libraries** na ručné načítanie. Stačí uložiť nový dizajn v Product Controls v druhej karte a vrátiť sa do Buildera; nový záznam sa objaví v dropdowne.
+
+Obnovenie mení iba ponuky a súvisiace údaje číselníkov. Produkt ani tabuľkový výpis sa znovu nenačítavajú. Názvy komponentov, vlastné texty, vybrané ID, SKU, ceny, mena, krabica, hmotnosť, poznámky, nastavenia a príznak neuložených zmien zostávajú zachované. Select2 ponechá aj rozpracované vyhľadávanie. Zmeny výberu počas pomalej odpovede majú prednosť pred starým stavom; oneskorená odpoveď kategórií neprepíše novšiu.
+
+Vymazaný vybraný záznam sa nenahradí iným. Chýbajúca UNI kategória ostane zobrazená ako nedostupná a vyžaduje nový platný výber pred uložením. Pri chybe načítania zostanú existujúce ponuky dostupné a používateľ môže obnovenie zopakovať. Automatické obnovenie nezačína počas aktívneho ukladania a neposiela zápisové požiadavky. Listings ani čitatelia bez editačného formulára nezačnú načítavať chránené číselníky.
+
+Nasadenie na aktuálnu inštaláciu: nahrajte obsah **.cache/product-builder/product-builder-library-refresh.zip** so zachovaním adresárov. Obsahuje tri súbory: scripts/product_builder/{app.js,page.php} a scripts/product_builder/locales/sk.json. **SQL import nie je potrebný.** Pred prvým načítaním novej verzie dokončite aktuálne rozpracovaný listing; potom stránku obnovte. Ďalšie aktualizácie číselníkov už nevyžadujú reload. Kompletný product-builder-upload.zip je aktualizovaný.
+
+Overenie: node tests/product_builder_library_refresh_ui_test.js pridá dizajn cez Controls v druhej karte a overí návratové udalosti, zachovanie celého formulára, rozpracované vyhľadávanie, pomalé odpovede, zmazané výbery, chybu/opakovanie, SK/EN, prístup čitateľa a mobil. Headless Playwright štandardne simuluje všetky karty ako aktívne, preto test po prepnutí explicitne odošle focus/visibilitychange. API zápisy sú simulované a reálne produkty ani číselníky sa nemenia. Prešli aj testy verzií grafiky, samostatných stránok a prekladov.
+
 ## Stránkovanie všetkých listingov
 
 Listings aj výpis v Product Builderi sprístupňujú všetky záznamy cez serverové stránkovanie. Hore aj dole sú tlačidlá prvá/predchádzajúca/nasledujúca/posledná stránka, pole na priamy prechod na číslo stránky a voľba 25, 50 alebo 100 riadkov (predvolene 100). Počet výsledkov a zobrazený rozsah sú vždy uvedené pri ovládaní. Ovládanie podporuje SK/EN a mobil.
 
-API products prijíma page a per_page; SQL používa LIMIT a OFFSET iba pre aktuálnu stránku. Odpoveď obsahuje pagination s page, per_page, total, pages, from a to. Vyhľadávanie podľa názvu, SKU a modelcode filtruje celú databázu pred výpočtom počtu strán a limitom. Zmena vyhľadávania alebo veľkosti stránky začína prvou stránkou. Príliš vysoké číslo stránky sa upraví na poslednú; neplatné parametre server odmietne. Globálne štatistiky zostávajú nezávislé od filtra.
+API products prijíma page a per_page; SQL používa LIMIT a OFFSET iba pre aktuálnu stránku. Odpoveď obsahuje pagination s page, per_page, total, pages, from a to. Vyhľadávanie podľa názvu, SKU, modelcode a kategórie filtruje celú databázu pred výpočtom počtu strán a limitom. Zmena vyhľadávania alebo veľkosti stránky začína prvou stránkou. Príliš vysoké číslo stránky sa upraví na poslednú; neplatné parametre server odmietne. Globálne štatistiky zostávajú nezávislé od filtra.
 
 Poradie created_at DESC, id DESC a oddeľovače dní sú zachované. Komponenty aj editácia fungujú na každej stránke. Oprávnenia sa nemenia. Oneskorená odpoveď neprepíše novšie vyhľadávanie; chyba sa zobrazí vo výpise s tlačidlom Skúsiť znova. Tisíce listingov sa neposielajú do prehliadača naraz.
 
@@ -103,7 +137,7 @@ Nasadenie: nahrajte **scripts/product_builder/service.php** alebo obsah **.cache
 ## Krabica a celková hmotnosť produktu — update 008
 
 - Spodná lišta so SKU a cenami obsahuje Box a Weight (kg). Výber krabice je voliteľný; ponuka zobrazuje názov a rozmery v cm. Pri editácii sa obnovia obe uložené hodnoty.
-- Hmotnosť produktu sa zadáva ručne ako celková hmotnosť zabaleného produktu vrátane krabice. Je nezávislá od hmotnosti prázdnej krabice; výber ani úprava krabice ju neprepočítavajú. Podporuje bodku aj čiarku, najviac tri desatinné miesta a rozsah 0 až 999999.999 kg.
+- Hmotnosť produktu sa ukladá ako samostatná celková hmotnosť zabaleného produktu vrátane krabice. Pri novom produkte ju výber krabice predvyplní jej hmotnosťou; ručná úprava aj už uložená hmotnosť majú prednosť. Podporuje bodku aj čiarku, najviac tri desatinné miesta a rozsah 0 až 999999.999 kg.
 - Nevyplnená hmotnosť je NULL a vo výpise sa zobrazí pomlčka; nula je platná hodnota 0.000 kg. Staršie produkty zostávajú bez priradenej krabice a bez hmotnosti. Zápis staršieho klienta, ktorý tieto polia neposiela, zachová už uložené hodnoty.
 - Saved products aj detail na čítanie zobrazujú krabicu s rozmermi a celkovú hmotnosť. Neskoršie úpravy názvu alebo rozmerov krabice sa prejavia vo výpise; ručná hmotnosť produktu zostáva zachovaná.
 - Krabicu používanú v produktoch nemožno vymazať. Editor ukazuje počet použití; ochranu zabezpečuje server aj cudzí kľúč. Pred zmazaním treba zmeniť alebo zrušiť jej priradenie.
