@@ -1,0 +1,63 @@
+<?php
+declare(strict_types=1);
+require_once __DIR__ . '/helpers.php';
+function pb_listing_channels(): array
+{
+    return ['web'=>'Web','ebay'=>'eBay','amazon'=>'Amazon'];
+}
+function pb_channel_listing_default(int $productId, string $channel): array
+{
+    return ['product_id'=>$productId,'channel'=>$channel,'status'=>'do_not_list','url'=>null,'price'=>null,'currency'=>'EUR','version'=>0];
+}
+/** Fetch the three independent channel states for a whole result page in one query. */
+function pb_channel_listings(PDO $pdo, array $productIds): array
+{
+    $productIds = array_values(array_unique(array_map('intval', $productIds)));
+    if (!$productIds) return [];
+    $result = [];
+    foreach ($productIds as $id) foreach (pb_listing_channels() as $channel=>$label) $result[$id][$channel] = pb_channel_listing_default($id, $channel);
+    $stmt = $pdo->prepare('SELECT product_id,channel,listing_status,listing_url,listed_price,listed_currency,version FROM product_builder_channel_listings WHERE product_id IN (' . implode(',', array_fill(0, count($productIds), '?')) . ')');
+    $stmt->execute($productIds);
+    foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+        if (!isset(pb_listing_channels()[$row['channel']])) continue;
+        $result[(int)$row['product_id']][$row['channel']] = ['product_id'=>(int)$row['product_id'],'channel'=>$row['channel'],'status'=>$row['listing_status'],'url'=>$row['listing_url'],'price'=>$row['listed_price'],'currency'=>$row['listed_currency'],'version'=>(int)$row['version']];
+    }
+    return $result;
+}
+/** Channel edits never overwrite suggested prices, product revisions or components. */
+function pb_save_channel_listing(PDO $pdo, array $data, ?int $userId): array
+{
+    $id = filter_var($data['product_id'] ?? null, FILTER_VALIDATE_INT, ['options'=>['min_range'=>1]]);
+    $version = filter_var($data['version'] ?? null, FILTER_VALIDATE_INT, ['options'=>['min_range'=>0]]);
+    $channel = $data['channel'] ?? null; $status = $data['status'] ?? null;
+    if (!$id || $version === false || $version === null || !is_string($channel) || !array_key_exists($channel, pb_listing_channels()) || !in_array($status, ['do_not_list','list','listed'], true)) throw new InvalidArgumentException('Invalid listing channel or status.');
+    $price = null; $currency = null; $url = null;
+    if ($status === 'listed') {
+        $price = pb_price($data['price'] ?? '');
+        if ($price === null) throw new InvalidArgumentException('Enter the listed price.');
+        $currency = strtoupper(pb_text($data['currency'] ?? '', 'Currency', 3, false));
+        if (!in_array($currency, pb_price_currencies(), true)) throw new InvalidArgumentException('Select a supported listing currency.');
+        $url = pb_text($data['url'] ?? '', 'Listing URL', 2048, false);
+        $parts = parse_url($url);
+        if (!$url || preg_match('/[\x00-\x20\x7F]/', $url) || !filter_var($url, FILTER_VALIDATE_URL) || !$parts || !in_array(strtolower($parts['scheme'] ?? ''), ['http','https'], true) || empty($parts['host']) || isset($parts['user']) || isset($parts['pass'])) throw new InvalidArgumentException('Enter a valid http:// or https:// listing URL.');
+    }
+    $pdo->beginTransaction();
+    try {
+        // Lock the parent too: two initial writes to the same missing channel cannot both succeed.
+        $findProduct = $pdo->prepare('SELECT id FROM product_builder_products WHERE id=? FOR UPDATE'); $findProduct->execute([$id]);
+        if (!$findProduct->fetchColumn()) throw new InvalidArgumentException('Product not found.');
+        $find = $pdo->prepare('SELECT * FROM product_builder_channel_listings WHERE product_id=? AND channel=? FOR UPDATE'); $find->execute([$id,$channel]); $current = $find->fetch(PDO::FETCH_ASSOC);
+        if ((int)($current['version'] ?? 0) !== $version) throw new InvalidArgumentException('Another user has changed this channel. Reload the latest channel data and try again.');
+        // Keep the last real price and URL for reuse when a listing is scheduled again.
+        if ($status !== 'listed') { $price = $current['listed_price'] ?? null; $currency = $current['listed_currency'] ?? 'EUR'; $url = $current['listing_url'] ?? null; }
+        if ($current) {
+            $save = $pdo->prepare('UPDATE product_builder_channel_listings SET listing_status=?,listing_url=?,listed_price=?,listed_currency=?,version=version+1,updated_by=? WHERE product_id=? AND channel=?');
+            $save->execute([$status,$url,$price,$currency,$userId,$id,$channel]);
+        } else {
+            $save = $pdo->prepare('INSERT INTO product_builder_channel_listings (product_id,channel,listing_status,listing_url,listed_price,listed_currency,updated_by) VALUES (?,?,?,?,?,?,?)');
+            $save->execute([$id,$channel,$status,$url,$price,$currency,$userId]);
+        }
+        $pdo->commit();
+        return ['product_id'=>(int)$id,'channel'=>$channel,'status'=>$status,'url'=>$url,'price'=>$price,'currency'=>$currency,'version'=>$version+1];
+    } catch (Throwable $e) { if ($pdo->inTransaction()) $pdo->rollBack(); throw $e; }
+}

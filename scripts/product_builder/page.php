@@ -21,7 +21,7 @@ if (empty($_SESSION['product_builder_csrf'])) $_SESSION['product_builder_csrf'] 
 if (!function_exists('pb_h')) { function pb_h($value): string { return htmlspecialchars((string) $value, ENT_QUOTES, 'UTF-8'); } }
 ?>
 <link rel="stylesheet" href="plugins/select2/css/select2.min.css">
-<link rel="stylesheet" href="assets/product_builder.css?v=20">
+<link rel="stylesheet" href="assets/product_builder.css?v=29">
 <div class="container-fluid pb-page" id="product-builder" lang="<?= pb_language() ?>">
   <div class="pb-language-bar"><div class="btn-group btn-group-sm" role="group" aria-label="<?= pb_h(pb_t('Language')) ?>">
     <?php foreach (['sk'=>'SK','en'=>'EN'] as $language=>$languageLabel): $query=['page'=>'product_'.$pbPageMode,'pb_lang'=>$language]; if($pbEditProductId>0)$query['edit']=$pbEditProductId; ?>
@@ -138,9 +138,11 @@ if (!function_exists('pb_h')) { function pb_h($value): string { return htmlspeci
     </div>
   <?php }; ?>
   <section class="card pb-panel pb-list-panel" id="pb-saved-products" aria-labelledby="pb-list-title"><div class="card-header pb-list-header"><h2 class="card-title" id="pb-list-title"><i class="fas fa-table mr-2" aria-hidden="true"></i><?= pb_h(pb_t('Saved products')) ?></h2><input type="search" id="pb-search" class="form-control form-control-sm" maxlength="150" aria-label="<?= pb_h(pb_t('Search products')) ?>" placeholder="<?= pb_h(pb_t('Name, SKU, modelcode or category…')) ?>"></div>
+    <span id="pb-channel-status-message" class="sr-only" role="status" aria-live="polite"></span>
+    <span id="pb-img-status-message" class="sr-only" role="status" aria-live="polite"></span>
     <span id="pb-copy-status" class="sr-only" role="status" aria-live="polite"></span>
     <?php $pbRenderPagination('top'); ?>
-    <div class="table-responsive"><table class="table table-bordered table-hover table-sm mb-0 pb-table pb-products-table"><thead><tr><th class="pb-created-column" title="<?= pb_h(pb_t('Listing creation date')) ?>"><?= pb_h(pb_t('Created')) ?></th><th><?= pb_h(pb_t('Product / SKU')) ?></th><th><?= pb_h(pb_t('Bundle')) ?></th><th><?= pb_h(pb_t('Category')) ?></th><th>Modelcode</th><?php foreach (pb_price_fields() as $priceLabel): ?><th class="pb-price-column"><?= pb_h(pb_t($priceLabel)) ?></th><?php endforeach; ?><th><?= pb_h(pb_t('Box')) ?></th><th><?= pb_h(pb_t('Components')) ?></th><th><?= pb_h(pb_t('Actions')) ?></th></tr></thead><tbody id="pb-products"><tr><td colspan="12" class="pb-muted"><?= pb_h(pb_t('Loading products…')) ?></td></tr></tbody></table></div>
+    <div class="table-responsive"><table class="table table-bordered table-hover table-sm mb-0 pb-table pb-products-table"><thead><tr><th class="pb-created-column" title="<?= pb_h(pb_t('Listing creation date')) ?>"><?= pb_h(pb_t('Created')) ?></th><th><?= pb_h(pb_t('Product / SKU')) ?></th><th><?= pb_h(pb_t('Bundle')) ?></th><th><?= pb_h(pb_t('Category')) ?></th><th class="pb-img-heading">IMG</th><?php foreach (pb_price_fields() as $priceLabel): ?><th class="pb-price-column"><?= pb_h(pb_t($priceLabel)) ?></th><?php endforeach; ?><th><?= pb_h(pb_t('Box')) ?></th><th><?= pb_h(pb_t('Components')) ?></th><th><?= pb_h(pb_t('Actions')) ?></th></tr></thead><tbody id="pb-products"><tr><td colspan="12" class="pb-muted"><?= pb_h(pb_t('Loading products…')) ?></td></tr></tbody></table></div>
     <?php $pbRenderPagination('bottom'); ?>
   </section>
   <?php endif; ?>
@@ -207,8 +209,29 @@ if (!function_exists('pb_h')) { function pb_h($value): string { return htmlspeci
 </div></div></div>
 <?php endif; ?>
 <?php if ($pbShowListings): ?>
+<div class="modal fade pb-modal" lang="<?= pb_language() ?>" id="pb-img-modal" tabindex="-1" role="dialog" aria-labelledby="pb-img-title"><div class="modal-dialog modal-lg"><div class="modal-content">
+  <div class="modal-header"><h3 class="modal-title h5" id="pb-img-title"><?= pb_h(pb_t('Image folder')) ?></h3><button type="button" class="close" data-dismiss="modal" aria-label="<?= pb_h(pb_t('Close')) ?>">&times;</button></div>
+  <form id="pb-img-form"><div class="modal-body">
+    <div id="pb-img-message" class="alert" role="alert" hidden></div>
+    <label for="pb-img-path-input"><?= pb_h(pb_t('Folder path')) ?></label>
+    <div class="input-group"><input type="text" id="pb-img-path-input" class="form-control" maxlength="2048" required autocomplete="off" spellcheck="false" placeholder="Y:\E-SHOP\_WEB_2025\GRAPHICS_KIT\HUSQVARNA AT"><div class="input-group-append"><button type="button" class="btn btn-outline-info pb-copy-code" id="pb-img-copy" title="<?= pb_h(pb_t('Copy folder path')) ?>" aria-label="<?= pb_h(pb_t('Copy folder path')) ?>"><i class="far fa-copy" aria-hidden="true"></i></button></div></div>
+    <small class="pb-muted"><?= pb_h(pb_t('Spaces in the folder path are supported.')) ?></small>
+    <button type="button" class="btn btn-sm btn-outline-info mt-2" id="pb-img-reload" hidden><?= pb_h(pb_t('Reload IMG status')) ?></button>
+  </div><div class="modal-footer"><button type="button" class="btn btn-secondary" data-dismiss="modal"><?= pb_h(pb_t('Close')) ?></button><button type="submit" class="btn btn-success" id="pb-img-save"><?= pb_h(pb_t('Save path')) ?></button></div></form>
+</div></div></div>
+<div class="modal fade pb-modal" lang="<?= pb_language() ?>" id="pb-channel-modal" tabindex="-1" role="dialog" aria-labelledby="pb-channel-title"><div class="modal-dialog modal-lg"><div class="modal-content">
+  <div class="modal-header"><div><h3 class="modal-title h5" id="pb-channel-title"><?= pb_h(pb_t('Listed product')) ?></h3><small class="pb-muted" id="pb-channel-product"></small></div><button type="button" class="close" data-dismiss="modal" aria-label="<?= pb_h(pb_t('Close')) ?>">&times;</button></div>
+  <form id="pb-channel-form"><div class="modal-body">
+    <div id="pb-channel-message" class="alert" role="alert" hidden></div>
+    <div class="form-row"><div class="form-group col-sm-8"><label for="pb-channel-price"><?= pb_h(pb_t('Listed price')) ?> *</label><input id="pb-channel-price" class="form-control" type="text" inputmode="decimal" pattern="[0-9]{1,8}([.,][0-9]{1,2})?" maxlength="11" required title="<?= pb_h(pb_t('Enter a non-negative amount with up to two decimal places.')) ?>"></div><div class="form-group col-sm-4"><label for="pb-channel-currency"><?= pb_h(pb_t('Currency')) ?></label><select id="pb-channel-currency" class="form-control" required><?php foreach (pb_price_currencies() as $currency): ?><option value="<?= $currency ?>"><?= $currency ?></option><?php endforeach; ?></select></div></div>
+    <div class="form-group"><label for="pb-channel-url"><?= pb_h(pb_t('Listing URL')) ?> *</label><input id="pb-channel-url" class="form-control" type="url" maxlength="2048" required placeholder="https://" autocomplete="off" spellcheck="false"></div>
+    <small class="pb-muted"><?= pb_h(pb_t('The listed price is stored separately from the suggested platform price.')) ?></small>
+    <button type="button" class="btn btn-sm btn-outline-info mt-2" id="pb-channel-reload" hidden><?= pb_h(pb_t('Reload channel data')) ?></button>
+  </div><div class="modal-footer"><button type="button" class="btn btn-secondary" data-dismiss="modal"><?= pb_h(pb_t('Cancel')) ?></button><button type="submit" class="btn btn-success" id="pb-channel-save"><?= pb_h(pb_t('Save listing')) ?></button></div></form>
+</div></div></div>
+
 <div class="modal fade pb-modal" lang="<?= pb_language() ?>" id="pb-detail-modal" tabindex="-1" role="dialog" aria-labelledby="pb-detail-title"><div class="modal-dialog modal-lg"><div class="modal-content"><div class="modal-header"><h3 class="modal-title h5" id="pb-detail-title"><?= pb_h(pb_t('Product details')) ?></h3><button type="button" class="close" data-dismiss="modal" aria-label="<?= pb_h(pb_t('Close')) ?>">&times;</button></div><div class="modal-body" id="pb-detail"></div></div></div></div>
 <?php endif; ?>
 <script>window.productBuilderConfig = <?= json_encode(['language'=>pb_language(),'languageCookie'=>pb_language_cookie(),'translations'=>pb_language()==='sk'?pb_i18n_dictionary():new stdClass(),'pageMode'=>$pbPageMode,'editProductId'=>$pbEditProductId,'csrf'=>$_SESSION['product_builder_csrf'],'canEdit'=>$pbCanEdit,'types'=>pb_component_types(),'bundleComponents'=>array_combine(pb_bundle_types(),array_map('pb_bundle_component_types',pb_bundle_types())),'priceFields'=>pb_price_fields(),'specFields'=>pb_component_spec_fields($conn),'requestKey'=>bin2hex(random_bytes(16))], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;</script>
 <script defer src="plugins/select2/js/select2.full.min.js"></script>
-<script src="scripts/product_builder/app.js?v=21"></script>
+<script src="scripts/product_builder/app.js?v=31"></script>

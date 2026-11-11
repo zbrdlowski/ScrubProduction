@@ -38,6 +38,8 @@ try {
         if ($action === 'delete_uni') { pb_delete_uni($pdo,(int) ($data['id'] ?? 0),(int) ($data['version'] ?? 0)); pb_reply(['ok'=>true]); }
         if ($action === 'generate_modelcode') pb_reply(['ok'=>true,'code'=>scrub_generate_modelcode($conn)]);
         if ($action === 'generate_sku') pb_reply(['ok'=>true,'sku'=>pb_generate_sku($pdo,pb_text($data['bundle_type'] ?? '', 'Bundle type', 5))]);
+        if ($action === 'save_channel_listing') pb_reply(['ok'=>true,'listing'=>pb_save_channel_listing($pdo,$data,(int) ($_SESSION['user_id'] ?? 0) ?: null)]);
+        if ($action === 'save_product_image') pb_reply(['ok'=>true,'image'=>pb_save_product_image($pdo,$data)]);
         if ($action === 'save_product') pb_reply(['ok'=>true,'product'=>pb_save_product($pdo,$data,(int) ($_SESSION['user_id'] ?? 0) ?: null)]);
         if ($action === 'import_uni') {
             $file = $_FILES['csv'] ?? [];
@@ -64,6 +66,7 @@ try {
             $stmt = $pdo->prepare('SELECT p.*,u.brand AS uni_brand,u.category_name AS uni_name,b.name AS box_name,b.length_cm AS box_length_cm,b.width_cm AS box_width_cm,b.height_cm AS box_height_cm,b.weight_kg AS box_weight_kg FROM product_builder_products p LEFT JOIN product_builder_uni_categories u ON u.id=p.uni_category_id LEFT JOIN product_builder_boxes b ON b.id=p.box_id WHERE p.id=?'); $stmt->execute([(int) ($_GET['id'] ?? 0)]); $row = $stmt->fetch(PDO::FETCH_ASSOC);
             if (!$row) pb_reply(['ok'=>false,'error'=>'Product not found.'],404);
             $row['components'] = pb_product_components($pdo, (int)$row['id']);
+            $row['channel_listings'] = pb_channel_listings($pdo, [(int)$row['id']])[(int)$row['id']];
             pb_reply(['ok'=>true,'product'=>$row]);
         }
         if ($action === 'products') {

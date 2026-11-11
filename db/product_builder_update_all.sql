@@ -1,12 +1,12 @@
--- DARKSCRUB: cumulative product builder repair/update through 008 (2026-11-05).
+-- DARKSCRUB: cumulative product builder repair/update through 010 (2026-11-11).
 -- Select the EXISTING DarkScrub application database in phpMyAdmin and import this file as UTF-8.
--- Includes base tables and updates 002, 003, 004, 005, 006, 007 and 008 in dependency order.
+-- Includes base tables and updates 002, 003, 004, 005, 006, 007, 008, 009 and 010 in dependency order.
 -- Preserves existing products, SKUs, components, UNI categories and saved design/version selections.
 -- Adds missing default designs and Graphics versions; renamed defaults retain their names.
 -- Previously deleted default designs/versions may be added again.
 -- Does not change user permissions or import UNI categories.
 -- No CREATE DATABASE, USE, DROP or TRUNCATE statements.
--- The final verification must show twenty OK rows in the application database.
+-- The final verification must show thirty-one OK rows in the application database.
 SET NAMES utf8mb4;
 
 -- Independent product builder; no dependency on the legacy catalogue.
@@ -44,6 +44,9 @@ CREATE TABLE IF NOT EXISTS product_builder_products (
  amazon_currency CHAR(3) NOT NULL DEFAULT 'EUR',
  box_id BIGINT UNSIGNED NULL,
  weight_kg DECIMAL(9,3) NULL,
+ img_status VARCHAR(4) NOT NULL DEFAULT 'none',
+ img_path TEXT NULL,
+ img_version INT UNSIGNED NOT NULL DEFAULT 1,
  request_key CHAR(32) NOT NULL, version INT UNSIGNED NOT NULL DEFAULT 1, created_by INT NULL,
  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -1831,7 +1834,56 @@ PREPARE pb_box_migration FROM @pb_box_sql;
 EXECUTE pb_box_migration;
 DEALLOCATE PREPARE pb_box_migration;
 
--- Read-only verification of the same six tables and fourteen columns checked by the application.
+-- DARKSCRUB: product listing IMG status and local folder path (update 009).
+-- Select the application database in phpMyAdmin. Safe to import repeatedly.
+-- Existing and new listings start at the display value ✗ (stored as none).
+-- No product, SKU, component or existing path is overwritten.
+SET NAMES utf8mb4;
+
+SET @pb_img_exists = (SELECT COUNT(*) FROM information_schema.columns
+ WHERE table_schema=DATABASE() AND table_name='product_builder_products' AND column_name='img_status');
+SET @pb_img_sql = IF(@pb_img_exists=0,
+ 'ALTER TABLE product_builder_products ADD COLUMN img_status VARCHAR(4) NOT NULL DEFAULT ''none''', 'DO 0');
+PREPARE pb_img_migration FROM @pb_img_sql;
+EXECUTE pb_img_migration;
+DEALLOCATE PREPARE pb_img_migration;
+
+SET @pb_img_exists = (SELECT COUNT(*) FROM information_schema.columns
+ WHERE table_schema=DATABASE() AND table_name='product_builder_products' AND column_name='img_path');
+SET @pb_img_sql = IF(@pb_img_exists=0,
+ 'ALTER TABLE product_builder_products ADD COLUMN img_path TEXT NULL', 'DO 0');
+PREPARE pb_img_migration FROM @pb_img_sql;
+EXECUTE pb_img_migration;
+DEALLOCATE PREPARE pb_img_migration;
+
+SET @pb_img_exists = (SELECT COUNT(*) FROM information_schema.columns
+ WHERE table_schema=DATABASE() AND table_name='product_builder_products' AND column_name='img_version');
+SET @pb_img_sql = IF(@pb_img_exists=0,
+ 'ALTER TABLE product_builder_products ADD COLUMN img_version INT UNSIGNED NOT NULL DEFAULT 1', 'DO 0');
+PREPARE pb_img_migration FROM @pb_img_sql;
+EXECUTE pb_img_migration;
+DEALLOCATE PREPARE pb_img_migration;
+
+-- DARKSCRUB: Web/eBay/Amazon listing workflow (update 010).
+-- Select the application database in phpMyAdmin. Safe to import repeatedly.
+-- Missing channel records mean Do not list. Existing suggested prices and products are preserved.
+SET NAMES utf8mb4;
+
+CREATE TABLE IF NOT EXISTS product_builder_channel_listings (
+ id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+ product_id BIGINT UNSIGNED NOT NULL, channel VARCHAR(16) NOT NULL,
+ listing_status VARCHAR(16) NOT NULL DEFAULT 'do_not_list',
+ listing_url VARCHAR(2048) NULL, listed_price DECIMAL(10,2) NULL,
+ listed_currency CHAR(3) NOT NULL DEFAULT 'EUR', version INT UNSIGNED NOT NULL DEFAULT 1,
+ updated_by INT NULL,
+ created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+ updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+ UNIQUE KEY uq_pb_channel_product (product_id,channel),
+ KEY idx_pb_channel_status (channel,listing_status),
+ CONSTRAINT fk_pb_channel_product FOREIGN KEY (product_id) REFERENCES product_builder_products(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Read-only verification of the same seven tables and twenty-four columns checked by the application.
 -- Select the DarkScrub application database in phpMyAdmin before importing.
 SELECT DATABASE() AS checked_database;
 SELECT 'product_builder_products' AS required_object, IF(EXISTS(SELECT 1 FROM information_schema.tables WHERE table_schema=DATABASE() AND table_name='product_builder_products'),'OK','MISSING') AS status
@@ -1872,4 +1924,26 @@ SELECT 'product_builder_products.amazon_currency', IF(EXISTS(SELECT 1 FROM infor
 UNION ALL
 SELECT 'product_builder_products.box_id', IF(EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name='product_builder_products' AND column_name='box_id'),'OK','MISSING')
 UNION ALL
-SELECT 'product_builder_products.weight_kg', IF(EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name='product_builder_products' AND column_name='weight_kg'),'OK','MISSING');
+SELECT 'product_builder_products.weight_kg', IF(EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name='product_builder_products' AND column_name='weight_kg'),'OK','MISSING')
+UNION ALL
+SELECT 'product_builder_products.img_status', IF(EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name='product_builder_products' AND column_name='img_status'),'OK','MISSING')
+UNION ALL
+SELECT 'product_builder_products.img_path', IF(EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name='product_builder_products' AND column_name='img_path'),'OK','MISSING')
+UNION ALL
+SELECT 'product_builder_products.img_version', IF(EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name='product_builder_products' AND column_name='img_version'),'OK','MISSING')
+UNION ALL
+SELECT 'product_builder_channel_listings', IF(EXISTS(SELECT 1 FROM information_schema.tables WHERE table_schema=DATABASE() AND table_name='product_builder_channel_listings'),'OK','MISSING')
+UNION ALL
+SELECT 'product_builder_channel_listings.product_id', IF(EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name='product_builder_channel_listings' AND column_name='product_id'),'OK','MISSING')
+UNION ALL
+SELECT 'product_builder_channel_listings.channel', IF(EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name='product_builder_channel_listings' AND column_name='channel'),'OK','MISSING')
+UNION ALL
+SELECT 'product_builder_channel_listings.listing_status', IF(EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name='product_builder_channel_listings' AND column_name='listing_status'),'OK','MISSING')
+UNION ALL
+SELECT 'product_builder_channel_listings.listing_url', IF(EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name='product_builder_channel_listings' AND column_name='listing_url'),'OK','MISSING')
+UNION ALL
+SELECT 'product_builder_channel_listings.listed_price', IF(EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name='product_builder_channel_listings' AND column_name='listed_price'),'OK','MISSING')
+UNION ALL
+SELECT 'product_builder_channel_listings.listed_currency', IF(EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name='product_builder_channel_listings' AND column_name='listed_currency'),'OK','MISSING')
+UNION ALL
+SELECT 'product_builder_channel_listings.version', IF(EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name='product_builder_channel_listings' AND column_name='version'),'OK','MISSING');

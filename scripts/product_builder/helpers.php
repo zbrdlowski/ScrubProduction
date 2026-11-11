@@ -135,9 +135,10 @@ function pb_validate_product(array $data): array
 }
 function pb_schema_ready(PDO $pdo): bool
 {
-    return (int) $pdo->query("SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name IN ('product_builder_products','product_builder_components','product_builder_uni_categories','product_builder_designs','product_builder_graphics_versions','product_builder_boxes')")->fetchColumn() === 6
+    return (int) $pdo->query("SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name IN ('product_builder_products','product_builder_components','product_builder_uni_categories','product_builder_designs','product_builder_graphics_versions','product_builder_boxes','product_builder_channel_listings')")->fetchColumn() === 7
         && (int) $pdo->query("SELECT COUNT(*) FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name='product_builder_components' AND column_name IN ('color','options_json','design_id','graphics_version_id')")->fetchColumn() === 4
-        && (int) $pdo->query("SELECT COUNT(*) FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name='product_builder_products' AND column_name IN ('recommended_price','recommended_currency','web_price','web_currency','ebay_price','ebay_currency','amazon_price','amazon_currency','box_id','weight_kg')")->fetchColumn() === 10;
+        && (int) $pdo->query("SELECT COUNT(*) FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name='product_builder_products' AND column_name IN ('recommended_price','recommended_currency','web_price','web_currency','ebay_price','ebay_currency','amazon_price','amazon_currency','box_id','weight_kg','img_status','img_path','img_version')")->fetchColumn() === 13
+        && (int) $pdo->query("SELECT COUNT(*) FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name='product_builder_channel_listings' AND column_name IN ('product_id','channel','listing_status','listing_url','listed_price','listed_currency','version')")->fetchColumn() === 7;
 }
 function pb_modelcode_lock(PDO $pdo): void
 {

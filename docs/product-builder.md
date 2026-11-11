@@ -1,3 +1,91 @@
+## Zalistovanie na Web, eBay a Amazon
+
+Každá platforma má v hlavnej tabuľke samostatný dropdown: **Do not list / Nelistovať** (červená), **List / Zalistovať** (zelená) a **Listed / Zalistované** (modrá). Predvolený stav pre nové aj existujúce produkty je Do not list; existujúca cena sama o sebe neznamená, že je produkt zalistovaný. Stavy Do not list a List sa uložia hneď po zmene. Listed otvorí modal s cenou, menou a URL; stav sa uloží až po potvrdení platných údajov. Zrušenie modalu zachová pôvodný stav.
+
+Cena z pôvodného formulára Web/eBay/Amazon slúži ako návrh a predvyplní modal. Skutočná predajná cena sa uchováva zvlášť, s vlastnou menou; automatický prepočet mien sa nerobí. Kým stav nie je Listed, bunka ukazuje pôvodnú navrhovanú cenu, pri Listed ukazuje skutočnú cenu. Odkaz Open listing / Otvoriť listing otvorí uložené HTTP(S) URL v novom tabe. Ceruzka umožní cenu, menu a URL upraviť. Pri zmene z Listed na iný stav zostanú posledná skutočná cena a URL uložené pre opätovné použitie. Nula je platná cena.
+
+Nová tabuľka product_builder_channel_listings obsahuje najviac jeden záznam na produkt a platformu. Uchováva stav, URL, skutočnú cenu, menu, vlastnú verziu, dátumy a posledného editora. Zmeny nepíšu do rozpracovaného formulára, pôvodných cien, SKU ani komponentov. Verzia každého kanála bráni prepísaniu novšej práce kolegu; po chybe možno načítať aktuálne údaje. Všetci prihlásení môžu údaje a odkazy vidieť, editácia používa existujúce products.view + products.manage a CSRF ochranu. UI funguje v SK/EN v Builderi aj Listings, vrátane detailového modalu.
+
+Nasadenie na existujúci server: **najprv importujte db/product_builder_update_010.sql cez phpMyAdmin do aplikačnej databázy**, potom nahrajte webové súbory z **.cache/product-builder/product-builder-channel-listings.zip** so zachovaním adresárov. Balík obsahuje osem webových súborov a SQL 010; samotné nahratie SQL na server nie je import. SQL neprerába staršie ceny ani listingy a možno ho importovať opakovane. Pri neznámom stave starších aktualizácií použite product_builder_update_all.sql. Kompletný product-builder-upload.zip má 27 webových súborov. Inštalačné SQL, CLI inštalátor aj diagnostika sú aktualizované; diagnostika má 31 objektov. Lokálna vývojová databáza má update 010 aplikovaný.
+
+Overenie: backendový test používa dočasné tabuľky a kontroluje validáciu, samostatné meny a kanály, verzie a zachovanie produktu. SQL test používa izolované tabuľky, kontroluje novú aj starú inštaláciu a opakovaný import. UI test so simulovaným API kontroluje stavy a farby, zrušenie aj uloženie modalu, nulovú cenu, chyby, konflikt kolegov, zachovanie rozpracovaného produktu, odkazy v novom tabe, čítacie práva, SK/EN a mobil. Reálne produkty sa pri testoch nemenia.
+
+## Kompaktný detail Seat Covers
+
+Seat cover používa rovnakú kompaktnú tabuľku ako grafika a fitting. Horný riadok obsahuje Type, Component name, Design, Reference / code, Quantity a Preferred supplier (Scrub). Pod ním sú Patch, Side Brand Patches, Waterproof Seams, Enduro Pocket, Printed Ribs a Complexity v samostatných tabuľkových bunkách. Vyplnené poznámky zostávajú pod parametrami a žlté označenie typu S je zachované. Platí v rozbalenom výpise aj detailovom modale, pre staršie aj nové listingy. Údaje ani formulár sa nemenia.
+
+Nasadenie: **.cache/product-builder/product-builder-seat-cover-layout.zip** obsahuje scripts/product_builder/{app.js,page.php}. **SQL import netreba.** Kompletný product-builder-upload.zip je aktualizovaný.
+
+Overenie: existujúce testy komponentových detailov a dodávateľov prešli vrátane všetkých parametrov S, samostatného aj zmiešaného bundla, modalu, prekladov a mobilu. API je simulované a reálne listingy sa nemenia. Výsledný seat cover blok bol vizuálne skontrolovaný.
+
+## Grafika: listingové parametre a Number Yes/No
+
+V Product Builderi sú Rider name, Name Font, Number Font a Printer sivé a disabled. Ich už uložené hodnoty sa pri editácii aj opätovnom uložení zachovajú, ale v rozbalenom detaile ani detailovom modale sa tieto polia nezobrazujú. Platí aj pre grafiku v Trim Kitoch a staršie uložené polia bez aktívnej definície. Ostatné typy komponentov a Custom Orders sa nemenia.
+
+Number je select s voľbami Yes/No (SK: Áno/Nie) a prázdnou voľbou pre nevyplnené pole. Ukladá sa do existujúceho options_json pod graphics_number. Pôvodné číslo jazdca vrátane 0 sa pri zobrazení interpretuje ako Yes; pri ďalšom uložení sa uloží zvolená hodnota Yes/No. Prázdna hodnota zostáva nevybraná. Nevykonáva sa hromadný prepis dát.
+
+Nasadenie: **.cache/product-builder/product-builder-graphics-listing-options.zip** obsahuje assets/product_builder.css a scripts/product_builder/{app.js,page.php}. Nahrajte so zachovaním adresárov a obnovte stránku po uložení rozpracovaného formulára. **SQL import netreba.** Kompletný product-builder-upload.zip je aktualizovaný.
+
+Overenie: product_builder_graphics_listing_options_ui_test.js (disabled polia, Yes/No uloženie, zachovanie starých hodnôt, odstránené definície, oba detaily, preklady SK/EN, Trim Kit a mobil), existujúce testy detailov a kompletného editora. Testy simulujú API a nemenia reálne listingy. Sivé polia boli vizuálne skontrolované.
+
+## Stlmenie stránky pri rozbalených komponentoch
+
+Po otvorení komponentov v Builderi alebo Listings sa zvyšok stránky vrátane navigácie stlmí. Vybraný riadok produktu a jeho komponenty zostávajú na pôvodnom mieste, jasné a ohraničené. Otvorený je vždy jeden listing. Kliknutie na rozbaľovacie tlačidlo, mimo zvýrazneného bloku alebo Esc zatvorí komponenty a odstráni stlmenie. Klávesnica môže pokračovať mimo bloku; pri presune fokusu sa zvýraznenie ukončí. Editácia, otvorenie modalu a obnovenie výpisu ho tiež vyčistia. Pomalá odpoveď po zatvorení ho znova neotvorí. Kopírovanie SKU/modelcode vrátane náhradného kopírovania zachová zvýraznenie.
+
+Nasadenie: **.cache/product-builder/product-builder-component-focus.zip** obsahuje assets/product_builder.css a scripts/product_builder/{app.js,page.php}. Nahrajte so zachovaním adresárov a obnovte stránku po uložení rozpracovaného formulára. **SQL import netreba.** Kompletný product-builder-upload.zip je aktualizovaný.
+
+Overenie: product_builder_component_focus_ui_test.js (vrstvy stránky a navigácie, všetky spôsoby zatvárania, kopírovanie, modal, obnovenie výpisu, pomalá/chybná odpoveď a mobil), existujúce testy detailov a celého editora. Testy používajú simulované API; reálne listingy nemenia. Vzhľad bol vizuálne skontrolovaný.
+
+## Rovnaká veľkosť riadkov parametrov grafiky
+
+Riadok Material, Finish a ostatných parametrov grafiky má rovnakú veľkosť hlavičiek, textu a odsadenie ako identifikačná tabuľka nad ním. Výška bežnej jednoradovej hodnoty je dorovnaná; dlhé hodnoty sa naďalej zalamujú. Platí v rozbalenom výpise aj modale. Overené existujúcim testom detailov a vizuálnou kontrolou.
+
+Nasadenie: **.cache/product-builder/product-builder-detail-row-size.zip** obsahuje assets/product_builder.css a scripts/product_builder/page.php. **SQL import netreba.** Kompletný product-builder-upload.zip je aktualizovaný.
+
+## Kompaktné vstupy plastov a fittingu
+
+V editačnej bunke Component name sú pri plastoch vstupy v jednom riadku v poradí Product code / barcode → Component name → Color. Pri fittingu sú vedľa seba Component name a Reference / code. Na úzkej obrazovke sa zalomia pod seba. Poradie klávesu Tab zodpovedá zobrazeniu; automatické dopĺňanie názvu a farby podľa barcode aj ukladanie zostávajú zachované.
+
+Nasadenie: **.cache/product-builder/product-builder-component-inputs.zip** obsahuje assets/product_builder.css a scripts/product_builder/{app.js,page.php}. Nahrajte so zachovaním adresárov a obnovte stránku po uložení rozpracovaného formulára. **SQL import netreba.** Kompletný product-builder-upload.zip je aktualizovaný.
+
+Overenie: existujúci product_builder_ui_test.js prešiel vrátane poradia a zarovnania vstupov, automatického dopĺňania plastov, viacerých komponentov, ukladania a mobilného rozloženia. API je simulované; reálne produkty sa nemenia. Desktopový formulár bol vizuálne skontrolovaný.
+
+## Rozbalený bundle: samostatné sekcie podľa typu komponentu
+
+Builder, Listings aj modal Detail používajú spoločný blok s farebnými sekciami G, F, P a S podľa vzhľadu editačného formulára. Typy sú v poradí ich prvého výskytu; viac položiek rovnakého typu je spolu a zachováva si uložené poradie. Staršie T komponenty sa naďalej zobrazujú ako G.
+
+G a F používajú kompaktné tabuľkové riadky s rovnakými farbami, hranicami a veľkosťou textu ako plasty. Grafika má názov, dizajn, verziu, referenciu, množstvo a Preferred supplier v jednom riadku; pod ním je nízky pás parametrov bez veľkých medzier. Fitting má svoje nastavenia priamo v tom istom riadku. S zostáva samostatnou kartou s dizajnom a parametrami. Každý parameter formulára má vlastnú označenú bunku: pri G napríklad Material, Finish, meno/fonty, číslo/farby, Swingarms, Grip a Printer; pri S Patch, Side Brand Patches, Waterproof Seams, Enduro Pocket, Printed Ribs a Complexity; pri F nastavenie Fitting. Polia pochádzajú z rovnakých definícií ako formulár, vrátane dodatočných uložených polí bez aktívnej definície. Nevyplnený parameter zobrazuje pomlčku; nula zostáva nulou. Poznámky sú oddelene pod parametrami, zobrazujú sa iba vyplnené a zachovávajú zalomenie riadkov.
+
+P zostáva tabuľkou s názvom, barcode, farbou, počtom kusov, živým preferovaným dodávateľom a skladovým množstvom. Interná a zákaznícka poznámka majú vlastné označenie. Ostatné typy nemajú nepotrebné skladové stĺpce. Údaje sa escapujú; názvy a voľný text sa neprekladajú, štandardné názvy polí a voľby používajú SK/EN. Detailový modal je širší a mriežka sa prispôsobí dostupnej šírke; úzka obrazovka posúva horizontálne iba tabuľku plastov.
+
+Nasadenie: **.cache/product-builder/product-builder-compact-components.zip** obsahuje assets/product_builder.css a scripts/product_builder/{app.js,page.php}. Nahrajte obsah so zachovaním adresárov a po uložení rozpracovaného formulára obnovte stránku. **Žiadny ďalší SQL import netreba.** Kompletný product-builder-upload.zip je aktualizovaný. Uložené produkty, parametre, SKU ani IMG stavy sa touto úpravou nemenia.
+
+Overenie: product_builder_component_details_ui_test.js kontroluje všetky definované polia, viac položiek, staršie/odstránené hodnoty, poznámky, nulové množstvo, escapovanie, dodávateľov, inline detail aj modal a mobil. Prešli aj existujúce testy inventory, Trim Kit, i18n a generovanie stránok/práv. Testy používajú simulované API; reálne listingy nemenia. Náhľady boli vizuálne skontrolované. Kompaktná úprava G/F (11. 11. 2026) prešla opakovaným overením všetkých parametrov, poznámok, skladových údajov, Trim Kit, modalu a mobilu; údaje ani databázu nemení.
+
+## Category s modelcode a stĺpec IMG
+
+V Builderi aj Listings je modelcode s kopírovaním v Category vedľa malého kruhového U (univerzálny listing) alebo S (špecifický listing). Názov kategórie zostáva pod nimi. Pôvodný stĺpec Modelcode je IMG.
+
+IMG obsahuje ✗ (červená, predvolená hodnota), R (purpurová), A (žltá) a Path s ikonami adresára/kopírovania (zelená). Zmeny ✗/R/A sa uložia ihneď; Path otvorí modal a uloží sa až po potvrdení neprázdnej cesty. Zrušenie modalu ponechá pôvodný stav. Ikona adresára umožní cestu opäť zobraziť/upraviť a ikona kopírovania skopíruje celú cestu vrátane medzier a spätných lomiek. Kopírovanie má vizuálnu odozvu a 25 ms vibráciu tam, kde ju prehliadač podporuje.
+
+Nové polia product_builder_products.img_status, img_path a img_version sú oddelené od editácie produktu. ✗ sa interne ukladá ako none. Zmena IMG zachová rozpracovaný formulár, SKU, komponenty a verziu produktu. Vlastná verzia IMG bráni prepísaniu zmeny iného používateľa; pri chybe zostane potvrdená hodnota a tlačidlo na načítanie aktuálneho stavu. Pri prepnutí z Path na iný stav sa posledná cesta uchová pre ďalšie použitie. Cesta je len text, server ju neotvára ani nekontroluje existenciu adresára. Maximálna dĺžka je 2048 znakov.
+
+Samostatná úprava farieb po nasadení IMG: **.cache/product-builder/product-builder-img-colors.zip** obsahuje assets/product_builder.css a scripts/product_builder/page.php. Nahrajte so zachovaním adresárov a obnovte stránku. Ak už je update 009 importovaný, ďalší SQL import netreba. Farebné zmeny sú aj v IMG a kompletnom upload balíku.
+
+Práva zostávajú rovnaké: všetci prihlásení môžu stav vidieť a cestu kopírovať; zápis vyžaduje products.view + products.manage a platný CSRF token. Údaje a nové popisy fungujú v SK/EN.
+
+Nasadenie: najprv importujte **db/product_builder_update_009.sql** do existujúcej aplikačnej databázy cez phpMyAdmin. Potom nahrajte webové súbory z **.cache/product-builder/product-builder-img.zip** so zachovaním adresárov; SQL 009 je priložený aj v priečinku db v ZIP-e, ale musí sa importovať. Balík obsahuje sedem webových súborov a jeden SQL skript. Po uložení rozpracovaného formulára obnovte stránku. Lokálna vývojová databáza už má update 009 aplikovaný. Kompletný product-builder-upload.zip, inštalačné SQL, kumulatívny update_all a diagnostika sú aktualizované; diagnostika má 23 požadovaných objektov.
+
+Overenie: product_builder_img_test.php používa dočasné tabuľky na uloženie stavov/ciest, konflikty a zachovanie ostatných dát; product_builder_img_ui_test.js overuje farby, okamžité uloženie, modal vrátane rýchleho opätovného otvorenia, chyby/opakovanie, kopírovanie, prístup čitateľa, SK/EN a mobil. Prešli aj existujúce testy migrácií (izolované tabuľky), práv, prekladov, kopírovania stĺpcov a dodávateľov. Reálne listingy sa pri testoch nemenia.
+
+## Preferred supplier pre vlastnú výrobu
+
+Grafika (G, vrátane Trim Kit), fitting (F) a seat covery (S) zobrazujú Preferred supplier = Scrub v rozbalenom výpise komponentov aj v modale Detail. Platí to v Builderi aj Listings pre existujúce aj nové listingy. Stĺpec je dostupný aj pri samostatnom G, F alebo S; skladové množstvo sa zobrazuje iba v listingoch obsahujúcich plasty. Dodávateľ a zásoby plastov sa naďalej načítavajú z items.
+
+Nasadenie: **.cache/product-builder/product-builder-scrub-supplier.zip** obsahuje scripts/product_builder/app.js a scripts/product_builder/page.php. Nahrajte ich so zachovaním adresárov a obnovte stránku po uložení rozpracovaného formulára. **SQL import netreba.** Kompletný product-builder-upload.zip je tiež aktualizovaný.
+
+Overenie: existujúci tests/product_builder_inventory_ui_test.js prešiel pre zmiešaný bundle, samostatné G/F/S, rozbalené riadky, detailový modal používateľa iba na čítanie a mobil. API je simulované; test nemení listingy ani zásoby.
+
 ## Vyhľadávanie podľa stĺpca Category
 
 Vyhľadávanie v Builderi aj Listings zahŕňa okrem názvu, SKU a modelcode aj značku, model alebo UNI kategóriu a roky zobrazené v stĺpci Category. Nájde napríklad KTM, SX 50, KTM 2016-2023, celý text KTM · SX 50 · 2016-2023, Kawasaki · Default alebo Husaberg · TE · 2013-2014. Bodky · aj viacnásobné medzery slúžia ako oddeľovače; pomlčky v rokoch sa normalizujú. Všetky zadané časti kategórie musia sedieť na rovnaký listing.
@@ -298,7 +386,7 @@ Súbory `includes/conn.php`, testy, CLI inštalátor a zdrojové CSV nie sú sú
 ## Inštalácia cez CLI (alternatíva)
 
 1. `php scripts/product_builder/install.php`
-   - Vytvorí šesť nových tabuliek podľa `db/product_builder.sql`.
+   - Vytvorí sedem nových tabuliek podľa `db/product_builder.sql`.
    - Importuje 1517 dizajnov z update 004 a 12 verzií grafiky z update 005.
    - Načíta 53 kategórií z dodaného `scripts/product_builder/UniCategories.csv`.
    - Generuje UNI modelcode rovnakým algoritmom ako Models Database, s kontrolou proti konkrétnym modelom aj UNI kategóriám.
@@ -315,6 +403,7 @@ Tabuľky:
 - `product_builder_designs`: skupina G/S, názov, stabilný kľúč importu a verzia.
 - `product_builder_graphics_versions`: názov verzie grafiky, poradie, stabilný kľúč importu a verzia záznamu.
 - `product_builder_boxes`: názov krabice, tri rozmery v cm, hmotnosť v kg a verzia záznamu.
+- `product_builder_channel_listings`: stav zalistovania, URL, skutočná cena a mena pre každú platformu, verzia, dátumy a editor.
 
 ## CSV
 
@@ -357,8 +446,8 @@ Databáza dizajnov Graphics a Seat Covers je implementovaná. Väzby na ďalšie
 
 ## Neúplná databázová aktualizácia na serveri
 
-Banner "The product database needs to be installed or updated" kontroluje šesť tabuliek modulu a stĺpce color, options_json, design_id a graphics_version_id v product_builder_components, plus osem cenových stĺpcov, box_id a weight_kg v product_builder_products. Update 005 nenahrádza staršie aktualizácie.
+Banner "The product database needs to be installed or updated" kontroluje sedem tabuliek modulu, štyri doplnené stĺpce komponentov, trinásť stĺpcov cien/balenia/IMG v product_builder_products a sedem stĺpcov stavov platforiem v product_builder_channel_listings. Update 005 nenahrádza staršie aktualizácie.
 
-Pri existujúcej inštalácii s neznámym stavom aktualizácií importujte do databázy aplikácie **db/product_builder_update_all.sql**. Obsahuje základné tabuľky a aktualizácie 002 až 008 v správnom poradí. Zachová listingy, SKU, komponenty, kategórie, vlastné názvy a výbery. Dopĺňa aj chýbajúce predvolené dizajny a verzie; predtým zmazané predvolené záznamy sa môžu vrátiť. Nemení používateľské oprávnenia a neimportuje UNI kategórie.
+Pri existujúcej inštalácii s neznámym stavom aktualizácií importujte do databázy aplikácie **db/product_builder_update_all.sql**. Obsahuje základné tabuľky a aktualizácie 002 až 010 v správnom poradí. Zachová listingy, SKU, komponenty, kategórie, vlastné názvy a výbery. Dopĺňa aj chýbajúce predvolené dizajny a verzie; predtým zmazané predvolené záznamy sa môžu vrátiť. Nemení používateľské oprávnenia a neimportuje UNI kategórie.
 
-Záverečná kontrola vypíše názov zvolenej databázy a dvadsať riadkov so stavom OK/MISSING. Rovnakú kontrolu bez zmien dát možno spustiť cez **db/product_builder_check.sql**. Ak sú všetky riadky OK, ale aplikácia stále hlási chýbajúcu schému, overte, či produkčné PDO pripojenie používa tú istú databázu a server. Pri chybe importu riešte prvú SQL chybu.
+Záverečná kontrola vypíše názov zvolenej databázy a 31 riadkov so stavom OK/MISSING. Rovnakú kontrolu bez zmien dát možno spustiť cez **db/product_builder_check.sql**. Ak sú všetky riadky OK, ale aplikácia stále hlási chýbajúcu schému, overte, či produkčné PDO pripojenie používa tú istú databázu a server. Pri chybe importu riešte prvú SQL chybu.

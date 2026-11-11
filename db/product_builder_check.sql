@@ -1,4 +1,4 @@
--- Read-only verification of the same six tables and fourteen columns checked by the application.
+-- Read-only verification of the same seven tables and twenty-four columns checked by the application.
 -- Select the DarkScrub application database in phpMyAdmin before importing.
 SELECT DATABASE() AS checked_database;
 SELECT 'product_builder_products' AS required_object, IF(EXISTS(SELECT 1 FROM information_schema.tables WHERE table_schema=DATABASE() AND table_name='product_builder_products'),'OK','MISSING') AS status
@@ -39,4 +39,26 @@ SELECT 'product_builder_products.amazon_currency', IF(EXISTS(SELECT 1 FROM infor
 UNION ALL
 SELECT 'product_builder_products.box_id', IF(EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name='product_builder_products' AND column_name='box_id'),'OK','MISSING')
 UNION ALL
-SELECT 'product_builder_products.weight_kg', IF(EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name='product_builder_products' AND column_name='weight_kg'),'OK','MISSING');
+SELECT 'product_builder_products.weight_kg', IF(EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name='product_builder_products' AND column_name='weight_kg'),'OK','MISSING')
+UNION ALL
+SELECT 'product_builder_products.img_status', IF(EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name='product_builder_products' AND column_name='img_status'),'OK','MISSING')
+UNION ALL
+SELECT 'product_builder_products.img_path', IF(EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name='product_builder_products' AND column_name='img_path'),'OK','MISSING')
+UNION ALL
+SELECT 'product_builder_products.img_version', IF(EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name='product_builder_products' AND column_name='img_version'),'OK','MISSING')
+UNION ALL
+SELECT 'product_builder_channel_listings', IF(EXISTS(SELECT 1 FROM information_schema.tables WHERE table_schema=DATABASE() AND table_name='product_builder_channel_listings'),'OK','MISSING')
+UNION ALL
+SELECT 'product_builder_channel_listings.product_id', IF(EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name='product_builder_channel_listings' AND column_name='product_id'),'OK','MISSING')
+UNION ALL
+SELECT 'product_builder_channel_listings.channel', IF(EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name='product_builder_channel_listings' AND column_name='channel'),'OK','MISSING')
+UNION ALL
+SELECT 'product_builder_channel_listings.listing_status', IF(EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name='product_builder_channel_listings' AND column_name='listing_status'),'OK','MISSING')
+UNION ALL
+SELECT 'product_builder_channel_listings.listing_url', IF(EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name='product_builder_channel_listings' AND column_name='listing_url'),'OK','MISSING')
+UNION ALL
+SELECT 'product_builder_channel_listings.listed_price', IF(EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name='product_builder_channel_listings' AND column_name='listed_price'),'OK','MISSING')
+UNION ALL
+SELECT 'product_builder_channel_listings.listed_currency', IF(EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name='product_builder_channel_listings' AND column_name='listed_currency'),'OK','MISSING')
+UNION ALL
+SELECT 'product_builder_channel_listings.version', IF(EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name='product_builder_channel_listings' AND column_name='version'),'OK','MISSING');

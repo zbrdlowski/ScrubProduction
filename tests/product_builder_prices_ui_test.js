@@ -26,12 +26,12 @@ const {chromium}=require('playwright'),fs=require('fs'),assert=require('assert/s
  await page.route('**/scripts/product_builder/api.php?*',handler);
  const url=process.env.PRODUCT_BUILDER_TEST_URL||'http://localhost/darkscrub/.cache/product-builder/preview.html';
  await page.goto(url);await page.waitForSelector('[data-product="701"]');
- assert.deepEqual(await page.locator('[data-price-cell]').allTextContents(),['—','—','—','—'],'Legacy prices remain unset.');
+ assert.deepEqual(await page.locator('[data-price-cell="recommended"], .pb-channel-price').allTextContents(),['—','—','—','—'],'Legacy prices remain unset.');
  await page.locator('[data-product="701"]').click();assert.equal(await page.locator('#pb-recommended-price').inputValue(),'');
  await page.locator('#pb-save').click();assert.equal(saves,0);assert.equal(await page.locator('#pb-recommended-price').evaluate(el=>el.validity.valueMissing),true);
  for(const [key,amount,currency] of [['recommended','149,90','EUR'],['web','129.50','GBP'],['ebay','0.00','USD'],['amazon','189.99','CAD']]){await page.fill('#pb-'+key+'-price',amount);await page.selectOption('#pb-'+key+'-currency',currency);}
  const save=async count=>{await page.locator('#pb-save').click();await page.waitForFunction(()=>!document.getElementById('pb-product-form').inert);assert.equal(saves,count);await page.waitForFunction(()=>document.querySelector('[data-price-cell="recommended"]').textContent===document.getElementById('pb-recommended-price').value+' EUR');};
- await save(1);assert.deepEqual(await page.locator('[data-price-cell]').allTextContents(),['149.90 EUR','129.50 GBP','0.00 USD','189.99 CAD']);
+ await save(1);assert.deepEqual(await page.locator('[data-price-cell="recommended"], .pb-channel-price').allTextContents(),['149.90 EUR','129.50 GBP','0.00 USD','189.99 CAD']);
  await page.locator('[data-product-expand="701"]').click();await page.waitForSelector('#pb-list-components-701 .pb-component-details');assert.equal(await page.locator('#pb-list-components-701>td').getAttribute('colspan'),'12');
  await page.locator('[data-product-expand="701"]').click();
  const boxes=await page.locator('.pb-price-field').evaluateAll(nodes=>nodes.map(el=>({x:el.getBoundingClientRect().x,y:el.getBoundingClientRect().y})));assert.ok(boxes.every(b=>Math.abs(b.y-boxes[0].y)<2),'Four prices share one row on desktop.');
@@ -41,7 +41,7 @@ const {chromium}=require('playwright'),fs=require('fs'),assert=require('assert/s
  await page.locator('#pb-products').locator('xpath=ancestor::section').screenshot({path:'.cache/product-builder/prices-list.png'});
  await page.fill('#pb-recommended-price','-1');await page.locator('#pb-save').click();assert.equal(saves,1);assert.equal(await page.locator('#pb-recommended-price').evaluate(el=>el.validity.patternMismatch),true);
  await page.fill('#pb-recommended-price','159.90');await page.selectOption('#pb-web-currency','CHF');assert.equal(await page.locator('#pb-web-price').inputValue(),'129.50','Changing currency does not convert the amount.');await save(2);
- await page.fill('#pb-web-price','');await save(3);assert.equal(await page.locator('[data-price-cell="web"]').textContent(),'—');
+ await page.fill('#pb-web-price','');await save(3);assert.equal(await page.locator('[data-price-cell="web"] .pb-channel-price').textContent(),'—');
  await page.locator('#pb-cancel').click();for(const key of channels){assert.equal(await page.locator('#pb-'+key+'-price').inputValue(),'');assert.equal(await page.locator('#pb-'+key+'-currency').inputValue(),'EUR');}
  await page.locator('[data-product="701"]').click();assert.equal(await page.locator('#pb-web-price').inputValue(),'');assert.equal(await page.locator('#pb-web-currency').inputValue(),'CHF');assert.equal(await page.locator('#pb-ebay-price').inputValue(),'0.00');
  await page.setViewportSize({width:390,height:900});await page.locator('.pb-save-bar').screenshot({path:'.cache/product-builder/prices-mobile.png'});
@@ -50,6 +50,6 @@ const {chromium}=require('playwright'),fs=require('fs'),assert=require('assert/s
  const reader=await browser.newPage({viewport:{width:1600,height:1000}});reader.on('pageerror',e=>errors.push(e.message));await reader.route('**/scripts/product_builder/api.php?*',handler);
  const html=fs.readFileSync('.cache/product-builder/preview.html','utf8').replace(/<form id="pb-product-form">[\s\S]*?<\/form>/,'').replace('"canEdit":true','"canEdit":false');
  await reader.route('**/.cache/product-builder/preview.html',route=>route.fulfill({contentType:'text/html',body:html}));await reader.goto(url);await reader.locator('[data-product="701"]').click();await reader.waitForSelector('#pb-detail-modal.show');
- assert.deepEqual(await reader.locator('#pb-detail .pb-price-overview dd').allTextContents(),['159.90 EUR','—','0.00 USD','189.99 CAD']);
+ assert.deepEqual(await reader.locator('#pb-detail .pb-price-overview-amount').allTextContents(),['159.90 EUR','—','0.00 USD','189.99 CAD']);
  assert.deepEqual(errors,[]);console.log('Price UI: legacy values, required price, per-channel currencies, save/reopen/clear, zero, expansion, responsive layout and view-only detail OK.');
 }finally{await browser.close();}})().catch(e=>{console.error(e);process.exitCode=1;});

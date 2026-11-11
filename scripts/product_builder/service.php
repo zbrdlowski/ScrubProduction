@@ -1,6 +1,7 @@
 <?php
 declare(strict_types=1);
 require_once __DIR__ . '/helpers.php';
+require_once __DIR__ . '/channel_listings.php';
 require_once __DIR__ . '/designs.php';
 require_once __DIR__ . '/graphics_versions.php';
 function pb_save_uni(PDO $pdo, mysqli $conn, array $data): int
@@ -69,6 +70,33 @@ function pb_generate_sku(PDO $pdo, string $bundle): string
     }
     throw new InvalidArgumentException('Unable to generate an available SKU. Please try again.');
 }
+/** Inline image status has its own revision so it never invalidates an open product form. */
+function pb_save_product_image(PDO $pdo, array $data): array
+{
+    $id = filter_var($data['id'] ?? null, FILTER_VALIDATE_INT, ['options'=>['min_range'=>1]]);
+    $version = filter_var($data['img_version'] ?? null, FILTER_VALIDATE_INT, ['options'=>['min_range'=>1]]);
+    $status = $data['img_status'] ?? null;
+    if (!$id || !$version || !in_array($status, ['none','R','A','Path'], true)) throw new InvalidArgumentException('Invalid IMG status.');
+    $path = null;
+    if ($status === 'Path') {
+        $path = pb_text($data['img_path'] ?? '', 'Folder path', 2048);
+        if (preg_match('/[\x00-\x1F\x7F]/', $path)) throw new InvalidArgumentException('Enter the folder path on a single line.');
+    }
+    $pdo->beginTransaction();
+    try {
+        $find = $pdo->prepare('SELECT img_status,img_path,img_version FROM product_builder_products WHERE id=? FOR UPDATE');
+        $find->execute([$id]); $current = $find->fetch(PDO::FETCH_ASSOC);
+        if (!$current) throw new InvalidArgumentException('Product not found.');
+        if ((int)$current['img_version'] !== $version) throw new InvalidArgumentException('Another user has changed the IMG status. Reload the latest status and try again.');
+        // Keep the last path when switching to a different status; selecting Path offers it again.
+        if ($status !== 'Path') $path = $current['img_path'];
+        $save = $pdo->prepare('UPDATE product_builder_products SET img_status=?,img_path=?,img_version=img_version+1 WHERE id=?');
+        $save->execute([$status,$path,$id]);
+        $pdo->commit();
+        return ['id'=>$id,'img_status'=>$status,'img_path'=>$path,'img_version'=>$version+1];
+    } catch (Throwable $e) { if ($pdo->inTransaction()) $pdo->rollBack(); throw $e; }
+}
+
 function pb_save_product(PDO $pdo, array $data, ?int $userId): array
 {
     $clean = pb_validate_product($data); $id = (int) ($data['id'] ?? 0);
@@ -202,6 +230,9 @@ function pb_product_overview(PDO $pdo, string $query = '', $page = 1, $perPage =
     $stmt->bindValue(count($params) + 2, $offset, PDO::PARAM_INT);
     $stmt->execute();
     $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    $channelListings = pb_channel_listings($pdo, array_column($rows, 'id'));
+    foreach ($rows as &$row) $row['channel_listings'] = $channelListings[(int)$row['id']];
+    unset($row);
     return ['rows' => $rows, 'pagination' => [
         'page'=>$page, 'per_page'=>$perPage, 'total'=>$total, 'pages'=>$pages,
         'from'=>count($rows) ? $offset + 1 : 0, 'to'=>count($rows) ? $offset + count($rows) : 0,

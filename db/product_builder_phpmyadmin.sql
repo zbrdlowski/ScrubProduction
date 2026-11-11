@@ -41,6 +41,9 @@ CREATE TABLE IF NOT EXISTS product_builder_products (
  amazon_currency CHAR(3) NOT NULL DEFAULT 'EUR',
  box_id BIGINT UNSIGNED NULL,
  weight_kg DECIMAL(9,3) NULL,
+ img_status VARCHAR(4) NOT NULL DEFAULT 'none',
+ img_path TEXT NULL,
+ img_version INT UNSIGNED NOT NULL DEFAULT 1,
  request_key CHAR(32) NOT NULL, version INT UNSIGNED NOT NULL DEFAULT 1, created_by INT NULL,
  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -1943,3 +1946,47 @@ EXECUTE pb_box_migration;
 DEALLOCATE PREPARE pb_box_migration;
 
 
+
+-- DARKSCRUB: product listing IMG status and local folder path (update 009).
+-- Select the application database in phpMyAdmin. Safe to import repeatedly.
+-- Existing and new listings start at the display value ✗ (stored as none).
+-- No product, SKU, component or existing path is overwritten.
+SET NAMES utf8mb4;
+
+SET @pb_img_exists = (SELECT COUNT(*) FROM information_schema.columns
+ WHERE table_schema=DATABASE() AND table_name='product_builder_products' AND column_name='img_status');
+SET @pb_img_sql = IF(@pb_img_exists=0,
+ 'ALTER TABLE product_builder_products ADD COLUMN img_status VARCHAR(4) NOT NULL DEFAULT ''none''', 'DO 0');
+PREPARE pb_img_migration FROM @pb_img_sql;
+EXECUTE pb_img_migration;
+DEALLOCATE PREPARE pb_img_migration;
+
+SET @pb_img_exists = (SELECT COUNT(*) FROM information_schema.columns
+ WHERE table_schema=DATABASE() AND table_name='product_builder_products' AND column_name='img_path');
+SET @pb_img_sql = IF(@pb_img_exists=0,
+ 'ALTER TABLE product_builder_products ADD COLUMN img_path TEXT NULL', 'DO 0');
+PREPARE pb_img_migration FROM @pb_img_sql;
+EXECUTE pb_img_migration;
+DEALLOCATE PREPARE pb_img_migration;
+
+SET @pb_img_exists = (SELECT COUNT(*) FROM information_schema.columns
+ WHERE table_schema=DATABASE() AND table_name='product_builder_products' AND column_name='img_version');
+SET @pb_img_sql = IF(@pb_img_exists=0,
+ 'ALTER TABLE product_builder_products ADD COLUMN img_version INT UNSIGNED NOT NULL DEFAULT 1', 'DO 0');
+PREPARE pb_img_migration FROM @pb_img_sql;
+EXECUTE pb_img_migration;
+DEALLOCATE PREPARE pb_img_migration;
+
+CREATE TABLE IF NOT EXISTS product_builder_channel_listings (
+ id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+ product_id BIGINT UNSIGNED NOT NULL, channel VARCHAR(16) NOT NULL,
+ listing_status VARCHAR(16) NOT NULL DEFAULT 'do_not_list',
+ listing_url VARCHAR(2048) NULL, listed_price DECIMAL(10,2) NULL,
+ listed_currency CHAR(3) NOT NULL DEFAULT 'EUR', version INT UNSIGNED NOT NULL DEFAULT 1,
+ updated_by INT NULL,
+ created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+ updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+ UNIQUE KEY uq_pb_channel_product (product_id,channel),
+ KEY idx_pb_channel_status (channel,listing_status),
+ CONSTRAINT fk_pb_channel_product FOREIGN KEY (product_id) REFERENCES product_builder_products(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
