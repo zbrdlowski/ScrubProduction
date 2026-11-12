@@ -9,6 +9,7 @@ require_once __DIR__ . '/orders_workflow_helpers.php';
 require_once __DIR__ . '/orders_customs_helpers.php';
 require_once __DIR__ . '/orders_multishipping_helpers.php';
 require_once __DIR__ . '/orders_product_filters.php';
+require_once __DIR__ . '/orders_pending_contact_helpers.php';
 require_once __DIR__ . '/shipping_methods.php';
 
 if (!isset($conn) || !$conn instanceof mysqli) {
@@ -814,6 +815,19 @@ if ($fDateMode === 'order') {
 }
 
 // ── Počty objednávok pre jednotlivé taby ──────────────────────────────────────────────────────────
+$pendingContactsReady = pendingContactsSchemaReady($conn);
+$isPendingContactView = $pendingContactsReady && $fStatus === 'PENDING';
+$pendingContactSqlParts = pendingContactSql();
+$fPendingContact = is_string($_GET['pending_contact'] ?? null) ? $_GET['pending_contact'] : 'all';
+if (!$isPendingContactView || !isset(pendingContactFilters()[$fPendingContact])) $fPendingContact = 'all';
+if ($fPendingContact === 'all') unset($_GET['pending_contact']);
+else $_GET['pending_contact'] = $fPendingContact;
+$pendingContactJoinSql = $isPendingContactView ? $pendingContactSqlParts['join'] : '';
+$pendingContactSelectSql = $isPendingContactView ? $pendingContactSqlParts['select'] . ',' : '';
+$pendingContactCounts = array_fill_keys(array_keys(pendingContactFilters()), 0);
+$pendingGlobalCounts = $pendingContactsReady
+  ? pendingContactCounts($conn, 'FROM orders o', "WHERE UPPER(TRIM(o.status)) = 'PENDING'")
+  : $pendingContactCounts;
 $quickTabCounts = ordersGetOrderStatusCounts($conn);
 $itemQuickTabCounts = ordersGetItemStatusCounts($conn);
 // Product tabs are temporarily disabled pending team feedback; keep the Item Type filter.
@@ -949,7 +963,7 @@ $defaultFedexShippingScope = ordersShippingScopeFromDepartment($dpt);
 if ($ordersCanManage) {
   $perm = max($perm, 400);
 }
-$ordersTableColumnCount = $isSuperAdmin ? 13 : 12;
+$ordersTableColumnCount = ($isSuperAdmin ? 13 : 12) + ($isPendingContactView ? 1 : 0);
 
 $aclCats = [];
 $aclTypes = [];
@@ -1369,17 +1383,25 @@ if ($fItemFeature === 'grip') {
   )";
 }
 
-$whereSql = $where ? ('WHERE ' . implode(' AND ', $where)) : '';
-
-$ordersFilteredTotal = null;
-$ordersCountSql = "SELECT COUNT(DISTINCT o.id) AS result_count
-FROM orders o
+$baseOrdersFromSql = "FROM orders o
 JOIN order_sources os ON os.id = o.source_id
 LEFT JOIN customers cu ON cu.id = o.customer_id
 LEFT JOIN order_addresses oa_ship
   ON oa_ship.order_id = o.id AND UPPER(oa_ship.type) = 'SHIPPING'
 LEFT JOIN order_addresses oa_bill
-  ON oa_bill.order_id = o.id AND UPPER(oa_bill.type) = 'BILLING'
+  ON oa_bill.order_id = o.id AND UPPER(oa_bill.type) = 'BILLING'";
+if ($isPendingContactView) {
+  // Counts respect all other filters and include every match, before LIMIT 1000.
+  $pendingContactCounts = pendingContactCounts($conn, $baseOrdersFromSql,
+    $where ? 'WHERE ' . implode(' AND ', $where) : '', $types, $params);
+  if ($fPendingContact !== 'all') $where[] = pendingContactFilterSql($fPendingContact);
+}
+$whereSql = $where ? ('WHERE ' . implode(' AND ', $where)) : '';
+
+$ordersFilteredTotal = null;
+$ordersCountSql = "SELECT COUNT(DISTINCT o.id) AS result_count
+$baseOrdersFromSql
+$pendingContactJoinSql
 $whereSql";
 
 $ordersCountStmt = $conn->prepare($ordersCountSql);
@@ -1395,6 +1417,7 @@ if ($ordersCountStmt) {
 }
 
 $sql = " SELECT
+  {$pendingContactSelectSql}
   o.id,
   o.customer_id,
   o.order_number,
@@ -1578,6 +1601,7 @@ LEFT JOIN employees status_override_employee
   ON status_override_employee.id = o.status_override_by
   AND o.status_override = 1
   AND o.status_override_note = 'Manual status change'
+$pendingContactJoinSql
 $whereSql
 
 ORDER BY
@@ -1605,6 +1629,9 @@ ORDER BY
   o.id ASC
 LIMIT 1000";
 
+if ($isPendingContactView) {
+  $sql = preg_replace('/\RORDER BY\R/', "\nORDER BY\n  " . $pendingContactSqlParts['sort'] . ",\n", $sql, 1);
+}
 $stmt = $conn->prepare($sql);
 if (!$stmt) {
   echo '<div class="alert alert-danger">SQL prepare error: ' . htmlspecialchars($conn->error) . '</div>';
@@ -1665,7 +1692,7 @@ foreach ($orderRows as $row) {
   }
 }
 
-if ($movedSplitChildIds) {
+if (!$isPendingContactView && $movedSplitChildIds) {
   $groupedOrderRows = [];
   foreach ($orderRows as $row) {
     $rowId = (int) ($row['id'] ?? 0);
@@ -2521,6 +2548,12 @@ $deptOptions = [
     flex: 1;
   }
 
+  /* Include contact filters in the measured sticky toolbar, even when they wrap. */
+  .orders-toolbar .pending-contact-filters {
+    flex-basis: 100%;
+    margin: 0;
+  }
+
   #ordersFilterCollapse {
     border-bottom: 1px solid rgba(255, 255, 255, .07);
   }
@@ -2612,6 +2645,10 @@ $deptOptions = [
 
     <form method="get" class="mb-0" style="min-width:320px; max-width:520px; flex:1;">
       <input type="hidden" name="page" value="<?= htmlspecialchars($page) ?>" />
+      <?php if ($isPendingContactView): ?>
+        <input type="hidden" name="status" value="PENDING">
+        <input type="hidden" name="pending_contact" value="<?= pendingContactEscape($fPendingContact) ?>">
+      <?php endif; ?>
 
       <div class="input-group input-group-sm <?= fActive($fQ) ?>">
         <input class="form-control form-control-sm" name="q" value="<?= htmlspecialchars($fQ) ?>"
@@ -2642,7 +2679,7 @@ $deptOptions = [
   function qtabIsActive(array $tabParams): bool
   {
     global $fExcludeStatuses;
-    $filterKeys = ['status', 'date_mode', 'item_status', 'item_department', 'traffic_department', 'traffic_state', 'exclude_status', 'source', 'country', 'payment', 'shipping', 'priority', 'priority_due', 'date_from', 'date_to', 'worker', 'dept', 'cat', 'type', 'q', 'print_printer', 'print_material', 'print_finish', 'item_feature'];
+    $filterKeys = ['status', 'date_mode', 'item_status', 'item_department', 'traffic_department', 'traffic_state', 'exclude_status', 'source', 'country', 'payment', 'shipping', 'priority', 'priority_due', 'date_from', 'date_to', 'worker', 'dept', 'cat', 'type', 'q', 'print_printer', 'print_material', 'print_finish', 'item_feature', 'pending_contact'];
     foreach ($tabParams as $k => $v) {
       $actualValue = $k === 'exclude_status' ? $fExcludeStatuses : ($_GET[$k] ?? '');
       if ((string)$actualValue !== (string)$v)
@@ -2660,7 +2697,7 @@ $deptOptions = [
   function qtabUrl(array $tabParams): string
   {
     $current = $_GET;
-    foreach (['status', 'date_mode', 'item_status', 'item_department', 'traffic_department', 'traffic_state', 'exclude_status', 'source', 'country', 'payment', 'shipping', 'priority', 'priority_due', 'date_from', 'date_to', 'worker', 'dept', 'cat', 'type', 'q', 'print_printer', 'print_material', 'print_finish', 'item_feature'] as $k) {
+    foreach (['status', 'date_mode', 'item_status', 'item_department', 'traffic_department', 'traffic_state', 'exclude_status', 'source', 'country', 'payment', 'shipping', 'priority', 'priority_due', 'date_from', 'date_to', 'worker', 'dept', 'cat', 'type', 'q', 'print_printer', 'print_material', 'print_finish', 'item_feature', 'pending_contact'] as $k) {
       unset($current[$k]);
     }
     if (isset($tabParams['exclude_status']) && !empty($current['customer_id'])) {
@@ -2682,6 +2719,16 @@ $deptOptions = [
       'color' => (string)($meta['color'] ?? '#6c757d'),
       'text_color' => ordersContrastColor((string)($meta['color'] ?? '#6c757d')),
     ];
+  }
+
+  if ($pendingContactsReady) {
+    $pendingShortcut = [
+      'id' => 'pending_contact_todo', 'label' => 'Pending: to contact',
+      'params' => ['status' => 'PENDING', 'pending_contact' => 'todo'],
+      'count' => $pendingGlobalCounts['todo'], 'color' => '#ffc107', 'text_color' => '#212529',
+    ];
+    // Keep the actionable count visible before the horizontally scrollable status tabs.
+    array_splice($quickTabs, 1, 0, [$pendingShortcut]);
   }
 
   $itemQuickTabs = [];
@@ -2798,6 +2845,8 @@ $deptOptions = [
     // Každý záznam: [ 'label' => 'Status', 'value' => 'IN_PROGRESS', 'display' => 'In Progress' ]
     // Ak chceš pridať nový filter do badgu, pridaj sem ďalší riadok.
     $activeFilterBadges = [];
+    if ($fPendingContact !== 'all')
+      $activeFilterBadges[] = ['label' => 'Contact', 'display' => pendingContactFilters()[$fPendingContact]];
     if ($fStatus !== '')
       $activeFilterBadges[] = ['label' => 'Status', 'display' => str_replace('_', ' ', $fStatus)];
     if ($fDateMode === 'status' && ($fDateFrom !== '' || $fDateTo !== '') && $dateModeStatusLabel !== '')
@@ -3086,9 +3135,7 @@ $deptOptions = [
 
     $filterIsOnlyFromTab = (
       (
-        count($activeFilterBadges) === 1
-        && isset($activeFilterBadges[0]['label'])
-        && $activeFilterBadges[0]['label'] === 'Status'
+        count($activeFilterBadges) === ($fPendingContact !== 'all' ? 2 : 1)
         && in_array(strtoupper($fStatus), $tabStatuses, true)
       )
       || (
@@ -3202,12 +3249,35 @@ $deptOptions = [
         data-target="#ordersFilterCollapse" aria-expanded="<?= $collapseShow === 'show' ? 'true' : 'false' ?>">
         <i class="fas fa-filter mr-1"></i>+ Filters
       </button>
+      <?php if ($isPendingContactView): ?>
+        <nav class="pending-contact-filters" aria-label="Pending order contacts">
+          <?php foreach (pendingContactFilters() as $contactFilter => $contactFilterLabel): ?>
+            <?php
+            if ($contactFilter === 'unknown' && !$pendingContactCounts['unknown'] && $fPendingContact !== 'unknown') continue;
+            $contactUrl = $_GET;
+            $contactUrl['page'] = $page;
+            $contactUrl['status'] = 'PENDING';
+            unset($contactUrl['exclude_status'], $contactUrl['pending_contact']);
+            if ($contactFilter !== 'all') $contactUrl['pending_contact'] = $contactFilter;
+            ?>
+            <a class="btn btn-sm <?= $fPendingContact === $contactFilter ? 'btn-info' : 'btn-outline-info' ?>"
+              href="?<?= pendingContactEscape(http_build_query($contactUrl)) ?>"
+              <?= $fPendingContact === $contactFilter ? 'aria-current="page"' : '' ?>>
+              <?= pendingContactEscape($contactFilterLabel) ?>
+              <span class="badge badge-light ml-1"><?= (int) $pendingContactCounts[$contactFilter] ?></span>
+            </a>
+          <?php endforeach; ?>
+        </nav>
+      <?php endif; ?>
     </div>
 
     <!-- ── Filter form (collapse) ──────────────────────────────────────── -->
     <div class="collapse <?= $collapseShow ?>" id="ordersFilterCollapse">
       <form method="get" id="ordersFilterForm" class="mb-2">
         <input type="hidden" name="page" value="<?= htmlspecialchars($page) ?>" />
+        <?php if ($fPendingContact !== 'all'): ?>
+          <input type="hidden" name="pending_contact" value="<?= pendingContactEscape($fPendingContact) ?>">
+        <?php endif; ?>
         <?php if ($fCustomerId > 0): ?>
           <input type="hidden" name="customer_id" value="<?= (int) $fCustomerId ?>" />
           <input type="hidden" name="customer_scope" value="<?= htmlspecialchars($fCustomerScope) ?>" />
@@ -3511,17 +3581,25 @@ $deptOptions = [
       </form>
     </div><!-- /collapse -->
 
+    <?php if ($fStatus === 'PENDING' && !$pendingContactsReady): ?>
+      <div class="alert alert-warning">Contact tracking requires the latest database update. Run scripts/orders/install_pending_contacts_2026_11.php.</div>
+    <?php endif; ?>
+    <?php if ($isPendingContactView): ?>
+      <?php if ($ordersFilteredTotal > count($orderRows)): ?>
+        <div class="alert alert-info py-2">Showing the first <?= count($orderRows) ?> of <?= (int) $ordersFilteredTotal ?> orders. Counts include all results; use filters to narrow the list.</div>
+      <?php endif; ?>
+    <?php endif; ?>
     <div id="ordersTableWrap">
-      <table id="ordersTable" class="table table-bordered table-hover table-sm">
+      <table id="ordersTable" class="table table-bordered table-hover table-sm<?= $isPendingContactView ? ' orders-pending-contacts' : '' ?>">
         <thead>
           <tr style="background:#343a40;color:#fff;">
             <th class="text-center" width="5%">Import</th>
             <th class="text-center" width="5%">Date</th>
-            <th class="text-center" width="4%" title="Custom order owner / manual workflow override">
+            <th class="text-center" width="<?= $isPendingContactView ? '3%' : '4%' ?>" title="Custom order owner / manual workflow override">
               <i class="fas fa-user-circle" aria-hidden="true"></i><span class="sr-only">Owner / override</span>
             </th>
             <th class="text-center" width="5%">Source</th>
-            <th class="text-center" width="11%">Order #</th>
+            <th class="text-center" width="<?= $isPendingContactView ? '8%' : '11%' ?>">Order #</th>
             <th>Customer</th>
             <th class="text-center" width="4%">Country</th>
             <?php if ($isSuperAdmin): ?>
@@ -3530,7 +3608,12 @@ $deptOptions = [
             <th class="text-center">Semafor</th>
             <th class="text-center">Priority</th>
             <th class="text-center">Status</th>
-            <th class="text-center">Assigned</th>
+            <?php if ($isPendingContactView): ?>
+              <th class="pending-contact-last-column">Last contact</th>
+              <th class="pending-contact-next-column">Next contact</th>
+            <?php else: ?>
+              <th class="text-center">Assigned</th>
+            <?php endif; ?>
             <th><?= htmlspecialchars($detailColumnTitle) ?></th>
           </tr>
         </thead>
@@ -3553,6 +3636,9 @@ $deptOptions = [
 
             if ($statusUpper === 'PENDING') {
               $rowClasses[] = 'order-pending';
+              if ($isPendingContactView && in_array($row['pending_contact_state'] ?? '', ['due', 'repeat', 'cancel_requested'], true)) {
+                $rowClasses[] = 'pending-contact-' . $row['pending_contact_state'];
+              }
             } elseif ($statusUpper === 'IN_PROGRESS') {
               $rowClasses[] = 'order-in-progress';
             } elseif ($dpt === 6 && $hasTM) {
@@ -3616,7 +3702,7 @@ $deptOptions = [
               && $row['external_order_id'] !== $row['order_number']
               && !$isFollowupRow;
             ?>
-            <?php if ($importDayKey !== $ordersPreviousImportDay): ?>
+            <?php if (!$isPendingContactView && $importDayKey !== $ordersPreviousImportDay): ?>
               <?php $ordersPreviousImportDay = $importDayKey; ?>
               <tr class="orders-import-day-separator-row">
                 <td colspan="<?= (int) $ordersTableColumnCount ?>">
@@ -3690,7 +3776,7 @@ $deptOptions = [
                 <span
                   style="display:flex; justify-content:space-between; align-items:center; gap:6px; white-space:nowrap;">
                   <span style="padding-left:5px; display:inline-flex; align-items:center; gap:5px;">
-                    <span data-order-customer-name><?= htmlspecialchars($customer) ?></span>
+                    <span data-order-customer-name<?= $isPendingContactView ? ' title="' . pendingContactEscape($customer) . '"' : '' ?>><?= htmlspecialchars($customer) ?></span>
                     <?php if ($multishipping): ?>
                       <button type="button"
                         class="order-multishipping-badge js-open-multishipping <?= $multishippingIsMaster ? '' : 'is-member' ?>"
@@ -3929,7 +4015,12 @@ $deptOptions = [
                 $assignedUsersRaw .= ($assignedUsersRaw !== '' ? ';;' : '') . $itemAssignedUsersRaw;
               }
               ?>
-              <td data-assigned-cell="<?= $orderId ?>"><?= render_assigned_users_html($conn, $orderId, $assignedUsersRaw) ?></td>
+              <?php if ($isPendingContactView): ?>
+                <td class="pending-contact-last-column"><?= pendingContactLastCell($row) ?></td>
+                <td class="pending-contact-next-column"><?= pendingContactCell($row, auth_can('orders.work')) ?></td>
+              <?php else: ?>
+                <td data-assigned-cell="<?= $orderId ?>"><?= render_assigned_users_html($conn, $orderId, $assignedUsersRaw) ?></td>
+              <?php endif; ?>
 
 
               <td class="text-nowrap">
@@ -3982,6 +4073,7 @@ $deptOptions = [
 
   </div>
 </div>
+<?php require __DIR__ . '/orders_pending_contact_modal.php'; ?>
 <div class="modal fade" id="inviteModal" tabindex="-1" role="dialog" aria-labelledby="inviteModalLabel"
   aria-hidden="true">
   <div class="modal-dialog modal-md" role="document">
@@ -6353,6 +6445,8 @@ $deptOptions = [
   const ordersTableColumnCount = <?= (int) $ordersTableColumnCount ?>;
 
   function sortOrdersByImportDate() {
+    // Pending SQL already orders by contact deadline; production grouping must not undo it.
+    if (<?= $isPendingContactView ? 'true' : 'false' ?>) return;
     const $tbody = $('#ordersTable tbody');
 
     $tbody.find('tr.orders-import-day-separator-row').remove();

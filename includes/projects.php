@@ -848,6 +848,37 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     vertical-align: middle !important;
   }
 
+  .project-day-separator-row>td {
+    padding: 7px 0 6px !important;
+    border-top: 0 !important;
+    border-bottom: 0 !important;
+    background: #171b20 !important;
+  }
+
+  .project-day-separator {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    color: #9ed6ff;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: .05em;
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+
+  .project-day-separator::before,
+  .project-day-separator::after {
+    content: "";
+    flex: 1 1 auto;
+    height: 1px;
+    background: linear-gradient(90deg, rgba(63, 158, 255, .12), rgba(63, 158, 255, .72));
+  }
+
+  .project-day-separator::after {
+    background: linear-gradient(90deg, rgba(63, 158, 255, .72), rgba(63, 158, 255, .12));
+  }
+
   .project-row {
     cursor: pointer;
   }
@@ -1904,8 +1935,10 @@ if ($viewId > 0) {
         GROUP BY project_id
     ) pa ON pa.project_id = p.id
     ORDER BY
+        DATE(p.created_at) DESC,
         FIELD(p.status,'in_progress','stuck','waiting','done','cancelled'),
         FIELD(p.priority,'urgent','high','medium','low'),
+        p.created_at DESC,
         p.id DESC
 ";
   $res = $conn->query($sql);
@@ -2092,7 +2125,11 @@ if ($viewId > 0) {
               </td>
             </tr>
           <?php endif; ?>
+          <?php $projectsPreviousCreatedDay = null; ?>
           <?php foreach ($projects as $p):
+            $createdTime = !empty($p['created_at']) ? strtotime($p['created_at']) : false;
+            $createdDay = $createdTime !== false ? date('Y-m-d', $createdTime) : 'unknown';
+            $createdDayLabel = $createdTime !== false ? date('d.m.Y', $createdTime) : 'Unknown date';
             $total = intval($p['total_tasks']);
             $done = intval($p['done_tasks']);
             $pct = $total > 0 ? round(($done / $total) * 100) : 0;
@@ -2134,6 +2171,14 @@ if ($viewId > 0) {
               $rowClasses[] = 'project-row-complete';
             }
             ?>
+            <?php if ($createdDay !== $projectsPreviousCreatedDay): ?>
+              <?php $projectsPreviousCreatedDay = $createdDay; ?>
+              <tr class="project-day-separator-row">
+                <td colspan="9">
+                  <div class="project-day-separator"><span><?= htmlspecialchars($createdDayLabel) ?></span></div>
+                </td>
+              </tr>
+            <?php endif; ?>
             <tr class="<?= implode(' ', $rowClasses) ?>" data-status="<?= $p['status'] ?>"
               data-employees="<?= htmlspecialchars($employeeIdsAttr, ENT_QUOTES, 'UTF-8') ?>"
               data-title="<?= strtolower(htmlspecialchars($p['title'])) ?>"
@@ -2486,6 +2531,12 @@ if ($viewId > 0) {
         var people = String($(this).data('people') || '');
         var searchMatch = !search || title.indexOf(search) !== -1 || people.indexOf(search) !== -1;
         $(this).toggle(statusMatch && employeeMatch && searchMatch);
+      });
+      $('#projectsTable .project-day-separator-row').each(function () {
+        var hasVisibleProjects = $(this)
+          .nextUntil('.project-day-separator-row', '.project-row')
+          .filter(':visible').length > 0;
+        $(this).toggle(hasVisibleProjects);
       });
 
       try {

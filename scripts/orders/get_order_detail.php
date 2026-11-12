@@ -1561,6 +1561,7 @@ require_once __DIR__ . '/access.php';
 require_once $base . '/includes/orders_status_helpers.php';
 require_once $base . '/includes/orders_workflow_helpers.php';
 require_once $base . '/includes/orders_customs_helpers.php';
+require_once $base . '/includes/orders_pending_contact_helpers.php';
 require_once $base . '/includes/orders_address_helpers.php';
 require_once $base . '/includes/get_order_detail_product_spec_selects.php';
 require_once $base . '/includes/shipping_methods.php';
@@ -5617,6 +5618,24 @@ ob_start();
               <?php endforeach; ?>
 
             </select>
+
+            <?php
+            $detailPendingContactsReady = pendingContactsSchemaReady($conn);
+            $detailHasPendingContacts = false;
+            if ($detailPendingContactsReady && !$isPendingStatus) {
+              $contactCheck = $conn->prepare('SELECT id FROM order_pending_contacts WHERE order_id = ? LIMIT 1');
+              $contactCheck->bind_param('i', $orderId);
+              $contactCheck->execute();
+              $detailHasPendingContacts = (bool) $contactCheck->get_result()->fetch_assoc();
+              $contactCheck->close();
+            }
+            ?>
+            <?php if ($detailPendingContactsReady && ($isPendingStatus || $detailHasPendingContacts)): ?>
+              <button type="button" class="btn btn-sm btn-outline-info js-pending-contact"
+                data-order-id="<?php echo (int) $orderId; ?>">
+                <i class="fas fa-comments mr-1"></i><?php echo $isPendingStatus && $ordersCanWork ? 'Record contact' : 'Contact history'; ?>
+              </button>
+            <?php endif; ?>
 
             <?php if ($isPendingStatus && $ordersCanManageFinancials): ?>
               <button type="button" class="btn btn-sm btn-success btn-confirm-order-payment"
