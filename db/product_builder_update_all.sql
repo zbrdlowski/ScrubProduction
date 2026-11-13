@@ -1,12 +1,12 @@
--- DARKSCRUB: cumulative product builder repair/update through 010 (2026-11-11).
+-- DARKSCRUB: cumulative product builder repair/update through 011 (2026-11-13).
 -- Select the EXISTING DarkScrub application database in phpMyAdmin and import this file as UTF-8.
--- Includes base tables and updates 002, 003, 004, 005, 006, 007, 008, 009 and 010 in dependency order.
+-- Includes base tables and updates 002, 003, 004, 005, 006, 007, 008, 009, 010 and 011 in dependency order.
 -- Preserves existing products, SKUs, components, UNI categories and saved design/version selections.
 -- Adds missing default designs and Graphics versions; renamed defaults retain their names.
 -- Previously deleted default designs/versions may be added again.
 -- Does not change user permissions or import UNI categories.
 -- No CREATE DATABASE, USE, DROP or TRUNCATE statements.
--- The final verification must show thirty-one OK rows in the application database.
+-- The final verification must show thirty-two OK rows in the application database.
 SET NAMES utf8mb4;
 
 -- Independent product builder; no dependency on the legacy catalogue.
@@ -1883,8 +1883,20 @@ CREATE TABLE IF NOT EXISTS product_builder_channel_listings (
  CONSTRAINT fk_pb_channel_product FOREIGN KEY (product_id) REFERENCES product_builder_products(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Read-only verification of the same seven tables and twenty-four columns checked by the application.
+-- Read-only verification of the same seven tables and twenty-five columns checked by the application.
 -- Select the DarkScrub application database in phpMyAdmin before importing.
+-- DARKSCRUB: sales channel listing date (update 011).
+-- Select the application database in phpMyAdmin; run after update 010.
+-- Existing listing dates remain unknown (NULL), never guessed from edit timestamps.
+SET NAMES utf8mb4;
+SET @pb_listing_date_exists = (SELECT COUNT(*) FROM information_schema.columns
+ WHERE table_schema=DATABASE() AND table_name='product_builder_channel_listings' AND column_name='listed_date');
+SET @pb_listing_date_sql = IF(@pb_listing_date_exists=0,
+ 'ALTER TABLE product_builder_channel_listings ADD COLUMN listed_date DATE NULL AFTER listed_currency', 'DO 0');
+PREPARE pb_listing_date_migration FROM @pb_listing_date_sql;
+EXECUTE pb_listing_date_migration;
+DEALLOCATE PREPARE pb_listing_date_migration;
+
 SELECT DATABASE() AS checked_database;
 SELECT 'product_builder_products' AS required_object, IF(EXISTS(SELECT 1 FROM information_schema.tables WHERE table_schema=DATABASE() AND table_name='product_builder_products'),'OK','MISSING') AS status
 UNION ALL
@@ -1946,4 +1958,6 @@ SELECT 'product_builder_channel_listings.listed_price', IF(EXISTS(SELECT 1 FROM 
 UNION ALL
 SELECT 'product_builder_channel_listings.listed_currency', IF(EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name='product_builder_channel_listings' AND column_name='listed_currency'),'OK','MISSING')
 UNION ALL
-SELECT 'product_builder_channel_listings.version', IF(EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name='product_builder_channel_listings' AND column_name='version'),'OK','MISSING');
+SELECT 'product_builder_channel_listings.version', IF(EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name='product_builder_channel_listings' AND column_name='version'),'OK','MISSING')
+UNION ALL
+SELECT 'product_builder_channel_listings.listed_date', IF(EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name='product_builder_channel_listings' AND column_name='listed_date'),'OK','MISSING');

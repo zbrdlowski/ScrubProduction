@@ -35,7 +35,9 @@ const {chromium}=require('playwright'),assert=require('assert/strict');
   await open();
   assert.equal(await page.locator('.pb-components-focused').count(),2,'Only the product and its detail are raised.');
   assert.equal(await page.evaluate(()=>document.elementFromPoint(10,10).classList.contains('pb-components-backdrop')),true,'Fixed navigation is dimmed and covered.');
-  assert.equal(await detail.locator('[data-detail-component="P"]').evaluate(node=>{const r=node.getBoundingClientRect();return node.contains(document.elementFromPoint(r.x+20,r.y+r.height/2));}),true,'The detail stays above the dimmer inside the real ancestor structure.');
+  // The wider table can be scrolled horizontally when Components is clicked. Probe the visible portion.
+  await detail.locator('[data-detail-component="P"]').scrollIntoViewIfNeeded();
+  assert.equal(await detail.locator('[data-detail-component="P"]').evaluate(node=>{const r=node.getBoundingClientRect(),view=node.closest('.table-responsive').getBoundingClientRect();const x=(Math.max(0,r.left,view.left)+Math.min(innerWidth,r.right,view.right))/2,y=(Math.max(0,r.top)+Math.min(innerHeight,r.bottom))/2;return node.contains(document.elementFromPoint(x,y));}),true,'The detail stays above the dimmer inside the real ancestor structure.');
   await page.evaluate(()=>{
    Object.defineProperty(navigator,'clipboard',{configurable:true,value:{writeText:async()=>{throw Error('Use fallback');}}});
    document.execCommand=command=>{window.focusTestCopied=document.activeElement.value;return command==='copy';};

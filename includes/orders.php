@@ -2720,17 +2720,18 @@ $deptOptions = [
       'text_color' => ordersContrastColor((string)($meta['color'] ?? '#6c757d')),
     ];
   }
-
+/*
   if ($pendingContactsReady) {
     $pendingShortcut = [
       'id' => 'pending_contact_todo', 'label' => 'Pending: to contact',
       'params' => ['status' => 'PENDING', 'pending_contact' => 'todo'],
       'count' => $pendingGlobalCounts['todo'], 'color' => '#ffc107', 'text_color' => '#212529',
     ];
-    // Keep the actionable count visible before the horizontally scrollable status tabs.
-    array_splice($quickTabs, 1, 0, [$pendingShortcut]);
+    // Place the contact shortcut immediately after the Pending status tab.
+    $pendingTabIndex = array_search('order_pending', array_column($quickTabs, 'id'), true);
+    array_splice($quickTabs, $pendingTabIndex === false ? count($quickTabs) : $pendingTabIndex + 1, 0, [$pendingShortcut]);
   }
-
+*/
   $itemQuickTabs = [];
   $itemQuickTabDefinitions = ordersGetItemTabBarStatusDefinitionsForPosition($conn, (int)$dpt);
   $itemQuickTabDepartments = [];

@@ -14,7 +14,7 @@ $readProduct=fn()=>$pdo->query('SELECT * FROM product_builder_products WHERE id=
 $before=$readProduct();$components=$pdo->query('SELECT * FROM product_builder_components')->fetchAll(PDO::FETCH_ASSOC);
 foreach($read() as $channel=>$row)channelAssert($row['status']==='do_not_list'&&$row['version']===0&&$row['price']===null,'Unconfigured channel defaults are explicit.');
 channelAssert(pb_channel_listings($pdo,[])===[],'Empty overview needs no query.');
-$save=fn($channel,$version,$status,$extra=[])=>pb_save_channel_listing($pdo,['product_id'=>$id,'channel'=>$channel,'version'=>$version,'status'=>$status]+$extra,7);
+$save=fn($channel,$version,$status,$extra=[])=>pb_save_channel_listing($pdo,array_replace(['product_id'=>$id,'channel'=>$channel,'version'=>$version,'status'=>$status,'listed_date'=>'2026-10-29'],$extra),7);
 $save('web',0,'list');$save('ebay',0,'list');
 $url='https://shop.example.test/product/example%20kit?variant=AT&source=team';
 $save('web',1,'listed',['price'=>'149,90','currency'=>'GBP','url'=>$url]);
@@ -25,7 +25,9 @@ $snapshot=$read();channelReject(fn()=>$save('web',1,'do_not_list'));channelAsser
 $save('web',2,'do_not_list');channelAssert($read()['web']['url']===$url&&$read()['web']['price']==='149.90','Pausing retains last listing details.');
 $save('web',3,'list');channelAssert($read()['web']['url']===$url,'Scheduling again retains last listing details.');
 $save('web',4,'listed',['price'=>'150','currency'=>'AUD','url'=>$url]);
-$valid=['price'=>'10','currency'=>'EUR','url'=>'https://example.test/product'];
+$valid=['listed_date'=>'2026-10-29','price'=>'10','currency'=>'EUR','url'=>'https://example.test/product'];
+channelAssert($read()['web']['listed_date']==='2026-10-29','Listing date survives status changes and relisting.');
+foreach(['','2026-02-30','29.10.2026','2026-1-01','0999-12-31',"2026-1\x00-01",[]] as $bad)channelReject(fn()=>$save('amazon',0,'listed',array_replace($valid,['listed_date'=>$bad])));
 foreach(['','-1','1.234','100000000',[],"1e2"] as $bad)channelReject(fn()=>$save('amazon',0,'listed',array_replace($valid,['price'=>$bad])));
 foreach(['','XXX',[], 'EURO'] as $bad)channelReject(fn()=>$save('amazon',0,'listed',array_replace($valid,['currency'=>$bad])));
 foreach(['','javascript:alert(1)','data:text/html,test','file:///C:/x','https://user:pass@example.test/p','https://example.test/a b',"https://example.test/\npath",str_repeat('a',2049),[]] as $bad)channelReject(fn()=>$save('amazon',0,'listed',array_replace($valid,['url'=>$bad])));

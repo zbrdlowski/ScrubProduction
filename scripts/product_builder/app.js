@@ -132,7 +132,7 @@ function pricesDetail(row) {
   return '<dl class="pb-pricing-grid pb-price-overview">'+priceFields.map(channel=>{
     const state=row.channel_listings?.[channel],listed=state?.status==='listed',url=listed?listingUrl(state.url):'';
     const price=listed?priceText({value_price:state.price,value_currency:state.currency},'value'):priceText(row,channel);
-    return '<div><dt>'+esc(t(cfg.priceFields[channel]))+'</dt><dd><span class="pb-price-overview-amount">'+esc(price)+'</span>'+(channel==='recommended'?'':'<div class="small">'+esc(t(listingStatuses[state?.status||'do_not_list']))+'</div>')+(url?'<a href="'+esc(url)+'" target="_blank" rel="noopener noreferrer">'+esc(t('Open listing'))+' <i class="fas fa-external-link-alt" aria-hidden="true"></i></a>':'')+'</dd></div>';
+    return '<div><dt>'+esc(t(cfg.priceFields[channel]))+'</dt><dd><span class="pb-price-overview-amount">'+esc(price)+'</span>'+(channel==='recommended'?'':'<div class="small">'+esc(t(listingStatuses[state?.status||'do_not_list']))+'</div><div class="pb-price-detail-stats">'+channelStats(state||{})+'</div>')+(url?'<a href="'+esc(url)+'" target="_blank" rel="noopener noreferrer">'+esc(t('Open listing'))+' <i class="fas fa-external-link-alt" aria-hidden="true"></i></a>':'')+'</dd></div>';
   }).join('')+'</dl>';
 }
 function weightText(value) {
@@ -194,16 +194,22 @@ function rememberImage(row) {
 }
 function imageCellContents(row) {
   const id=String(row.id),pending=imagePending.has(id),error=imageErrors.get(id);
-  return '<div class="pb-img-controls"><select class="form-control form-control-sm pb-img-select" data-img-select="'+esc(id)+'" aria-label="'+esc(t('IMG status'))+'"'+(!cfg.canEdit||pending?' disabled':'')+'>'+[['none','✗'],['R','R'],['A','A'],['Path','Path']].map(([value,label])=>'<option value="'+value+'"'+(row.img_status===value?' selected':'')+'>'+label+'</option>').join('')+'</select>'+(row.img_status==='Path'?'<button type="button" class="btn pb-img-open" data-img-path="'+esc(id)+'" title="'+esc(t(cfg.canEdit?'Edit folder path':'View folder path'))+'" aria-label="'+esc(t(cfg.canEdit?'Edit folder path':'View folder path'))+'"'+(pending?' disabled':'')+'><i class="far fa-folder-open" aria-hidden="true"></i></button>'+copyButton(row.img_path,t('Copy folder path')):'')+'</div>'+(pending?'<span class="pb-img-feedback" role="status">'+esc(t('Saving…'))+'</span>':error?'<span class="pb-img-feedback" role="alert">'+esc(error)+'</span><button type="button" class="btn btn-sm btn-outline-light" data-img-reload="'+esc(id)+'">'+esc(t('Reload IMG status'))+'</button>':'');
+  return '<div class="pb-img-controls"><select class="form-control form-control-sm pb-img-select" data-img-select="'+esc(id)+'" aria-label="'+esc(t('IMG status'))+'"'+(!cfg.canEdit||pending?' disabled':'')+'>'+[['none','✗'],['R','R'],['A','A'],['Path','Path']].map(([value,label])=>'<option value="'+value+'"'+(row.img_status===value?' selected':'')+'>'+label+'</option>').join('')+'</select></div>'+(pending?'<span class="pb-img-feedback" role="status">'+esc(t('Saving…'))+'</span>':error?'<span class="pb-img-feedback" role="alert">'+esc(error)+'</span><button type="button" class="btn btn-sm btn-outline-light" data-img-reload="'+esc(id)+'">'+esc(t('Reload IMG status'))+'</button>':'');
+}
+function imageActions(row) {
+  const id=String(row.id),pending=imagePending.has(id);
+  return row.img_status==='Path'?'<div class="pb-cell-actions"><button type="button" class="btn pb-img-open" data-img-path="'+esc(id)+'" title="'+esc(t(cfg.canEdit?'Edit folder path':'View folder path'))+'" aria-label="'+esc(t(cfg.canEdit?'Edit folder path':'View folder path'))+'"'+(pending?' disabled':'')+'><i class="far fa-folder-open" aria-hidden="true"></i></button>'+copyButton(row.img_path,t('Copy folder path'))+'</div>':'<span class="pb-muted">—</span>';
 }
 function imageCell(row) {
   const state=rememberImage(row);
-  return '<td class="pb-img-cell" data-img-cell="'+esc(state.id)+'" data-img-status="'+esc(state.img_status)+'" aria-busy="'+imagePending.has(state.id)+'">'+imageCellContents(state)+'</td>';
+  return '<td class="pb-img-cell" data-img-cell="'+esc(state.id)+'" data-img-status="'+esc(state.img_status)+'" aria-busy="'+imagePending.has(state.id)+'">'+imageCellContents(state)+'</td><td class="pb-icon-column" data-img-actions="'+esc(state.id)+'">'+imageActions(state)+'</td>';
 }
 function renderImage(id) {
   const row=imageRows.get(String(id));if(!row)return;
   document.querySelectorAll('[data-img-cell]').forEach(cell=>{if(cell.dataset.imgCell!==String(id))return;cell.dataset.imgStatus=row.img_status;cell.setAttribute('aria-busy',String(imagePending.has(String(id))));cell.innerHTML=imageCellContents(row);});
+  document.querySelectorAll('[data-img-actions]').forEach(cell=>{if(cell.dataset.imgActions===String(id))cell.innerHTML=imageActions(row);});
 }
+
 async function saveImage(id,status,path,version) {
   id=String(id);if(!cfg.canEdit||imagePending.has(id))return false;
   imagePending.add(id);imageErrors.delete(id);renderImage(id);
@@ -272,7 +278,7 @@ function listingUrl(value) {
 }
 function rememberChannel(row,channel) {
   const key=channelKey(row.id,channel),old=channelRows.get(key),saved=row.channel_listings?.[channel];
-  const next={product_id:Number(row.id),channel,status:'do_not_list',url:null,price:null,currency:'EUR',version:0,...saved};
+  const next={product_id:Number(row.id),channel,status:'do_not_list',url:null,price:null,currency:'EUR',listed_date:null,sold_quantity:null,version:0,...saved};
   const state=old&&(channelPending.has(key)||old.version>Number(next.version))?old:next;
   state.name=row.name;state.sku=row.sku;state.suggestedPrice=row[channel+'_price'];state.suggestedCurrency=row[channel+'_currency']||'EUR';
   channelRows.set(key,state);return state;
@@ -282,17 +288,29 @@ function channelPrice(state) {
   return priceText({value_price:listed?state.price:state.suggestedPrice,value_currency:listed?state.currency:state.suggestedCurrency},'value');
 }
 function channelContents(state) {
-  const key=channelKey(state.product_id,state.channel),pending=channelPending.has(key),error=channelErrors.get(key),url=state.status==='listed'?listingUrl(state.url):'';
-  return '<div class="pb-channel-controls"><select class="form-control form-control-sm pb-channel-select" data-channel-select="'+esc(key)+'" aria-label="'+esc(t('{channel} listing status',{channel:listingChannels[state.channel]}))+'"'+(!cfg.canEdit||pending||error?' disabled':'')+'>'+Object.entries(listingStatuses).map(([value,label])=>'<option value="'+value+'"'+(state.status===value?' selected':'')+'>'+esc(t(label))+'</option>').join('')+'</select>'+(cfg.canEdit&&state.status==='listed'?'<button type="button" class="btn pb-channel-edit" data-channel-edit="'+esc(key)+'" title="'+esc(t('Edit listed price and URL'))+'" aria-label="'+esc(t('Edit listed price and URL'))+'"'+(pending?' disabled':'')+'><i class="fas fa-pen" aria-hidden="true"></i></button>':'')+'</div>'+(url?'<a class="pb-channel-link" href="'+esc(url)+'" target="_blank" rel="noopener noreferrer" title="'+esc(url)+'">'+esc(t('Open listing'))+' <i class="fas fa-external-link-alt" aria-hidden="true"></i></a>':'')+'<div class="pb-channel-price" title="'+esc(t(state.status==='listed'?'Listed price':'Suggested price'))+'">'+esc(channelPrice(state))+'</div>'+(pending?'<small class="pb-channel-feedback" role="status">'+esc(t('Saving…'))+'</small>':error?'<small class="pb-channel-feedback" role="alert">'+esc(error)+'</small><button type="button" class="btn btn-sm btn-outline-light" data-channel-reload="'+esc(key)+'">'+esc(t('Reload channel data'))+'</button>':'');
+  const key=channelKey(state.product_id,state.channel),pending=channelPending.has(key),error=channelErrors.get(key);
+  return '<div class="pb-channel-controls"><select class="form-control form-control-sm pb-channel-select" data-channel-select="'+esc(key)+'" aria-label="'+esc(t('{channel} listing status',{channel:listingChannels[state.channel]}))+'"'+(!cfg.canEdit||pending||error?' disabled':'')+'>'+Object.entries(listingStatuses).map(([value,label])=>'<option value="'+value+'"'+(state.status===value?' selected':'')+'>'+esc(t(label))+'</option>').join('')+'</select></div><div class="pb-channel-price" title="'+esc(t(state.status==='listed'?'Listed price':'Suggested price'))+'">'+esc(channelPrice(state))+'</div>'+(pending?'<small class="pb-channel-feedback" role="status">'+esc(t('Saving…'))+'</small>':error?'<small class="pb-channel-feedback" role="alert">'+esc(error)+'</small><button type="button" class="btn btn-sm btn-outline-light" data-channel-reload="'+esc(key)+'">'+esc(t('Reload channel data'))+'</button>':'');
+}
+function channelActions(state) {
+  if(state.status!=='listed')return '<span class="pb-muted">—</span>';
+  const key=channelKey(state.product_id,state.channel),pending=channelPending.has(key),url=listingUrl(state.url);
+  return '<div class="pb-cell-actions">'+(url?'<a class="pb-channel-link" href="'+esc(url)+'" target="_blank" rel="noopener noreferrer" title="'+esc(t('Open listing')+' · '+url)+'" aria-label="'+esc(t('Open listing')+' · '+listingChannels[state.channel])+'"><i class="fas fa-external-link-alt" aria-hidden="true"></i></a>':'')+(cfg.canEdit?'<button type="button" class="btn pb-channel-edit" data-channel-edit="'+esc(key)+'" title="'+esc(t('Edit listing details'))+'" aria-label="'+esc(t('Edit listing details')+' · '+listingChannels[state.channel])+'"'+(pending?' disabled':'')+'><i class="fas fa-pen" aria-hidden="true"></i></button>':'')+'</div>';
+}
+function channelStats(state) {
+  const quantity=state.sold_quantity,known=quantity!==null&&quantity!==undefined,date=productCreatedDate(state.listed_date);
+  return '<div class="pb-channel-sold" title="'+esc(t(known?'Sold units from imported orders matching this SKU.':'No imported sales source for this platform.'))+'">'+(known?esc(t('{count} pcs',{count:Number(quantity)})):'—')+'</div><div class="pb-channel-date" title="'+esc(t('Listing date'))+'">'+(date.key?'<time datetime="'+esc(date.key)+'">'+esc(date.label)+'</time>':'—')+'</div>';
 }
 function channelCell(row,channel) {
-  const state=rememberChannel(row,channel);
-  return '<td class="pb-price-column pb-channel-cell" data-price-cell="'+channel+'" data-channel-cell="'+esc(channelKey(row.id,channel))+'" data-listing-status="'+esc(state.status)+'">'+channelContents(state)+'</td>';
+  const state=rememberChannel(row,channel),key=esc(channelKey(row.id,channel));
+  return '<td class="pb-price-column pb-channel-cell" data-price-cell="'+channel+'" data-channel-cell="'+key+'" data-listing-status="'+esc(state.status)+'">'+channelContents(state)+'</td><td class="pb-icon-column" data-channel-actions="'+key+'">'+channelActions(state)+'</td><td class="pb-channel-stats" data-channel-stats="'+key+'">'+channelStats(state)+'</td>';
 }
 function renderChannel(key) {
   const state=channelRows.get(key);if(!state)return;
   document.querySelectorAll('[data-channel-cell]').forEach(cell=>{if(cell.dataset.channelCell===key){cell.dataset.listingStatus=state.status;cell.innerHTML=channelContents(state);}});
+  document.querySelectorAll('[data-channel-actions]').forEach(cell=>{if(cell.dataset.channelActions===key)cell.innerHTML=channelActions(state);});
+  document.querySelectorAll('[data-channel-stats]').forEach(cell=>{if(cell.dataset.channelStats===key)cell.innerHTML=channelStats(state);});
 }
+
 async function saveChannel(key,changes) {
   const state=channelRows.get(key);if(!state||channelPending.has(key))return null;
   channelPending.add(key);channelErrors.delete(key);renderChannel(key);
@@ -319,6 +337,27 @@ async function reloadChannel(key) {
     if(inModal){el('pb-channel-form').inert=false;el('pb-channel-modal').querySelector('.close').disabled=false;}
   }
 }
+// Keep the displayed date independent of the browser locale; API/DB still use ISO dates.
+function channelDateIso(value) {
+  const match=String(value||'').trim().match(/^(\d{2})[.](\d{2})[.](\d{4})$/);
+  if(!match||Number(match[3])<1000)return '';
+  const iso=match[3]+'-'+match[2]+'-'+match[1],date=new Date(iso+'T00:00:00Z');
+  return Number.isFinite(date.getTime())&&date.toISOString().slice(0,10)===iso?iso:'';
+}
+function setChannelDate(iso) {
+  el('pb-channel-date').value=iso?productCreatedDate(iso).label:'';
+  el('pb-channel-date-picker').value=iso||'';
+}
+el('pb-channel-date')?.addEventListener('input',()=>{el('pb-channel-date-picker').value=channelDateIso(el('pb-channel-date').value);});
+el('pb-channel-date-open')?.addEventListener('click',()=>{
+  const picker=el('pb-channel-date-picker');picker.value=channelDateIso(el('pb-channel-date').value);
+  try{if(picker.showPicker)picker.showPicker();else picker.click();}catch(_){el('pb-channel-date').focus();}
+});
+el('pb-channel-date-picker')?.addEventListener('change',event=>{
+  setChannelDate(event.target.value);
+  el('pb-channel-date').dispatchEvent(new Event('input',{bubbles:true}));
+  el('pb-channel-date').focus({preventScroll:true});
+});
 let channelModalKey=null,channelModalClosing=false,channelModalNext=null;
 function fillChannelModal(key) {
   const state=channelRows.get(key);if(!state)return;
@@ -328,6 +367,8 @@ function fillChannelModal(key) {
   el('pb-channel-price').value=hasPrice?state.price:(state.suggestedPrice??'');
   el('pb-channel-currency').value=hasPrice?state.currency:state.suggestedCurrency;
   el('pb-channel-url').value=state.url||'';
+  const today=new Date(),localDate=[today.getFullYear(),String(today.getMonth()+1).padStart(2,'0'),String(today.getDate()).padStart(2,'0')].join('-');
+  setChannelDate(state.listed_date||(state.status==='listed'?'':localDate));
   msg('pb-channel-message','');el('pb-channel-reload').hidden=true;
   el('pb-channel-form').dataset.unsaved='0';
   el('pb-channel-form').querySelectorAll('[data-pb-validity]').forEach(input=>{input.setCustomValidity('');delete input.dataset.pbValidity;});
@@ -346,7 +387,8 @@ $('#pb-channel-modal').on('hide.bs.modal',event=>{if(channelModalKey&&channelPen
 });
 el('pb-channel-form')?.addEventListener('submit',async event=>{
   event.preventDefault();const f=event.currentTarget,key=channelModalKey;if(!cfg.canEdit||!key||!f.reportValidity())return;
-  const payload={status:'listed',price:el('pb-channel-price').value.trim(),currency:el('pb-channel-currency').value,url:el('pb-channel-url').value.trim()};
+  const payload={status:'listed',price:el('pb-channel-price').value.trim(),currency:el('pb-channel-currency').value,url:el('pb-channel-url').value.trim(),listed_date:channelDateIso(el('pb-channel-date').value)};
+  if(!payload.listed_date){const input=el('pb-channel-date');input.dataset.pbValidity='1';input.setCustomValidity(t('Enter a valid listing date.'));input.reportValidity();return;}
   if(!listingUrl(payload.url)){msg('pb-channel-message',t('Enter a valid http:// or https:// listing URL.'));return;}
   f.inert=true;el('pb-channel-modal').querySelector('.close').disabled=true;
   try{await saveChannel(key,payload);f.dataset.unsaved='0';modalAction('pb-channel-modal','hide');}
@@ -419,7 +461,7 @@ document.addEventListener('focusin',event=>{
 function showListLoading() {
   closeComponentFocus();
   listLoading=true;renderPagination();
-  el('pb-products').innerHTML='<tr><td colspan="12" class="text-center py-4 pb-muted">'+esc(t('Loading products…'))+'</td></tr>';
+  el('pb-products').innerHTML='<tr><td colspan="19" class="text-center py-4 pb-muted">'+esc(t('Loading products…'))+'</td></tr>';
 }
 async function loadProducts({page=listPage,perPage=listPerPage}={}) {
   if(!el('pb-products'))return;
@@ -432,14 +474,14 @@ async function loadProducts({page=listPage,perPage=listPerPage}={}) {
     let previousDay=null;
     el('pb-products').innerHTML=data.rows.map((r,index)=>{
       const created=productCreatedDate(r.created_at);
-      const separator=created.key!==previousDay?'<tr class="pb-day-separator-row"><td colspan="12"><div class="pb-day-separator"><span>'+esc(created.label)+'</span></div></td></tr>':'';
+      const separator=created.key!==previousDay?'<tr class="pb-day-separator-row"><td colspan="19"><div class="pb-day-separator"><span>'+esc(created.label)+'</span></div></td></tr>':'';
       previousDay=created.key;
-      return separator+'<tr class="pb-product-row'+(index%2===0?' pb-row-tinted':'')+'"><td class="pb-created-column" title="'+esc(r.created_at||t("No creation date"))+'">'+(created.key?'<time datetime="'+esc(created.key)+'">'+esc(created.short)+'</time>':'—')+'</td><td class="pb-product-identity"><strong>'+esc(r.name)+'</strong><div>'+copyableCode(r.sku,'sku')+'</div></td><td><span class="badge pb-bundle-badge" data-bundle="'+esc(r.bundle_type)+'">'+esc(r.bundle_type)+'</span></td><td class="pb-category-cell">'+categoryCell(r)+'</td>'+imageCell(r)+priceFields.map(channel=>channel==='recommended'?'<td class="pb-price-column" data-price-cell="'+channel+'">'+esc(priceText(r,channel))+'</td>':channelCell(r,channel)).join('')+'<td data-box-cell>'+packagingCell(r)+'</td><td><button type="button" class="btn btn-sm btn-outline-info pb-expand" data-product-expand="'+r.id+'" aria-expanded="false" aria-controls="pb-list-components-'+r.id+'" aria-label="'+esc(t('Show components for {name}',{name:r.name}))+'"><i class="fas fa-chevron-right mr-1" aria-hidden="true"></i> '+esc(t('{count} components',{count:Number(r.component_count)}))+'</button></td><td>'+productAction(r)+'</td></tr><tr id="pb-list-components-'+r.id+'" class="pb-expanded-row" hidden><td colspan="12"><div data-component-detail role="region" aria-label="'+esc(t('Components of {name}',{name:r.name}))+'"></div></td></tr>';
-    }).join('')||("<tr><td colspan=\"12\" class=\"text-center py-4 pb-muted\">"+esc(t("No products match this selection yet."))+"</td></tr>");
+      return separator+'<tr class="pb-product-row'+(index%2===0?' pb-row-tinted':'')+'"><td class="pb-created-column" title="'+esc(r.created_at||t("No creation date"))+'">'+(created.key?'<time datetime="'+esc(created.key)+'">'+esc(created.short)+'</time>':'—')+'</td><td class="pb-product-identity"><strong>'+esc(r.name)+'</strong><div>'+copyableCode(r.sku,'sku')+'</div></td><td><span class="badge pb-bundle-badge" data-bundle="'+esc(r.bundle_type)+'">'+esc(r.bundle_type)+'</span></td><td class="pb-category-cell">'+categoryCell(r)+'</td>'+imageCell(r)+priceFields.map(channel=>channel==='recommended'?'<td class="pb-price-column" data-price-cell="'+channel+'">'+esc(priceText(r,channel))+'</td>':channelCell(r,channel)).join('')+'<td data-box-cell>'+packagingCell(r)+'</td><td><button type="button" class="btn btn-sm btn-outline-info pb-expand" data-product-expand="'+r.id+'" aria-expanded="false" aria-controls="pb-list-components-'+r.id+'" aria-label="'+esc(t('Show components for {name}',{name:r.name}))+'"><i class="fas fa-chevron-right mr-1" aria-hidden="true"></i> '+esc(t('{count} components',{count:Number(r.component_count)}))+'</button></td><td>'+productAction(r)+'</td></tr><tr id="pb-list-components-'+r.id+'" class="pb-expanded-row" hidden><td colspan="19"><div data-component-detail role="region" aria-label="'+esc(t('Components of {name}',{name:r.name}))+'"></div></td></tr>';
+    }).join('')||("<tr><td colspan=\"19\" class=\"text-center py-4 pb-muted\">"+esc(t("No products match this selection yet."))+"</td></tr>");
   } catch(e) {
     if(seq!==listSeq)return;
     listLoaded=false;
-    el('pb-products').innerHTML='<tr><td colspan="12" class="text-center py-4">'+esc(e.message)+' <button type="button" class="btn btn-sm btn-outline-info ml-2" data-list-retry>'+esc(t('Retry'))+'</button></td></tr>';
+    el('pb-products').innerHTML='<tr><td colspan="19" class="text-center py-4">'+esc(e.message)+' <button type="button" class="btn btn-sm btn-outline-info ml-2" data-list-retry>'+esc(t('Retry'))+'</button></td></tr>';
     // Keep list failures beside the retry button; a successful retry clears them.
   } finally {
     if(seq===listSeq){listLoading=false;renderPagination();}

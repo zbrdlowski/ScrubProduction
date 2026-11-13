@@ -518,5 +518,14 @@
   "Enter the listed price.": "Zadajte cenu zalistovania.",
   "Select a supported listing currency.": "Vyberte podporovanú menu listingu.",
   "Enter a valid http:// or https:// listing URL.": "Zadajte platnú URL listingu začínajúcu http:// alebo https://.",
-  "Another user has changed this channel. Reload the latest channel data and try again.": "Iný používateľ zmenil údaje tohto kanála. Načítajte aktuálne údaje a skúste to znova."
+  "Another user has changed this channel. Reload the latest channel data and try again.": "Iný používateľ zmenil údaje tohto kanála. Načítajte aktuálne údaje a skúste to znova.",
+  "Listing date": "Dátum zalistovania",
+  "Enter a valid listing date.": "Zadajte platný dátum zalistovania.",
+  "Edit listing details": "Upraviť údaje zalistovania",
+  "Listing links": "Odkazy listingu",
+  "Sold / Date": "Predaj / Dátum",
+  "Sold units / Listing date": "Predané kusy / Dátum zalistovania",
+  "{count} pcs": "{count} ks",
+  "Sold units from imported orders matching this SKU.": "Predané kusy z importovaných objednávok so zhodným SKU.",
+  "No imported sales source for this platform.": "Pre túto platformu nie je zavedený zdroj importovaných predajov."
 }

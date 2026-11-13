@@ -1,3 +1,21 @@
+## Európsky dátum v modale zalistovania
+
+Dátum v modale Web/eBay/Amazon sa zobrazuje a zadáva pevne vo formáte dd.mm.yyyy v SK aj EN, nezávisle od nastavenia prehliadača. Kalendár zostáva dostupný. Pred odoslaním sa dátum overí vrátane počtu dní a priestupného roka a prevedie na pôvodný ISO formát pre API/databázu. Nový SQL import netreba.
+
+Nasadenie: **.cache/product-builder/product-builder-european-date.zip**, súbory scripts/product_builder/app.js a page.php. Overené v prehliadači s locale en-US: zobrazenie, opätovné otvorenie, konverzia do ISO, zadanie cez kalendár, neplatné dátumy a mobil. Kompletný upload ZIP je aktualizovaný.
+
+## Stĺpce platforiem, predaj a dátum zalistovania (13. 11. 2026)
+
+Hlavná tabuľka Builder aj Listings má 19 stĺpcov. Za IMG je samostatná úzka bunka s editáciou a kopírovaním adresára; kopírovanie vrátane vibrácie a prístupu na čítanie je zachované. Každá platforma má tri bunky: stav s cenou, ikony otvorenia/editácie a počet predaných kusov s dátumom zalistovania. Odkaz otvára nový tab. Do not list je červená #813d43, List fialová #713d81 a Listed zelená #276342, zhodne s IMG. Rovnaký počet stĺpcov používajú denné oddeľovače, detaily, načítavanie, chyby aj prázdny výsledok. Na úzkej obrazovke sa posúva iba tabuľka.
+
+Modal Listed obsahuje povinný editovateľný dátum. Pri novom zalistovaní predvyplní miestny dnešný dátum; pri existujúcom Listed s neznámym dátumom ponechá pole prázdne na doplnenie. Dátum sa ukladá ako DATE do product_builder_channel_listings.listed_date, je nezávislý pre každú platformu a pri zmene stavu zostáva zachovaný. SQL starším záznamom nepriraďuje odhadovaný dátum. Cena, mena, URL a dátum sa ukladajú spolu so zachovaním kontroly verzie.
+
+Počty sú kumulatívne predané kusy zo všetkých evidovaných objednávok pre presné SKU, nie počet objednávok ani živá štatistika e-shopu. Web = order_sources.SHOPTET; eBay = EBAY; Amazon = AMAZON. Shoptet/Amazon sa párujú cez order_items.sku, eBay cez seller SKU v custom_label (pri prázdnom custom_label cez sku). Nejde o prefixové ani LIKE vyhľadávanie. Počítajú sa kladné qty, vynechajú sa zmazané a zrušené položky/objednávky, automaticky vytvorené komponenty označené options_json._auto_generated a samostatné opakovania/reklamácie/náhrady vo follow-up objednávkach. Rozdelené objednávky SPLIT sa započítajú cez zostávajúce a presunuté množstvá. Počet nezávisí od ručne zadaného dátumu zalistovania. Pri chýbajúcom zdroji platformy sa zobrazuje pomlčka s vysvetlením; nula znamená zavedený zdroj bez zodpovedajúceho predaja. Lokálna databáza zatiaľ nemá zdroj AMAZON.
+
+Nasadenie na existujúcu inštaláciu s update 010: **najprv importovať db/product_builder_update_011.sql cez phpMyAdmin**, potom nahrať obsah **.cache/product-builder/product-builder-channel-columns.zip** so zachovaním adresárov. ZIP obsahuje sedem webových súborov a SQL 011; SQL treba importovať, samotný upload nestačí. Pri neznámom stave starších aktualizácií je pripravený product_builder_update_all.sql. Kompletný product-builder-upload.zip obsahuje 28 webových súborov vrátane nového sales.php. SQL inštalácie, CLI inštalátor a diagnostika sú aktualizované na 32 požadovaných objektov. Lokálna vývojová databáza už má update 011.
+
+Overenie: dočasné tabuľky pre výpočet predaja (bundle, duplicitné skutočné nákupy, presné SKU, eBay label, zrušenie/zmazanie, SPLIT, náhrady, chýbajúci zdroj a Amazon), ukladanie/validácia dátumov a opakovaný SQL import. UI používa simulované API a kontroluje presunuté ikony, kopírovanie, ceny, dátumy, čítacie práva, SK/EN a mobil. Testy nemenia reálne objednávky ani produkty.
+
 ## Zalistovanie na Web, eBay a Amazon
 
 Každá platforma má v hlavnej tabuľke samostatný dropdown: **Do not list / Nelistovať** (červená), **List / Zalistovať** (zelená) a **Listed / Zalistované** (modrá). Predvolený stav pre nové aj existujúce produkty je Do not list; existujúca cena sama o sebe neznamená, že je produkt zalistovaný. Stavy Do not list a List sa uložia hneď po zmene. Listed otvorí modal s cenou, menou a URL; stav sa uloží až po potvrdení platných údajov. Zrušenie modalu zachová pôvodný stav.

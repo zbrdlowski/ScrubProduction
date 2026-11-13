@@ -1,4 +1,4 @@
--- Read-only verification of the same seven tables and twenty-four columns checked by the application.
+-- Read-only verification of the same seven tables and twenty-five columns checked by the application.
 -- Select the DarkScrub application database in phpMyAdmin before importing.
 SELECT DATABASE() AS checked_database;
 SELECT 'product_builder_products' AS required_object, IF(EXISTS(SELECT 1 FROM information_schema.tables WHERE table_schema=DATABASE() AND table_name='product_builder_products'),'OK','MISSING') AS status
@@ -61,4 +61,6 @@ SELECT 'product_builder_channel_listings.listed_price', IF(EXISTS(SELECT 1 FROM 
 UNION ALL
 SELECT 'product_builder_channel_listings.listed_currency', IF(EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name='product_builder_channel_listings' AND column_name='listed_currency'),'OK','MISSING')
 UNION ALL
-SELECT 'product_builder_channel_listings.version', IF(EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name='product_builder_channel_listings' AND column_name='version'),'OK','MISSING');
+SELECT 'product_builder_channel_listings.version', IF(EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name='product_builder_channel_listings' AND column_name='version'),'OK','MISSING')
+UNION ALL
+SELECT 'product_builder_channel_listings.listed_date', IF(EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name='product_builder_channel_listings' AND column_name='listed_date'),'OK','MISSING');

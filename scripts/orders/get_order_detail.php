@@ -5925,57 +5925,7 @@ ob_start();
                   <?php $s = $addr['SHIPPING'] ?? []; ?>
 
                   <div class="row">
-                    <!-- LEFT: Billing -->
-                    <div class="col-md-6">
-                      <h6>Billing</h6>
-                      <input class="form-control form-control-sm mb-1 edit-billing-name" placeholder="Name"
-                        value="<?php echo h($b['name'] ?? ''); ?>">
-                      <div class="form-row mb-1">
-                        <div class="col-md-8">
-                          <input class="form-control form-control-sm edit-billing-company" placeholder="Company"
-                            value="<?php echo h($b['company'] ?? ''); ?>">
-                        </div>
-                        <div class="col-md-4">
-                          <input class="form-control form-control-sm edit-billing-company-id" placeholder="Company ID"
-                            value="<?php echo h($b['company_id'] ?? ''); ?>">
-                        </div>
-                      </div>
-                      <input class="form-control form-control-sm mb-1 edit-billing-street" placeholder="Street"
-                        value="<?php echo h($b['street'] ?? ''); ?>">
-                      <input class="form-control form-control-sm mb-1 edit-billing-city" placeholder="City"
-                        value="<?php echo h($b['city'] ?? ''); ?>">
-                      <input class="form-control form-control-sm mb-1 edit-billing-zip" placeholder="ZIP"
-                        value="<?php echo h($b['zip'] ?? ''); ?>">
-                      <?php
-                      $savedState = trim((string) ($b['state'] ?? ''));
-                      $editState = $savedState !== ''
-                        ? (ordersAddressStateCode((string) ($b['country'] ?? ''), $savedState) ?: $savedState)
-                        : orderDetailAddressState($b);
-                      ?>
-                      <div class="mb-1 custom-country-state-row">
-                        <div class="custom-country-col">
-                          <div class="custom-country-select-wrap no-flag">
-                            <span class="custom-country-flag is-empty" data-country-flag aria-hidden="true"></span>
-                            <select class="form-control form-control-sm edit-billing-country custom-country-select"
-                              data-order-detail-country-select data-country-placeholder="Country">
-                              <option value="<?php echo h((string) ($b['country'] ?? '')); ?>" selected><?php echo h((string) ($b['country'] ?? '')); ?></option>
-                            </select>
-                          </div>
-                        </div>
-                        <div class="custom-state-col" data-order-detail-state-field="billing" hidden>
-                          <select id="edit-billing-state-<?php echo (int) $orderId; ?>"
-                            class="form-control form-control-sm edit-billing-state" aria-label="State / Province" disabled>
-                            <option value="<?php echo h($editState); ?>" selected><?php echo h($editState); ?></option>
-                          </select>
-                        </div>
-                      </div>
-                      <input class="form-control form-control-sm mb-1 edit-billing-email" placeholder="Email"
-                        value="<?php echo h($b['email'] ?? ''); ?>">
-                      <input class="form-control form-control-sm mb-1 edit-billing-phone" placeholder="Phone"
-                        value="<?php echo h($b['phone'] ?? ''); ?>">
-                    </div>
-
-                    <!-- RIGHT: Shipping -->
+                    <!-- LEFT: Shipping -->
                     <div class="col-md-6">
                       <h6>Shipping</h6>
                       <input class="form-control form-control-sm mb-1 edit-shipping-name" placeholder="Name"
@@ -6031,6 +5981,56 @@ ob_start();
                         value="<?php echo h($s['email'] ?? ''); ?>">
                       <input class="form-control form-control-sm mb-1 edit-shipping-phone" placeholder="Phone"
                         value="<?php echo h($s['phone'] ?? ''); ?>">
+                    </div>
+
+                    <!-- RIGHT: Billing -->
+                    <div class="col-md-6">
+                      <h6>Billing</h6>
+                      <input class="form-control form-control-sm mb-1 edit-billing-name" placeholder="Name"
+                        value="<?php echo h($b['name'] ?? ''); ?>">
+                      <div class="form-row mb-1">
+                        <div class="col-md-8">
+                          <input class="form-control form-control-sm edit-billing-company" placeholder="Company"
+                            value="<?php echo h($b['company'] ?? ''); ?>">
+                        </div>
+                        <div class="col-md-4">
+                          <input class="form-control form-control-sm edit-billing-company-id" placeholder="Company ID"
+                            value="<?php echo h($b['company_id'] ?? ''); ?>">
+                        </div>
+                      </div>
+                      <input class="form-control form-control-sm mb-1 edit-billing-street" placeholder="Street"
+                        value="<?php echo h($b['street'] ?? ''); ?>">
+                      <input class="form-control form-control-sm mb-1 edit-billing-city" placeholder="City"
+                        value="<?php echo h($b['city'] ?? ''); ?>">
+                      <input class="form-control form-control-sm mb-1 edit-billing-zip" placeholder="ZIP"
+                        value="<?php echo h($b['zip'] ?? ''); ?>">
+                      <?php
+                      $savedState = trim((string) ($b['state'] ?? ''));
+                      $editState = $savedState !== ''
+                        ? (ordersAddressStateCode((string) ($b['country'] ?? ''), $savedState) ?: $savedState)
+                        : orderDetailAddressState($b);
+                      ?>
+                      <div class="mb-1 custom-country-state-row">
+                        <div class="custom-country-col">
+                          <div class="custom-country-select-wrap no-flag">
+                            <span class="custom-country-flag is-empty" data-country-flag aria-hidden="true"></span>
+                            <select class="form-control form-control-sm edit-billing-country custom-country-select"
+                              data-order-detail-country-select data-country-placeholder="Country">
+                              <option value="<?php echo h((string) ($b['country'] ?? '')); ?>" selected><?php echo h((string) ($b['country'] ?? '')); ?></option>
+                            </select>
+                          </div>
+                        </div>
+                        <div class="custom-state-col" data-order-detail-state-field="billing" hidden>
+                          <select id="edit-billing-state-<?php echo (int) $orderId; ?>"
+                            class="form-control form-control-sm edit-billing-state" aria-label="State / Province" disabled>
+                            <option value="<?php echo h($editState); ?>" selected><?php echo h($editState); ?></option>
+                          </select>
+                        </div>
+                      </div>
+                      <input class="form-control form-control-sm mb-1 edit-billing-email" placeholder="Email"
+                        value="<?php echo h($b['email'] ?? ''); ?>">
+                      <input class="form-control form-control-sm mb-1 edit-billing-phone" placeholder="Phone"
+                        value="<?php echo h($b['phone'] ?? ''); ?>">
                     </div>
                   </div>
 

@@ -16,6 +16,7 @@ $pdo->exec(file_get_contents(__DIR__ . '/../../db/product_builder_update_007.sql
 $pdo->exec(file_get_contents(__DIR__ . '/../../db/product_builder_update_008.sql'));
 $pdo->exec(file_get_contents(__DIR__ . '/../../db/product_builder_update_009.sql'));
 $pdo->exec(file_get_contents(__DIR__ . '/../../db/product_builder_update_010.sql'));
+$pdo->exec(file_get_contents(__DIR__ . '/../../db/product_builder_update_011.sql'));
 // Permissions are installed separately by the access administrator; no employee roles are assigned here.
 $result = pb_import_uni($pdo,$conn,pb_parse_csv(__DIR__ . '/UniCategories.csv'));
 echo 'Product builder ready. UNI added: ' . $result['added'] . '; existing: ' . $result['skipped'] . PHP_EOL;
