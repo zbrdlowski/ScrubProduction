@@ -217,6 +217,9 @@ if (isset($conn) && $conn instanceof mysqli) {
       </li>
       -->
       <li class="nav-item d-none d-sm-inline-block">
+        <a href="index.php?page=kanban" class="nav-link">Kanban</a>
+      </li>
+      <li class="nav-item d-none d-sm-inline-block">
         <a href="?page=profile" class="nav-link">Attendance</a>
       </li>
       <li class="nav-item d-none d-sm-inline-block">

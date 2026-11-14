@@ -81,6 +81,7 @@ function auth_page_permission(string $page): ?string
         'product_builder' => 'products.view',
         'product_controls' => 'products.view',
         'product_listings' => null, // Available to every signed-in employee.
+        'kanban' => null, // Personal board; API scopes every operation to the signed-in employee.
         'accounting_payouts' => 'accounting.view',
         'accounting_paypal' => 'accounting.view',
         'accounting_tatra' => 'accounting.view',

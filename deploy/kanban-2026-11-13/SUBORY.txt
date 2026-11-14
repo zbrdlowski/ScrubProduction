@@ -1,0 +1,16 @@
+index.php
+includes/auth.php
+includes/navbar.php
+includes/sidebar.php
+includes/kanban.php
+assets/css/kanban.css
+scripts/kanban/api.php
+scripts/kanban/service.php
+scripts/kanban/i18n.php
+scripts/kanban/help.php
+scripts/kanban/kanban.js
+scripts/kanban/locales/sk.json
+scripts/kanban/vendor/Sortable.min.js
+scripts/kanban/vendor/LICENSE
+docs/kanban/navod.md
+docs/kanban/navod.en.md

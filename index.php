@@ -20,6 +20,7 @@ if (!isset($_SESSION['permission'])) {
 }
 include 'includes/conn.php';
 require_once 'includes/auth.php';
+require_once 'scripts/kanban/i18n.php';
 
 if (empty($_GET['page'])) {
   header('Location: index.php?page=profile');
@@ -48,6 +49,7 @@ $pageLabels = [
   'settings' => 'Settings',
   'users' => 'Users',
   'profile' => 'My Profile',
+  'kanban' => kb_t('My kanban'),
   'kit_diss' => 'Kit Disassembly',
   'add_item' => 'Add New Item',
   'upload_items' => 'ADD / Upload Items',

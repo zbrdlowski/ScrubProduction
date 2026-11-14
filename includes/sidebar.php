@@ -12,6 +12,7 @@
 </style>
 <?php
 require_once __DIR__ . '/auth.php';
+require_once __DIR__ . '/../scripts/kanban/i18n.php';
 $currentPage = $_GET['page'] ?? '';
 $sidebarPermission = intval($_SESSION['permission'] ?? 0);
 $sidebarUserId = intval($_SESSION['user_id'] ?? 0);
@@ -293,6 +294,12 @@ function isMenuOpen($pages = [])
           <a href="<?= basename($_SERVER['PHP_SELF']) ?>?page=holidays" class="nav-link <?= isActive('holidays') ?>">
             <i class="nav-icon far fa-calendar-check" style="color:#17a2b8;"></i>
             <p>Holidays</p>
+          </a>
+        </li>
+        <li class="nav-item">
+          <a href="<?= basename($_SERVER['PHP_SELF']) ?>?page=kanban" class="nav-link <?= isActive('kanban') ?>">
+            <i class="nav-icon fas fa-columns" style="color:#60a5fa;"></i>
+            <p><?= htmlspecialchars(kb_t('My kanban'), ENT_QUOTES, 'UTF-8') ?></p>
           </a>
         </li>
         <li class="nav-item">
