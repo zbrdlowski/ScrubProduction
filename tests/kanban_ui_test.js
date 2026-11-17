@@ -10,7 +10,7 @@ const fs = require('node:fs');
   const card = (id, column_id, title, extra={}) => ({id,column_id,title,description:'Dva návrhy podľa briefu.\nPripraviť verziu na schválenie.',priority:'high',due_date:'2026-11-18',label:'Grafika',reference:'Klient ABC · #1258',reference_url:'https://example.com/orders/1258',completed_at:null,created_at:'2026-11-13 12:00:00',...extra});
   function snapshot(search='') {
     const q=search.toLocaleLowerCase();
-    return {ok:true,board,columns:columns.map(col=>{
+    return {ok:true,board,active_count:allCards.filter(card=>columns.some(col=>col.id===card.column_id&&!col.is_done)).length,columns:columns.map(col=>{
       let rows=allCards.filter(c=>c.column_id===col.id);
       if(col.is_done)rows.sort((a,b)=>(b.completed_at||'').localeCompare(a.completed_at||'')||b.id-a.id);
       if(q)rows=rows.filter(c=>[c.title,c.description,c.label,c.reference].some(s=>(s||'').toLocaleLowerCase().includes(q)));
@@ -87,8 +87,11 @@ const fs = require('node:fs');
     await page.goto(process.env.KANBAN_TEST_URL||'http://localhost/darkscrub/.cache/kanban/preview.html');
     await idle();
     assert(await page.locator('#kb-onboarding').isVisible());
+    assert(!(await page.locator('#navbarKanbanCount').isVisible()),'Zero count is hidden');
     await page.locator('[data-template=general]').click();await idle();
     assert.equal(await page.locator('.kb-lane').count(),3);
+    assert.equal(await page.locator('#navbarKanbanCount').innerText(),'3','Backlog and active cards are counted');
+    assert.match(await page.locator('#navbarKanbanCount').getAttribute('title'),/vrátane Backlogu/);
     assert.equal(await page.locator('[data-column="3"] .kb-card').count(),2);
     const bg=await page.locator('.kb-card').first().evaluate(el=>getComputedStyle(el).backgroundColor);
     assert.equal(bg,'rgb(50, 62, 75)','Cards use dark palette');
@@ -97,11 +100,13 @@ const fs = require('node:fs');
     assert.equal(allCards.find(c=>c.id===1).column_id,2,'Real mouse drag moves a card between lanes');
     await drag(page.locator('.kb-card[data-id="1"] .kb-description'),page.locator('[data-column="3"]'));
     assert.equal(allCards.find(c=>c.id===1).column_id,3,'Drag into Done');
+    assert.equal(await page.locator('#navbarKanbanCount').innerText(),'2','Done updates navbar immediately');
     assert.equal(await page.locator('[data-column="3"] .kb-card').count(),2,'Done limit after drop');
     await page.locator('[data-more="3"]').click();await idle();
     assert.equal(await page.locator('[data-column="3"] .kb-card').count(),4,'Older cards accessible');
     await drag(page.locator('.kb-card[data-id="1"] .kb-description'),page.locator('[data-column="1"]'));
     assert.equal(allCards.find(c=>c.id===1).completed_at,null,'Drag back reopens card');
+    assert.equal(await page.locator('#navbarKanbanCount').innerText(),'3','Reopening updates navbar immediately');
     // Reorder actual cards inside a list.
     await drag(page.locator('.kb-card[data-id="1"] .kb-description'),page.locator('.kb-card[data-id="2"]'));
     assert.deepEqual(await page.locator('[data-column="1"] .kb-card').evaluateAll(els=>els.map(e=>Number(e.dataset.id))),[2,1], JSON.stringify(calls.slice(-3)));
@@ -109,6 +114,7 @@ const fs = require('node:fs');
     await drag(page.locator('.kb-card[data-id="1"] .kb-description'),page.locator('[data-column="2"]'));
     assert.equal(await page.locator('[data-column="1"] .kb-card[data-id="1"]').count(),1,'Failed drag restores original UI');
     assert.match(await page.locator('#kb-message').innerText(),/zlyhalo/);
+    assert.equal(await page.locator('#navbarKanbanCount').innerText(),'3','Rejected moves do not change count');
     await page.locator('#kb-refresh').click();await idle();
     // Move a column by its handle, then reload from server state.
     await drag(page.locator('.kb-lane[data-id="1"] .kb-column-handle'),page.locator('.kb-lane[data-id="3"] .kb-lane-header'));
@@ -144,6 +150,7 @@ const fs = require('node:fs');
     await page.locator('#kb-search').fill('Staršia');
     await page.waitForTimeout(400);await idle();
     assert.equal(await page.locator('.kb-card').count(),1,'Search finds hidden completed card');
+    assert.equal(await page.locator('#navbarKanbanCount').innerText(),'4','Search leaves total unchanged');
     assert.equal(await page.locator('.kb-card-title').innerText(),'Staršia hotová karta');
     const before=postCount;
     await drag(page.locator('.kb-card .kb-description'),page.locator('[data-column="2"]'));

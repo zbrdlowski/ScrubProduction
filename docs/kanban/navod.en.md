@@ -2,6 +2,8 @@
 
 Open **Kanban** in the top menu, to the left of Attendance, or **My kanban** in the sidebar. Each signed-in user has their own columns and cards. Changes are saved automatically after a move or when you submit a form.
 
+The number next to **Kanban** in the top menu shows your unfinished cards, including Backlog. Cards in any column marked as completed are excluded, regardless of the column name. The badge is hidden when the count is zero. It updates after saving changes on the board, or when loading another page. Search and card display limits do not affect the count.
+
 ## Choosing and reopening templates
 
 On your first visit, choose **General**, **Design** or **Customer service**. A template supplies starting columns that you can customise afterwards.

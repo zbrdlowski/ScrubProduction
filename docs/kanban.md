@@ -47,6 +47,16 @@ Nová nástenka dostane názvy stĺpcov šablóny v práve zvolenom jazyku.
 Uložené názvy stĺpcov, kariet, popisy, štítky a referencie sú používateľské údaje; prepínanie jazyka ich nemení.
 Aktualizácia jazykov nevyžaduje zmenu databázy. Nahrajte aj scripts/kanban/i18n.php a scripts/kanban/locales/sk.json.
 
+## Počítadlo v hornom menu
+
+Odznak pri Kanbane počíta všetky karty aktuálneho zamestnanca v stĺpcoch s is_done = 0, vrátane Backlogu.
+Nerozhoduje názov stĺpca ani čas completed_at. Počet nezávisí od hľadania, stránkovania a limitu Done.
+Pri nule alebo nedostupnej schéme sa odznak skryje. Navbar používa jeden parametrizovaný COUNT dotaz
+cez scripts/kanban/count.php. Chýbajúca schéma Kanbanu nepreruší ostatné moduly.
+GET nástenky vracia active_count v rámci existujúceho zámku nástenky a JavaScript po úspešnom načítaní
+aktualizuje odznak. Na ostatných stránkach sa počet obnoví pri načítaní stránky, bez pravidelného pollingu.
+Aktualizácia nevyžaduje SQL migráciu. Tooltip a prístupný popis sú v SK/EN.
+
 ## Používanie
 
 Pri prvom otvorení vyberte šablónu Univerzálny, Grafika alebo Customer service.

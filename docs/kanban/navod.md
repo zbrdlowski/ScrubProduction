@@ -2,6 +2,8 @@
 
 Kanban otvoríte odkazom **Kanban** v hornom menu naľavo od Attendance alebo cez **Môj kanban** v bočnom menu. Každý prihlásený používateľ má vlastné stĺpce a karty. Zmeny sa ukladajú automaticky po presune alebo po potvrdení formulára.
 
+Číslo pri odkaze **Kanban** v hornom menu ukazuje počet vašich nedokončených kariet vrátane Backlogu. Karty vo všetkých stĺpcoch označených ako dokončené sa nezapočítavajú, bez ohľadu na názov stĺpca. Pri nulovom počte sa číslo skryje. Na nástenke sa aktualizuje po uložení zmeny; inde pri načítaní stránky. Vyhľadávanie ani limit zobrazených kariet ho nemenia.
+
 ## Prvý výber a návrat k šablónam
 
 Pri prvom otvorení vyberte **Univerzálny**, **Grafika** alebo **Zákaznícky servis**. Šablóna určuje počiatočné stĺpce; tie si potom môžete upraviť podľa seba.

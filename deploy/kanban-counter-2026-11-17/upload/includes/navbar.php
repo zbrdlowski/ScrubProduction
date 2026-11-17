@@ -1,0 +1,791 @@
+<?php
+require_once __DIR__ . '/project_filters.php';
+require_once __DIR__ . '/auth.php';
+require_once __DIR__ . '/../scripts/kanban/i18n.php';
+require_once __DIR__ . '/../scripts/kanban/count.php';
+
+$navbarKanbanCount = null;
+$navbarKanbanEmployeeId = (int) ($_SESSION['user_id'] ?? 0);
+if (isset($pdo) && $pdo instanceof PDO && $navbarKanbanEmployeeId > 0) {
+    try {
+        $navbarKanbanCount = kb_active_card_count($pdo, $navbarKanbanEmployeeId);
+    } catch (PDOException $e) {
+        // A not-yet-installed Kanban must not interrupt navigation in other modules.
+        if ($e->getCode() !== '42S02') error_log('Kanban navbar count: ' . $e->getMessage());
+    }
+}
+$navbarKanbanLabel = kb_t('Active cards: {count} (including Backlog)', ['count' => $navbarKanbanCount ?? 0]);
+
+$navbarProjects = [];
+$navbarProjectUserId = intval($_SESSION['user_id'] ?? 0);
+if (isset($conn) && $conn instanceof mysqli) {
+    $navbarProjects = projectGetActiveForEmployee($conn, $navbarProjectUserId);
+}
+$navbarProjectCount = count($navbarProjects);
+$navbarProjectStatusStyles = [
+    'waiting' => ['secondary', 'Waiting'],
+    'in_progress' => ['primary', 'In Progress'],
+    'stuck' => ['danger', 'Stuck'],
+];
+
+$holidayNotifCount = 0;
+$holidayNotifText = 'Dovolenky';
+$holidayNotifFooter = 'Otvorit dovolenky';
+if (isset($conn) && $conn instanceof mysqli) {
+    $holidayTableCheck = $conn->query("SHOW TABLES LIKE 'holiday_requests'");
+    if ($holidayTableCheck && $holidayTableCheck->num_rows > 0) {
+        $holidayUserId = intval($_SESSION['user_id'] ?? 0);
+        $holidayPermission = intval($_SESSION['permission'] ?? 0);
+        $holidayDepartmentId = intval($_SESSION['dpt'] ?? 0);
+        $holidayCanManage = $holidayPermission === 900
+            || ($holidayPermission === 500 && $holidayDepartmentId === 3);
+        if ($holidayCanManage) {
+            $holidayCountRes = $conn->query("SELECT COUNT(*) AS c FROM holiday_requests WHERE status='pending'");
+            if ($holidayCountRes && ($holidayCountRow = $holidayCountRes->fetch_assoc())) {
+                $holidayNotifCount = intval($holidayCountRow['c']);
+                $holidayNotifText = $holidayNotifCount === 1 ? '1 ziadost caka' : $holidayNotifCount . ' ziadosti cakaju';
+            }
+        } elseif ($holidayUserId > 0) {
+            $holidayStmt = $conn->prepare("SELECT COUNT(*) AS c FROM holiday_requests WHERE employee_id=? AND status IN ('approved','rejected') AND employee_seen_at IS NULL");
+            if ($holidayStmt) {
+                $holidayStmt->bind_param('i', $holidayUserId);
+                $holidayStmt->execute();
+                $holidayCountRow = $holidayStmt->get_result()->fetch_assoc();
+                $holidayNotifCount = intval($holidayCountRow['c'] ?? 0);
+                $holidayNotifText = $holidayNotifCount === 1 ? '1 odpoved' : $holidayNotifCount . ' odpovede';
+                $holidayStmt->close();
+            }
+        }
+    }
+}
+?>
+<style>
+  @media (min-width: 576px) {
+    .main-nav-dropdown:hover > .dropdown-menu,
+    .main-nav-dropdown:focus-within > .dropdown-menu {
+      display: block;
+      margin-top: 0;
+    }
+  }
+
+  .navbar-project-list {
+    max-height: 60vh;
+    overflow-y: auto;
+  }
+
+  .navbar-project-list .dropdown-item {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .navbar-project-status {
+    flex: 0 0 76px;
+    margin-top: .2rem;
+  }
+
+  .navbar-project-title {
+    min-width: 0;
+  }
+
+  @keyframes navbarAlertBounce {
+    0%, 72%, 100% {
+      transform: translateY(0) scale(1);
+    }
+    12% {
+      transform: translateY(-5px) scale(1.08);
+    }
+    24% {
+      transform: translateY(0) scale(.98);
+    }
+    36% {
+      transform: translateY(-3px) scale(1.04);
+    }
+    48% {
+      transform: translateY(0) scale(1);
+    }
+  }
+
+  @keyframes navbarAlertBadgePulse {
+    0%, 72%, 100% {
+      transform: scale(1);
+    }
+    14%, 38% {
+      transform: scale(1.22);
+    }
+  }
+
+  .navbar-alert-bounce i,
+  .navbar-badge-bounce {
+    display: inline-block;
+    transform-origin: center bottom;
+    animation: navbarAlertBounce 1.6s ease-in-out infinite;
+  }
+
+  .navbar-alert-bounce .navbar-badge {
+    transform-origin: center;
+    animation: navbarAlertBadgePulse 1.6s ease-in-out infinite;
+  }
+
+  .navbar-alert-bounce:hover i,
+  .navbar-alert-bounce:focus i,
+  .navbar-alert-bounce:hover .navbar-badge,
+  .navbar-alert-bounce:focus .navbar-badge,
+  .nav-link:hover .navbar-badge-bounce,
+  .nav-link:focus .navbar-badge-bounce {
+    animation-play-state: paused;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .navbar-alert-bounce i,
+    .navbar-alert-bounce .navbar-badge,
+    .navbar-badge-bounce {
+      animation: none;
+    }
+  }
+</style>
+<nav class="main-header navbar navbar-expand navbar-dark">
+    <!-- Left navbar links -->
+    <ul class="navbar-nav">
+      <li class="nav-item">
+        <a class="nav-link" data-widget="pushmenu" href="#" role="button"><i class="fas fa-bars"></i></a>
+      </li>
+      <li class="nav-item d-none d-sm-inline-block">
+        <a href="?page=orders" class="nav-link">Production</a>
+      </li>
+      <li class="nav-item d-none d-sm-inline-block">
+        <a href="?page=custom_orders" class="nav-link">Custom</a>
+      </li>
+      <li class="nav-item dropdown d-none d-sm-inline-block main-nav-dropdown">
+        <a href="#" class="nav-link dropdown-toggle" data-toggle="dropdown" role="button" aria-haspopup="true" aria-expanded="false">
+          Dashboard
+        </a>
+        <div class="dropdown-menu">
+          <a href="?page=status_dashboard" class="dropdown-item">Order Status Dashboard</a>
+          <a href="?page=plastics_dashboard" class="dropdown-item">Warehouse Dashboard</a>
+          <a href="?page=orders_dashboard" class="dropdown-item">Orders Dashboard</a>
+          <a href="?page=year_to_year_statistics" class="dropdown-item">Year to Year Statistics</a>
+          <a href="tv.php" class="dropdown-item">TV Dashboard</a>
+        </div>
+      </li>
+      <li class="nav-item dropdown d-none d-sm-inline-block main-nav-dropdown">
+        <a href="#" class="nav-link dropdown-toggle" data-toggle="dropdown" role="button" aria-haspopup="true" aria-expanded="false">
+          Warehouse
+        </a>
+        <div class="dropdown-menu">
+          <a href="?page=inventory_report" class="dropdown-item">Plastics Inventory</a>
+          <a href="?page=general_items" class="dropdown-item">All Plastics Items</a>
+          <a href="?page=historical_movements" class="dropdown-item">Plastics Order Archive</a>          
+        </div>
+      </li>
+      <li class="nav-item d-none d-sm-inline-block<?= $navbarProjectCount > 0 ? ' dropdown' : '' ?>">
+        <a href="index.php?page=projects" class="nav-link text-nowrap" id="navbarProjectsToggle"
+          <?php if ($navbarProjectCount > 0): ?>
+            data-toggle="dropdown" role="button" aria-haspopup="true" aria-expanded="false" aria-controls="navbarProjectsMenu"
+          <?php endif; ?>>
+          Projects
+          <?php if ($navbarProjectCount > 0): ?>
+            <span class="badge badge-warning ml-1 navbar-badge-bounce"><?= $navbarProjectCount ?></span>
+          <?php endif; ?>
+        </a>
+        <?php if ($navbarProjectCount > 0): ?>
+          <div class="dropdown-menu dropdown-menu-lg" id="navbarProjectsMenu" aria-labelledby="navbarProjectsToggle">
+            <div class="navbar-project-list">
+              <?php foreach ($navbarProjects as $navbarProjectIndex => $navbarProject): ?>
+                <?php if ($navbarProjectIndex > 0): ?>
+                  <div class="dropdown-divider"></div>
+                <?php endif; ?>
+                <?php $navbarProjectStatus = $navbarProjectStatusStyles[$navbarProject['status'] ?? ''] ?? ['secondary', 'Unknown']; ?>
+                <a href="index.php?page=projects&amp;view=<?= intval($navbarProject['id']) ?>" class="dropdown-item d-flex align-items-start">
+                  <span class="badge badge-<?= $navbarProjectStatus[0] ?> navbar-project-status mr-2" title="Project status">
+                    <?= $navbarProjectStatus[1] ?>
+                  </span>
+                  <span class="navbar-project-title"><?= htmlspecialchars($navbarProject['title'], ENT_QUOTES, 'UTF-8') ?></span>
+                </a>
+              <?php endforeach; ?>
+            </div>
+            <div class="dropdown-divider"></div>
+            <a href="index.php?page=projects" class="dropdown-item dropdown-footer">See All projects</a>
+          </div>
+        <?php endif; ?>
+      </li>
+      <li class="nav-item d-none d-sm-inline-block">
+        <a href="?page=product_chart" class="nav-link">Model database</a>
+      </li>
+      <li class="nav-item dropdown d-none d-sm-inline-block main-nav-dropdown">
+        <a href="#" class="nav-link dropdown-toggle" data-toggle="dropdown" role="button" aria-haspopup="true" aria-expanded="false" id="navbarProductDatabase">Product database</a>
+        <div class="dropdown-menu" aria-labelledby="navbarProductDatabase">
+          <?php if (auth_can('products.view')): ?><a href="index.php?page=product_builder" class="dropdown-item">Product Builder</a><?php endif; ?>
+          <a href="index.php?page=product_listings" class="dropdown-item">Listings</a>
+          <?php if (auth_can('products.view')): ?><a href="index.php?page=product_transfers" class="dropdown-item">Transfer D-base</a><?php endif; ?>
+          <?php if (auth_can('products.view')): ?><a href="index.php?page=product_controls" class="dropdown-item">Product Controls</a><?php endif; ?>
+        </div>
+      </li>
+      <li class="nav-item d-none d-sm-inline-block">
+        <a href="?page=order_search" class="nav-link">Order Search</a>
+      </li>
+    </ul>
+    <!-- Right navbar links -->
+    <ul class="navbar-nav ml-auto">
+       <!--
+      <li class="nav-item d-none d-sm-inline-block">
+        <a href="?page=chat" class="nav-link">Chat</a>
+      </li>
+      -->
+      <li class="nav-item d-none d-sm-inline-block">
+        <a href="index.php?page=kanban" class="nav-link text-nowrap">Kanban
+          <span id="navbarKanbanCount" class="badge badge-info ml-1" aria-live="polite" aria-atomic="true"
+            title="<?= htmlspecialchars($navbarKanbanLabel, ENT_QUOTES, 'UTF-8') ?>"
+            aria-label="<?= htmlspecialchars($navbarKanbanLabel, ENT_QUOTES, 'UTF-8') ?>"<?= !$navbarKanbanCount ? ' hidden' : '' ?>><?= $navbarKanbanCount ?? 0 ?></span>
+        </a>
+      </li>
+      <li class="nav-item d-none d-sm-inline-block">
+        <a href="?page=profile" class="nav-link">Attendance</a>
+      </li>
+      <li class="nav-item d-none d-sm-inline-block">
+        <a href="?page=holidays" class="nav-link">Holidays</a>
+      </li>
+      <!-- Zablokované, lebo sa im to nelúbilo -->
+      <!--
+          <li class="nav-item dropdown">
+        <a class="nav-link" data-toggle="dropdown" href="#" id="chatNotifToggle">
+          <i class="far fa-comments"></i>
+          <span class="badge badge-danger navbar-badge" id="chatUnreadBadge" style="display:none;">0</span>
+        </a>
+        <div class="dropdown-menu dropdown-menu-lg dropdown-menu-right" id="chatNotifMenu">
+          <span class="dropdown-item dropdown-header" id="chatNotifHeader">0 nových správ</span>
+          <div class="dropdown-divider"></div>
+
+          <div id="chatNotifList">
+            <span class="dropdown-item text-muted">Žiadne nové správy</span>
+          </div>
+
+          <div class="dropdown-divider"></div>
+          <a href="?page=chat" class="dropdown-item dropdown-footer">Otvoriť chat</a>
+        </div>
+      </li>
+    -->
+      <!-- Len Žbrdlo a admini z managementu -->
+      <?php if ($holidayCanManage): ?>
+      <li class="nav-item dropdown">
+        <a class="nav-link<?= $holidayNotifCount > 0 ? ' navbar-alert-bounce' : '' ?>" data-toggle="dropdown" href="#" id="holidayNotifToggle" title="Holiday requests">
+          <i class="far fa-calendar-check"></i>
+          <?php if ($holidayNotifCount > 0): ?>
+            <span class="badge badge-warning navbar-badge"><?= intval($holidayNotifCount) ?></span>
+          <?php endif; ?>
+        </a>
+        <div class="dropdown-menu dropdown-menu-lg dropdown-menu-right">
+          <span class="dropdown-item dropdown-header"><?= htmlspecialchars($holidayNotifText, ENT_QUOTES, 'UTF-8') ?></span>
+          <div class="dropdown-divider"></div>
+          <?php if ($holidayNotifCount > 0): ?>
+            <a href="?page=holidays" class="dropdown-item">
+              <i class="far fa-calendar-check mr-2"></i>
+              <?= htmlspecialchars($holidayNotifText, ENT_QUOTES, 'UTF-8') ?>
+            </a>
+          <?php else: ?>
+            <span class="dropdown-item text-muted">Ziadne nove ziadosti</span>
+          <?php endif; ?>
+          <div class="dropdown-divider"></div>
+          <a href="?page=holidays" class="dropdown-item dropdown-footer"><?= htmlspecialchars($holidayNotifFooter, ENT_QUOTES, 'UTF-8') ?></a>
+        </div>
+      </li>
+      <?php endif; ?>
+
+
+      <li class="nav-item">
+        <a class="nav-link" data-widget="fullscreen" href="#" role="button">
+          <i class="fas fa-expand-arrows-alt"></i>
+        </a>
+      </li>
+
+      <!--<li class="nav-item">-->
+        <!--<a class="nav-link" data-widget="control-sidebar" data-slide="true" href="#" role="button">-->
+          <!--<i class="fas fa-th-large"></i>-->
+        <!--</a>-->
+      <!--</li>-->
+      <li class="dropdown user user-menu" style="padding-top:5px;">
+            <a href="#" style="color:silver;" class="dropdown-toggle" data-toggle="dropdown">
+              <img src="<?php echo (!empty($_SESSION['user_photo'])) ? 'images/'.$_SESSION['user_photo'] : 'images/profile.jpg'; ?>" class="user-image" alt="User Image">
+              <span class="hidden-xs"><?php echo $_SESSION['name']; ?></span>
+            </a>
+            <ul class="dropdown-menu">
+              <!-- User image -->
+              <li class="user-header">
+                <img src="<?php echo (!empty($_SESSION['user_photo'])) ? 'images/'.$_SESSION['user_photo'] : 'images/profile.jpg'; ?>" class="img-circle" alt="User Image">
+
+                <p>
+                  <?php echo $_SESSION['name']; ?>
+                  
+                </p>
+              </li>
+              <li class="user-footer"> 
+              
+                <a href="#profile" data-toggle="modal" class="btn btn-default btn-flat" id="admin_profile">Upraviť</a>               
+                
+                <a href="logout.php" class="btn btn-default btn-flat float-right">Odhlásiť</a>
+                
+              </li>
+            </ul>
+          </li>
+    </ul>
+  </nav>
+  <style>
+    .chat-navbar-toast-container {
+      position: fixed;
+      top: 1rem;
+      right: 1rem;
+      z-index: 1080;
+      width: 360px;
+      max-width: calc(100vw - 2rem);
+      
+    }
+
+    .chat-navbar-toast-container .toast {
+      margin-bottom: .75rem;
+    }
+
+    .chat-toast-body .btn {
+      border-radius: 999px;
+    }
+
+    .chat-toast-body img {
+      width: 40px;
+      height: 40px;
+      object-fit: cover;
+    }
+
+    .fullscreen-restore-button {
+      position: fixed;
+      top: 4.25rem;
+      right: 1rem;
+      z-index: 1081;
+      box-shadow: 0 .5rem 1rem rgba(0, 0, 0, .25);
+    }
+  </style>
+  <script>
+(() => {
+    const fullscreenPreferenceKey = 'darkscrub.fullscreenPreferred';
+    const restoreButtonId = 'darkscrubFullscreenRestore';
+    let leavingPage = false;
+    let restoreArmed = false;
+
+    function fullscreenElement() {
+        return document.fullscreenElement ||
+            document.webkitFullscreenElement ||
+            document.mozFullScreenElement ||
+            document.msFullscreenElement;
+    }
+
+    function setFullscreenPreference(enabled) {
+        try {
+            sessionStorage.setItem(fullscreenPreferenceKey, enabled ? '1' : '0');
+        } catch (e) {
+            // sessionStorage can be unavailable in stricter browser modes.
+        }
+    }
+
+    function wantsFullscreen() {
+        try {
+            return sessionStorage.getItem(fullscreenPreferenceKey) === '1';
+        } catch (e) {
+            return false;
+        }
+    }
+
+    function requestDocumentFullscreen() {
+        const root = document.documentElement;
+        const request = root.requestFullscreen ||
+            root.webkitRequestFullscreen ||
+            root.mozRequestFullScreen ||
+            root.msRequestFullscreen;
+
+        if (!request) {
+            return Promise.reject(new Error('Fullscreen is not supported.'));
+        }
+
+        const result = request.call(root);
+        return result && typeof result.then === 'function' ? result : Promise.resolve();
+    }
+
+    function hideRestoreButton() {
+        $('#' + restoreButtonId).remove();
+    }
+
+    function showRestoreButton() {
+        if ($('#' + restoreButtonId).length || fullscreenElement() || !wantsFullscreen()) {
+            return;
+        }
+
+        $('body').append(
+            '<button type="button" class="btn btn-primary btn-sm fullscreen-restore-button" id="' + restoreButtonId + '">' +
+                '<i class="fas fa-expand-arrows-alt mr-1"></i> Obnoviť fullscreen' +
+            '</button>'
+        );
+    }
+
+    function restoreFullscreen() {
+        if (fullscreenElement() || !wantsFullscreen()) {
+            hideRestoreButton();
+            return Promise.resolve();
+        }
+
+        return requestDocumentFullscreen()
+            .then(function () {
+                setFullscreenPreference(true);
+                hideRestoreButton();
+            })
+            .catch(function () {
+                showRestoreButton();
+            });
+    }
+
+    function isPageNavigation(target) {
+        const link = $(target).closest('a[href]')[0];
+
+        if (!link) {
+            return false;
+        }
+
+        const href = link.getAttribute('href') || '';
+        const targetAttr = (link.getAttribute('target') || '').toLowerCase();
+
+        return href !== '' &&
+            href.charAt(0) !== '#' &&
+            href.toLowerCase().indexOf('javascript:') !== 0 &&
+            (!targetAttr || targetAttr === '_self');
+    }
+
+    function armRestoreOnNextGesture() {
+        if (restoreArmed) {
+            return;
+        }
+
+        restoreArmed = true;
+
+        $(document).on('click.darkscrubFullscreenRestore keydown.darkscrubFullscreenRestore touchend.darkscrubFullscreenRestore', function (event) {
+            if (!wantsFullscreen() || fullscreenElement()) {
+                $(document).off('.darkscrubFullscreenRestore');
+                restoreArmed = false;
+                return;
+            }
+
+            if (event.type === 'keydown' && (event.key === 'Escape' || event.key === 'Esc')) {
+                setFullscreenPreference(false);
+                hideRestoreButton();
+                $(document).off('.darkscrubFullscreenRestore');
+                restoreArmed = false;
+                return;
+            }
+
+            if ($(event.target).closest('#' + restoreButtonId).length || isPageNavigation(event.target)) {
+                return;
+            }
+
+            restoreFullscreen();
+        });
+    }
+
+    $(document).on('click.darkscrubFullscreenPreference', '[data-widget="fullscreen"]', function () {
+        setFullscreenPreference(!fullscreenElement());
+    });
+
+    $(document).on('click.darkscrubFullscreenRestoreButton', '#' + restoreButtonId, function (event) {
+        event.preventDefault();
+        restoreFullscreen();
+    });
+
+    $(document).on('mousedown.darkscrubFullscreenNavigation click.darkscrubFullscreenNavigation', 'a[href]', function (event) {
+        if (wantsFullscreen() && fullscreenElement() && isPageNavigation(event.target)) {
+            leavingPage = true;
+        }
+    });
+
+    $(document).on('submit.darkscrubFullscreenNavigation', 'form', function () {
+        if (wantsFullscreen() && fullscreenElement()) {
+            leavingPage = true;
+        }
+    });
+
+    $(window).on('beforeunload.darkscrubFullscreenNavigation pagehide.darkscrubFullscreenNavigation', function () {
+        if (wantsFullscreen()) {
+            leavingPage = true;
+        }
+    });
+
+    $(document).on('keydown.darkscrubFullscreenPreference', function (event) {
+        if ((event.key === 'Escape' || event.key === 'Esc') && fullscreenElement()) {
+            setFullscreenPreference(false);
+        }
+    });
+
+    $(document).on('webkitfullscreenchange mozfullscreenchange fullscreenchange MSFullscreenChange', function () {
+        if (fullscreenElement()) {
+            setFullscreenPreference(true);
+            hideRestoreButton();
+        } else if (!leavingPage) {
+            setFullscreenPreference(false);
+        }
+    });
+
+    $(document).ready(function () {
+        if (!wantsFullscreen() || fullscreenElement()) {
+            return;
+        }
+
+        showRestoreButton();
+        armRestoreOnNextGesture();
+        setTimeout(restoreFullscreen, 100);
+    });
+})();
+
+let chatNotifInitialized = false;
+let seenChatNotificationKeys = new Set();
+let chatNotificationPermissionRequested = false;
+
+function escapeHtmlNav(text) {
+    const div = document.createElement('div');
+    div.innerText = text || '';
+    return div.innerHTML;
+}
+
+function getChatMessageLabel(count) {
+    if (count === 1) {
+        return 'nová správa';
+    }
+
+    if (count >= 2 && count <= 4) {
+        return 'nové správy';
+    }
+
+    return 'nových správ';
+}
+
+function getChatNotificationKey(item) {
+    return [
+        item.thread_id || 0,
+        item.created_at || '',
+        item.message_text || '',
+        item.name || ''
+    ].join('|');
+}
+
+function isSameOpenChatThread(threadId) {
+    const params = new URLSearchParams(window.location.search);
+    const page = params.get('page') || '';
+    const currentThreadId = params.get('thread_id') || '';
+
+    return page === 'chat' && String(currentThreadId) === String(threadId) && document.visibilityState === 'visible';
+}
+
+function isChatPageOpen() {
+    const params = new URLSearchParams(window.location.search);
+    return (params.get('page') || '') === 'chat';
+}
+
+function supportsChatBrowserNotifications() {
+    return 'Notification' in window && (
+        window.isSecureContext ||
+        Notification.permission === 'granted' ||
+        /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?/i.test(window.location.origin)
+    );
+}
+
+function requestChatBrowserNotificationPermission() {
+    if (
+        !supportsChatBrowserNotifications() ||
+        chatNotificationPermissionRequested ||
+        Notification.permission !== 'default'
+    ) {
+        return;
+    }
+
+    chatNotificationPermissionRequested = true;
+
+    try {
+        const permissionRequest = Notification.requestPermission();
+        if (permissionRequest && typeof permissionRequest.catch === 'function') {
+            permissionRequest.catch(function () { });
+        }
+    } catch (e) {
+        Notification.requestPermission(function () { });
+    }
+}
+
+function showChatBrowserNotification(item) {
+    if (!item || isChatPageOpen() || isSameOpenChatThread(item.thread_id)) {
+        return;
+    }
+
+    if (!supportsChatBrowserNotifications() || Notification.permission !== 'granted') {
+        return;
+    }
+
+    const threadId = item.thread_id || 0;
+    const senderName = item.name || 'Nová správa';
+    const text = item.message_text || 'Poslal(a) ti novú správu';
+    const shortText = text.length > 140 ? text.substring(0, 140) + '...' : text;
+    const photo = item.photo ? ('images/' + item.photo) : 'images/profile.jpg';
+    const threadUrl = '?page=chat&thread_id=' + encodeURIComponent(threadId);
+    const tag = 'chat-navbar-' + getChatNotificationKey(item);
+
+    try {
+        const notification = new Notification('Nová správa od ' + senderName, {
+            body: shortText,
+            icon: photo,
+            tag: tag,
+            requireInteraction: true
+        });
+
+        notification.onclick = function () {
+            window.focus();
+            window.location.href = threadUrl;
+            notification.close();
+        };
+
+    } catch (e) {
+        // Browser notifications are best-effort only.
+    }
+}
+
+function showChatToast(item) {
+    if (isChatPageOpen() || isSameOpenChatThread(item.thread_id)) {
+        return false;
+    }
+
+    let container = $('#chatNavbarToastContainer');
+
+    if (!container.length) {
+        $('body').append('<div id="chatNavbarToastContainer" class="chat-navbar-toast-container"></div>');
+        container = $('#chatNavbarToastContainer');
+    }
+
+    const photo = item.photo ? ('images/' + item.photo) : 'images/profile.jpg';
+    const senderName = item.name || 'Nová správa';
+    let text = item.message_text || 'Poslal(a) ti novú správu';
+
+    if (text.length > 90) {
+        text = text.substring(0, 90) + '...';
+    }
+
+    const toastId = 'chatToast_' + Date.now() + '_' + Math.floor(Math.random() * 100000);
+
+    const toastHtml = `
+        <div id="${toastId}" class="toast bg-maroon fade" role="alert" aria-live="assertive" aria-atomic="true" data-autohide="false">
+            <div class="toast-header bg-maroon text-white">
+                <strong class="mr-auto">Nová správa</strong>
+                <button type="button" class="ml-2 mb-1 close text-white" aria-label="Zavrieť">
+                    <span aria-hidden="true">&times;</span>
+                </button>
+            </div>
+            <div class="toast-body">
+                <div class="chat-toast-body d-flex align-items-start">
+                    <img src="${escapeHtmlNav(photo)}" alt="Avatar" class="img-circle mr-2" onerror="this.src='images/profile.jpg';">
+                    <div class="flex-grow-1 pr-2">
+                        <div class="font-weight-bold mb-1">${escapeHtmlNav(senderName)}</div>
+                        <div class="mb-2">${escapeHtmlNav(text)}</div>
+                        <a href="?page=chat&thread_id=${encodeURIComponent(item.thread_id)}" class="btn btn-xs btn-light">Otvoriť chat</a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+
+    container.append(toastHtml);
+
+    const toast = $('#' + toastId);
+    toast.toast({
+        autohide: false,
+        animation: true
+    });
+
+    toast.find('.close').on('click', function() {
+        toast.toast('hide');
+    });
+
+    toast.on('hidden.bs.toast', function() {
+        toast.remove();
+    });
+
+    toast.toast('show');
+    return true;
+}
+
+function loadChatNotifications() {
+    $.ajax({
+        url: 'scripts/chat/get_unread_threads.php',
+        method: 'GET',
+        dataType: 'json',
+        success: function(res) {
+            if (res.status !== 'success') {
+                return;
+            }
+
+            const threads = Array.isArray(res.threads) ? res.threads : [];
+            const count = parseInt(res.count || 0, 10);
+            const currentKeys = new Set();
+
+            if (count > 0) {
+                $('#chatUnreadBadge').text(count).show();
+                $('#chatNotifToggle').addClass('navbar-alert-bounce');
+                $('#chatNotifHeader').text(count + ' ' + getChatMessageLabel(count));
+            } else {
+                $('#chatUnreadBadge').hide();
+                $('#chatNotifToggle').removeClass('navbar-alert-bounce');
+                $('#chatNotifHeader').text('Žiadne nové správy');
+            }
+
+            let html = '';
+
+            if (!threads.length) {
+                html = '<span class="dropdown-item text-muted">Žiadne nové správy</span>';
+            } else {
+                threads.forEach(function(item) {
+                    const key = getChatNotificationKey(item);
+                    currentKeys.add(key);
+
+                    if (chatNotifInitialized && !seenChatNotificationKeys.has(key)) {
+                        showChatToast(item);
+                        showChatBrowserNotification(item);
+                    }
+
+                    let photo = item.photo ? ('images/' + item.photo) : 'images/profile.jpg';
+                    let text = item.message_text || '';
+
+                    if (text.length > 55) {
+                        text = text.substring(0, 55) + '...';
+                    }
+
+                    html += `
+                        <a href="?page=chat&thread_id=${item.thread_id}" class="dropdown-item">
+                            <div class="media">
+                                <img src="${photo}" alt="User Avatar" class="img-size-50 mr-3 img-circle">
+                                <div class="media-body">
+                                    <h3 class="dropdown-item-title">
+                                        ${escapeHtmlNav(item.name)}
+                                    </h3>
+                                    <p class="text-sm">${escapeHtmlNav(text)}</p>
+                                    <p class="text-sm text-muted">${escapeHtmlNav(item.created_at)}</p>
+                                </div>
+                            </div>
+                        </a>
+                        <div class="dropdown-divider"></div>
+                    `;
+                });
+            }
+
+            $('#chatNotifList').html(html);
+            seenChatNotificationKeys = currentKeys;
+            chatNotifInitialized = true;
+        }
+    });
+}
+
+$(document).ready(function() {
+    $(document).on('click.chatNavbarNotifications keydown.chatNavbarNotifications mousedown.chatNavbarNotifications', function () {
+        requestChatBrowserNotificationPermission();
+    });
+
+    loadChatNotifications();
+    setInterval(loadChatNotifications, 10000);
+});
+</script>
+  <?php include 'includes/profile_modal.php'; ?>

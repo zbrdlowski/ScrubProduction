@@ -1,6 +1,7 @@
 <?php
 declare(strict_types=1);
 require_once __DIR__ . '/i18n.php';
+require_once __DIR__ . '/count.php';
 
 final class KanbanError extends RuntimeException {}
 
@@ -306,7 +307,7 @@ function kb_read(PDO $pdo, int $employeeId, array $query): array
         $board = kb_query($pdo, 'SELECT * FROM kanban_boards WHERE employee_id = ? LOCK IN SHARE MODE', [$employeeId])->fetch(PDO::FETCH_ASSOC);
         if (!$board) {
             $pdo->commit();
-            return ['board' => null, 'columns' => []];
+            return ['board' => null, 'columns' => [], 'active_count' => 0];
         }
         $board['id'] = (int) $board['id'];
         $board['version'] = (int) $board['version'];
@@ -327,7 +328,8 @@ function kb_read(PDO $pdo, int $employeeId, array $query): array
                 $column += kb_column_page($pdo, $column, $column['is_done'] ? $board['done_limit'] : 100, 0, $search);
             }
             unset($column);
-            $result = ['board' => $board, 'columns' => $columns];
+            // Count independently of search and pagination while the board lock is held.
+            $result = ['board' => $board, 'columns' => $columns, 'active_count' => kb_active_card_count($pdo, $employeeId)];
         }
         $pdo->commit();
         return $result;

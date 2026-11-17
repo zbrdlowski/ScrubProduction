@@ -100,6 +100,13 @@
     if (sequence !== state.sequence) return;
     state.board = result.board;
     state.columns = result.columns;
+    const badge = $('navbarKanbanCount');
+    if (badge && Number.isInteger(result.active_count) && result.active_count >= 0) {
+      badge.textContent = String(result.active_count);
+      badge.hidden = result.active_count === 0;
+      badge.title = t('Active cards: {count} (including Backlog)', { count: result.active_count });
+      badge.setAttribute('aria-label', badge.title);
+    }
     render();
     boardEl.setAttribute('aria-busy', String(state.busy));
   }

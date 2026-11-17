@@ -26,6 +26,8 @@ foreach (['employees', 'kanban_boards', 'kanban_columns', 'kanban_cards'] as $ta
 }
 check(kb_ready($pdo), 'Schema is ready');
 check(kb_read($pdo, 701, [])['board'] === null, 'First visit has no board');
+check(kb_read($pdo, 701, [])['active_count'] === 0, 'No board has zero active cards');
+check(kb_active_card_count($pdo, 0) === 0, 'Guest count is zero');
 kb_initialize($pdo, 701, 'general');
 kb_initialize($pdo, 702, 'design');
 kb_initialize($pdo, 701, 'support');
@@ -47,6 +49,8 @@ $make = static function (string $title, int $column) use ($change): int {
 $id1 = $make('Prvá karta', $active);
 $id2 = $make('Druhá karta', $active);
 $id3 = $make('Tretia karta', $active);
+check(kb_active_card_count($pdo, 701) === 3, 'Backlog cards count as active');
+check(kb_active_card_count($pdo, 702) === 0, 'Another employee never counts these cards');
 $change('move_card', ['id' => $id3, 'column_id' => $active, 'before_id' => $id1]);
 check(array_column(kb_read($pdo, 701, [])['columns'][0]['cards'], 'id') === [$id3, $id1, $id2], 'Within-column ordering persists');
 $change('move_card', ['id' => $id1, 'column_id' => $todo]);
@@ -64,12 +68,15 @@ fails(fn() => $change('move_card', ['id' => $id1, 'column_id' => $todo, 'before_
 check(kb_read($pdo, 701, [])['board']['version'] === $version, 'Rejected changes do not increment revision');
 $change('move_card', ['id' => $id1, 'column_id' => $done]);
 check(kb_card($pdo, $a['board']['id'], $id1)['completed_at'] !== null, 'Completion timestamp');
+check(kb_active_card_count($pdo, 701) === 2, 'Done decreases active count');
 $pdo->exec("UPDATE kanban_cards SET completed_at = '2020-01-01 00:00:00' WHERE id = $id1");
 $extraDone = $change('save_column', ['title' => 'Vyriešené', 'color' => '#34d399', 'is_done' => 1])['id'];
 $change('move_card', ['id' => $id1, 'column_id' => $extraDone]);
 check(strpos(kb_card($pdo, $a['board']['id'], $id1)['completed_at'], '2020-01-01') === 0, 'Done-to-done preserves timestamp');
+check(kb_active_card_count($pdo, 701) === 2, 'Custom completed columns are excluded too');
 $change('move_card', ['id' => $id1, 'column_id' => $active]);
 check(kb_card($pdo, $a['board']['id'], $id1)['completed_at'] === null, 'Reopen clears timestamp');
+check(kb_active_card_count($pdo, 701) === 3, 'Reopened card increases active count');
 $change('move_card', ['id' => $id1, 'column_id' => $done]);
 check(strpos(kb_card($pdo, $a['board']['id'], $id1)['completed_at'], '2020-01-01') !== 0, 'Recompletion gets new timestamp');
 $change('settings', ['done_limit' => 2]);
@@ -102,6 +109,7 @@ $change('move_column', ['id' => $done, 'before_id' => $active]);
 check(kb_read($pdo, 701, [])['columns'][0]['id'] === $done, 'Column order persists');
 $change('save_column', ['id' => $active, 'title' => 'Archivované', 'color' => '#123456', 'is_done' => 1]);
 check(kb_card($pdo, $a['board']['id'], $id2)['completed_at'] !== null, 'Column completion toggle applies to existing cards');
+check(kb_active_card_count($pdo, 701) === 0, 'Completion flag excludes all cards irrespective of column name');
 $change('save_column', ['id' => $active, 'title' => 'Rozpracované', 'color' => '#123456', 'is_done' => 0]);
 check(kb_card($pdo, $a['board']['id'], $id2)['completed_at'] === null, 'Column reopening clears completion');
 $change('delete_column', ['id' => $extraDone]);
@@ -115,6 +123,9 @@ fails(fn() => kb_read($pdo, 701, ['column_id' => $done, 'version' => $board['ver
 for ($i = 0; $i < 105; ++$i) $make('Batch ' . $i, $todo);
 $todoCol = array_values(array_filter(kb_read($pdo, 701, [])['columns'], fn($c) => $c['id'] === $todo))[0];
 check(count($todoCol['cards']) === 100 && $todoCol['total'] === 105, 'Active lists are paginated too');
+check(kb_active_card_count($pdo, 701) === 107, 'Count includes cards beyond active page limit');
+$filteredCount = kb_read($pdo, 701, ['search' => 'Hotová 0']);
+check($filteredCount['active_count'] === 107 && count(array_merge(...array_column($filteredCount['columns'], 'cards'))) === 1, 'Searching completed history never changes active total');
 $last = (int) $pdo->query("SELECT id FROM kanban_cards WHERE column_id = $todo ORDER BY position DESC, id DESC LIMIT 1")->fetchColumn();
 $change('move_card', ['id' => $last, 'column_id' => $todo, 'before_id' => $todoCol['cards'][0]['id']]);
 $ids = array_map('intval', $pdo->query("SELECT id FROM kanban_cards WHERE column_id = $todo ORDER BY position, id")->fetchAll(PDO::FETCH_COLUMN));

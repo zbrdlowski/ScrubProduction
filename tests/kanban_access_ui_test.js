@@ -11,12 +11,14 @@ const assert=require('node:assert/strict');
   const url=new URL(route.request().url());
   return route.fulfill({contentType:'text/html',body:fs.readFileSync('.cache/kanban/shell-'+level+'-'+(url.searchParams.get('kb_lang')||'sk')+'.html','utf8')});
  });
- await page.route('**/scripts/kanban/api.php*',route=>route.fulfill({json:{ok:true,board:{id:1,done_limit:20,version:1},columns:[{id:1,title:'Osobné úlohy',color:'#60a5fa',is_done:0,total:0,has_more:false,cards:[]}]}}));
+ await page.route('**/scripts/kanban/api.php*',route=>route.fulfill({json:{ok:true,active_count:7,board:{id:1,done_limit:20,version:1},columns:[{id:1,title:'Osobné úlohy',color:'#60a5fa',is_done:0,total:0,has_more:false,cards:[]}]}}));
  const idle=()=>page.waitForFunction(()=>document.getElementById('kb-board')?.getAttribute('aria-busy')==='false'&&!document.getElementById('kb-refresh').disabled);
  try {
   for(level of [0,100,300,500,900]){
    await page.goto('http://localhost/darkscrub/index.php?page=kanban&kb_lang=sk');await idle();
    assert.equal(await page.locator('#kb-app').count(),1);
+   assert.equal(await page.locator('.main-header #navbarKanbanCount').innerText(),'7');
+   assert.match(await page.locator('#navbarKanbanCount').getAttribute('title'),/Aktívne karty: 7/);
    assert.equal(await page.locator('.main-header a[href="index.php?page=kanban"]').count(),1);
    assert.equal(await page.locator('.main-sidebar a[href$="?page=kanban"]').count(),1);
    assert.match(await page.locator('link[href^="assets/css/kanban.css"]').getAttribute('href'), /[?]v=[a-f0-9]{12}$/);
@@ -28,6 +30,7 @@ const assert=require('node:assert/strict');
    await page.keyboard.press('Escape');
    await page.locator('[data-kb-language=en]').click({timeout:5000});await idle();
    assert.equal(await page.locator('#kb-title').innerText(),'My kanban');
+   assert.equal(await page.locator('#navbarKanbanCount').getAttribute('aria-label'),'Active cards: 7 (including Backlog)');
    await page.locator('#kb-guide-open').click({timeout:5000});
    assert.equal(await page.locator('#kb-guide-title').innerText(),'Kanban guide');
    await page.keyboard.press('Escape');

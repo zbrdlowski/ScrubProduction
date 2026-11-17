@@ -144,5 +144,6 @@
   "Apply template": "Použiť šablónu",
   "Applying a template replaces your columns. Your cards are kept: active cards move to the first column, completed cards to the last.": "Použitie šablóny nahradí vaše stĺpce. Karty zostanú zachované: aktívne sa presunú do prvého stĺpca, dokončené do posledného.",
   "Existing column names, colours and positions will be replaced. All cards, including older completed cards, are kept. Completion dates and your display limit stay unchanged.": "Pôvodné názvy, farby a poradie stĺpcov sa nahradia. Všetky karty vrátane starších dokončených zostanú zachované. Dátumy dokončenia a limit zobrazenia sa nezmenia.",
-  "Apply “{template}”? Active cards move to “{active}” and completed cards to “{done}”.": "Použiť šablónu „{template}“? Aktívne karty sa presunú do stĺpca „{active}“ a dokončené do stĺpca „{done}“."
+  "Apply “{template}”? Active cards move to “{active}” and completed cards to “{done}”.": "Použiť šablónu „{template}“? Aktívne karty sa presunú do stĺpca „{active}“ a dokončené do stĺpca „{done}“.",
+  "Active cards: {count} (including Backlog)": "Aktívne karty: {count} (vrátane Backlogu)"
 }

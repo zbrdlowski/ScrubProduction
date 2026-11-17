@@ -8,7 +8,7 @@ foreach (['sk', 'en'] as $lang) {
     $_SESSION = ['user_id' => 701, 'permission' => 0, 'kanban_csrf' => 'kanban-ui-test-token'];
     $_GET = ['kb_lang' => $lang];
     ob_start();
-?><!doctype html><html lang="<?= $lang ?>"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><base href="/darkscrub/"><title>Kanban – UI test</title><link rel="stylesheet" href="dist/css/adminlte.min.css"><link rel="stylesheet" href="plugins/fontawesome-free/css/all.min.css"></head><body class="dark-mode" style="padding:24px;background:#343a40"><?php
+?><!doctype html><html lang="<?= $lang ?>"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><base href="/darkscrub/"><title>Kanban – UI test</title><link rel="stylesheet" href="dist/css/adminlte.min.css"><link rel="stylesheet" href="plugins/fontawesome-free/css/all.min.css"></head><body class="dark-mode" style="padding:24px;background:#343a40"><span id="navbarKanbanCount" class="badge badge-info" hidden>0</span><?php
     require __DIR__ . '/../includes/kanban.php';
 ?></body></html><?php
     $html = ob_get_clean();

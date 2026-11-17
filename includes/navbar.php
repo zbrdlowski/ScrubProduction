@@ -1,6 +1,20 @@
 <?php
 require_once __DIR__ . '/project_filters.php';
 require_once __DIR__ . '/auth.php';
+require_once __DIR__ . '/../scripts/kanban/i18n.php';
+require_once __DIR__ . '/../scripts/kanban/count.php';
+
+$navbarKanbanCount = null;
+$navbarKanbanEmployeeId = (int) ($_SESSION['user_id'] ?? 0);
+if (isset($pdo) && $pdo instanceof PDO && $navbarKanbanEmployeeId > 0) {
+    try {
+        $navbarKanbanCount = kb_active_card_count($pdo, $navbarKanbanEmployeeId);
+    } catch (PDOException $e) {
+        // A not-yet-installed Kanban must not interrupt navigation in other modules.
+        if ($e->getCode() !== '42S02') error_log('Kanban navbar count: ' . $e->getMessage());
+    }
+}
+$navbarKanbanLabel = kb_t('Active cards: {count} (including Backlog)', ['count' => $navbarKanbanCount ?? 0]);
 
 $navbarProjects = [];
 $navbarProjectUserId = intval($_SESSION['user_id'] ?? 0);
@@ -218,7 +232,11 @@ if (isset($conn) && $conn instanceof mysqli) {
       </li>
       -->
       <li class="nav-item d-none d-sm-inline-block">
-        <a href="index.php?page=kanban" class="nav-link">Kanban</a>
+        <a href="index.php?page=kanban" class="nav-link text-nowrap">Kanban
+          <span id="navbarKanbanCount" class="badge badge-info ml-1" aria-live="polite" aria-atomic="true"
+            title="<?= htmlspecialchars($navbarKanbanLabel, ENT_QUOTES, 'UTF-8') ?>"
+            aria-label="<?= htmlspecialchars($navbarKanbanLabel, ENT_QUOTES, 'UTF-8') ?>"<?= !$navbarKanbanCount ? ' hidden' : '' ?>><?= $navbarKanbanCount ?? 0 ?></span>
+        </a>
       </li>
       <li class="nav-item d-none d-sm-inline-block">
         <a href="?page=profile" class="nav-link">Attendance</a>
