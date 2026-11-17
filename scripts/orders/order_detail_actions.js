@@ -3229,3 +3229,27 @@ $(document)
       },
     });
   });
+
+// Send only saved database values; this action does not change the production status.
+$(document).off('click.graphicsTransfer','.btn-transfer-graphics').on('click.graphicsTransfer','.btn-transfer-graphics',function(){
+  const button=this,$button=$(button),$state=$button.siblings('.graphics-transfer-state');
+  if(button.disabled)return;
+  // Prevent sending a snapshot while visible product fields still have unsaved edits.
+  const row=$button.closest('tr'),rows=row.add(row.nextUntil('tr.item-repeat-header-row'));
+  const changed=rows.find('input:not([type=hidden]),textarea,select').toArray().some(input=>{
+    if(input.disabled)return false;
+    if(input.tagName==='SELECT'){const opts=Array.from(input.options),defaults=opts.filter(option=>option.defaultSelected);return opts.some((option,index)=>option.selected!==(defaults.length?option.defaultSelected:(!input.multiple&&index===0)));}
+    if(input.type==='checkbox'||input.type==='radio')return input.checked!==input.defaultChecked;
+    return input.value!==input.defaultValue;
+  });
+  if(changed){showOrderActionToast('warning','Save your item changes and reopen the order detail before transferring.');return;}
+  button.disabled=true;$state.text('Transferring…');
+  $.ajax({url:'scripts/orders/transfer_graphics.php',method:'POST',dataType:'json',data:{item_id:button.dataset.itemId,order_id:button.dataset.orderId,csrf:button.dataset.csrf}})
+    .done(response=>{
+      if(!response?.ok){button.disabled=false;$state.text(response?.error||'Transfer failed.');return;}
+      $button.removeClass('btn-outline-info').addClass('btn-success').html('<i class="fas fa-check"></i> Transferred');
+      $state.text(response.transfer.status==='pending'?'Pending':response.transfer.status);
+      if(button.dataset.canOpen==='1')$('<a>',{href:'index.php?page=product_transfers&transfer='+Number(response.transfer.id),target:'_blank',rel:'noopener',class:'small d-block',text:'Transfer D-base ↗'}).insertAfter($state);
+      showOrderActionToast('success','Graphics transferred to Transfer D-base.');
+    }).fail(xhr=>{button.disabled=false;$state.text(xhr.responseJSON?.error||'Transfer failed. Please try again.');});
+});

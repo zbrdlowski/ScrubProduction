@@ -89,6 +89,7 @@ $pageLabels = [
   'product_builder' => 'Product Builder',
   'product_listings' => 'Listings',
   'product_controls' => 'Product Controls',
+  'product_transfers' => 'Transfer D-base',
   'vykaz_prace' => 'Activity Report',
   'accounting_payouts' => 'eBay payouty',
   'accounting_paypal' => 'PayPal platby',

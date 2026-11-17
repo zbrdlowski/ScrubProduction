@@ -8,6 +8,8 @@ const {chromium}=require('playwright'),assert=require('assert/strict');
   const listing={id:801,name:'Plastics + Graphics KTM SX 50',sku:'GFP_ARTLEX_ST',bundle_type:'GFP',category_kind:'specific',brand:'KTM',model:'SX 50',year_range:'2016-2023',modelcode:'VXR7',created_at:'2026-11-06 12:00:00',recommended_price:'210',recommended_currency:'EUR',component_count:3,components,img_status:'R'};
   let failNext=false,pendingRelease=null,holdNext=false;
   await page.route('**/scripts/product_builder/api.php?*',async route=>{
+  if(new URL(route.request().url()).searchParams.get('action')==='transfers')return route.fulfill({json:{ok:true,rows:[],page:1,pages:1,total:0,pending:0}});
+
    assert.equal(route.request().method(),'GET','Focus must never write product data.');
    const url=new URL(route.request().url()),action=url.searchParams.get('action');
    if(action==='products')return route.fulfill({json:{ok:true,rows:[listing,{...listing,id:802,name:'Second listing'}],stats:{total:2,specific:2,universal:0}}});

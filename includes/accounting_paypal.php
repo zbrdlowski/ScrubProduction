@@ -153,7 +153,7 @@ $rawExportReady = (int) $stats['unmatched'] === 0 && (int) $stats['review'] === 
   <header class="accounting-page-header">
     <div class="accounting-page-heading">
       <h1 class="h3 mb-1">PayPal platby<?= accountingPaypalInfo('Denný import prekrývajúcich sa PayPal CSV, automatické párovanie platieb a export podkladov do OMEGY.') ?></h1>
-      <div class="accounting-page-subtitle text-muted">Pôvodné CSV zostáva nezmenené. CO sa používa na dohľadanie leadu, export vždy použije aktuálne SO.</div>
+      <div class="accounting-page-subtitle text-muted">Pôvodné CSV zostáva nezmenené. Výcuc zachová CO alebo SO, ku ktorému bola platba pôvodne vyžiadaná.</div>
     </div>
     <div class="accounting-page-actions">
       <div class="btn-group" role="group" aria-label="Účtovné sekcie">
@@ -209,8 +209,8 @@ $rawExportReady = (int) $stats['unmatched'] === 0 && (int) $stats['review'] === 
           $cards = [
               ['all', 'Transakcie', (int) $stats['transactions'], 'fa-exchange-alt', 'paypal-stat-all', 'Skutočné finančné PayPal pohyby. Shopping Cart Item detail sa nepočíta ako ďalšia platba.'],
               ['matched', 'Spárované', max(0, (int) $stats['matched'] - (int) $stats['review']), 'fa-link', 'paypal-stat-matched', 'Platby s jednoznačnou referenciou alebo presným Transaction ID. Nevyžadujú ručný zásah.'],
-              ['review', 'Na potvrdenie', (int) $stats['review'], 'fa-user-check', 'paypal-stat-review', 'Systém našiel pravdepodobnú objednávku podľa identity. Skontrolujte SO a uložte ho.'],
-              ['unmatched', 'Nespárované', (int) $stats['unmatched'], 'fa-unlink', 'paypal-stat-unmatched', 'Chýba finálna referencia. Platbu treba dohľadať alebo počkať na pridelenie SO.'],
+              ['review', 'Na potvrdenie', (int) $stats['review'], 'fa-user-check', 'paypal-stat-review', 'Systém našiel pravdepodobnú objednávku podľa identity. Overte pôvodné CO/SO platby a uložte ho.'],
+              ['unmatched', 'Nespárované', (int) $stats['unmatched'], 'fa-unlink', 'paypal-stat-unmatched', 'Chýba exportná referencia. Dohľadajte pôvodné CO/SO alebo iné číslo z platobnej požiadavky.'],
           ];
           ?>
           <div class="row accounting-stats-row">
@@ -279,9 +279,9 @@ $rawExportReady = (int) $stats['unmatched'] === 0 && (int) $stats['review'] === 
             <th class="text-right">Hrubá suma<?= accountingPaypalInfo('Hrubá prijatá suma pred odpočítaním PayPal poplatku.') ?></th>
             <th>PayPal ID<?= accountingPaypalInfo('Jedinečný Transaction ID. Je to najsilnejší spôsob párovania, ak je uložený v Custom Orders.') ?></th>
             <th>Stopy v PayPal<?= accountingPaypalInfo('Invoice Number, Item Title, Subject a Note z pôvodného CSV. Systém v nich hľadá SO, CO a ďalšie objednávkové čísla.') ?></th>
-            <th>CO<?= accountingPaypalInfo('Interný lead kód použitý na dohľadanie Custom Order. CO sa nikdy nepoužije ako finálna referencia vo Vycuc PayPal.') ?></th>
-            <th>Exportná referencia<?= accountingPaypalInfo('Finálne SO alebo platná e-shop/eBay/SK/SC referencia. Pri žltom návrhu číslo skontrolujte a tlačidlom uložiť ho potvrďte.') ?></th>
-            <th>Zhoda<?= accountingPaypalInfo('Metóda a percento istoty. Zelené zhody sú automatické, žlté treba potvrdiť a červené treba dohľadať alebo počkať na SO.') ?></th>
+            <th>CO<?= accountingPaypalInfo('Interný kód Custom Order. Ak bola platba vyžiadaná k CO, toto CO zostane aj vo výcucu po pridelení SO.') ?></th>
+            <th>Exportná referencia<?= accountingPaypalInfo('Pôvodné CO/SO platby alebo platná e-shop/eBay/SK/SC referencia. Pri žltom návrhu číslo skontrolujte a tlačidlom uložiť ho potvrďte.') ?></th>
+            <th>Zhoda<?= accountingPaypalInfo('Metóda a percento istoty. Zelené zhody sú automatické, žlté treba potvrdiť a červené treba dohľadať.') ?></th>
           </tr></thead>
           <tbody>
           <?php foreach ($rows as $row):
@@ -305,7 +305,7 @@ $rawExportReady = (int) $stats['unmatched'] === 0 && (int) $stats['review'] === 
                 <?php if ($canImportAccounting): ?>
                   <form method="post" action="scripts/accounting/update_paypal_match.php" class="form-inline flex-nowrap">
                     <input type="hidden" name="csrf_token" value="<?= accountingPaypalH($_SESSION['accounting_paypal_csrf']) ?>"><input type="hidden" name="transaction_row_id" value="<?= (int) $row['id'] ?>"><input type="hidden" name="month" value="<?= accountingPaypalH($month) ?>"><input type="hidden" name="match" value="<?= accountingPaypalH($matchFilter) ?>">
-                    <input class="form-control form-control-sm mr-1" style="width:125px" name="export_order_number" value="<?= accountingPaypalH($row['export_order_number'] ?? '') ?>" placeholder="SO / e-shop / eBay">
+                    <input class="form-control form-control-sm mr-1" style="width:125px" name="export_order_number" value="<?= accountingPaypalH($row['export_order_number'] ?? '') ?>" placeholder="CO / SO / e-shop / eBay">
                     <button class="btn btn-outline-light btn-sm" title="Uložiť"><i class="fas fa-save"></i></button>
                   </form>
                 <?php else: ?><b><?= accountingPaypalH($row['export_order_number'] ?: '-') ?></b><?php endif; ?>

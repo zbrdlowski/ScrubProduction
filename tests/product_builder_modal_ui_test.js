@@ -2,6 +2,8 @@ const {chromium}=require('playwright'),fs=require('fs'),assert=require('assert/s
 (async()=>{const browser=await chromium.launch({channel:'chrome',headless:true});try{
  const page=await browser.newPage({viewport:{width:1440,height:1100}}),errors=[];page.on('pageerror',e=>errors.push(e.message));
  await page.route('**/scripts/product_builder/api.php?*',async route=>{
+  if(new URL(route.request().url()).searchParams.get('action')==='transfers')return route.fulfill({json:{ok:true,rows:[],page:1,pages:1,total:0,pending:0}});
+
   const url=new URL(route.request().url()),action=url.searchParams.get('action');let data={ok:true};
   if(action==='boxes')data.rows=[];
   else if(action==='models')data.rows=url.searchParams.get('level')==='brands'?[{brand:'KTM'}]:[];

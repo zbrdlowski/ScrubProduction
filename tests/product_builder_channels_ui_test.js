@@ -10,6 +10,8 @@ const {chromium}=require('playwright'),fs=require('fs'),assert=require('assert/s
   const empty=channel=>({product_id:801,channel,status:'do_not_list',url:null,price:null,currency:'EUR',listed_date:null,sold_quantity:{web:10,ebay:7,amazon:null}[channel],version:0});
   await context.route('https://shop.example.test/**',route=>route.fulfill({contentType:'text/html',body:'Mock listing opened'}));
   await context.route('**/scripts/product_builder/api.php?*',async route=>{
+  if(new URL(route.request().url()).searchParams.get('action')==='transfers')return route.fulfill({json:{ok:true,rows:[],page:1,pages:1,total:0,pending:0}});
+
    const action=new URL(route.request().url()).searchParams.get('action');let body={ok:true};
    if(action==='products')Object.assign(body,{rows:[snapshot()],stats:{total:1,specific:1,universal:0}});
    else if(action==='product')body.product=snapshot();

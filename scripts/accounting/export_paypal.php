@@ -38,7 +38,7 @@ $blockers->execute([$from, $to]);
 $blockerCount = (int) $blockers->fetchColumn();
 if ($blockerCount > 0) {
     http_response_code(409);
-    exit('Export is blocked: ' . $blockerCount . ' payment rows still require an SO or manual confirmation.');
+    exit('Export is blocked: ' . $blockerCount . ' payment rows still require an order reference or manual confirmation.');
 }
 $stmt = $pdo->prepare('
     SELECT raw_json, export_order_number

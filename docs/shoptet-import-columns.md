@@ -54,7 +54,11 @@ Neodhalia každý prípad starej hlavičky, ak má rovnaký počet stĺpcov a pl
   Toto nie je transakčná záruka pri zlyhaní samotného zápisu do Sheets.
 - Neprázdne `graphics-parts-versions` sa ukladajú aj do `options_json`.
   `itemHsCode` a ostatné nemapované polia zostávajú v `source_raw_json`.
-- Mapovanie eBay, MX Locker, krajín, číslovanie riadkov a funkcie poznámok MX Locker ostávajú zachované.
+- eBay podporuje pôvodné názvy `Post to ...` / `postcode` aj názvy `Ship To ...` / `Zip`
+  z exportu zo 16. 11. 2026. Pri súčasnom výskyte oboch názvov má prednosť prvý neprázdny
+  pôvodný názov. Mapovanie MX Locker, krajín, číslovanie riadkov a poznámky MX Locker ostávajú zachované.
+- Textový formát telefónov, PSČ a sledovacích čísel sa nastavuje pred zápisom výstupu.
+  Úvodné nuly stratené už pri importe do RAW hárka však nie je možné spätne obnoviť.
 
 ## Katalóg prebytočných polí
 
@@ -130,7 +134,7 @@ neznamená, že už existuje výrobná logika alebo ovládací prvok pre dané p
 
 ## Overenie
 
-Lokálne prešlo 16 regresných testov v
+Pri pôvodnej úprave Shoptet lokálne prešlo 16 regresných testov v
 [tests/darkscrub_import_spec_test.js](../tests/darkscrub_import_spec_test.js), vrátane:
 
 - 25 rôznych poradí stĺpcov a vloženia nového stĺpca na začiatok, do stredu i na koniec;
@@ -161,3 +165,53 @@ Spustenie aj s dodanými referenciami:
 ```powershell
 node tests/darkscrub_import_spec_test.js --raw 'Y:\ORDERS_DOWNLOAD\2026\NOV\13\shoptet_raw.csv' --expected 'Y:\ORDERS_DOWNLOAD\2026\NOV\13\Darkscrub.csv' --original 'C:\Users\PC\OneDrive\Desktop\darkscrub_import_spec.js'
 ```
+
+## Oprava eBay kontaktov zo 16. 11. 2026
+
+V `Y:\ORDERS_DOWNLOAD\2026\NOV\16\Darkscrubfix.csv` bolo 37 položiek:
+3 Shoptet a 34 eBay položiek patriacich k 33 rôznym eBay objednávkam.
+Všetkým 34 eBay riadkom chýbali vo výsledných stĺpcoch `phone`, `bill_zip`
+a `delivery_zip` hodnoty, hoci všetky boli zachované v `source_raw_json`.
+
+Príčinou sú odlišné názvy hlavičiek exportu, nie poradie stĺpcov.
+Oprava v Apps Scripte podporuje tieto dvojice:
+
+| Pôvodný názov | Alternatívny názov z dnešného CSV | Výstup |
+| --- | --- | --- |
+| `Post to phone` | `Ship To Phone` | `phone` |
+| `Buyer postcode` | `Buyer Zip` | `bill_zip` |
+| `Post to postcode` | `Ship To Zip` | `delivery_zip` |
+| `Post to name` | `Ship To Name` | `delivery_name` |
+| `Post to address 1` | `Ship To Address 1` | prvá časť `delivery_street` |
+| `Post to address 2` | `Ship To Address 2` | druhá časť `delivery_street` |
+| `Post to city` | `Ship To City` | `delivery_city` |
+| `Post to country` | `Ship To Country` | `delivery_country` cez existujúci hárok `COUNTRIES` |
+| `Postage and packaging` | `Shipping And Handling` | `shipping_price` |
+| `Delivery service` | `Shipping Service` | `shipping_method` |
+
+Pri prázdnej hodnote pod pôvodným názvom sa použije alternatíva.
+Hlavičky naďalej ignorujú rozdiel vo veľkosti písmen a poradie stĺpcov.
+Pôvodný raw JSON sa uchová bez premenovania alebo dopĺňania aliasových kľúčov.
+PSČ položky (`Item Zip Code`) ani daňové PSČ (`Tax Zip`) sa nepoužijú ako náhrada adresy zákazníka.
+
+Aktuálne prešlo 25 testov vrátane reálnej vzorky, starého i nového eBay formátu,
+prázdnych aliasov, úvodných núl, alfanumerických PSČ a formátovania pred zápisom.
+Test zároveň preukázal, že pôvodný skript na tejto vzorke stráca všetky tri kontaktné polia.
+
+Spustenie celej kontroly s oboma reálnymi vzorkami:
+
+```powershell
+node tests/darkscrub_import_spec_test.js --raw 'Y:\ORDERS_DOWNLOAD\2026\NOV\13\shoptet_raw.csv' --expected 'Y:\ORDERS_DOWNLOAD\2026\NOV\13\Darkscrub.csv' --original 'C:\Users\PC\OneDrive\Desktop\darkscrub_import_spec.js' --ebay-unified 'Y:\ORDERS_DOWNLOAD\2026\NOV\16\Darkscrubfix.csv'
+```
+
+Nahraď existujúci Apps Script opraveným súborom a vygeneruj nový `DARKSCRUB_IMPORT`
+z pôvodného `EBAY_RAW` s celou hlavičkou. Živý Apps Script a databáza sa pri tejto oprave nemenili.
+
+### Už importované objednávky
+
+Zmena generátora sama nedoplní údaje v už uložených objednávkach.
+Režim `skip` v `scripts/import_darkscrub_unified.php` ich preskočí.
+Režim `update` obnovuje aj položky (vrátane volania `oi_delete_items_for_order`),
+preto ho nepoužívaj iba na opravu kontaktov v rozpracovaných objednávkach.
+Na tieto objednávky treba samostatné cielené doplnenie adries a telefónov z uchovaného raw JSON;
+taká databázová oprava sa v tomto kroku nevykonala.

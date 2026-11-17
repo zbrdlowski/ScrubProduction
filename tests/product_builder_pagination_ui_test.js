@@ -4,6 +4,8 @@ const {chromium}=require('playwright'),assert=require('assert/strict');
  const rows=Array.from({length:237},(_,n)=>{const id=237-n;return {id,name:'Listing '+id,sku:'SKU_'+String(id).padStart(4,'0'),bundle_type:'P',category_kind:'specific',brand:'KTM',model:'SX',year_range:'2026',modelcode:id===1?'OLDEST':'AB23',created_at:'2026-11-0'+(4+Math.floor((id-1)/80))+' 12:00:00',recommended_price:'199.90',recommended_currency:'EUR',component_count:1};});
  const page=await browser.newPage({viewport:{width:1500,height:1000}});page.on('pageerror',e=>errors.push(e.message));
  await page.route('**/scripts/product_builder/api.php?*',async route=>{
+  if(new URL(route.request().url()).searchParams.get('action')==='transfers')return route.fulfill({json:{ok:true,rows:[],page:1,pages:1,total:0,pending:0}});
+
   const url=new URL(route.request().url()),action=url.searchParams.get('action');let body={ok:true},status=200;
   if(action==='products'){
    const q=url.searchParams.get('q')||'',size=Number(url.searchParams.get('per_page')),requested=Number(url.searchParams.get('page'));requests.push({q,size,page:requested});

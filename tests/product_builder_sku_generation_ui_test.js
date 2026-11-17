@@ -3,7 +3,9 @@ const {chromium}=require('playwright'),assert=require('assert/strict');
  const errors=[];let saves=0,sequence=0,release=null,nextMode='normal';
  let listing={id:801,version:1,request_key:'a'.repeat(32),name:'Orange Plastics kit',sku:'UNSUITABLE-SKU',bundle_type:'P',category_kind:'universal',uni_category_id:11,brand:'KTM',model:'Default',year_range:'',modelcode:'AB23',notes:'Keep listing note',recommended_price:'199.90',recommended_currency:'EUR',web_price:null,web_currency:'EUR',ebay_price:null,ebay_currency:'EUR',amazon_price:null,amazon_currency:'EUR',box_id:null,weight_kg:null,created_at:'2026-11-05 12:00:00',component_count:1,components:[{component_type:'P',label:'Front plate',reference:'KT00295',color:'ORANGE',quantity:1,options:{plastics_buyer_note:'Keep component option'}}]};
  const page=await browser.newPage({viewport:{width:1600,height:1000}});page.on('pageerror',e=>errors.push(e.message));page.on('dialog',d=>d.accept());
- await page.route('**/scripts/product_builder/api.php?*',async route=>{const req=route.request(),action=new URL(req.url()).searchParams.get('action'),data=req.method()==='POST'?JSON.parse(req.postData()):{};let body={ok:true},status=200;
+ await page.route('**/scripts/product_builder/api.php?*',async route=>{
+  if(new URL(route.request().url()).searchParams.get('action')==='transfers')return route.fulfill({json:{ok:true,rows:[],page:1,pages:1,total:0,pending:0}});
+const req=route.request(),action=new URL(req.url()).searchParams.get('action'),data=req.method()==='POST'?JSON.parse(req.postData()):{};let body={ok:true},status=200;
   if(action==='categories')body.rows=[{id:11,brand:'KTM',category_name:'Default',modelcode:'AB23',included_models:'Big bike',version:1}];
   else if(action==='designs')Object.assign(body,{rows:[],versions:[]});
   else if(action==='boxes')body.rows=[];

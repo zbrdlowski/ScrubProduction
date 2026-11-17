@@ -179,6 +179,10 @@ function accounting_paypal_parse_file(string $path, string $originalName = ''): 
 
 function accounting_paypal_extract_reference(array $row): array
 {
+    $raw = $row['raw'] ?? null;
+    if (!is_array($raw)) {
+        $raw = json_decode((string) ($row['raw_json'] ?? ''), true);
+    }
     $rawInvoice = trim((string) ($row['raw_invoice_number'] ?? ''));
     if (preg_match('/^Shoptet\d+-(20\d{8})$/i', $rawInvoice, $match)) {
         return ['kind' => 'ESHOP', 'value' => $match[1]];
@@ -187,7 +191,7 @@ function accounting_paypal_extract_reference(array $row): array
         (string) ($row['item_title'] ?? ''),
         (string) ($row['subject_text'] ?? ''),
         (string) ($row['note_text'] ?? ''),
-        (string) ($row['raw']['Custom Number'] ?? ''),
+        (string) ($raw['Custom Number'] ?? ''),
         $rawInvoice,
     ]);
     if (preg_match('/\b(?:GO)?(SO\d{4,}(?:-\d+)?)\b/i', $text, $match)) {
@@ -220,13 +224,17 @@ function accounting_paypal_empty_match(string $method = 'UNMATCHED'): array
     ];
 }
 
-function accounting_paypal_custom_match(array $record, string $method, int $confidence): array
+function accounting_paypal_custom_match(array $record, string $method, int $confidence, array $reference = []): array
 {
     $official = strtoupper(trim((string) ($record['official_order_number'] ?? '')));
     $so = accounting_paypal_normalize_so($official);
     $exportNumber = $so;
     if ($exportNumber === '' && preg_match('/^(SK-\d+|SC\d+)$/', $official)) {
         $exportNumber = $official;
+    }
+    // The payment reference belongs to the request, not the current order state.
+    if (in_array($reference['kind'] ?? '', ['CO', 'SO'], true)) {
+        $exportNumber = $reference['value'];
     }
     return [
         'matched_order_id' => !empty($record['production_order_id']) ? (int) $record['production_order_id'] : null,
@@ -240,6 +248,7 @@ function accounting_paypal_custom_match(array $record, string $method, int $conf
 
 function accounting_paypal_match_row(PDO $pdo, array $row): array
 {
+    $reference = accounting_paypal_extract_reference($row);
     $transactionId = trim((string) ($row['transaction_id'] ?? ''));
     if ($transactionId !== '') {
         $stmt = $pdo->prepare('
@@ -251,20 +260,19 @@ function accounting_paypal_match_row(PDO $pdo, array $row): array
         $stmt->execute([$transactionId]);
         $matches = $stmt->fetchAll(PDO::FETCH_ASSOC);
         if (count($matches) === 1) {
-            return accounting_paypal_custom_match($matches[0], 'TRANSACTION_ID', 100);
+            return accounting_paypal_custom_match($matches[0], 'TRANSACTION_ID', 100, $reference);
         }
         if (count($matches) > 1) {
             return accounting_paypal_empty_match('AMBIGUOUS_TRANSACTION_ID');
         }
     }
 
-    $reference = accounting_paypal_extract_reference($row);
     if ($reference['kind'] === 'CO') {
         $stmt = $pdo->prepare('SELECT id, internal_code, official_order_number, production_order_id FROM custom_orders WHERE BINARY internal_code = BINARY ? ORDER BY id DESC');
         $stmt->execute([$reference['value']]);
         $matches = $stmt->fetchAll(PDO::FETCH_ASSOC);
         if (count($matches) === 1) {
-            return accounting_paypal_custom_match($matches[0], 'CUSTOM_CODE', 98);
+            return accounting_paypal_custom_match($matches[0], 'CUSTOM_CODE', 98, $reference);
         }
         return accounting_paypal_empty_match(count($matches) > 1 ? 'AMBIGUOUS_CUSTOM_CODE' : 'CUSTOM_CODE_NOT_FOUND');
     }
@@ -279,7 +287,7 @@ function accounting_paypal_match_row(PDO $pdo, array $row): array
             $stmt->execute([$reference['value'], 'GO' . $reference['value']]);
             $customMatches = $stmt->fetchAll(PDO::FETCH_ASSOC);
             if (count($customMatches) === 1) {
-                return accounting_paypal_custom_match($customMatches[0], 'EXPLICIT_' . $reference['kind'], 99);
+                return accounting_paypal_custom_match($customMatches[0], 'EXPLICIT_' . $reference['kind'], 99, $reference);
             }
             if (count($customMatches) > 1) {
                 return accounting_paypal_empty_match('AMBIGUOUS_EXPLICIT_' . $reference['kind']);
@@ -501,7 +509,7 @@ function accounting_paypal_refresh_matches(PDO $pdo, ?string $from = null, ?stri
     $byTransaction = [];
     foreach ($rows as $row) {
         if (!empty($row['transaction_id'])) {
-            $byTransaction[(string) $row['transaction_id']][] = $row;
+            $byTransaction[(string) $row['transaction_id']][(int) $row['id']] = $row;
         }
     }
 
@@ -559,6 +567,9 @@ function accounting_paypal_refresh_matches(PDO $pdo, ?string $from = null, ?stri
             }
         }
         accounting_paypal_update_match($pdo, (int) $row['id'], $match);
+        if ($transactionId !== '') {
+            $byTransaction[$transactionId][(int) $row['id']] = array_merge($row, $match);
+        }
         $assignment = $wasUnmatched
             ? accounting_paypal_assign_custom_payment($pdo, $candidateRow, $match, $actorId)
             : ['payment' => 'skipped', 'status_updated' => false];
@@ -598,5 +609,54 @@ function accounting_paypal_refresh_matches(PDO $pdo, ?string $from = null, ?stri
 function accounting_paypal_valid_export_reference(string $value): bool
 {
     $value = strtoupper(trim($value));
-    return preg_match('/^(SO\d+(?:-\d+)?|20\d{8}|\d{2}-\d{5}-\d{5}|SK-\d+|SC\d+)$/', $value) === 1;
+    return preg_match('/^(CO\d{4,}|SO\d+(?:-\d+)?|20\d{8}|\d{2}-\d{5}-\d{5}|SK-\d+|SC\d+)$/', $value) === 1;
+}
+
+function accounting_paypal_export_reference(array $row): string
+{
+    if (empty($row['manual_override'])) {
+        $reference = accounting_paypal_extract_reference($row);
+        if (in_array($reference['kind'], ['CO', 'SO'], true)) {
+            return $reference['value'];
+        }
+    }
+    return trim((string) ($row['export_order_number'] ?? ''));
+}
+
+function accounting_paypal_vycuc_rows(PDO $pdo, string $from, string $to): array
+{
+    $stmt = $pdo->prepare('
+        SELECT *
+        FROM accounting_paypal_transactions
+        WHERE transaction_date >= ? AND transaction_date < ?
+          AND balance_impact = \'Credit\'
+          AND match_confidence >= 90
+        ORDER BY transaction_date, transaction_time, id
+    ');
+    $stmt->execute([$from, $to]);
+    $rows = [];
+    while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
+        // Resolve saved imports too, without requiring a rematch or changing payments.
+        $row['export_order_number'] = accounting_paypal_export_reference($row);
+        if ($row['export_order_number'] !== '') {
+            $rows[] = $row;
+        }
+    }
+    return $rows;
+}
+
+function accounting_paypal_write_vycuc($out, array $rows): void
+{
+    fwrite($out, "\xEF\xBB\xBF");
+    fputcsv($out, ['Date', 'Suma', 'Poplatok', 'Order Number', 'PayPal', 'IBAN partnera'], ';', '"', '');
+    foreach ($rows as $row) {
+        fputcsv($out, [
+            date('d.m.Y', strtotime((string) $row['transaction_date'])),
+            number_format((float) $row['gross_amount'], 2, ',', ''),
+            number_format((float) ($row['fee_amount'] ?? 0), 2, ',', ''),
+            (string) $row['export_order_number'],
+            'PayPal',
+            '',
+        ], ';', '"', '');
+    }
 }

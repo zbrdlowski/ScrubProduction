@@ -14,7 +14,9 @@ const {chromium}=require('playwright'),fs=require('fs'),assert=require('assert/s
  ];
  const listing={id:801,name:'Orange Restyle KTM Plastics kit',sku:'P_690175',bundle_type:'GFPS',category_kind:'universal',uni_category_id:categories[0].id,brand:'KTM',model:'SX 2011–2012',modelcode:'X6XZ',recommended_price:'199.90',recommended_currency:'EUR',components:stockRows,component_count:stockRows.length};
  let reads=0,failNext=false;
- const handler=async route=>{const action=new URL(route.request().url()).searchParams.get('action');let body={ok:true};
+ const handler=async route=>{
+  if(new URL(route.request().url()).searchParams.get('action')==='transfers')return route.fulfill({json:{ok:true,rows:[],page:1,pages:1,total:0,pending:0}});
+const action=new URL(route.request().url()).searchParams.get('action');let body={ok:true};
   if(action==='categories')body.rows=categories;
   else if(action==='designs')Object.assign(body,{rows:[],versions:[]});
   else if(action==='boxes')body.rows=[];

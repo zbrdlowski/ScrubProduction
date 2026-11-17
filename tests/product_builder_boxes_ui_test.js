@@ -4,6 +4,8 @@ const {chromium}=require('playwright'),fs=require('fs'),assert=require('assert/s
  const categories=JSON.parse(fs.readFileSync('.cache/product-builder/categories.json','utf8')),designs=JSON.parse(fs.readFileSync('.cache/product-builder/designs.json','utf8')),versions=JSON.parse(fs.readFileSync('.cache/product-builder/graphics-versions.json','utf8'));
  let boxes=[{id:900,name:'Plastics box',length_cm:'60.00',width_cm:'40.00',height_cm:'30.00',weight_kg:'0.500',version:1}],writes=0,failNext=false;
  const handler=async route=>{
+  if(new URL(route.request().url()).searchParams.get('action')==='transfers')return route.fulfill({json:{ok:true,rows:[],page:1,pages:1,total:0,pending:0}});
+
   const action=new URL(route.request().url()).searchParams.get('action'),data=route.request().method()==='POST'?JSON.parse(route.request().postData()):{};let result={ok:true};
   if(action==='categories')result.rows=categories;
   else if(action==='designs')Object.assign(result,{rows:designs,versions});

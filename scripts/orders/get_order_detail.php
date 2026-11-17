@@ -1571,6 +1571,15 @@ require_once __DIR__ . '/financial_helpers.php';
 
 $ordersCanManage = auth_can('orders.manage');
 $ordersCanWork = auth_can('orders.work');
+require_once __DIR__ . '/../product_builder/transfers.php';
+$graphicsTransfersReady = pb_transfers_ready($pdo);
+if (empty($_SESSION['orders_transfer_csrf'])) $_SESSION['orders_transfer_csrf'] = bin2hex(random_bytes(32));
+$graphicsTransfers = [];
+if ($graphicsTransfersReady) {
+  $transferQuery = $pdo->prepare('SELECT order_item_id,id,status FROM product_builder_transfers WHERE order_id=?');
+  $transferQuery->execute([(int)($_POST['order_id'] ?? 0)]);
+  foreach ($transferQuery->fetchAll(PDO::FETCH_ASSOC) as $transferRow) $graphicsTransfers[(int)$transferRow['order_item_id']] = $transferRow;
+}
 $ordersCanManageFinancials = auth_can('orders.financial');
 $ordersCanAdminister = auth_can('orders.admin');
 $ordersCanManageCustomOrders = auth_can('custom_orders.manage') || auth_can('custom_orders.financial');
@@ -6826,6 +6835,7 @@ ob_start();
         <table class="table table-sm table-bordered mb-0 order-detail-table">
           <tbody>
 
+            <?php $hasGraphicsTransferColumn = count(array_filter($items,static fn($row)=>strtoupper(trim((string)($row['item_type_code'] ?? '')))==='G')) > 0; ?>
             <?php foreach ($items as $it): ?>
               <?php
               $seatPatchGroupItemId = (int) ($it['id'] ?? 0);
@@ -6857,6 +6867,7 @@ ob_start();
                 <th class="text-center">Detail</th>
                 <th>Action</th>
                 <th>Waiting</th>
+                <?php if ($hasGraphicsTransferColumn): ?><th class="text-center"><?= strtoupper(trim((string)($it['item_type_code'] ?? ''))) === 'G' ? 'Transfer' : '' ?></th><?php endif; ?>
                 <?php if ($ordersCanManage): ?>
                   <th class="text-center">Save</th>
                   <th class="text-center">Delete</th>
@@ -7599,6 +7610,20 @@ ob_start();
                     data-item-id="<?= (int) $it['id'] ?>" value="<?= h($it['expected_date'] ?? '') ?>">
                 </td>
 
+                <?php if ($hasGraphicsTransferColumn): ?>
+                  <td class="text-center" style="width:105px;">
+                  <?php if ($isGraphicsItem): $transfer = $graphicsTransfers[(int)$it['id']] ?? null; ?>
+                    <button type="button" class="btn btn-xs <?= $transfer ? 'btn-success' : 'btn-outline-info' ?> btn-transfer-graphics"
+                      data-can-open="<?= auth_can('products.view') ? '1' : '0' ?>" data-item-id="<?= (int)$it['id'] ?>" data-order-id="<?= (int)$orderId ?>" data-csrf="<?= h($_SESSION['orders_transfer_csrf']) ?>"
+                      <?= (!$ordersCanWork || !$graphicsTransfersReady || $transfer) ? 'disabled' : '' ?>
+                      title="<?= $graphicsTransfersReady ? 'Send saved Graphics details to Transfer D-base' : 'Import product_builder_update_013.sql first' ?>">
+                      <i class="fas <?= $transfer ? 'fa-check' : 'fa-share-square' ?>"></i> <?= $transfer ? 'Transferred' : 'Transfer' ?>
+                    </button>
+                    <small class="d-block text-muted graphics-transfer-state" role="status"><?= $transfer ? h(ucfirst($transfer['status'])) : '' ?></small>
+                    <?php if ($transfer && auth_can('products.view')): ?><a href="index.php?page=product_transfers&amp;transfer=<?= (int)$transfer['id'] ?>" target="_blank" rel="noopener" class="small">Transfer D-base <i class="fas fa-external-link-alt"></i></a><?php endif; ?>
+                  <?php endif; ?>
+                  </td>
+                <?php endif; ?>
                 <td class="text-center" style="display:none;">
                   <?php
                   $itTypeRtp = strtoupper(trim((string) ($it['item_type_code'] ?? '')));

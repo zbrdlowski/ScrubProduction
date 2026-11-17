@@ -1,0 +1,14 @@
+const {chromium}=require('playwright'),fs=require('fs'),assert=require('assert/strict');
+(async()=>{const browser=await chromium.launch({channel:'chrome',headless:true});try{
+ const page=await browser.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));
+ await page.goto('http://localhost/darkscrub/.cache/product-builder/preview.html');
+ await page.evaluate(()=>{document.body.innerHTML='<table><tbody><tr class="item-repeat-header-row"><th>Waiting</th><th>Transfer</th></tr><tr><td><input value="Saved"><select><option value="">Choose</option><option value="x">X</option></select></td><td><button class="btn-transfer-graphics" data-item-id="11" data-order-id="1" data-csrf="TOKEN" data-can-open="1">Transfer</button><small class="graphics-transfer-state"></small></td></tr><tr class="g-item-options-row"><td colspan="2"><textarea>Note</textarea></td></tr></tbody></table>';window.toasts=[];window.showOrderActionToast=(type,message)=>window.toasts.push({type,message});});
+ const js=fs.readFileSync('scripts/orders/order_detail_actions.js','utf8').split('// Send only saved database values;')[1];await page.addScriptTag({content:'// Send only saved database values;'+js});
+ let writes=0,fail=true,received=null;
+ await page.route('**/scripts/orders/transfer_graphics.php',async route=>{writes++;received=new URLSearchParams(route.request().postData());if(fail){fail=false;return route.fulfill({status:422,json:{ok:false,error:'Retry this transfer.'}});}return route.fulfill({json:{ok:true,transfer:{id:61,status:'pending'}}});});
+ await page.fill('textarea','Unsaved note');await page.click('.btn-transfer-graphics');assert.equal(writes,0);assert.match(await page.evaluate(()=>window.toasts.at(-1).message),/Save your item changes/);
+ await page.fill('textarea','Note');await page.click('.btn-transfer-graphics');await page.waitForFunction(()=>document.querySelector('.graphics-transfer-state').textContent==='Retry this transfer.');assert.equal(await page.locator('.btn-transfer-graphics').isDisabled(),false);
+ await page.click('.btn-transfer-graphics');await page.waitForFunction(()=>document.querySelector('.btn-transfer-graphics').textContent.includes('Transferred'));assert.equal(writes,2);assert.equal(received.get('csrf'),'TOKEN');assert.equal(received.get('item_id'),'11');assert.equal(await page.locator('.btn-transfer-graphics').isDisabled(),true);assert.match(await page.locator('a').getAttribute('href'),/page=product_transfers&transfer=61$/);
+ assert.deepEqual(errors,[]);const unauth=await page.request.post('http://localhost/darkscrub/scripts/orders/transfer_graphics.php',{form:{item_id:'11',order_id:'1',csrf:'TOKEN'}});assert.equal(unauth.status(),403);
+ console.log('Orders transfer UI: unsaved guard, defaults, failed request/retry, CSRF payload, transferred state, navigation and anonymous denial OK.');
+}finally{await browser.close();}})().catch(e=>{console.error(e);process.exit(1);});

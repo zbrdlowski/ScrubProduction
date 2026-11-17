@@ -5,7 +5,7 @@ require __DIR__ . '/../includes/conn.php';
 function repairAssert(bool $ok, string $message): void { if (!$ok) throw new RuntimeException($message); }
 $root = dirname(__DIR__);
 $prefix = 'pb_repair_test_' . bin2hex(random_bytes(4)) . '_';
-$suffixes = ['channel_listings','components','products','uni_categories','designs','graphics_versions','boxes'];
+$suffixes = ['transfers','channel_listings','components','products','uni_categories','designs','graphics_versions','boxes'];
 $tables = array_map(fn($name) => $prefix . $name, $suffixes);
 $translate = static fn(string $sql): string => str_replace(['product_builder_','fk_pb_'], [$prefix,'fk_' . $prefix], $sql);
 $checkSql = $translate(file_get_contents($root . '/db/product_builder_check.sql'));
@@ -13,6 +13,7 @@ $updateSql = $translate(file_get_contents($root . '/db/product_builder_update_al
 $baseSql = file_get_contents($root . '/db/product_builder.sql');
 $legacySql = preg_replace('/CREATE TABLE IF NOT EXISTS product_builder_designs \([\s\S]*?(?=CREATE TABLE IF NOT EXISTS product_builder_components)/', '', $baseSql);
 $legacySql = preg_replace('/CREATE TABLE IF NOT EXISTS product_builder_channel_listings \([\s\S]*?ENGINE=InnoDB[^;]*;\s*/', '', $legacySql);
+$legacySql = preg_replace('/CREATE TABLE IF NOT EXISTS product_builder_transfers \([\s\S]*?ENGINE=InnoDB[^;]*;\s*/', '', $legacySql);
 $legacySql = preg_replace('/^ color VARCHAR[^\r\n]*\r?\n/m', '', $legacySql);
 $legacySql = str_replace(' options_json LONGTEXT NULL,', '', $legacySql);
 $legacySql = preg_replace('/^ CONSTRAINT fk_pb_component_(graphics_version|design)[^\r\n]*\r?\n/m', '', $legacySql);
@@ -26,18 +27,18 @@ function repairRun(PDO $pdo, string $sql): array {
     do { if ($statement->columnCount()) $sets[] = $statement->fetchAll(PDO::FETCH_ASSOC); } while ($statement->nextRowset());
     $statement->closeCursor(); return $sets;
 }
-$existing = $pdo->prepare('SELECT COUNT(*) FROM information_schema.tables WHERE table_schema=DATABASE() AND table_name IN (?,?,?,?,?,?,?)');
+$existing = $pdo->prepare('SELECT COUNT(*) FROM information_schema.tables WHERE table_schema=DATABASE() AND table_name IN (?,?,?,?,?,?,?,?)');
 $existing->execute($tables);
 repairAssert((int)$existing->fetchColumn() === 0, 'Test table names must be unused.');
 $cleanup = static function() use ($pdo, $tables, $prefix): void {
     foreach ($tables as $table) {
-        if (!preg_match('/^pb_repair_test_[a-f0-9]{8}_(channel_listings|components|products|uni_categories|designs|graphics_versions|boxes)$/D', $table) || !str_starts_with($table, $prefix)) throw new RuntimeException('Unsafe cleanup target.');
+        if (!preg_match('/^pb_repair_test_[a-f0-9]{8}_(transfers|channel_listings|components|products|uni_categories|designs|graphics_versions|boxes)$/D', $table) || !str_starts_with($table, $prefix)) throw new RuntimeException('Unsafe cleanup target.');
         $pdo->exec('DROP TABLE IF EXISTS `' . $table . '`');
     }
 };
 $ready = static function(array $sets): void {
     $rows = $sets[count($sets)-1];
-    repairAssert(count($rows) === 32, 'Diagnostics must report all thirty-two required schema objects.');
+    repairAssert(count($rows) === 34, 'Diagnostics must report all thirty-four required schema objects.');
     repairAssert(array_unique(array_column($rows, 'status')) === ['OK'], 'All schema objects must be present.');
 };
 try {
@@ -48,7 +49,7 @@ try {
     $cleanup();
     repairRun($pdo, $translate($legacySql));
     $checks = repairRun($pdo, $checkSql);
-    repairAssert(count(array_filter($checks[count($checks)-1], fn($row) => $row['status'] === 'MISSING')) === 29, 'Legacy diagnostics identify four missing tables and twenty-five columns.');
+    repairAssert(count(array_filter($checks[count($checks)-1], fn($row) => $row['status'] === 'MISSING')) === 31, 'Legacy diagnostics identify four missing tables and twenty-five columns.');
     $pdo->exec("INSERT INTO {$prefix}uni_categories (brand,category_name,modelcode,included_models) VALUES ('Test','Original category','ZQA7','Original models')");
     $pdo->exec("INSERT INTO {$prefix}products (sku,name,bundle_type,category_kind,uni_category_id,brand,model,modelcode,notes,request_key) VALUES ('EXISTING-SHOPTET-SKU','Original listing','P','universal',1,'Test','Original category','ZQA7','Original notes','0123456789abcdef0123456789abcdef')");
     $pdo->exec("INSERT INTO {$prefix}components (product_id,component_type,label,reference,quantity,notes) VALUES (1,'P','Original component','KT00543',2,'Original component notes')");

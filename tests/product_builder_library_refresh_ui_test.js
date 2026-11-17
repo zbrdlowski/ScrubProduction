@@ -6,6 +6,8 @@ const {chromium}=require('playwright'),assert=require('assert/strict');
  let categories=[{id:11,brand:'KTM',category_name:'Default',modelcode:'AB23',included_models:'All KTM',version:1,usage_count:0},{id:12,brand:'KTM',category_name:'Small',modelcode:'AB24',included_models:'Small KTM',version:1,usage_count:0}];
  let boxes=[{id:41,name:'Box A',length_cm:60,width_cm:40,height_cm:20,weight_kg:'0.5',version:1,usage_count:0}];
  await context.route('**/scripts/product_builder/api.php?*',async route=>{
+  if(new URL(route.request().url()).searchParams.get('action')==='transfers')return route.fulfill({json:{ok:true,rows:[],page:1,pages:1,total:0,pending:0}});
+
   const req=route.request(),action=new URL(req.url()).searchParams.get('action'),data=req.method()==='POST'?JSON.parse(req.postData()):{};requests.push({action,method:req.method(),page:req.frame().page()});let body={ok:true},status=200;
   if(action==='categories'){body.rows=structuredClone(categories);if(holdCategories){holdCategories=false;await new Promise(resolve=>releaseCategories=resolve);}}
   else if(action==='designs'){if(failDesigns){status=503;body={ok:false,error:'Temporary design failure'};}else Object.assign(body,{rows:designs,versions});}

@@ -4,6 +4,7 @@
 // Six-month holiday / time off planning grid.
 
 require_once __DIR__ . '/../scripts/accounting/ui_helpers.php';
+require_once __DIR__ . '/holiday_company.php';
 
 $holidayPermission = intval($_SESSION['permission'] ?? 0);
 $holidayDepartmentId = intval($_SESSION['dpt'] ?? 0);
@@ -252,6 +253,14 @@ $holidayHasTable = holidayTableExists($conn, 'holiday_requests');
 $holidayHasEmployeeFlag = holidayColumnExists($conn, 'employees', 'holiday_planner_enabled');
 $holidayMessage = '';
 $holidayError = '';
+$holidayCompanyResult = $holidayCanManage ? ($_SESSION['holiday_company_result'] ?? null) : null;
+unset($_SESSION['holiday_company_result']);
+if ($holidayCanManage && empty($_SESSION['holiday_company_csrf'])) {
+  $_SESSION['holiday_company_csrf'] = bin2hex(random_bytes(32));
+}
+$holidayCompanyStart = '';
+$holidayCompanyEnd = '';
+$holidayCompanyNote = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && $holidayHasTable) {
   $action = $_POST['action'] ?? '';
@@ -264,6 +273,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $holidayHasTable) {
   }));
   $returnStart = preg_replace('/[^0-9-]/', '', $_POST['return_start'] ?? ($_GET['start'] ?? ''));
   $returnUrl = $_SERVER['PHP_SELF'] . '?page=holidays' . ($returnStart !== '' ? '&start=' . urlencode($returnStart) : '');
+
+  if ($action === 'create_company_holiday') {
+    $holidayCompanyStart = is_string($_POST['start_date'] ?? null) ? trim($_POST['start_date']) : '';
+    $holidayCompanyEnd = is_string($_POST['end_date'] ?? null) ? trim($_POST['end_date']) : '';
+    $holidayCompanyNote = is_string($_POST['note'] ?? null) ? trim($_POST['note']) : '';
+    $csrf = is_string($_POST['csrf_token'] ?? null) ? $_POST['csrf_token'] : '';
+    if (!$holidayCanManage) {
+      $holidayError = 'You do not have permission to add a company-wide holiday.';
+    } elseif (!hash_equals($_SESSION['holiday_company_csrf'], $csrf)) {
+      $holidayError = 'This form has expired. Refresh the page and try again.';
+    } else {
+      try {
+        $_SESSION['holiday_company_result'] = holidayCreateCompanyLeave(
+          $conn, $holidayCanManage, $holidayEmpId,
+          $holidayCompanyStart, $holidayCompanyEnd, $holidayCompanyNote, $holidayPublicHolidays
+        );
+        holidayRedirect($_SERVER['PHP_SELF'] . '?page=holidays&start=' . substr($holidayCompanyStart, 0, 7) . '-01');
+      } catch (InvalidArgumentException $error) {
+        $holidayError = $error->getMessage();
+      } catch (Throwable $error) {
+        error_log('Company holiday creation failed: ' . $error->getMessage());
+        $holidayError = 'The company-wide holiday could not be saved. All changes were rolled back.';
+      }
+    }
+  }
 
   if ($action === 'create_holiday_request') {
     $employeeId = $holidayCanManage ? (intval($_POST['employee_id'] ?? 0) ?: $holidayEmpId) : $holidayEmpId;
@@ -1167,12 +1201,18 @@ $holidayHelpMarkdown = is_file($holidayHelpPath)
 <div class="container-fluid holiday-planner">
   <div class="d-flex flex-wrap justify-content-between align-items-center mb-3" style="gap:8px;">
     <h4 class="mb-0" style="color:#e4e6eb;"><i class="far fa-calendar-check mr-2"></i>Holiday planner</h4>
-    <div class="d-flex" style="gap:8px;">
+    <div class="d-flex flex-wrap" style="gap:8px;">
       <button type="button" class="btn btn-outline-info"
         data-toggle="modal" data-target="#holidayHelpModal"
         data-bs-toggle="modal" data-bs-target="#holidayHelpModal">
         <i class="fas fa-question-circle mr-1"></i> Help
       </button>
+      <?php if ($holidayCanManage): ?>
+        <button type="button" class="btn btn-outline-success" id="holidayCompanyButton"
+          aria-haspopup="dialog" aria-controls="holidayCompanyModal" <?= $holidayHasTable ? '' : 'disabled' ?>>
+          <i class="fas fa-calendar-plus mr-1" aria-hidden="true"></i> Company-wide holiday
+        </button>
+      <?php endif; ?>
       <button type="button" class="btn btn-primary" id="holidayNewRequestButton"
         data-toggle="modal" data-target="#holidayRequestModal"
         data-bs-toggle="modal" data-bs-target="#holidayRequestModal"
@@ -1187,6 +1227,34 @@ $holidayHelpMarkdown = is_file($holidayHelpPath)
       Holiday planner database schema is not fully installed yet.
       Run <strong>db/holiday_planner.sql</strong> first. The page can render a preview, but requests need the database
       table.
+    </div>
+  <?php endif; ?>
+
+  <?php if ($holidayError !== ''): ?>
+    <div class="alert alert-danger" role="alert"><?= htmlspecialchars($holidayError, ENT_QUOTES, 'UTF-8') ?></div>
+  <?php endif; ?>
+  <?php if ($holidayCompanyResult !== null): ?>
+    <div class="alert <?= $holidayCompanyResult['days_skipped'] > 0 ? 'alert-warning' : 'alert-success' ?>" role="status">
+      <strong>Company-wide holiday:</strong>
+      Added and approved for <?= intval($holidayCompanyResult['employees_added']) ?>
+      of <?= intval($holidayCompanyResult['employees_total']) ?> active employees.
+      Total days added: <?= intval($holidayCompanyResult['days_added']) ?>.
+      Total occupied days skipped: <?= intval($holidayCompanyResult['days_skipped']) ?>.
+      <?php if (!empty($holidayCompanyResult['skipped'])): ?>
+        <details class="mt-2">
+          <summary>Skipped employees and dates</summary>
+          <ul class="mb-0 mt-2">
+            <?php foreach ($holidayCompanyResult['skipped'] as $skipped): ?>
+              <li>
+                <?= htmlspecialchars($skipped['employee'], ENT_QUOTES, 'UTF-8') ?>:
+                <?= htmlspecialchars(implode(', ', array_map(static function (string $date): string {
+                  return date('d.m.Y', strtotime($date));
+                }, $skipped['dates'])), ENT_QUOTES, 'UTF-8') ?>
+              </li>
+            <?php endforeach; ?>
+          </ul>
+        </details>
+      <?php endif; ?>
     </div>
   <?php endif; ?>
 
@@ -1507,6 +1575,49 @@ $holidayHelpMarkdown = is_file($holidayHelpPath)
 </div>
 
 <?php if ($holidayCanManage): ?>
+  <div class="modal fade" id="holidayCompanyModal" tabindex="-1" role="dialog" aria-labelledby="holidayCompanyTitle" aria-hidden="true">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <form method="POST" id="holidayCompanyForm">
+          <input type="hidden" name="action" value="create_company_holiday">
+          <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['holiday_company_csrf'], ENT_QUOTES, 'UTF-8') ?>">
+          <div class="modal-header bg-success">
+            <h5 class="modal-title text-white" id="holidayCompanyTitle">Company-wide holiday</h5>
+            <button type="button" class="close text-white" data-holiday-modal-close aria-label="Close">&times;</button>
+          </div>
+          <div class="modal-body">
+            <div class="form-group">
+              <label for="holidayCompanyEmployees">Employees</label>
+              <input id="holidayCompanyEmployees" class="form-control" value="All active employees" readonly>
+            </div>
+            <div class="form-row">
+              <div class="form-group col-md-6">
+                <label for="holidayCompanyStart">From</label>
+                <input type="date" name="start_date" id="holidayCompanyStart" class="form-control" required
+                  value="<?= htmlspecialchars($holidayCompanyStart, ENT_QUOTES, 'UTF-8') ?>">
+              </div>
+              <div class="form-group col-md-6">
+                <label for="holidayCompanyEnd">To</label>
+                <input type="date" name="end_date" id="holidayCompanyEnd" class="form-control" required
+                  value="<?= htmlspecialchars($holidayCompanyEnd, ENT_QUOTES, 'UTF-8') ?>">
+              </div>
+            </div>
+            <div class="form-group">
+              <label for="holidayCompanyNote">Note</label>
+              <textarea name="note" id="holidayCompanyNote" class="form-control" rows="3" maxlength="10000"><?= htmlspecialchars($holidayCompanyNote, ENT_QUOTES, 'UTF-8') ?></textarea>
+            </div>
+            <div><strong>Status:</strong> <span class="badge badge-success">Approved</span></div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-holiday-modal-close>Cancel</button>
+            <button type="submit" class="btn btn-success" <?= $holidayHasTable ? '' : 'disabled' ?>>
+              <i class="fas fa-check mr-1" aria-hidden="true"></i> Add and approve
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
   <script type="application/json" id="holidayReviewData"><?= json_encode($holidayReviewRequests, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_INVALID_UTF8_SUBSTITUTE) ?></script>
   <div class="modal fade" id="holidayReviewModal" tabindex="-1" role="dialog" aria-labelledby="holidayReviewTitle" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered">
@@ -1972,6 +2083,29 @@ $holidayHelpMarkdown = is_file($holidayHelpPath)
       }
       showHolidayModal();
     });
+
+    $('#holidayCompanyButton').on('click', function () {
+      if (!this.disabled) {
+        showHolidayModal(document.getElementById('holidayCompanyModal'));
+      }
+    });
+
+    var companyForm = document.getElementById('holidayCompanyForm');
+    if (companyForm) {
+      var companyStart = document.getElementById('holidayCompanyStart');
+      var companyEnd = document.getElementById('holidayCompanyEnd');
+      function updateCompanyDates() {
+        companyEnd.min = companyStart.value;
+        if (!companyEnd.value) {
+          companyEnd.value = companyStart.value;
+        }
+      }
+      companyStart.addEventListener('change', updateCompanyDates);
+      updateCompanyDates();
+      companyForm.addEventListener('submit', function () {
+        companyForm.querySelector('[type="submit"]').disabled = true;
+      });
+    }
 
     $('[data-holiday-modal-close]').on('click', hideHolidayModal);
 

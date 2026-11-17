@@ -25,16 +25,7 @@ if (!preg_match('/^\d{4}-(0[1-9]|1[0-2])$/', $month)) {
 $from = $month . '-01';
 $to = date('Y-m-d', strtotime($from . ' +1 month'));
 
-$stmt = $pdo->prepare('
-    SELECT transaction_date, gross_amount, fee_amount, export_order_number
-    FROM accounting_paypal_transactions
-    WHERE transaction_date >= ? AND transaction_date < ?
-      AND balance_impact = \'Credit\'
-      AND export_order_number IS NOT NULL AND export_order_number <> \'\'
-      AND match_confidence >= 90
-    ORDER BY transaction_date, transaction_time, id
-');
-$stmt->execute([$from, $to]);
+$rows = accounting_paypal_vycuc_rows($pdo, $from, $to);
 
 $filename = 'paypal-vycuc-' . $month . '.csv';
 header('Content-Type: text/csv; charset=UTF-8');
@@ -42,16 +33,5 @@ header('Content-Disposition: attachment; filename="' . $filename . '"');
 header('Cache-Control: no-store');
 
 $out = fopen('php://output', 'wb');
-fwrite($out, "\xEF\xBB\xBF");
-fputcsv($out, ['Date', 'Suma', 'Poplatok', 'Order Number', 'PayPal', 'IBAN partnera'], ';', '"', '');
-while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
-    fputcsv($out, [
-        date('d.m.Y', strtotime((string) $row['transaction_date'])),
-        number_format((float) $row['gross_amount'], 2, ',', ''),
-        number_format((float) ($row['fee_amount'] ?? 0), 2, ',', ''),
-        (string) $row['export_order_number'],
-        'PayPal',
-        '',
-    ], ';', '"', '');
-}
+accounting_paypal_write_vycuc($out, $rows);
 fclose($out);

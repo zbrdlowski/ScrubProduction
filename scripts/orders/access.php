@@ -21,6 +21,7 @@ $ordersPermissionMap = [
     'invite_collab.php' => 'orders.work',
     'update_item_status.php' => 'orders.work',
     'update_item_waiting.php' => 'orders.work',
+    'transfer_graphics.php' => 'orders.work',
     'update_item_options.php' => 'orders.work',
     'update_item_internal_options.php' => 'orders.work',
     'update_item_category_info.php' => 'orders.work',

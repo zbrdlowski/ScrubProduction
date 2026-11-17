@@ -7,6 +7,8 @@ const {chromium}=require('playwright'),fs=require('fs'),assert=require('assert/s
  let listing={id:701,name:'Existing listing with prices',sku:'SHOP-PRICE-701',bundle_type:'G',category_kind:'universal',uni_category_id:category.id,brand:category.brand,model:category.category_name,modelcode:category.modelcode,year_range:'',notes:'Existing note',request_key:'a'.repeat(32),version:1,component_count:1,components:[{component_type:'G',label:'Existing custom design',quantity:1,options:{graphics_finish:'Matte'}}]};
  for(const key of channels){listing[key+'_price']=null;listing[key+'_currency']='EUR';}
  const handler=async route=>{
+  if(new URL(route.request().url()).searchParams.get('action')==='transfers')return route.fulfill({json:{ok:true,rows:[],page:1,pages:1,total:0,pending:0}});
+
   const action=new URL(route.request().url()).searchParams.get('action'),data=route.request().method()==='POST'?JSON.parse(route.request().postData()):{};let result={ok:true};
   if(action==='boxes'){await route.fulfill({json:{ok:true,rows:[]}});return;}
    else if(action==='designs')Object.assign(result,{rows:designs,versions});

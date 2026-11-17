@@ -10,6 +10,8 @@ const fs=require('fs'),assert=require('assert/strict');
   const g=designs.find(d=>d.component_type==='G'&&d.name==='G1'),s=designs.find(d=>d.component_type==='S');
   let listing=null,nextId=90001,saves=0;
   await page.route('**/scripts/product_builder/api.php?*',async route=>{
+  if(new URL(route.request().url()).searchParams.get('action')==='transfers')return route.fulfill({json:{ok:true,rows:[],page:1,pages:1,total:0,pending:0}});
+
    const action=new URL(route.request().url()).searchParams.get('action'),data=route.request().method()==='POST'?JSON.parse(route.request().postData()):{};
    let result={ok:true};
    if(action==='boxes'){await route.fulfill({json:{ok:true,rows:[]}});return;}

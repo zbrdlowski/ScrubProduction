@@ -6,25 +6,28 @@ $_SESSION['product_builder_languages'][(int) ($_SESSION['user_id'] ?? 0)] = pb_l
 require_once __DIR__ . '/access.php';
 require_once __DIR__ . '/helpers.php';
 require_once __DIR__ . '/specs.php';
+require_once __DIR__ . '/transfers.php';
 if (!isset($_SESSION['permission'])) { http_response_code(401); echo '<div class="alert alert-danger">' . htmlspecialchars(pb_t('Please sign in to the application.'), ENT_QUOTES, 'UTF-8') . '</div>'; return; }
-$pbPageMode = in_array($pbPageMode ?? '', ['builder','listings','controls'], true) ? $pbPageMode : 'builder';
+$pbPageMode = in_array($pbPageMode ?? '', ['builder','listings','controls','transfers'], true) ? $pbPageMode : 'builder';
 $pbShowBuilder = $pbPageMode === 'builder';
+$pbIsTransfers = $pbPageMode === 'transfers';
 $pbShowListings = $pbPageMode !== 'controls';
-$pbShowLibraries = $pbPageMode !== 'listings';
-$pbTitle = ['builder'=>'Product Builder','listings'=>'Listings','controls'=>'Product Controls'][$pbPageMode];
-$pbDescription = ['builder'=>'Build a product, select its compatibility and create a unique SKU.','listings'=>'','controls'=>'Manage categories, designs, versions and boxes.'][$pbPageMode];
+$pbShowLibraries = in_array($pbPageMode, ['builder','controls'], true);
+$pbTitle = ['builder'=>'Product Builder','listings'=>'Listings','controls'=>'Product Controls','transfers'=>'Transfer D-base'][$pbPageMode];
+$pbDescription = ['builder'=>'Build a product, select its compatibility and create a unique SKU.','listings'=>'','controls'=>'Manage categories, designs, versions and boxes.','transfers'=>'Set IMG to Ready, then move the graphics to Product Builder.'][$pbPageMode];
 if ($pbPageMode !== 'listings' && !auth_can('products.view')) { http_response_code(403); echo '<div class="alert alert-danger">' . htmlspecialchars(pb_t('You do not have permission to view products.'), ENT_QUOTES, 'UTF-8') . '</div>'; return; }
 $pbReady = pb_schema_ready($pdo);
 $pbCanEdit = pb_can_manage_products();
+$pbTransfersReady = ($pbShowBuilder || $pbIsTransfers) && pb_transfers_ready($pdo);
 $pbEditProductId = $pbShowBuilder && $pbCanEdit ? (filter_var($_GET['edit'] ?? 0, FILTER_VALIDATE_INT, ['options'=>['min_range'=>1]]) ?: 0) : 0;
 if (empty($_SESSION['product_builder_csrf'])) $_SESSION['product_builder_csrf'] = bin2hex(random_bytes(32));
 if (!function_exists('pb_h')) { function pb_h($value): string { return htmlspecialchars((string) $value, ENT_QUOTES, 'UTF-8'); } }
 ?>
 <link rel="stylesheet" href="plugins/select2/css/select2.min.css">
-<link rel="stylesheet" href="assets/product_builder.css?v=30">
+<link rel="stylesheet" href="assets/product_builder.css?v=35">
 <div class="container-fluid pb-page" id="product-builder" lang="<?= pb_language() ?>">
   <div class="pb-language-bar"><div class="btn-group btn-group-sm" role="group" aria-label="<?= pb_h(pb_t('Language')) ?>">
-    <?php foreach (['sk'=>'SK','en'=>'EN'] as $language=>$languageLabel): $query=['page'=>'product_'.$pbPageMode,'pb_lang'=>$language]; if($pbEditProductId>0)$query['edit']=$pbEditProductId; ?>
+    <?php foreach (['sk'=>'SK','en'=>'EN'] as $language=>$languageLabel): $query=['page'=>'product_'.$pbPageMode,'pb_lang'=>$language]; if($pbEditProductId>0)$query['edit']=$pbEditProductId; if(!empty($_GET['transfer']))$query['transfer']=(int)$_GET['transfer']; ?>
     <a class="btn <?= pb_language()===$language?'btn-info':'btn-outline-light' ?>" href="index.php?<?= pb_h(http_build_query($query)) ?>" data-pb-language="<?= $language ?>" lang="<?= $language ?>" hreflang="<?= $language ?>" aria-pressed="<?= pb_language()===$language?'true':'false' ?>" title="<?= $language==='sk'?'Slovenčina':'English' ?>"><?= $languageLabel ?></a>
     <?php endforeach; ?>
   </div></div>
@@ -44,8 +47,10 @@ if (!function_exists('pb_h')) { function pb_h($value): string { return htmlspeci
   <?php endif; ?>
   <?php if ($pbShowBuilder && $pbCanEdit): ?><div id="pb-library-status" class="small pb-muted mb-2" role="status" hidden></div><?php endif; ?>
   <div id="pb-message" class="alert" role="status" hidden></div>
+  <?php if ($pbIsTransfers && !$pbTransfersReady): ?><div class="alert alert-warning"><?= pb_h(pb_t('Import product_builder_update_013.sql to enable Transfer D-base.')) ?></div><?php return; endif; ?>
   <?php if ($pbShowBuilder && $pbCanEdit): ?>
   <form id="pb-product-form">
+    <div id="pb-transfer-draft-banner" class="alert alert-info mb-0" role="status" hidden></div>
     <header class="pb-editor-header"><h2 id="pb-editor-title"><i class="fas fa-pen mr-2" aria-hidden="true"></i><?= pb_h(pb_t('Product editor')) ?></h2><span class="pb-editor-mode" id="pb-edit-label" role="status"><?= pb_h(pb_t('New product')) ?></span></header>
     <div class="pb-top-grid">
       <section class="card pb-panel" id="pb-type-panel">
@@ -137,12 +142,18 @@ if (!function_exists('pb_h')) { function pb_h($value): string { return htmlspeci
       </nav>
     </div>
   <?php }; ?>
-  <section class="card pb-panel pb-list-panel" id="pb-saved-products" aria-labelledby="pb-list-title"><div class="card-header pb-list-header"><h2 class="card-title" id="pb-list-title"><i class="fas fa-table mr-2" aria-hidden="true"></i><?= pb_h(pb_t('Saved products')) ?></h2><input type="search" id="pb-search" class="form-control form-control-sm" maxlength="150" aria-label="<?= pb_h(pb_t('Search products')) ?>" placeholder="<?= pb_h(pb_t('Name, SKU, modelcode or category…')) ?>"></div>
+  <section class="card pb-panel pb-list-panel <?= $pbIsTransfers ? 'pb-transfer-database' : '' ?>" id="pb-saved-products" aria-labelledby="pb-list-title"><div class="card-header pb-list-header"><?php if ($pbIsTransfers): ?><div class="pb-transfer-heading"><?php endif; ?><h2 class="card-title" id="pb-list-title"><i class="fas fa-table mr-2" aria-hidden="true"></i><?= pb_h(pb_t($pbIsTransfers ? 'Transferred graphics' : 'Saved products')) ?></h2>
+    <?php if ($pbIsTransfers): ?><div class="pb-transfer-filters" role="group" aria-label="<?= pb_h(pb_t('Status filters')) ?>">
+      <?php foreach (['unset'=>'—','skip'=>'Skip','gen'=>'Gen','ready'=>'Ready','completed'=>'Listing created'] as $filter=>$label): ?>
+      <label class="pb-transfer-filter" data-filter-tone="<?= $filter ?>" title="<?= pb_h(pb_t($filter==='unset'?'Not set':($filter==='completed'?'Completed transfers':'Show {status} transfers'),['status'=>$label])) ?>"><input type="checkbox" role="switch" data-transfer-filter="<?= $filter ?>" <?= $filter!=='completed'?'checked':'' ?> aria-label="<?= pb_h(pb_t($filter==='unset'?'Not set':$label)) ?>"><span><?= pb_h(pb_t($label)) ?></span></label>
+      <?php endforeach; ?>
+    </div></div><?php endif; ?><input type="search" id="pb-search" class="form-control form-control-sm" maxlength="150" aria-label="<?= pb_h(pb_t('Search products')) ?>" placeholder="<?= pb_h(pb_t($pbIsTransfers ? 'Name, order, modelcode or category…' : 'Name, SKU, modelcode or category…')) ?>"></div>
+    <?php if ($pbIsTransfers): ?><small id="pb-transfer-search-hint" class="pb-muted px-3 pt-2" role="status" hidden><?= pb_h(pb_t('Search also includes created listings.')) ?></small><?php endif; ?>
     <span id="pb-channel-status-message" class="sr-only" role="status" aria-live="polite"></span>
     <span id="pb-img-status-message" class="sr-only" role="status" aria-live="polite"></span>
     <span id="pb-copy-status" class="sr-only" role="status" aria-live="polite"></span>
     <?php $pbRenderPagination('top'); ?>
-    <div class="table-responsive"><table class="table table-bordered table-hover table-sm mb-0 pb-table pb-products-table"><thead><tr><th class="pb-created-column" title="<?= pb_h(pb_t('Listing creation date')) ?>"><?= pb_h(pb_t('Created')) ?></th><th><?= pb_h(pb_t('Product / SKU')) ?></th><th><?= pb_h(pb_t('Bundle')) ?></th><th><?= pb_h(pb_t('Category')) ?></th><th class="pb-img-heading">IMG</th><th class="pb-icon-column" title="<?= pb_h(pb_t('Image folder')) ?>" aria-label="<?= pb_h(pb_t('Image folder')) ?>"><i class="far fa-folder-open" aria-hidden="true"></i></th><?php foreach (pb_price_fields() as $priceChannel=>$priceLabel): ?><th class="pb-price-column"><?= pb_h(pb_t($priceLabel)) ?></th><?php if ($priceChannel !== 'recommended'): ?><th class="pb-icon-column" aria-label="<?= pb_h($priceLabel . ' · ' . pb_t('Listing links')) ?>"><i class="fas fa-link" aria-hidden="true"></i></th><th class="pb-channel-stats" title="<?= pb_h($priceLabel . ' · ' . pb_t('Sold units / Listing date')) ?>"><?= pb_h(pb_t('Sold / Date')) ?></th><?php endif; ?><?php endforeach; ?><th><?= pb_h(pb_t('Box')) ?></th><th><?= pb_h(pb_t('Components')) ?></th><th><?= pb_h(pb_t('Actions')) ?></th></tr></thead><tbody id="pb-products"><tr><td colspan="19" class="pb-muted"><?= pb_h(pb_t('Loading products…')) ?></td></tr></tbody></table></div>
+    <div class="table-responsive"><table class="table table-bordered table-hover table-sm mb-0 pb-table pb-products-table"><thead><tr><th class="pb-created-column" title="<?= pb_h(pb_t('Listing creation date')) ?>"><?= pb_h(pb_t('Created')) ?></th><th><?= pb_h(pb_t($pbIsTransfers ? 'Product / Source order' : 'Product / SKU')) ?></th><th><?= pb_h(pb_t('Bundle')) ?></th><th><?= pb_h(pb_t('Category')) ?></th><th class="pb-img-heading">IMG</th><th class="pb-icon-column" title="<?= pb_h(pb_t('Image folder')) ?>" aria-label="<?= pb_h(pb_t('Image folder')) ?>"><i class="far fa-folder-open" aria-hidden="true"></i></th><?php foreach (pb_price_fields() as $priceChannel=>$priceLabel): ?><th class="pb-price-column"><?= pb_h(pb_t($priceLabel)) ?></th><?php if ($priceChannel !== 'recommended'): ?><th class="pb-icon-column" aria-label="<?= pb_h($priceLabel . ' · ' . pb_t('Listing links')) ?>"><i class="fas fa-link" aria-hidden="true"></i></th><th class="pb-channel-stats" title="<?= pb_h($priceLabel . ' · ' . pb_t('Sold units / Listing date')) ?>"><?= pb_h(pb_t('Sold / Date')) ?></th><?php endif; ?><?php endforeach; ?><th><?= pb_h(pb_t('Box')) ?></th><th><?= pb_h(pb_t('Components')) ?></th><th><?= pb_h(pb_t('Actions')) ?></th></tr></thead><tbody id="pb-products"><tr><td colspan="19" class="pb-muted"><?= pb_h(pb_t('Loading products…')) ?></td></tr></tbody></table></div>
     <?php $pbRenderPagination('bottom'); ?>
   </section>
   <?php endif; ?>
@@ -208,7 +219,19 @@ if (!function_exists('pb_h')) { function pb_h($value): string { return htmlspeci
     </form></div><?php endif; ?></div></div>
 </div></div></div>
 <?php endif; ?>
-<?php if ($pbShowListings): ?>
+<?php if ($pbIsTransfers): ?>
+<div class="modal fade pb-modal" lang="<?= pb_language() ?>" id="pb-transfer-folder-modal" tabindex="-1" role="dialog" aria-labelledby="pb-transfer-folder-title"><div class="modal-dialog modal-lg"><div class="modal-content">
+  <div class="modal-header"><div><h3 class="modal-title h5" id="pb-transfer-folder-title"><?= pb_h(pb_t('Image folder')) ?></h3><small id="pb-transfer-folder-source" class="pb-muted"></small></div><button type="button" class="close" data-dismiss="modal" aria-label="<?= pb_h(pb_t('Close')) ?>">&times;</button></div>
+  <form id="pb-transfer-folder-form"><div class="modal-body">
+    <div id="pb-transfer-folder-error" class="alert alert-danger" role="alert" hidden></div>
+    <label for="pb-transfer-folder-input"><?= pb_h(pb_t('Folder path')) ?></label>
+    <div class="input-group"><input id="pb-transfer-folder-input" class="form-control" type="text" maxlength="2048" autocomplete="off" spellcheck="false"><div class="input-group-append"><button id="pb-transfer-folder-copy" type="button" class="btn btn-outline-info" title="<?= pb_h(pb_t('Copy folder path')) ?>" aria-label="<?= pb_h(pb_t('Copy folder path')) ?>"><i class="far fa-copy" aria-hidden="true"></i></button></div></div>
+    <small class="pb-muted"><?= pb_h(pb_t('Spaces in the folder path are supported.')) ?> <?= pb_h(pb_t('The folder path will be saved with the product.')) ?></small>
+    <button type="button" id="pb-transfer-folder-reload" class="btn btn-sm btn-outline-info mt-2" hidden><?= pb_h(pb_t('Reload folder path')) ?></button>
+  </div><div class="modal-footer"><button type="button" class="btn btn-secondary" data-dismiss="modal"><?= pb_h(pb_t('Close')) ?></button><button id="pb-transfer-folder-save" type="submit" class="btn btn-success"><?= pb_h(pb_t('Save path')) ?></button></div></form>
+</div></div></div>
+<?php endif; ?>
+<?php if ($pbShowListings && !$pbIsTransfers): ?>
 <div class="modal fade pb-modal" lang="<?= pb_language() ?>" id="pb-img-modal" tabindex="-1" role="dialog" aria-labelledby="pb-img-title"><div class="modal-dialog modal-lg"><div class="modal-content">
   <div class="modal-header"><h3 class="modal-title h5" id="pb-img-title"><?= pb_h(pb_t('Image folder')) ?></h3><button type="button" class="close" data-dismiss="modal" aria-label="<?= pb_h(pb_t('Close')) ?>">&times;</button></div>
   <form id="pb-img-form"><div class="modal-body">
@@ -233,6 +256,7 @@ if (!function_exists('pb_h')) { function pb_h($value): string { return htmlspeci
 
 <div class="modal fade pb-modal" lang="<?= pb_language() ?>" id="pb-detail-modal" tabindex="-1" role="dialog" aria-labelledby="pb-detail-title"><div class="modal-dialog modal-lg"><div class="modal-content"><div class="modal-header"><h3 class="modal-title h5" id="pb-detail-title"><?= pb_h(pb_t('Product details')) ?></h3><button type="button" class="close" data-dismiss="modal" aria-label="<?= pb_h(pb_t('Close')) ?>">&times;</button></div><div class="modal-body" id="pb-detail"></div></div></div></div>
 <?php endif; ?>
-<script>window.productBuilderConfig = <?= json_encode(['language'=>pb_language(),'languageCookie'=>pb_language_cookie(),'translations'=>pb_language()==='sk'?pb_i18n_dictionary():new stdClass(),'pageMode'=>$pbPageMode,'editProductId'=>$pbEditProductId,'csrf'=>$_SESSION['product_builder_csrf'],'canEdit'=>$pbCanEdit,'types'=>pb_component_types(),'bundleComponents'=>array_combine(pb_bundle_types(),array_map('pb_bundle_component_types',pb_bundle_types())),'priceFields'=>pb_price_fields(),'specFields'=>pb_component_spec_fields($conn),'requestKey'=>bin2hex(random_bytes(16))], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;</script>
+
+<script>window.productBuilderConfig = <?= json_encode(['language'=>pb_language(),'languageCookie'=>pb_language_cookie(),'translations'=>pb_language()==='sk'?pb_i18n_dictionary():new stdClass(),'pageMode'=>$pbPageMode,'editProductId'=>$pbEditProductId,'transfersReady'=>$pbTransfersReady,'openTransferId'=>($pbShowBuilder || $pbIsTransfers) ? (int)($_GET['transfer'] ?? 0) : 0,'csrf'=>$_SESSION['product_builder_csrf'],'canEdit'=>$pbCanEdit,'types'=>pb_component_types(),'bundleComponents'=>array_combine(pb_bundle_types(),array_map('pb_bundle_component_types',pb_bundle_types())),'priceFields'=>pb_price_fields(),'specFields'=>pb_component_spec_fields($conn),'requestKey'=>bin2hex(random_bytes(16))], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;</script>
 <script defer src="plugins/select2/js/select2.full.min.js"></script>
-<script src="scripts/product_builder/app.js?v=33"></script>
+<?php if ($pbIsTransfers): ?><script src="scripts/product_builder/transfers.js?v=5"></script><?php else: ?><script src="scripts/product_builder/app.js?v=36"></script><?php endif; ?>

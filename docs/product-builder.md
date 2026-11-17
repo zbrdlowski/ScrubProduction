@@ -1,3 +1,46 @@
+## Transfer D-base (16. 11. 2026)
+
+Prenesené grafiky z Orders sú na samostatnej stránke **index.php?page=product_transfers**, v submenu Product database ako **Transfer D-base**. Product Builder už nemá zoznam prenosov ani ich pôvodný modal. Odkaz v detaile objednávky vedie do Transfer D-base a vyfiltruje zdrojovú objednávku.
+
+Používa rovnakú 19-stĺpcovú tabuľku, kompaktné riadky, oddeľovače dní a stránkovanie 25/50/100 ako Listings. Novšie prenosy sú hore. Základné podfarbenie je žlté; pod názvom sa zobrazuje číslo pôvodnej objednávky namiesto SKU. Neznáme ceny, platformy, odkazy, predaje a balenie sú neaktívne. Vyhľadávanie prehľadáva názov, objednávku, pôvodné SKU, kategóriu/modelcode aj SKU a názov vytvoreného produktu.
+
+IMG sa ukladá okamžite pri zmene:
+- **—**: zatiaľ nerozhodnuté, predvolené aj pre staršie záznamy.
+- **Skip**: celý riadok červený, záznam zostáva dostupný a možno ho znovu spracovať.
+- **Gen**: celý riadok fialový.
+- **Ready**: celý riadok zelený, sprístupní priečinok s obrázkami a tlačidlo Product Builder.
+- **Listing created / Listing vytvorený**: produkt už bol uložený, prenos je uzamknutý a má modrosivé podfarbenie.
+
+Tlačidlo otvorí Builder a priamo predvyplní jeho bežný formulár. Samotné Ready ani otvorenie formulára produkt nevytvára. Pri štandardnom uložení vznikne nový produkt a v rovnakej transakcii sa priradí k prenosu; úloha sa označí completed. V Transfer D-base má viditeľný stav **Listing vytvorený** v IMG a zostáva na dohľadanie cez filter alebo vyhľadávanie. Predvolene je skrytý. Platformové zalistovanie sa rieši samostatne v Listings; completed v tejto databáze znamená dokončené vytvorenie produktu. Existujúce historické prepojenia, cesty a poznámky sa pri migrácii nemažú.
+
+IMG pripravenosť kontroluje aj backend pri načítaní draftu a pri uložení produktu. Súbežné zmeny kontroluje version; opakovaný rovnaký save vráti existujúci produkt, iný operátor nevytvorí druhý listing z toho istého prenosu. Čítanie vyžaduje products.view, zmena IMG a vytváranie products.view + products.manage. Orders naďalej vyžaduje orders.view + orders.work pre vytvorenie prenosu.
+
+Z prenosu sa predvyplní G, názov, jednoznačne nájdená kategória, presne zodpovedajúci dizajn/verzia a sedem základných grafických údajov. Material, Finish, Number, Number Color, Number Plates Color, Tr. Swingarms a Grip sa neduplikujú s inými podtypmi. Number sa prevedie na Yes/No; upravuje sa už v normálnom formulári Buildera. Pôvodné uložené Number overrides zostávajú podporované. Zákaznícke poznámky, Moto Carpet, meno, fonty a printer sa neprenášajú do listingových možností. SKU zostáva prázdne na generovanie, cena na doplnenie, množstvo komponentu je 1. Údaje objednávky ani výrobné stavy sa nemenia.
+
+### Filtre stavov a priečinok (17. 11. 2026)
+
+V hlavičke pri Transferred graphics sú kombinovateľné prepínače **—, Skip, Gen, Ready, Listing created / Listing vytvorený**. Predvolene sú zapnuté prvé štyri; vytvorené listingy sú skryté. Prepínače sú dostupné aj používateľom s právom iba na čítanie.
+
+Dokončené záznamy (status completed alebo existujúci product_id) tvoria samostatnú skupinu bez ohľadu na pôvodné IMG. Platí to aj pre staršie hotové prenosy s prázdnym IMG. Vypnutie všetkých filtrov bez vyhľadávania zobrazí výzvu na výber stavu. Pri neprázdnom vyhľadávaní sa navyše zahrnú zodpovedajúce vytvorené listingy, aj keď je ich prepínač vypnutý; stránka zobrazí vysvetlenie. Po vymazaní vyhľadávania sa obnoví bežný výber filtrov. Kombinácia ostatných stavov funguje ako OR.
+
+Filtrovanie aj vyhľadávanie prebieha v SQL pred COUNT a LIMIT. Zmena filtra vráti výpis na prvú stránku; zmena IMG obnoví počty a aktuálnu stránku. API parameter img_filters je validovaný zoznam povolených hodnôt; starší klient bez parametra naďalej dostane všetky stavy.
+
+Pri Ready sa aktivuje ikona priečinka. Modal umožňuje zadať alebo vymazať lokálnu cestu vrátane medzier a kopírovať ju s vizuálnou aj dostupnou haptickou odozvou. Ukladá sa existujúce product_builder_transfers.folder_path, bez kopírovania obrázkov na server. Oprávnenia, stav Ready a version kontroluje aj backend. Po dokončení je priečinok dostupný iba na čítanie/kopírovanie.
+
+Po kliknutí na Product Builder sa cesta zobrazí pri predvyplnenom produkte. Pri úspešnom uložení sa cesta zo zamknutého prenosu uloží do product_builder_products.img_path a IMG sa nastaví na Path. Produkt a dokončenie prenosu sa uložia v jednej transakcii. Ak iný operátor medzitým zmenil prenos, uloženie starého formulára sa odmietne; rovnaký opakovaný úspešný save zostáva idempotentný. Bez zadanej cesty zostáva bežný predvolený IMG stav.
+
+Balík tejto úpravy: **.cache/product-builder/product-builder-transfer-created-folder.zip**. Pri už nainštalovanom Transfer D-base **netreba nový SQL import**; využíva existujúce stĺpce.
+
+### Nasadenie
+
+1. V phpMyAdmin importovať **db/product_builder_update_013.sql**. Stačí tento update, pokiaľ produktový modul už funguje; obsahuje aj vytvorenie tabuľky prenosov, ak chýba update 012. Pridáva nullable img_status; existujúce dáta zachováva a možno ho importovať opakovane.
+2. Nahrať obsah **.cache/product-builder/product-builder-transfer-database.zip** so zachovaním priečinkov. SQL v balíku treba importovať; samotné nahratie súboru do db ho nevykoná.
+3. Obnoviť stránku. Prístupy zostávajú rovnaké ako k Product Builderu.
+
+Základné inštalácie, kumulatívny update, CLI inštalátor a diagnostika sú aktualizované (34 kontrol). Lokálna vývojová databáza má update 013 aplikovaný. Testy používajú dočasné alebo vlastné izolované tabuľky a prehliadačové mocky; nevytvárajú skutočné objednávky/listingy.
+
+Overené: čistá aj opakovaná migrácia a zachovanie dát, Ready gating vrátane zmeny stavu počas editácie, deduplikácia, search/paginácia, oprávnenia, navbar, nový formulárový postup, chybová odpoveď pri uložení IMG, read-only používateľ a mobilný výpis.
+
 ## Európsky dátum v modale zalistovania
 
 Dátum v modale Web/eBay/Amazon sa zobrazuje a zadáva pevne vo formáte dd.mm.yyyy v SK aj EN, nezávisle od nastavenia prehliadača. Kalendár zostáva dostupný. Pred odoslaním sa dátum overí vrátane počtu dní a priestupného roka a prevedie na pôvodný ISO formát pre API/databázu. Nový SQL import netreba.

@@ -6,6 +6,8 @@ const {chromium}=require('playwright'),fs=require('fs'),assert=require('assert/s
  let listing={id:701,name:'Packed product',sku:'SHOP-PACK-1',bundle_type:'G',category_kind:'universal',uni_category_id:category.id,brand:category.brand,model:category.category_name,modelcode:category.modelcode,year_range:'',notes:'Keep note',recommended_price:'149.90',recommended_currency:'EUR',box_id:null,weight_kg:null,request_key:'a'.repeat(32),version:1,component_count:1,components:[{component_type:'G',label:'Existing design',quantity:1,options:{graphics_finish:'Matte'}}]},saves=0;
  const view=()=>{const b=boxes.find(b=>Number(b.id)===Number(listing.box_id));return {...listing,box_name:b?.name,box_length_cm:b?.length_cm,box_width_cm:b?.width_cm,box_height_cm:b?.height_cm,box_weight_kg:b?.weight_kg};};
  const handler=async route=>{
+  if(new URL(route.request().url()).searchParams.get('action')==='transfers')return route.fulfill({json:{ok:true,rows:[],page:1,pages:1,total:0,pending:0}});
+
   const action=new URL(route.request().url()).searchParams.get('action'),data=route.request().method()==='POST'?JSON.parse(route.request().postData()):{};let result={ok:true};
   if(action==='categories')result.rows=categories;
   else if(action==='designs')Object.assign(result,{rows:designs,versions});

@@ -1,12 +1,12 @@
--- DARKSCRUB: cumulative product builder repair/update through 011 (2026-11-13).
+-- DARKSCRUB: cumulative product builder repair/update through 012 (2026-11-16).
 -- Select the EXISTING DarkScrub application database in phpMyAdmin and import this file as UTF-8.
--- Includes base tables and updates 002, 003, 004, 005, 006, 007, 008, 009, 010 and 011 in dependency order.
+-- Includes base tables and updates 002, 003, 004, 005, 006, 007, 008, 009, 010, 011 and 012 in dependency order.
 -- Preserves existing products, SKUs, components, UNI categories and saved design/version selections.
 -- Adds missing default designs and Graphics versions; renamed defaults retain their names.
 -- Previously deleted default designs/versions may be added again.
 -- Does not change user permissions or import UNI categories.
 -- No CREATE DATABASE, USE, DROP or TRUNCATE statements.
--- The final verification must show thirty-two OK rows in the application database.
+-- The final verification must show thirty-four OK rows in the application database.
 SET NAMES utf8mb4;
 
 -- Independent product builder; no dependency on the legacy catalogue.
@@ -1897,6 +1897,42 @@ PREPARE pb_listing_date_migration FROM @pb_listing_date_sql;
 EXECUTE pb_listing_date_migration;
 DEALLOCATE PREPARE pb_listing_date_migration;
 
+-- Graphics transferred from Orders into a separate Product Builder work queue.
+-- Additive and repeat-safe. Existing listings and IMG statuses are unchanged.
+SET NAMES utf8mb4;
+CREATE TABLE IF NOT EXISTS product_builder_transfers (
+ id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+ order_item_id BIGINT UNSIGNED NOT NULL,
+ order_id BIGINT UNSIGNED NOT NULL,
+ order_number VARCHAR(150) NOT NULL,
+ title VARCHAR(255) NOT NULL,
+ source_sku VARCHAR(255) NOT NULL DEFAULT '',
+ snapshot_json MEDIUMTEXT NOT NULL,
+ status ENUM('pending','completed','dismissed') NOT NULL DEFAULT 'pending',
+ purpose ENUM('new_listing','update_images') NOT NULL DEFAULT 'new_listing',
+ product_id BIGINT UNSIGNED NULL,
+ folder_path VARCHAR(2048) NOT NULL DEFAULT '',
+ work_note TEXT NOT NULL,
+ version INT UNSIGNED NOT NULL DEFAULT 1,
+ created_by INT NULL,
+ updated_by INT NULL,
+ created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+ updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+ completed_at DATETIME NULL,
+ UNIQUE KEY uq_pb_transfer_item (order_item_id),
+ KEY idx_pb_transfer_queue (status,created_at,id),
+ KEY idx_pb_transfer_product (product_id),
+ KEY idx_pb_transfer_order (order_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Transfer D-base image preparation status; NULL means not decided yet.
+SET @pb_transfer_img_exists=(SELECT COUNT(*) FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name='product_builder_transfers' AND column_name='img_status');
+SET @pb_transfer_img_sql=IF(@pb_transfer_img_exists=0,
+ "ALTER TABLE product_builder_transfers ADD COLUMN img_status ENUM('skip','gen','ready') NULL DEFAULT NULL AFTER status", 'DO 0');
+PREPARE pb_transfer_img_migration FROM @pb_transfer_img_sql;
+EXECUTE pb_transfer_img_migration;
+DEALLOCATE PREPARE pb_transfer_img_migration;
+
 SELECT DATABASE() AS checked_database;
 SELECT 'product_builder_products' AS required_object, IF(EXISTS(SELECT 1 FROM information_schema.tables WHERE table_schema=DATABASE() AND table_name='product_builder_products'),'OK','MISSING') AS status
 UNION ALL
@@ -1908,6 +1944,9 @@ SELECT 'product_builder_designs' AS required_object, IF(EXISTS(SELECT 1 FROM inf
 UNION ALL
 SELECT 'product_builder_graphics_versions' AS required_object, IF(EXISTS(SELECT 1 FROM information_schema.tables WHERE table_schema=DATABASE() AND table_name='product_builder_graphics_versions'),'OK','MISSING') AS status
 UNION ALL
+
+
+
 SELECT 'product_builder_boxes' AS required_object, IF(EXISTS(SELECT 1 FROM information_schema.tables WHERE table_schema=DATABASE() AND table_name='product_builder_boxes'),'OK','MISSING') AS status
 UNION ALL
 SELECT 'product_builder_components.color', IF(EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name='product_builder_components' AND column_name='color'),'OK','MISSING')
@@ -1960,4 +1999,8 @@ SELECT 'product_builder_channel_listings.listed_currency', IF(EXISTS(SELECT 1 FR
 UNION ALL
 SELECT 'product_builder_channel_listings.version', IF(EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name='product_builder_channel_listings' AND column_name='version'),'OK','MISSING')
 UNION ALL
-SELECT 'product_builder_channel_listings.listed_date', IF(EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name='product_builder_channel_listings' AND column_name='listed_date'),'OK','MISSING');
+SELECT 'product_builder_channel_listings.listed_date', IF(EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name='product_builder_channel_listings' AND column_name='listed_date'),'OK','MISSING')
+UNION ALL
+SELECT 'product_builder_transfers', IF(EXISTS(SELECT 1 FROM information_schema.tables WHERE table_schema=DATABASE() AND table_name='product_builder_transfers'),'OK','MISSING')
+UNION ALL
+SELECT 'product_builder_transfers.img_status', IF(EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name='product_builder_transfers' AND column_name='img_status'),'OK','MISSING');

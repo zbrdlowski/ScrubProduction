@@ -7,6 +7,8 @@ const {chromium}=require('playwright'),fs=require('fs'),assert=require('assert/s
  const versions=[{id:903,name:'R1',sort_order:1,version:1,usage_count:0}];
  const page=await browser.newPage({viewport:{width:1500,height:1080}});page.on('pageerror',e=>errors.push(e.message));page.on('dialog',d=>d.accept());
  await page.route('**/scripts/product_builder/api.php?*',async route=>{
+  if(new URL(route.request().url()).searchParams.get('action')==='transfers')return route.fulfill({json:{ok:true,rows:[],page:1,pages:1,total:0,pending:0}});
+
   const req=route.request(),url=new URL(req.url()),action=url.searchParams.get('action'),data=req.method()==='POST'?JSON.parse(req.postData()):{};let body={ok:true};
   if(action==='categories')body.rows=categories;
   else if(action==='designs')Object.assign(body,{rows:designs,versions});

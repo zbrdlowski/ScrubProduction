@@ -38,7 +38,7 @@ try {
         throw new RuntimeException('Neplatná PayPal transakcia.');
     }
     if ($reference !== '' && !accounting_paypal_valid_export_reference($reference)) {
-        throw new RuntimeException('Použite SO, e-shop, eBay, SK alebo SC číslo. CO nie je finálna exportná referencia.');
+        throw new RuntimeException('Použite pôvodné CO, SO, e-shop, eBay, SK alebo SC číslo z platobnej požiadavky.');
     }
     $stmt = $pdo->prepare('SELECT transaction_id FROM accounting_paypal_transactions WHERE id = ? LIMIT 1');
     $stmt->execute([$id]);

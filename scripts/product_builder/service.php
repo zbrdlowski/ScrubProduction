@@ -1,6 +1,7 @@
 <?php
 declare(strict_types=1);
 require_once __DIR__ . '/helpers.php';
+require_once __DIR__ . '/transfers.php';
 require_once __DIR__ . '/channel_listings.php';
 require_once __DIR__ . '/designs.php';
 require_once __DIR__ . '/graphics_versions.php';
@@ -100,10 +101,25 @@ function pb_save_product_image(PDO $pdo, array $data): array
 function pb_save_product(PDO $pdo, array $data, ?int $userId): array
 {
     $clean = pb_validate_product($data); $id = (int) ($data['id'] ?? 0);
+    $transferId = (int)($data['transfer_id'] ?? 0);
+    if ($transferId && $id) throw new InvalidArgumentException('A transfer can only prepare a new product.');
     $requestKey = pb_text($data['request_key'] ?? '', 'Form identifier', 32);
     if (!preg_match('/^[a-f0-9]{32}$/D', $requestKey)) throw new InvalidArgumentException('Refresh the product form.');
     $pdo->beginTransaction();
     try {
+        if ($transferId) {
+            $transfer = pb_transfer_lock_for_product($pdo,$transferId);
+            // Two operators processing the same transfer cannot create two products.
+            if ($transfer['product_id']) {
+                $existing = $pdo->prepare('SELECT id,sku,request_key FROM product_builder_products WHERE id=?'); $existing->execute([$transfer['product_id']]);
+                if ($row = $existing->fetch(PDO::FETCH_ASSOC)) {
+                    if ($row['request_key'] !== $requestKey) throw new InvalidArgumentException('This transfer already has a listing. Open it from the transfer queue.');
+                    unset($row['request_key']); $pdo->commit(); return $row;
+                }
+                throw new InvalidArgumentException('The linked listing no longer exists. Reload the transfer.');
+            }
+            if (isset($data['transfer_version']) && (int)$data['transfer_version'] !== (int)$transfer['version']) throw new InvalidArgumentException('This transfer changed after the form was opened. Open it again from Transfer D-base.');
+        }
         if ($id === 0) {
             $existing = $pdo->prepare('SELECT id,sku FROM product_builder_products WHERE request_key=?'); $existing->execute([$requestKey]);
             if ($row = $existing->fetch(PDO::FETCH_ASSOC)) { $pdo->commit(); return $row; }
@@ -177,6 +193,11 @@ function pb_save_product(PDO $pdo, array $data, ?int $userId): array
         }
         $stmt = $pdo->prepare('INSERT INTO product_builder_components (product_id,component_type,label,reference,color,quantity,notes,sort_order,options_json,design_id,graphics_version_id) VALUES (?,?,?,?,?,?,?,?,?,?,?)');
         foreach ($clean['components'] as $i => $row) $stmt->execute([$id,$row['component_type'],$row['label'],$row['reference'],$row['color'],$row['quantity'],$row['notes'],$i,json_encode((object)$row['options'], JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE),$row['design_id'],$row['graphics_version_id']]);
+        if ($transferId) {
+            // The locked source is authoritative: save the image path and completion atomically.
+            if ($transfer['folder_path'] !== '') $pdo->prepare("UPDATE product_builder_products SET img_status='Path',img_path=?,img_version=img_version+1 WHERE id=?")->execute([$transfer['folder_path'],$id]);
+            $pdo->prepare("UPDATE product_builder_transfers SET product_id=?,purpose='new_listing',status='completed',completed_at=NOW(),updated_by=?,version=version+1 WHERE id=?")->execute([$id,$userId,$transferId]);
+        }
         $pdo->commit(); return ['id'=>$id,'sku'=>$sku];
     } catch (Throwable $e) {
         if ($pdo->inTransaction()) $pdo->rollBack();

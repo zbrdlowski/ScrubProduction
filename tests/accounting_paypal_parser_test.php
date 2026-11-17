@@ -45,7 +45,8 @@ try {
     $shop = accounting_paypal_extract_reference($parsed['rows'][1]);
     paypal_test_assert($shop === ['kind' => 'ESHOP', 'value' => '2026002056'], 'Shoptet reference extraction failed');
     paypal_test_assert(accounting_paypal_normalize_so('GOSO21708') === 'SO21708', 'SO normalization failed');
-    paypal_test_assert(!accounting_paypal_valid_export_reference('CO000114'), 'CO must not be an export reference');
+    paypal_test_assert(accounting_paypal_valid_export_reference('CO000114'), 'CO should be an export reference');
+    paypal_test_assert(!accounting_paypal_valid_export_reference('CO'), 'Bare CO must not be an export reference');
     paypal_test_assert(accounting_paypal_valid_export_reference('SO21662'), 'SO should be an export reference');
 } finally {
     @unlink($temporary);

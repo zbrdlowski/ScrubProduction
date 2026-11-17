@@ -7,6 +7,8 @@ const {chromium}=require('playwright'),fs=require('fs'),assert=require('assert/s
  let versions=JSON.parse(fs.readFileSync('.cache/product-builder/graphics-versions.json','utf8')),listing=null,saves=0;
  const r1=versions.find(v=>v.name==='R1'),r2=versions.find(v=>v.name==='R2'),r10=versions.find(v=>v.name==='R10');
  await page.route('**/scripts/product_builder/api.php?*',async route=>{
+  if(new URL(route.request().url()).searchParams.get('action')==='transfers')return route.fulfill({json:{ok:true,rows:[],page:1,pages:1,total:0,pending:0}});
+
   const action=new URL(route.request().url()).searchParams.get('action'),data=route.request().method()==='POST'?JSON.parse(route.request().postData()):{};let result={ok:true};
   if(action==='boxes'){await route.fulfill({json:{ok:true,rows:[]}});return;}
    else if(action==='designs')Object.assign(result,{rows:designs,versions:versions.slice().sort((a,b)=>Number(a.sort_order)-Number(b.sort_order)||a.name.localeCompare(b.name))});

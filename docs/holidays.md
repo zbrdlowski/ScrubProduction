@@ -61,6 +61,18 @@ Admin môže:
 
 Po schválení sa `Rh` zmení na `Ah` a `Rt` na `At`. Používateľ dostane notifikáciu o výsledku.
 
+## Celozávodná dovolenka
+
+Používateľ s právom schvaľovať dovolenky má v hornej lište tlačidlo **Company-wide holiday** (celozávodná dovolenka).
+
+1. Vyberte dátumy **From** a **To**, prípadne doplňte spoločnú poznámku do poľa **Note**.
+2. Kliknite na **Add and approve**.
+3. Skontrolujte výsledok nad kalendárom; rozbalenie zoznamu ukáže preskočených zamestnancov a dátumy.
+
+Operácia zahŕňa všetkých **aktívnych zamestnancov**, aj tých, ktorí majú vypnuté zobrazenie v plánovači. Neaktívni zamestnanci sa vynechajú. Nové záznamy sú typu Holiday, rovno schválené (`Ah`) a v poli Admin note majú označenie **Company-wide holiday**. Eviduje sa aj schvaľovateľ a čas schválenia.
+
+Víkendy a štátne sviatky sa vynechajú. Pracovné dni s existujúcou čakajúcou alebo schválenou neprítomnosťou sa preskočia; pôvodný typ, stav aj poznámky zostanú zachované. Zamietnuté a zrušené žiadosti pridaniu nebránia. Opakované odoslanie rovnakého obdobia už obsadené dni nezdvojí. Počty dní vo výsledku sú súčty za všetkých zamestnancov.
+
 ## Úpravy a zrušenie
 
 - V časti **My requests** môže používateľ upraviť poznámku pri dostupných budúcich záznamoch.

@@ -63,4 +63,8 @@ SELECT 'product_builder_channel_listings.listed_currency', IF(EXISTS(SELECT 1 FR
 UNION ALL
 SELECT 'product_builder_channel_listings.version', IF(EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name='product_builder_channel_listings' AND column_name='version'),'OK','MISSING')
 UNION ALL
-SELECT 'product_builder_channel_listings.listed_date', IF(EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name='product_builder_channel_listings' AND column_name='listed_date'),'OK','MISSING');
+SELECT 'product_builder_channel_listings.listed_date', IF(EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name='product_builder_channel_listings' AND column_name='listed_date'),'OK','MISSING')
+UNION ALL
+SELECT 'product_builder_transfers', IF(EXISTS(SELECT 1 FROM information_schema.tables WHERE table_schema=DATABASE() AND table_name='product_builder_transfers'),'OK','MISSING')
+UNION ALL
+SELECT 'product_builder_transfers.img_status', IF(EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name='product_builder_transfers' AND column_name='img_status'),'OK','MISSING');

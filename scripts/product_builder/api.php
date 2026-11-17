@@ -28,6 +28,9 @@ try {
         }
         $data = json_decode(file_get_contents('php://input'), true);
         if ($action !== 'import_uni' && !is_array($data)) throw new InvalidArgumentException('Invalid form data.');
+        if ($action === 'save_transfer_folder') pb_reply(['ok'=>true,'transfer'=>pb_transfer_save_folder($pdo,$data,(int)($_SESSION['user_id'] ?? 0) ?: null)]);
+        if ($action === 'save_transfer_image') pb_reply(['ok'=>true,'transfer'=>pb_transfer_save_image($pdo,$data,(int)($_SESSION['user_id'] ?? 0) ?: null)]);
+        if ($action === 'save_transfer') pb_reply(['ok'=>true,'transfer'=>pb_transfer_save($pdo,$data,(int)($_SESSION['user_id'] ?? 0) ?: null)]);
         if ($action === 'save_box') pb_reply(['ok'=>true,'id'=>pb_save_box($pdo,$data)]);
         if ($action === 'delete_box') { pb_delete_box($pdo,$data); pb_reply(['ok'=>true]); }
         if ($action === 'save_graphics_version') pb_reply(['ok'=>true,'id'=>pb_save_graphics_version($pdo,$data)]);
@@ -47,6 +50,15 @@ try {
             pb_reply(['ok'=>true,'result'=>pb_import_uni($pdo,$conn,pb_parse_csv($file['tmp_name']))]);
         }
     } elseif ($_SERVER['REQUEST_METHOD'] === 'GET') {
+        if ($action === 'transfers') pb_reply(['ok'=>true] + pb_transfer_list($pdo,$_GET));
+        if ($action === 'transfer') pb_reply(['ok'=>true,'transfer'=>pb_transfer_get($pdo,(int)($_GET['id'] ?? 0))]);
+        if ($action === 'transfer_draft') pb_reply(['ok'=>true,'draft'=>pb_transfer_draft($pdo,(int)($_GET['id'] ?? 0))]);
+        if ($action === 'transfer_products') {
+            $q=pb_text($_GET['q'] ?? '', 'Search',150,false);
+            $like='%'.str_replace(['!','%','_'],['!!','!%','!_'],$q).'%';
+            $stmt=$pdo->prepare("SELECT p.id,p.name,p.sku FROM product_builder_products p WHERE (p.name LIKE ? ESCAPE '!' OR p.sku LIKE ? ESCAPE '!' OR p.modelcode LIKE ? ESCAPE '!') AND EXISTS(SELECT 1 FROM product_builder_components c WHERE c.product_id=p.id AND c.component_type='G') ORDER BY p.id DESC LIMIT 25");
+            $stmt->execute([$like,$like,$like]); pb_reply(['ok'=>true,'rows'=>$stmt->fetchAll(PDO::FETCH_ASSOC)]);
+        }
         if ($action === 'boxes') pb_reply(['ok'=>true,'rows'=>pb_box_list($pdo)]);
         if ($action === 'designs') pb_reply(['ok'=>true,'rows'=>pb_design_list($pdo),'versions'=>pb_graphics_version_list($pdo)]);
         if ($action === 'categories') pb_reply(['ok'=>true,'rows'=>$pdo->query('SELECT u.*, (SELECT COUNT(*) FROM product_builder_products p WHERE p.uni_category_id=u.id) AS usage_count FROM product_builder_uni_categories u ORDER BY brand,category_name')->fetchAll(PDO::FETCH_ASSOC)]);

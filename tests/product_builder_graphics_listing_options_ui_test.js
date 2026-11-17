@@ -9,6 +9,8 @@ const {chromium}=require('playwright'),fs=require('fs'),assert=require('assert/s
   let listing={id:701,version:1,name:'Legacy graphics listing',sku:'G_LEGACY',bundle_type:'G',category_kind:'specific',brand:'KTM',model:'SX 50',year_range:'2016-2023',modelcode:'VXR7',recommended_price:'210.00',recommended_currency:'EUR',component_count:1,components:[{component_type:'G',label:'ARTLEX ST',quantity:1,options:{...previous}}]},saved=null,saveCount=0;
   const fixture=name=>JSON.parse(fs.readFileSync('.cache/product-builder/'+name+'.json','utf8'));
   await page.route('**/scripts/product_builder/api.php?*',async route=>{
+  if(new URL(route.request().url()).searchParams.get('action')==='transfers')return route.fulfill({json:{ok:true,rows:[],page:1,pages:1,total:0,pending:0}});
+
    const action=new URL(route.request().url()).searchParams.get('action');let body={ok:true};
    if(action==='categories')body.rows=fixture('categories');
    else if(action==='boxes')body.rows=[];

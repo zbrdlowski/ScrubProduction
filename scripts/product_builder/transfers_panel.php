@@ -1,0 +1,11 @@
+<?php if ($pbShowBuilder): ?>
+<section id="pb-transfers" class="card pb-panel pb-transfer-panel" aria-labelledby="pb-transfers-title">
+  <div class="card-header d-flex align-items-center flex-wrap"><h2 class="card-title mr-auto" id="pb-transfers-title"><i class="fas fa-share-square mr-2" aria-hidden="true"></i><?= pb_h(pb_t('Transferred graphics')) ?> <span class="badge badge-info ml-1" id="pb-transfer-count">—</span></h2><button type="button" class="btn btn-sm btn-outline-info" id="pb-transfer-refresh"><i class="fas fa-sync-alt mr-1" aria-hidden="true"></i><?= pb_h(pb_t('Refresh')) ?></button></div>
+  <div class="card-body p-2">
+    <div class="d-flex flex-wrap align-items-center mb-2" style="gap:8px"><label class="mb-0" for="pb-transfer-filter"><?= pb_h(pb_t('Status')) ?></label><select id="pb-transfer-filter" class="form-control form-control-sm" style="width:auto"><option value="pending"><?= pb_h(pb_t('To process')) ?></option><option value="completed"><?= pb_h(pb_t('Completed')) ?></option><option value="dismissed"><?= pb_h(pb_t('Dismissed')) ?></option></select><input id="pb-transfer-search" class="form-control form-control-sm" style="width:260px;max-width:100%" placeholder="<?= pb_h(pb_t('Order, product or source SKU…')) ?>" aria-label="<?= pb_h(pb_t('Search transfers')) ?>"><small class="pb-muted"><?= pb_h(pb_t('Saved Graphics from Orders, ready to prepare a listing or update its images.')) ?></small></div>
+    <div id="pb-transfer-message" class="alert" role="status" hidden></div>
+    <div class="table-responsive"><table class="table table-sm table-bordered mb-1 pb-transfer-table"><thead><tr><th><?= pb_h(pb_t('Transferred')) ?></th><th><?= pb_h(pb_t('Source order')) ?></th><th><?= pb_h(pb_t('Graphics')) ?></th><th><?= pb_h(pb_t('Linked listing')) ?></th><th><?= pb_h(pb_t('Actions')) ?></th></tr></thead><tbody id="pb-transfer-rows"></tbody></table></div>
+    <div class="d-flex align-items-center justify-content-end" style="gap:8px"><small id="pb-transfer-page" role="status"></small><button class="btn btn-xs btn-outline-info" id="pb-transfer-prev" type="button" aria-label="<?= pb_h(pb_t('Previous page')) ?>">&lsaquo;</button><button class="btn btn-xs btn-outline-info" id="pb-transfer-next" type="button" aria-label="<?= pb_h(pb_t('Next page')) ?>">&rsaquo;</button></div>
+  </div>
+</section>
+<?php endif; ?>

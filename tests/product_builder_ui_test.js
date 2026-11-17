@@ -10,6 +10,8 @@ const assert = require('assert/strict');
   const initialOverview=JSON.parse(fs.readFileSync('.cache/product-builder/overview.json','utf8'));
   let products=initialOverview.rows,stats=initialOverview.stats,lastProduct,releaseSlow;
   await page.route('**/scripts/product_builder/api.php?*',async route=>{
+  if(new URL(route.request().url()).searchParams.get('action')==='transfers')return route.fulfill({json:{ok:true,rows:[],page:1,pages:1,total:0,pending:0}});
+
    const u=new URL(route.request().url()),action=u.searchParams.get('action');
    const data=route.request().method()==='POST'?JSON.parse(route.request().postData()||'{}'):null;
    let body={ok:true};

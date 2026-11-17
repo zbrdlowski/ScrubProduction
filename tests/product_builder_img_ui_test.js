@@ -6,6 +6,8 @@ const {chromium}=require('playwright'),assert=require('assert/strict');
  const specific={...row,id:802,sku:'P_IMG_02',category_kind:'specific',brand:'KTM',model:'SX 50',year_range:'2016-2023',modelcode:'AB23',img_status:'A'};
  await context.addInitScript(()=>{window.copyWrites=[];window.vibrations=[];Object.defineProperty(navigator,'clipboard',{configurable:true,value:{writeText:async text=>window.copyWrites.push(text)}});Object.defineProperty(navigator,'vibrate',{configurable:true,value:duration=>{window.vibrations.push(duration);return true;}});});
  await context.route('**/scripts/product_builder/api.php?*',async route=>{
+  if(new URL(route.request().url()).searchParams.get('action')==='transfers')return route.fulfill({json:{ok:true,rows:[],page:1,pages:1,total:0,pending:0}});
+
   const req=route.request(),action=new URL(req.url()).searchParams.get('action');let body={ok:true};
   if(action==='products')Object.assign(body,{rows:[row,specific],stats:{total:2,universal:1,specific:1}});
   else if(action==='product')body.product=row;

@@ -2,6 +2,7 @@
 
 // Run: node tests/darkscrub_import_spec_test.js
 // Optional real exports: --raw <shoptet_raw.csv> --expected <Darkscrub.csv>
+// Optional eBay unified export: --ebay-unified <Darkscrubfix.csv>
 // Optional old script: --original <darkscrub_import_spec.js>
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -13,16 +14,18 @@ function makeSheet(data) {
   return {
     data,
     clears: 0,
+    writes: [],
     getDataRange() { return { getDisplayValues: () => this.data }; },
     clearContents() { this.clears++; this.data = []; },
     getRange(row, column, height, width) {
       return {
         setValues: values => {
+          this.writes.push({ type: 'values' });
           assert.equal(values.length, height);
           values.forEach(value => assert.equal(value.length, width));
           this.data = values.map(value => Array.from(value));
         },
-        setNumberFormat: () => {}
+        setNumberFormat: format => { this.writes.push({ type: 'format', column, format }); }
       };
     },
     setFrozenRows() {},
@@ -192,6 +195,128 @@ test('country lookup and output schema are preserved', () => {
   assert.equal(Object.keys(actual).length, 64);
 });
 
+const ebayLegacy = {
+  'Order number': 'EB-ALIAS-1',
+  'Sale date': '2026-11-16',
+  'Buyer name': 'Billing Customer',
+  'Buyer postcode': '00123',
+  'Buyer country': 'US',
+  'Post to name': 'Shipping Recipient',
+  'Post to phone': '+12020000000',
+  'Post to address 1': '12 Example Street',
+  'Post to address 2': 'Unit 4',
+  'Post to city': 'Example City',
+  'Post to postcode': '00501-0123',
+  'Post to country': 'US',
+  'Item title': 'Test Graphics',
+  'Custom label': 'G_EBAY',
+  'Quantity': '1',
+  'Sold for': 'US $99.90',
+  'Postage and packaging': 'US $14.90',
+  'Delivery service': 'Example Shipping'
+};
+const ebayModernNames = {
+  'Buyer postcode': 'Buyer Zip',
+  'Post to name': 'Ship To Name',
+  'Post to phone': 'Ship To Phone',
+  'Post to address 1': 'Ship To Address 1',
+  'Post to address 2': 'Ship To Address 2',
+  'Post to city': 'Ship To City',
+  'Post to postcode': 'Ship To Zip',
+  'Post to country': 'Ship To Country',
+  'Postage and packaging': 'Shipping And Handling',
+  'Delivery service': 'Shipping Service'
+};
+const ebayModern = Object.fromEntries(Object.entries(ebayLegacy).map(([key, value]) => [
+  ebayModernNames[key] || key.replace(/\b\w/g, letter => letter.toUpperCase()), value
+]));
+function generateEbay(record) {
+  return comparable(generate([headers], { EBAY_RAW: [Object.keys(record), Object.values(record)] }))[0];
+}
+
+test('eBay Ship To / Zip export keeps phone, both postal codes and complete shipping address', () => {
+  const actual = generateEbay(ebayModern);
+  assert.equal(actual.phone, "'+12020000000");
+  assert.equal(actual.bill_zip, '00123');
+  assert.equal(actual.delivery_zip, '00501-0123');
+  assert.equal(actual.delivery_name, 'Shipping Recipient');
+  assert.equal(actual.delivery_street, '12 Example Street, Unit 4');
+  assert.equal(actual.delivery_city, 'Example City');
+  assert.equal(actual.delivery_country, 'US');
+  assert.equal(actual.shipping_price, '14.90');
+  assert.equal(actual.shipping_method, 'Example Shipping');
+  assert.deepEqual(actual.source_raw_json, ebayModern);
+});
+
+test('eBay old and new header names produce the same mapped values', () => {
+  const legacy = generateEbay(ebayLegacy);
+  const modern = generateEbay(ebayModern);
+  delete legacy.source_raw_json;
+  delete modern.source_raw_json;
+  assert.deepEqual(modern, legacy);
+});
+
+test('eBay falls back from blank legacy aliases and preserves non-empty legacy values', () => {
+  const mixed = {
+    ...ebayModern,
+    'Post to phone': '  ',
+    'Buyer postcode': '',
+    'Post to postcode': '',
+    'Post to name': 'Preferred Recipient',
+    'Postage and packaging': '0'
+  };
+  const actual = generateEbay(mixed);
+  assert.equal(actual.phone, "'+12020000000");
+  assert.equal(actual.bill_zip, '00123');
+  assert.equal(actual.delivery_zip, '00501-0123');
+  assert.equal(actual.delivery_name, 'Preferred Recipient');
+  assert.equal(actual.shipping_price, '0');
+  assert.deepEqual(actual.source_raw_json, mixed);
+});
+
+test('eBay aliases tolerate reversed order, header case changes and new columns', () => {
+  const shuffled = Object.fromEntries(Object.entries(ebayModern).reverse().map(([k,v]) => [k.toLowerCase(),v]));
+  shuffled['future column'] = 'preserved';
+  const actual = generateEbay(shuffled);
+  const expected = generateEbay(ebayModern);
+  assert.equal(actual.source_raw_json['future column'], 'preserved');
+  delete actual.source_raw_json;
+  delete expected.source_raw_json;
+  assert.deepEqual(actual, expected);
+});
+
+test('eBay phone leading zeroes and alphanumeric postal codes remain text', () => {
+  const actual = generateEbay({ ...ebayModern, 'Ship To Phone': '0612345678', 'Buyer Zip': 'SW1A 1AA', 'Ship To Zip': 'K1A 0B1' });
+  assert.equal(actual.phone, "'0612345678");
+  assert.equal(actual.bill_zip, 'SW1A 1AA');
+  assert.equal(actual.delivery_zip, 'K1A 0B1');
+});
+
+test('eBay missing contact fields stay empty instead of using tax or item postal codes', () => {
+  const actual = generateEbay({
+    'Order Number': 'EB-NO-CONTACT',
+    'Buyer Zip': '00123',
+    'Item Zip Code': '99999',
+    'Tax Zip': '88888'
+  });
+  assert.equal(actual.bill_zip, '00123');
+  assert.equal(actual.delivery_zip, '');
+  assert.equal(actual.phone, '');
+  assert.equal(actual.delivery_street, '');
+});
+
+test('output contact columns receive text formatting before values are written', () => {
+  const loaded = load({ EBAY_RAW: [Object.keys(ebayModern), Object.values(ebayModern)] });
+  loaded.context.generateDarkScrubImport();
+  const output = loaded.sheets.DARKSCRUB_IMPORT;
+  assert.equal(output.writes.at(-1).type, 'values');
+  const formats = output.writes.slice(0, -1);
+  assert.equal(formats.length, 5);
+  ['phone', 'bill_zip', 'delivery_zip', 'package_number', 'tracking_number'].forEach(header => {
+    assert.ok(formats.some(f => f.type === 'format' && f.format === '@' && f.column === output.data[0].indexOf(header) + 1));
+  });
+});
+
 function parseCsv(text) {
   const rows = [];
   let row = [], cell = '', quoted = false;
@@ -289,6 +414,46 @@ if (rawPath && expectedPath) {
     test('the supplied original already maps this complete raw CSV correctly by headers', () => {
       const original = comparable(generate(raw, extras, fs.readFileSync(originalPath, 'utf8')));
       assert.deepEqual(comparable(generate(raw, extras)), original);
+    });
+  }
+}
+
+const ebayPath = option('--ebay-unified');
+if (ebayPath) {
+  const table = parseCsv(fs.readFileSync(ebayPath, 'utf8'));
+  const records = table.slice(1).map(values => Object.fromEntries(table[0].map((key,i) => [key, values[i]])));
+  const ebayRows = records.filter(r => r.source === 'EBAY');
+  assert.ok(ebayRows.length > 0, 'Expected eBay rows in reference export');
+  const countryPairs = new Map(ebayRows.map(r => [JSON.parse(r.source_raw_json)['Buyer Country'], r.bill_country]));
+  const rawRows = ebayRows.map(r => JSON.parse(r.source_raw_json));
+  const rawHeaders = [...new Set(rawRows.flatMap(Object.keys))];
+  const tables = {
+    EBAY_RAW: [rawHeaders, ...rawRows.map(r => rawHeaders.map(key => r[key] ?? ''))],
+    COUNTRIES: [['Country', 'Two_Letters'], ...countryPairs]
+  };
+  test('real eBay export recovers every phone, postal code and shipping address from raw JSON', () => {
+    const mapped = generate([headers], tables);
+    assert.equal(mapped.length, ebayRows.length);
+    mapped.forEach((r, index) => {
+      const raw = rawRows[index];
+      assert.equal(r.external_order_id, ebayRows[index].external_order_id);
+      assert.equal(r.phone, "'" + raw['Ship To Phone'].trim());
+      assert.equal(r.bill_zip, raw['Buyer Zip'].trim());
+      assert.equal(r.delivery_zip, raw['Ship To Zip'].trim());
+      assert.equal(r.delivery_name, raw['Ship To Name'].trim());
+      assert.equal(r.delivery_street, [raw['Ship To Address 1'], raw['Ship To Address 2']].map(v => (v || '').trim()).filter(Boolean).join(', '));
+      assert.equal(r.delivery_city, raw['Ship To City'].trim());
+      assert.equal(r.delivery_country, countryPairs.get(raw['Ship To Country']) || raw['Ship To Country']);
+      assert.equal(r.shipping_method, raw['Shipping Service'].trim());
+      assert.deepEqual(JSON.parse(r.source_raw_json), raw);
+    });
+    const orderCount = new Set(mapped.map(r => r.external_order_id)).size;
+    console.log('Verified eBay contacts: ' + mapped.length + ' rows / ' + orderCount + ' orders.');
+  });
+  if (originalPath) {
+    test('original script reproduces missing eBay phone and both postal codes in this export', () => {
+      const old = generate([headers], tables, fs.readFileSync(originalPath, 'utf8'));
+      assert.ok(old.every(r => r.phone === '' && r.bill_zip === '' && r.delivery_zip === ''));
     });
   }
 }

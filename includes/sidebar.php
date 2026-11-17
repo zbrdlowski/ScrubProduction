@@ -332,11 +332,12 @@ function isMenuOpen($pages = [])
               </a></li>            
           </ul>
         </li>
-        <li class="nav-item <?= isMenuOpen(['product_builder','product_listings','product_controls']) ? 'menu-open' : '' ?>">
+        <li class="nav-item <?= isMenuOpen(['product_builder','product_listings','product_controls','product_transfers']) ? 'menu-open' : '' ?>">
           <a href="#" class="nav-link" style="background-color:#2a3036;"><i class="nav-icon fas fa-cubes" style="color:#20c997;"></i><p>Product Database<i class="fas fa-angle-left right"></i></p></a>
           <ul class="nav nav-treeview">
             <?php if (auth_can('products.view')): ?><li class="nav-item"><a href="index.php?page=product_builder" class="nav-link <?= isActive('product_builder') ?>"><i class="fas fa-pen nav-icon"></i><p>Product Builder</p></a></li><?php endif; ?>
             <li class="nav-item"><a href="index.php?page=product_listings" class="nav-link <?= isActive('product_listings') ?>"><i class="fas fa-table nav-icon"></i><p>Listings</p></a></li>
+            <?php if (auth_can('products.view')): ?><li class="nav-item"><a href="index.php?page=product_transfers" class="nav-link <?= isActive('product_transfers') ?>"><i class="fas fa-share-square nav-icon"></i><p>Transfer D-base</p></a></li><?php endif; ?>
             <?php if (auth_can('products.view')): ?><li class="nav-item"><a href="index.php?page=product_controls" class="nav-link <?= isActive('product_controls') ?>"><i class="fas fa-sliders-h nav-icon"></i><p>Product Controls</p></a></li><?php endif; ?>
           </ul>
         </li>  

@@ -159,25 +159,21 @@ function generateDarkScrubImport() {
   const output = getOrCreateSheet_(ss, OUTPUT_SHEET);
   output.clearContents();
 
-  if (rows.length > 1) {
-    output.getRange(1, 1, rows.length, OUTPUT_HEADERS.length).setValues(rows);
-  } else {
-    output.getRange(1, 1, 1, OUTPUT_HEADERS.length).setValues([OUTPUT_HEADERS]);
-  }
-const textColumns = [
-  'phone',
-  'bill_zip',
-  'delivery_zip',
-  'package_number',
-  'tracking_number'
-];
-
-textColumns.forEach(header => {
-  const col = OUTPUT_HEADERS.indexOf(header) + 1;
-  if (col > 0) {
-    output.getRange(1, col, Math.max(rows.length, 1), 1).setNumberFormat('@');
-  }
-});
+  // Set text formats BEFORE writing so phone numbers and postal codes retain
+  // their leading + / zeroes when Sheets receives the new values.
+  [
+    'phone',
+    'bill_zip',
+    'delivery_zip',
+    'package_number',
+    'tracking_number'
+  ].forEach(header => {
+    const col = OUTPUT_HEADERS.indexOf(header) + 1;
+    if (col > 0) {
+      output.getRange(1, col, rows.length, 1).setNumberFormat('@');
+    }
+  });
+  output.getRange(1, 1, rows.length, OUTPUT_HEADERS.length).setValues(rows);
   output.setFrozenRows(1);
   output.autoResizeColumns(1, OUTPUT_HEADERS.length);
 }
@@ -359,23 +355,23 @@ function mapEbayRow_(r, lineNo, countryLookup) {
     currency: detectCurrency_(val_(r, 'Sold for')),
     exchange_rate: '',
     email: val_(r, 'Buyer email'),
-   phone: textCell_(val_(r, 'Post to phone')),
+    phone: textCell_(firstValue_(r, ['Post to phone', 'Ship To Phone'])),
     bill_name: val_(r, 'Buyer name'),
     bill_company: '',
     bill_street: val_(r, 'Buyer address 1'),
     bill_house_number: '',
     bill_city: val_(r, 'Buyer city'),
-    bill_zip: val_(r, 'Buyer postcode'),
-   bill_country: normalizeCountry_(val_(r, 'Buyer country'), countryLookup),
+    bill_zip: firstValue_(r, ['Buyer postcode', 'Buyer Zip']),
+    bill_country: normalizeCountry_(val_(r, 'Buyer country'), countryLookup),
     bill_company_id: '',
     bill_vat_id: val_(r, 'Buyer tax identifier value'),
-    delivery_name: val_(r, 'Post to name'),
+    delivery_name: firstValue_(r, ['Post to name', 'Ship To Name']),
     delivery_company: '',
-    delivery_street: joinNonEmpty_([val_(r, 'Post to address 1'), val_(r, 'Post to address 2')], ', '),
+    delivery_street: joinNonEmpty_([firstValue_(r, ['Post to address 1', 'Ship To Address 1']), firstValue_(r, ['Post to address 2', 'Ship To Address 2'])], ', '),
     delivery_house_number: '',
-    delivery_city: val_(r, 'Post to city'),
-    delivery_zip: val_(r, 'Post to postcode'),
-    delivery_country: normalizeCountry_(val_(r, 'Post to country'), countryLookup),
+    delivery_city: firstValue_(r, ['Post to city', 'Ship To City']),
+    delivery_zip: firstValue_(r, ['Post to postcode', 'Ship To Zip']),
+    delivery_country: normalizeCountry_(firstValue_(r, ['Post to country', 'Ship To Country']), countryLookup),
     customer_ip: '',
     customer_note: val_(r, 'Buyer note'),
     internal_note: val_(r, 'My item note'),
@@ -405,8 +401,8 @@ function mapEbayRow_(r, lineNo, countryLookup) {
     item_ean: '',
     item_plu: '',
     item_supplier: '',
-    shipping_price: moneyNumber_(val_(r, 'Postage and packaging')),
-    shipping_method: val_(r, 'Delivery service'),
+    shipping_price: moneyNumber_(firstValue_(r, ['Postage and packaging', 'Shipping And Handling'])),
+    shipping_method: firstValue_(r, ['Delivery service', 'Shipping Service']),
     tracking_number: val_(r, 'Tracking number'),
     payment_method: val_(r, 'Payment method'),
     sales_channel: 'eBay',
@@ -525,6 +521,16 @@ function pickNonEmpty_(obj, keys) {
 
 function json_(value) {
   return JSON.stringify(value || {});
+}
+
+// eBay exports use different names by locale (Post to / Ship To, postcode / Zip).
+// Keep the first non-empty alias, using the same case-insensitive header lookup.
+function firstValue_(obj, keys) {
+  for (const key of keys) {
+    const value = val_(obj, key);
+    if (value !== '') return value;
+  }
+  return '';
 }
 
 function val_(obj, key) {

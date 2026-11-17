@@ -10,7 +10,9 @@ const {chromium}=require('playwright'),fs=require('fs'),assert=require('assert/s
  const designs=[{id:21,component_type:'G',name:'Boxes',version:1,usage_count:0},{id:22,component_type:'S',name:'Name',version:1,usage_count:0}],versions=[{id:31,name:'R1',sort_order:1,version:1,usage_count:0}],boxes=[{id:41,name:'Name',length_cm:'61.00',width_cm:'41.00',height_cm:'21.00',weight_kg:'0.500',version:1,usage_count:0}];
  let saved=0,boxSaved=0;
  await page.route('**/index.php?*',async route=>{const url=new URL(route.request().url()),mode=url.searchParams.get('page').replace('product_',''),lang=url.searchParams.get('pb_lang')||((await page.context().cookies()).find(c=>c.name==='product_builder_lang_999010')?.value||'sk');await route.fulfill({contentType:'text/html',body:fixture(mode,lang,Number(url.searchParams.get('edit')||0))});});
- await page.route('**/scripts/product_builder/api.php?*',async route=>{const req=route.request(),url=new URL(req.url()),action=url.searchParams.get('action'),lang=url.searchParams.get('pb_lang'),data=req.method()==='POST'?JSON.parse(req.postData()):{};calls.push({action,lang});assert.ok(['sk','en'].includes(lang));let body={ok:true};
+ await page.route('**/scripts/product_builder/api.php?*',async route=>{
+  if(new URL(route.request().url()).searchParams.get('action')==='transfers')return route.fulfill({json:{ok:true,rows:[],page:1,pages:1,total:0,pending:0}});
+const req=route.request(),url=new URL(req.url()),action=url.searchParams.get('action'),lang=url.searchParams.get('pb_lang'),data=req.method()==='POST'?JSON.parse(req.postData()):{};calls.push({action,lang});assert.ok(['sk','en'].includes(lang));let body={ok:true};
   if(action==='categories')body.rows=categories;
   else if(action==='designs')Object.assign(body,{rows:designs,versions});
   else if(action==='boxes')body.rows=boxes;

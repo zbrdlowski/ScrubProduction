@@ -18,6 +18,8 @@ const assert=require('assert/strict');
   ]};
   const original=structuredClone(listing);const lookups=[];let saves=0,hold=false,releaseLookup;
   await page.route('**/scripts/product_builder/api.php?*',async route=>{
+  if(new URL(route.request().url()).searchParams.get('action')==='transfers')return route.fulfill({json:{ok:true,rows:[],page:1,pages:1,total:0,pending:0}});
+
    const url=new URL(route.request().url()),action=url.searchParams.get('action');let result={ok:true};
    if(action==='boxes'){await route.fulfill({json:{ok:true,rows:[]}});return;}
    else if(action==='designs'){result.rows=JSON.parse(fs.readFileSync('.cache/product-builder/designs.json','utf8'));result.versions=JSON.parse(fs.readFileSync('.cache/product-builder/graphics-versions.json','utf8'));}
