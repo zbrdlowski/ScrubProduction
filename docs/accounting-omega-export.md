@@ -54,6 +54,8 @@ Balík je nemenná snímka vybraných objednávok. Opakované stiahnutie nemení
 
 História balíkov ukazuje, či už boli súbory zákazníkov a objednávok stiahnuté. Starší balík môžete kedykoľvek otvoriť a stiahnuť znova.
 
+Oprava Oddielu KVDPH sa uplatní aj pri opätovnom stiahnutí staršieho balíka podľa firemných údajov uložených v jeho snímke. Už stiahnuté TXT súbory sa spätne nemenia. Kvôli tejto úprave netreba vytvárať nový balík ani spúšťať databázovú migráciu.
+
 ## Zákaznícky seed
 
 Seed je posledný použitý číselný kód zákazníka. Bežne ho nemeňte. Ak ho treba upraviť, zadáva sa celý kód, napríklad `M2602995`. Nasledujúci nový zákazník dostane ďalšie číslo. Seed sa nedá znížiť pod najvyšší už pridelený kód.
@@ -64,6 +66,7 @@ Seed je posledný použitý číselný kód zákazníka. Bežne ho nemeňte. Ak 
 - EÚ mimo Slovenska používa typ `OSSzd` a sadzbu cieľovej krajiny.
 - Krajiny mimo EÚ používajú typ `15t`, dopravu `15s` a nulovú DPH.
 - V položke R02 je množstvo samostatne a jednotková cena je bez DPH.
+- Firemné objednávky majú v každej položke R02 vrátane dopravy v stĺpci BB (Oddiel KVDPH) hodnotu `A1`. Rozhoduje názov firmy alebo IČO vo fakturačnej adrese, rovnako ako pri ikonke budovy v objednávkach. Ostatné objednávky ponechávajú hodnotu `X`.
 - Pri cudzej mene sa použije suma v EUR a kurz zo spárovaného payoutu.
 
 ## Technická inštalácia

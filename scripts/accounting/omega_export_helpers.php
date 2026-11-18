@@ -403,6 +403,11 @@ function omega_export_payload(PDO $pdo, array $order, string $partnerCode): arra
         'customer_phone' => $phone,
         'company' => omega_export_clean($address['company'] ?? ''),
         'company_id' => omega_export_clean($address['company_id'] ?? ''),
+        // Same billing-address condition as the company icon in includes/orders.php.
+        // A company at the shipping address alone does not make this a company invoice.
+        'billing_is_company' => strtoupper((string) ($address['type'] ?? '')) === 'BILLING'
+            && (trim((string) ($address['company'] ?? '')) !== ''
+                || trim((string) ($address['company_id'] ?? '')) !== ''),
         'street' => omega_export_clean($address['street'] ?? ''),
         'city' => omega_export_clean($address['city'] ?? ''),
         'zip' => omega_export_clean($address['zip'] ?? ''),
@@ -569,20 +574,24 @@ function omega_export_invoice_rows(array $payloads): array
         $header[93] = '0';
         $rows[] = $header;
 
+        // Older immutable batches contain company fields but no explicit billing flag.
+        $isCompany = (bool) ($payload['billing_is_company']
+            ?? (trim((string) ($payload['company'] ?? '')) !== ''
+                || trim((string) ($payload['company_id'] ?? '')) !== ''));
         foreach ($payload['items'] as $item) {
-            $rows[] = omega_export_invoice_item_row($item, $rule, $payload['source_code'] === 'EBAY');
+            $rows[] = omega_export_invoice_item_row($item, $rule, $payload['source_code'] === 'EBAY', false, $isCompany);
         }
         if ((float) $payload['shipping_eur'] > 0) {
             $rows[] = omega_export_invoice_item_row([
                 'description' => 'Shipping & Handling', 'synthetic' => '602', 'analytic' => '001',
                 'qty' => 1.0, 'unit_gross_eur' => (float) $payload['shipping_eur'],
-            ], $rule, false, true);
+            ], $rule, false, true, $isCompany);
         }
     }
     return $rows;
 }
 
-function omega_export_invoice_item_row(array $item, array $rule, bool $stockItem, bool $shipping = false): array
+function omega_export_invoice_item_row(array $item, array $rule, bool $stockItem, bool $shipping = false, bool $isCompany = false): array
 {
     $vatRate = (float) $rule['vat'];
     $unitGross = (float) $item['unit_gross_eur'];
@@ -627,7 +636,7 @@ function omega_export_invoice_item_row(array $item, array $rule, bool $stockItem
     $row[50] = omega_export_number($unitGross, 4);
     $row[51] = '0';
     $row[52] = '0';
-    $row[53] = 'X';
+    $row[53] = $isCompany ? 'A1' : 'X'; // BB: Oddiel KVDPH (R02).
     $row[57] = '0';
     return $row;
 }
