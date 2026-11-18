@@ -99,7 +99,7 @@ if ($action === 'fetch') {
   $customerEmail = trim((string) ($base['customer_email'] ?? ''));
   $customerName = trim((string) ($base['customer_name'] ?? ''));
 
-  $clauses = ["o.status = 'READY_TO_SHIP'"];
+  $clauses = ["o.status IN ('READY_TO_SHIP', 'READY_TO_INVOICE')"];
   $types = '';
   $params = [];
   $identityClauses = [];
@@ -245,8 +245,8 @@ if ($action === 'save') {
       throw new RuntimeException('One or more selected orders no longer exist.');
     }
     foreach ($rows as $row) {
-      if (strtoupper((string) $row['status']) !== 'READY_TO_SHIP') {
-        throw new RuntimeException('All selected orders must be READY_TO_SHIP.');
+      if (!in_array(strtoupper((string) $row['status']), ['READY_TO_SHIP', 'READY_TO_INVOICE'], true)) {
+        throw new RuntimeException('All selected orders must be in Ready for Label or Ready for Invoice.');
       }
     }
 

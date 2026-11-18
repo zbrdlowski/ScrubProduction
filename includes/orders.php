@@ -3790,7 +3790,7 @@ $deptOptions = [
                           ? 'MULTI · ' . (int) $multishipping['member_count']
                           : 'MULTI → ' . htmlspecialchars($multishippingMasterLabel) ?>
                       </button>
-                    <?php elseif ($customerIsDup && strtoupper((string) ($row['status'] ?? '')) === 'READY_TO_SHIP'): ?>
+                    <?php elseif ($customerIsDup && in_array(strtoupper((string) ($row['status'] ?? '')), ['READY_TO_SHIP', 'READY_TO_INVOICE'], true)): ?>
                       <button type="button" class="order-dup-customer-badge is-multishipping-trigger js-open-multishipping"
                         data-order-id="<?= $orderId ?>"
                         title="<?= htmlspecialchars($customerDupCount . ' open orders from this customer · Create multishipping') ?>">
@@ -6894,14 +6894,15 @@ $deptOptions = [
           const editable = !!resp.editable && (!resp.group || groupStatus === 'DRAFT');
           let html = '';
           (resp.candidates || []).forEach(function (row) {
-            const blocked = !!row.blocked_group || !!row.export_locked || row.status !== 'READY_TO_SHIP';
+            const eligibleStatus = ['READY_TO_SHIP', 'READY_TO_INVOICE'].includes(row.status);
+            const blocked = !!row.blocked_group || !!row.export_locked || !eligibleStatus;
             const disabled = !editable || blocked;
             const checked = !!row.selected;
             const selectedMaster = !!row.master || (!resp.group && parseInt(row.id, 10) === parseInt(resp.requested_order_id, 10));
             let warning = '';
             if (row.blocked_group) warning = 'Already in multishipping with ' + row.blocked_group_master;
             else if (row.export_locked) warning = 'Already included in a FedEx CSV at ' + row.exported_at;
-            else if (row.status !== 'READY_TO_SHIP') warning = 'Status: ' + row.status;
+            else if (!eligibleStatus) warning = 'Status: ' + row.status;
             else if (row.address_mismatch) warning = 'Shipping address differs from the opened order. Verify before grouping.';
             html += '<div class="multishipping-candidate' + (blocked ? ' is-blocked' : '') + '">' +
               '<div class="d-flex align-items-start">' +
@@ -6920,7 +6921,7 @@ $deptOptions = [
                 '</div>' +
               '</div></div>';
           });
-          if (!html) html = '<div class="alert alert-warning mb-0">No other READY_TO_SHIP orders were found for this customer.</div>';
+          if (!html) html = '<div class="alert alert-warning mb-0">No orders in Ready for Label or Ready for Invoice were found for this customer.</div>';
           $multishippingCandidates.html(html);
           $multishippingSaveBtn.prop('disabled', !editable || (resp.candidates || []).length < 2).toggleClass('d-none', !editable);
           const canUnlock = !!resp.editable && !!resp.group && !!resp.group.can_unlock;
