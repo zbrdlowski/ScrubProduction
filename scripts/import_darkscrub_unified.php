@@ -404,6 +404,7 @@ function import_darkscrub_unified_csv(mysqli $conn, string $csvPath, string $mod
       'city' => $first['bill_city'] ?? null,
       'zip' => $first['bill_zip'] ?? null,
       'country' => $first['bill_country'] ?? null,
+      'state' => oi_import_address_state($first, 'BILLING', $first['bill_country'] ?? null),
       'email' => $first['email'] ?? null,
       'phone' => $first['phone'] ?? null,
     ]);
@@ -419,6 +420,7 @@ function import_darkscrub_unified_csv(mysqli $conn, string $csvPath, string $mod
       'city' => oi_first_nonempty($first['delivery_city'] ?? null, $first['bill_city'] ?? null),
       'zip' => oi_first_nonempty($first['delivery_zip'] ?? null, $first['bill_zip'] ?? null),
       'country' => oi_first_nonempty($first['delivery_country'] ?? null, $first['bill_country'] ?? null),
+      'state' => oi_import_address_state($first, 'SHIPPING', oi_first_nonempty($first['delivery_country'] ?? null, $first['bill_country'] ?? null)),
       'email' => $first['email'] ?? null,
       'phone' => $first['phone'] ?? null,
     ]);

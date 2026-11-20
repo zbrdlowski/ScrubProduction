@@ -41,4 +41,33 @@ foreach ([
   assertSameValue($expected, ordersResolveAddressState($country, $state, $zip), 'Resolve ' . $country . ' / ' . $state . ' / ' . $zip);
 }
 
+
+foreach ([
+  ['78233', '78233'], ['78233-5953', '78233'], ['782335953', '78233'],
+  ['78233 5953', '78233'], ["'02108", '02108'], ['2703', '02703'],
+  ['', ''], ['12130 Example St', ''], ['San Antonio TX 78233', ''],
+  ['78233-12', ''], ['123456', ''], ['7823359530', ''],
+] as [$zip, $expected]) {
+  assertSameValue($expected, ordersNormalizeUsZip($zip), 'Normalize ZIP ' . $zip);
+}
+
+// Exercise the real detail helpers without executing the database endpoint.
+$detail = file_get_contents(dirname(__DIR__) . '/scripts/orders/get_order_detail.php');
+$start = strpos($detail, 'function normalizeUsZipFromAddress(');
+$end = strpos($detail, 'function addressCopyText(', $start);
+if ($start === false || $end === false) throw new RuntimeException('Detail address helpers not found.');
+eval(substr($detail, $start, $end - $start));
+foreach ([
+  ['78233-5953', '', 'TX'], ['78233', '', 'TX'], ['', '', ''],
+  ['782335953', '', 'TX'], ['invalid', '', ''], ['78233-12', '', ''],
+  ['02108', '', 'MA'], ['2703', '', 'MA'], ['', 'TX', 'TX'],
+  ['78233-5953', 'CA', 'CA'],
+] as [$zip, $state, $expected]) {
+  $address = ['country' => 'US', 'state' => $state, 'zip' => $zip,
+    'street' => '12130 Example St', 'city' => 'San Antonio'];
+  assertSameValue($expected, orderDetailAddressState($address), 'Detail ZIP ' . $zip . ' / state ' . $state);
+  assertSameValue($expected, ordersResolveAddressState('US', $state, $zip), 'FedEx ZIP ' . $zip . ' / state ' . $state);
+}
+assertSameValue('', normalizeUsZipFromAddress(['street' => '12130 Example St', 'city' => 'San Antonio 78233']), 'Never search other address fields for ZIP');
+
 echo "orders_address_helpers_test: OK\n";

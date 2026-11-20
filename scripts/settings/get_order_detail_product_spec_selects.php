@@ -1,5 +1,6 @@
 <?php
 declare(strict_types=1);
+require_once dirname(__DIR__, 2) . '/includes/orders_address_helpers.php';
 session_start();
 //out(200, ['ok'=>false,'error'=>'PHP '.PHP_VERSION]);
 header('Content-Type: application/json; charset=utf-8');
@@ -134,32 +135,7 @@ function countryFlag($code): string
 
 function normalizeUsZipFromAddress(array $a): string
 {
-  // Spojenie PSČ, ulice a mesta pre spracovanie
-  $text = trim(
-    ($a['zip'] ?? '') . ' ' .
-    ($a['street'] ?? '') . ' ' .
-    ($a['city'] ?? '')
-  );
-
-  if ($text === '')
-    return '';
-
-  // Vzor ZIP+4: 11706-4815 => extrahni 11706
-  if (preg_match('/\b(\d{5})-\d{4}\b/', $text, $m)) {
-    return $m[1];
-  }
-
-  // Hľadaj posledný samostatný 5-miestny kód
-  if (preg_match_all('/\b\d{5}\b/', $text, $m) && !empty($m[0])) {
-    return end($m[0]);
-  }
-
-  // MXLocker/Shoptet občas chýba vedúca nula: 2703 => 02703
-  if (preg_match('/\b(\d{4})\b\s*$/', $text, $m)) {
-    return '0' . $m[1];
-  }
-
-  return '';
+  return ordersNormalizeUsZip((string) ($a['zip'] ?? ''));
 }
 
 // Vracia kód amerického štátu na základe PSČ

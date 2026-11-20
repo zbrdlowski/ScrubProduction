@@ -173,6 +173,9 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == '1') {
       $jobReportContext = 'profile_self';
       include __DIR__ . '/vykaz_prace.php';
       break;
+    case 'notifications':
+      include __DIR__ . '/profile_notifications.php';
+      break;
     case 'online':
       include __DIR__ . '/profile_online_grid.php';
       break;
@@ -329,6 +332,12 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == '1') {
                 <a class="nav-link <?php echo ($activeTab === 'online') ? 'active' : ''; ?>"
                   href="?page=profile&tab=online">
                   Online status
+                </a>
+              </li>
+              <li class="nav-item">
+                <a class="nav-link <?php echo ($activeTab === 'notifications') ? 'active' : ''; ?>"
+                  href="?page=profile&tab=notifications">
+                  Upozornenia
                 </a>
               </li>
             </ul>
@@ -512,6 +521,9 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == '1') {
                 include 'includes/vykaz_prace.php';
                 ?>
               </div>
+
+            <?php elseif ($activeTab === 'notifications'): ?>
+              <?php include __DIR__ . '/profile_notifications.php'; ?>
 
             <?php else: ?>
 

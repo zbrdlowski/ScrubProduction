@@ -1,6 +1,7 @@
 <?php
 
 declare(strict_types=1);
+require_once dirname(__DIR__) . '/includes/orders_address_helpers.php';
 if (session_status() === PHP_SESSION_NONE) {
   session_start();
 }
@@ -293,6 +294,30 @@ function oi_upsert_order(mysqli $conn, int $sourceId, string $externalOrderId, a
 }
 
 /**
+ * Read an explicit address state from unified columns or the preserved source row.
+ * Billing and delivery are independent; never use the buyer/tax state for shipping.
+ */
+function oi_import_address_state(array $row, string $type, ?string $country): ?string {
+  $keys = strtoupper($type) === 'BILLING'
+    ? ['bill_state', 'billState', 'Buyer State', 'Buyer county']
+    : ['delivery_state', 'deliveryState', 'Post to state', 'Post to county', 'Ship To State'];
+  if (strtoupper((string) ($row['source'] ?? '')) === 'MX_LOCKER') {
+    $keys[] = 'State Province';
+  }
+  $raw = json_decode((string) ($row['source_raw_json'] ?? ''), true);
+  foreach ([$row, is_array($raw) ? $raw : []] as $values) {
+    $values = array_change_key_case($values, CASE_LOWER);
+    foreach ($keys as $key) {
+      $value = $values[strtolower($key)] ?? null;
+      if (!is_scalar($value)) continue;
+      $state = ordersAddressStateCode((string) $country, (string) $value);
+      if ($state !== '') return $state;
+    }
+  }
+  return null;
+}
+
+/**
  * Upsert address snapshot (BILLING/SHIPPING).
  */
 function oi_upsert_address(mysqli $conn, int $orderId, string $type, array $a): void {
@@ -304,32 +329,41 @@ function oi_upsert_address(mysqli $conn, int $orderId, string $type, array $a): 
   $city = oi_trim($a['city'] ?? null);
   $zip = oi_trim($a['zip'] ?? null);
   $country = oi_trim($a['country'] ?? null);
+  $state = ordersAddressStateCode((string) $country, (string) ($a['state'] ?? '')) ?: null;
   $email = oi_trim($a['email'] ?? null);
   $phone = oi_trim($a['phone'] ?? null);
 
-  $stmt = $conn->prepare("SELECT id FROM order_addresses WHERE order_id=? AND type=? LIMIT 1");
+  $stmt = $conn->prepare("SELECT id, street, city, zip, country, state FROM order_addresses WHERE order_id=? AND type=? LIMIT 1");
   $stmt->bind_param('is', $orderId, $type);
   $stmt->execute();
   $row = $stmt->get_result()->fetch_assoc();
   $stmt->close();
 
   if ($row) {
+    // Keep a manual state only while it still belongs to the same address.
+    if ($state === null
+      && ordersAddressCountryCode((string) ($row['country'] ?? '')) === ordersAddressCountryCode((string) $country)
+      && oi_trim($row['street'] ?? null) === $street
+      && oi_trim($row['city'] ?? null) === $city
+      && oi_trim($row['zip'] ?? null) === $zip) {
+      $state = ordersAddressStateCode((string) $country, (string) ($row['state'] ?? '')) ?: null;
+    }
     $upd = $conn->prepare("
       UPDATE order_addresses
-      SET name=?, company=?, company_id=?, street=?, city=?, zip=?, country=?, email=?, phone=?
+      SET name=?, company=?, company_id=?, street=?, city=?, zip=?, country=?, state=?, email=?, phone=?
       WHERE order_id=? AND type=?
     ");
-    $upd->bind_param('sssssssssis', $name, $company, $company_id, $street, $city, $zip, $country, $email, $phone, $orderId, $type);
+    $upd->bind_param('ssssssssssis', $name, $company, $company_id, $street, $city, $zip, $country, $state, $email, $phone, $orderId, $type);
     $upd->execute();
     $upd->close();
     return;
   }
 
   $ins = $conn->prepare("
-    INSERT INTO order_addresses (order_id, type, name, company, company_id, street, city, zip, country, email, phone)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?)
+    INSERT INTO order_addresses (order_id, type, name, company, company_id, street, city, zip, country, state, email, phone)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
   ");
-  $ins->bind_param('issssssssss', $orderId, $type, $name, $company, $company_id, $street, $city, $zip, $country, $email, $phone);
+  $ins->bind_param('isssssssssss', $orderId, $type, $name, $company, $company_id, $street, $city, $zip, $country, $state, $email, $phone);
   $ins->execute();
   $ins->close();
 }

@@ -361,6 +361,7 @@ if (isset($conn) && $conn instanceof mysqli) {
       box-shadow: 0 .5rem 1rem rgba(0, 0, 0, .25);
     }
   </style>
+  <?php include __DIR__ . '/chat_notification_bootstrap.php'; ?>
   <script>
 (() => {
     const fullscreenPreferenceKey = 'darkscrub.fullscreenPreferred';
@@ -560,12 +561,7 @@ function getChatMessageLabel(count) {
 }
 
 function getChatNotificationKey(item) {
-    return [
-        item.thread_id || 0,
-        item.created_at || '',
-        item.message_text || '',
-        item.name || ''
-    ].join('|');
+    return [item.thread_id || 0, item.last_message_id || 0].join(':');
 }
 
 function isSameOpenChatThread(threadId) {
@@ -591,6 +587,7 @@ function supportsChatBrowserNotifications() {
 
 function requestChatBrowserNotificationPermission() {
     if (
+        window.darkScrubChatNotifications.getPreferences().toast_mode === 'badge' ||
         !supportsChatBrowserNotifications() ||
         chatNotificationPermissionRequested ||
         Notification.permission !== 'default'
@@ -621,33 +618,19 @@ function showChatBrowserNotification(item) {
 
     const threadId = item.thread_id || 0;
     const senderName = item.name || 'Nová správa';
-    const text = item.message_text || 'Poslal(a) ti novú správu';
+    const text = window.darkScrubChatNotifications.preview(item.message_text, item.message_type) || 'Poslal(a) ti novú správu';
     const shortText = text.length > 140 ? text.substring(0, 140) + '...' : text;
     const photo = item.photo ? ('images/' + item.photo) : 'images/profile.jpg';
     const threadUrl = '?page=chat&thread_id=' + encodeURIComponent(threadId);
-    const tag = 'chat-navbar-' + getChatNotificationKey(item);
-
-    try {
-        const notification = new Notification('Nová správa od ' + senderName, {
-            body: shortText,
-            icon: photo,
-            tag: tag,
-            requireInteraction: true
-        });
-
-        notification.onclick = function () {
-            window.focus();
-            window.location.href = threadUrl;
-            notification.close();
-        };
-
-    } catch (e) {
-        // Browser notifications are best-effort only.
-    }
+    window.darkScrubChatNotifications.showBrowserNotification(
+        threadId, item.last_message_id, 'Nová správa od ' + senderName, shortText, photo, threadUrl
+    );
 }
 
 function showChatToast(item) {
-    if (isChatPageOpen() || isSameOpenChatThread(item.thread_id)) {
+    const notifications = window.darkScrubChatNotifications;
+    if (!notifications.canShow(item.thread_id, item.last_message_id)
+        || isChatPageOpen() || isSameOpenChatThread(item.thread_id)) {
         return false;
     }
 
@@ -660,7 +643,7 @@ function showChatToast(item) {
 
     const photo = item.photo ? ('images/' + item.photo) : 'images/profile.jpg';
     const senderName = item.name || 'Nová správa';
-    let text = item.message_text || 'Poslal(a) ti novú správu';
+    let text = notifications.preview(item.message_text, item.message_type) || 'Poslal(a) ti novú správu';
 
     if (text.length > 90) {
         text = text.substring(0, 90) + '...';
@@ -697,8 +680,8 @@ function showChatToast(item) {
         animation: true
     });
 
-    toast.find('.close').on('click', function() {
-        toast.toast('hide');
+    toast.find('.close, .toast-body a').on('click', function() {
+        notifications.dismiss(item.thread_id, item.last_message_id);
     });
 
     toast.on('hidden.bs.toast', function() {
@@ -706,6 +689,11 @@ function showChatToast(item) {
     });
 
     toast.toast('show');
+    notifications.registerToast(item.thread_id, item.last_message_id, function () {
+        // Bootstrap ignores hide() while the opening transition is still running.
+        toast.toast('dispose');
+        toast.remove();
+    });
     return true;
 }
 
@@ -719,6 +707,7 @@ function loadChatNotifications() {
                 return;
             }
 
+            window.darkScrubChatNotifications.syncServer(res);
             const threads = Array.isArray(res.threads) ? res.threads : [];
             const count = parseInt(res.count || 0, 10);
             const currentKeys = new Set();
@@ -745,10 +734,13 @@ function loadChatNotifications() {
                     if (chatNotifInitialized && !seenChatNotificationKeys.has(key)) {
                         showChatToast(item);
                         showChatBrowserNotification(item);
+                        if (!isChatPageOpen()) {
+                            window.darkScrubChatNotifications.playSound(item.thread_id, item.last_message_id);
+                        }
                     }
 
                     let photo = item.photo ? ('images/' + item.photo) : 'images/profile.jpg';
-                    let text = item.message_text || '';
+                    let text = window.darkScrubChatNotifications.preview(item.message_text, item.message_type);
 
                     if (text.length > 55) {
                         text = text.substring(0, 55) + '...';
@@ -784,6 +776,12 @@ $(document).ready(function() {
         requestChatBrowserNotificationPermission();
     });
 
+    let readRefreshTimer = null;
+    document.addEventListener('darkscrub:chat-read', function () {
+        clearTimeout(readRefreshTimer);
+        readRefreshTimer = setTimeout(loadChatNotifications, 100);
+    });
+    window.addEventListener('focus', loadChatNotifications);
     loadChatNotifications();
     setInterval(loadChatNotifications, 10000);
 });

@@ -1,5 +1,7 @@
 <?php
 require_once __DIR__ . '/helpers.php';
+require_once __DIR__ . '/../../includes/chat_notification_helpers.php';
+header('Cache-Control: no-store');
 
 chat_require_login();
 
@@ -46,6 +48,8 @@ while ($row = $result->fetch_assoc()) {
             e.lastname,
             e.photo,
             m.message_text,
+            m.message_type,
+            m.id AS last_message_id,
             m.created_at
         FROM chat_messages m
         INNER JOIN employees e ON e.id = m.sender_id
@@ -64,6 +68,8 @@ while ($row = $result->fetch_assoc()) {
     if ($last) {
         $threads[] = [
             'thread_id' => $threadId,
+            'last_message_id' => (int)$last['last_message_id'],
+            'message_type' => $last['message_type'],
             'name' => trim(($last['firstname'] ?? '') . ' ' . ($last['lastname'] ?? '')),
             'photo' => $last['photo'] ?? '',
             'message_text' => $last['message_text'] ?? '',
@@ -77,6 +83,8 @@ $stmt->close();
 chat_json([
     'status' => 'success',
     'count' => count($threads),
-    'threads' => $threads
+    'threads' => $threads,
+    'read_positions' => chat_notification_read_positions($conn, $currentUserId),
+    'notification_preferences' => chat_notification_preferences($conn, $currentUserId)
 ]);
 ?>

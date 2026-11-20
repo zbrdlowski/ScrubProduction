@@ -22,9 +22,18 @@ if (!chat_user_in_thread($conn, $threadId, $currentUserId)) {
     ], 403);
 }
 
+$messageStmt = $conn->prepare('SELECT id FROM chat_messages WHERE id = ? AND thread_id = ?');
+$messageStmt->bind_param('ii', $lastMessageId, $threadId);
+$messageStmt->execute();
+$messageExists = $messageStmt->get_result()->fetch_assoc();
+$messageStmt->close();
+if (!$messageExists) {
+    chat_json(['status' => 'error', 'message' => 'Message does not belong to this conversation'], 422);
+}
+
 $stmt = $conn->prepare("
     UPDATE chat_thread_members
-    SET last_read_message_id = ?
+    SET last_read_message_id = GREATEST(COALESCE(last_read_message_id, 0), ?)
     WHERE thread_id = ? AND user_id = ?
     LIMIT 1
 ");
@@ -43,6 +52,8 @@ if (!$stmt->execute()) {
 $stmt->close();
 
 chat_json([
-    'status' => 'success'
+    'status' => 'success',
+    'thread_id' => $threadId,
+    'last_read_message_id' => $lastMessageId
 ]);
 ?>

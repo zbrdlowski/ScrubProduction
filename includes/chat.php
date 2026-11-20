@@ -74,6 +74,11 @@ if (empty($_SESSION['user_id'])) {
                             </div>
                         </div>
 
+                        <div id="chatAnnouncementHtmlHint" class="small text-muted mt-2" style="display:none;">
+                            HTML formatting is supported, e.g. &lt;h1&gt;Heading&lt;/h1&gt;, &lt;br /&gt;,
+                            &lt;strong&gt;bold&lt;/strong&gt;, lists and links.
+                        </div>
+
                         <input type="file" id="chatAttachmentInput" style="display:none;">
 
                         <div id="chatAttachmentDropzone" class="chat-attachment-dropzone is-disabled" role="button"
@@ -811,6 +816,7 @@ if (empty($_SESSION['user_id'])) {
     }
     const canSendAnnouncements = <?php echo ((int) ($_SESSION['permission'] ?? 0) >= 500 ? 'true' : 'false'); ?>;
     const currentUserId = <?php echo (int) ($_SESSION['user_id'] ?? 0); ?>;
+    const chatNotifications = window.darkScrubChatNotifications || null;
     let broadcastModeEnabled = false;
     let selectedAnnouncementRecipients = new Set();
     let contactsCache = [];
@@ -1009,6 +1015,7 @@ if (empty($_SESSION['user_id'])) {
         broadcastModeEnabled = !!enabled;
         $('#chatPageRoot').toggleClass('broadcast-mode', broadcastModeEnabled);
         $('#chatBroadcastControls').toggle(broadcastModeEnabled);
+        $('#chatAnnouncementHtmlHint').toggle(broadcastModeEnabled);
 
         selectedAnnouncementRecipients = new Set();
 
@@ -1290,8 +1297,11 @@ if (empty($_SESSION['user_id'])) {
         const data = (payload && typeof payload === 'object') ? payload : { message: payload };
         const threadId = parseInt(data.thread_id || 0, 10);
         const messageId = parseInt(data.last_message_id || data.message_id || 0, 10);
+        if (chatNotifications && !chatNotifications.canShow(threadId, messageId)) return false;
         const senderName = normalizeToastText(data.sender_name || data.name, 'New message');
-        const rawPreview = normalizeToastText(data.last_message_text || data.message_text || data.preview || data.message, '');
+        const contact = threadId ? $('.chat-contact[data-thread-id="' + threadId + '"]') : $();
+        const threadType = contact.attr('data-thread-type') || data.thread_type || 'dm';
+        const rawPreview = chatMessagePreview(data, threadType);
         const preview = rawPreview && rawPreview.trim() !== '' ? rawPreview.trim() : 'You have a new message';
         const shortPreview = preview.length > 140 ? preview.substring(0, 140) + '...' : preview;
 
@@ -1309,8 +1319,6 @@ if (empty($_SESSION['user_id'])) {
         chatRuntime.lastToastSignature = lastToastSignature;
         chatRuntime.lastToastAt = lastToastAt;
 
-        const contact = threadId ? $('.chat-contact[data-thread-id="' + threadId + '"]') : $();
-        const threadType = contact.attr('data-thread-type') || data.thread_type || 'dm';
         const titleText = threadType === 'announcement' ? 'New announcement' : 'New message';
 
         let avatar = 'images/profile.jpg';
@@ -1373,19 +1381,15 @@ if (empty($_SESSION['user_id'])) {
             toast.addClass('show');
         }, 10);
 
-        toast.find('.chat-toast-close').on('click', function () {
+        const closeToast = function () {
             toast.removeClass('show');
-            setTimeout(function () {
-                toast.remove();
-            }, 250);
+            setTimeout(function () { toast.remove(); }, 250);
+        };
+        toast.find('.chat-toast-close, .chat-toast-link').on('click', function () {
+            if (chatNotifications) chatNotifications.dismiss(threadId, messageId);
+            else closeToast();
         });
-
-        toast.find('.chat-toast-link').on('click', function () {
-            toast.removeClass('show');
-            setTimeout(function () {
-                toast.remove();
-            }, 150);
-        });
+        if (chatNotifications) chatNotifications.registerToast(threadId, messageId, closeToast);
 
         return true;
     }
@@ -1401,9 +1405,12 @@ if (empty($_SESSION['user_id'])) {
         }
     }
 
-    function playNotificationSound() {
+    function playNotificationSound(threadId, messageId) {
+        if (chatNotifications) {
+            chatNotifications.playSound(threadId, messageId);
+            return;
+        }
         if (!userHasInteracted) return;
-
         ensureNotificationAudio();
         notifyAudio.currentTime = 0;
         notifyAudio.play().catch(function () { });
@@ -1418,7 +1425,8 @@ if (empty($_SESSION['user_id'])) {
     }
 
     function requestBrowserNotificationPermission() {
-        if (!supportsBrowserNotifications() || notificationPermissionRequested || Notification.permission !== 'default') {
+        if ((chatNotifications && chatNotifications.getPreferences().toast_mode === 'badge')
+            || !supportsBrowserNotifications() || notificationPermissionRequested || Notification.permission !== 'default') {
             return;
         }
 
@@ -1442,6 +1450,10 @@ if (empty($_SESSION['user_id'])) {
 
         const threadId = parseInt((thread && thread.thread_id) || 0, 10);
         const messageId = parseInt((thread && (thread.last_message_id || thread.message_id)) || 0, 10);
+        if (chatNotifications) {
+            chatNotifications.showBrowserNotification(threadId, messageId, titleText, bodyText, iconPath, threadUrl);
+            return;
+        }
         const tag = threadId && messageId ? ('chat-' + threadId + '-' + messageId) : ('chat-' + Date.now());
 
         try {
@@ -1492,17 +1504,21 @@ if (empty($_SESSION['user_id'])) {
         const contact = threadId ? $('.chat-contact[data-thread-id="' + threadId + '"]') : $();
         const threadType = contact.attr('data-thread-type') || data.thread_type || 'dm';
         const titleText = threadType === 'announcement' ? 'New announcement' : ('New message from ' + safeName);
-        const rawPreview = normalizeToastText(data.last_message_text || data.message_text || data.preview || data.message, '');
+        const rawPreview = chatMessagePreview(data, threadType);
         const preview = rawPreview && rawPreview.trim() !== '' ? rawPreview.trim() : 'You have a new message';
         const shortPreview = preview.length > 140 ? preview.substring(0, 140) + '...' : preview;
         const iconPath = data.sender_photo ? buildPhotoPath(data.sender_photo) : 'images/profile.jpg';
         const threadUrl = '?page=chat&thread_id=' + encodeURIComponent(threadId || '');
 
-        if (!showChatToast(data)) {
+        const messageId = parseInt(data.last_message_id || data.message_id || 0, 10);
+        if (chatNotifications && chatNotifications.handled(threadId, messageId)) return;
+        if (chatNotifications && chatNotifications.getPreferences().toast_mode === 'badge') {
+            playNotificationSound(threadId, messageId);
             return;
         }
+        if (!showChatToast(data)) return;
 
-        playNotificationSound();
+        playNotificationSound(threadId, messageId);
         showBrowserNotification(data, titleText, shortPreview, iconPath, threadUrl);
 
         if (document.hidden || parseInt(currentThreadId || 0, 10) !== threadId) {
@@ -1795,12 +1811,15 @@ if (empty($_SESSION['user_id'])) {
             const senderLabelHtml = msg.message_type === 'announcement'
                 ? `<div class="chat-announcement-sender">${escapeHtml(msg.sender_name || 'Administrator')}</div>`
                 : '';
+            const messageHtml = msg.message_type === 'announcement'
+                ? formatAnnouncementHtml(msg.message_text)
+                : linkify(msg.message_text);
 
             html += `
         <div class="chat-message-row ${msg.is_own ? 'own' : ''}">
             <div class="chat-bubble">
                 ${senderLabelHtml}
-                ${msg.message_text ? `<div>${linkify(msg.message_text)}</div>` : ''}
+                ${msg.message_text ? `<div>${messageHtml}</div>` : ''}
                 ${attachmentHtml}
                 <div class="chat-meta">
                     ${formatDateEU(msg.created_at)}
@@ -1824,9 +1843,11 @@ if (empty($_SESSION['user_id'])) {
         if (lastMessageId > 0 && currentThreadId) {
             knownLastMessageIds[currentThreadId] = lastMessageId;
             initializedThreadIds[currentThreadId] = true;
-            markThreadRead(currentThreadId, lastMessageId);
-            clearContactUnread(currentThreadId);
-            stopTitleBlink();
+            if (!document.hidden && document.hasFocus()) {
+                markThreadRead(currentThreadId, lastMessageId);
+                clearContactUnread(currentThreadId);
+                stopTitleBlink();
+            }
         }
     }
 
@@ -2047,6 +2068,11 @@ if (empty($_SESSION['user_id'])) {
             data: {
                 thread_id: threadId,
                 last_message_id: lastMessageId
+            },
+            success: function (res) {
+                if (res && res.status === 'success' && chatNotifications) {
+                    chatNotifications.markRead(threadId, res.last_read_message_id || lastMessageId);
+                }
             }
         });
     }
@@ -2068,6 +2094,7 @@ if (empty($_SESSION['user_id'])) {
                     return;
                 }
 
+                if (chatNotifications) chatNotifications.syncServer(res);
                 let shouldReloadCurrentThread = false;
                 let currentSearch = $('#chatSearch').val() || '';
 
@@ -2094,7 +2121,7 @@ if (empty($_SESSION['user_id'])) {
                                 if (document.hidden || !document.hasFocus()) {
                                     triggerIncomingNotification(thread);
                                 } else {
-                                    playNotificationSound();
+                                    playNotificationSound(threadId, lastMessageId);
                                 }
                             }
 
@@ -2112,7 +2139,7 @@ if (empty($_SESSION['user_id'])) {
                         markContactUnread(threadId, unreadCount);
                     }
 
-                    if (isCurrentThread) {
+                    if (isCurrentThread && !document.hidden && document.hasFocus()) {
                         clearContactUnread(threadId);
                     }
                 });
@@ -2220,6 +2247,10 @@ if (empty($_SESSION['user_id'])) {
                 e.preventDefault();
                 sendMessage();
             }
+        });
+
+        $(document).on('darkscrub:chat-read.darkScrubChat', function () {
+            loadContacts($('#chatSearch').val());
         });
 
         $(window).on('focus.darkScrubChat', function () {
@@ -2332,11 +2363,86 @@ if (empty($_SESSION['user_id'])) {
             loadContacts($('#chatSearch').val());
         });
     });
+    function formatAnnouncementHtml(text) {
+        // Parse in an inert template, then rebuild only formatting elements.
+        // Never insert the original HTML or copy arbitrary attributes into the page.
+        const source = document.createElement('template');
+        source.innerHTML = String(text || '');
+        const output = document.createElement('div');
+        const allowedTags = new Set([
+            'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'p', 'br', 'hr', 'div', 'span',
+            'strong', 'b', 'em', 'i', 'u', 's', 'del', 'small', 'sub', 'sup',
+            'ul', 'ol', 'li', 'blockquote', 'pre', 'code', 'a'
+        ]);
+
+        function appendSafeNodes(parent, target, autoLink = true) {
+            Array.from(parent.childNodes).forEach(function (node) {
+                if (node.nodeType === Node.TEXT_NODE) {
+                    if (autoLink && node.textContent.trim() !== '') {
+                        const linkedText = document.createElement('template');
+                        linkedText.innerHTML = linkify(node.textContent);
+                        target.appendChild(linkedText.content);
+                    } else {
+                        target.appendChild(document.createTextNode(node.textContent));
+                    }
+                    return;
+                }
+
+                if (node.nodeType !== Node.ELEMENT_NODE) return;
+                const tag = node.localName.toLowerCase();
+                if (!allowedTags.has(tag)) return;
+
+                const element = document.createElement(tag);
+                if (tag === 'a') {
+                    const href = (node.getAttribute('href') || '').trim();
+                    try {
+                        const url = new URL(href, window.location.href);
+                        if (href && ['http:', 'https:', 'mailto:'].includes(url.protocol)) {
+                            element.setAttribute('href', url.href);
+                            element.setAttribute('target', '_blank');
+                            element.setAttribute('rel', 'noopener noreferrer');
+                            element.className = 'chat-web-link';
+                        }
+                    } catch (error) {
+                        // Invalid links retain their label without a clickable destination.
+                    }
+                }
+                appendSafeNodes(node, element, autoLink && !['a', 'pre', 'code'].includes(tag));
+                target.appendChild(element);
+            });
+        }
+
+        appendSafeNodes(source.content, output);
+        return output.innerHTML;
+    }
+
+    function chatMessagePreview(data, threadType) {
+        const text = normalizeToastText(data.last_message_text || data.message_text || data.preview || data.message, '');
+        if (threadType !== 'announcement') return text;
+
+        const content = document.createElement('template');
+        content.innerHTML = formatAnnouncementHtml(text);
+        content.content.querySelectorAll('br, hr').forEach(node => node.replaceWith(' '));
+        content.content.querySelectorAll('h1, h2, h3, h4, h5, h6, p, div, li, blockquote, pre')
+            .forEach(node => { node.prepend(' '); node.append(' '); });
+        return content.content.textContent.replace(/\s+/g, ' ').trim();
+    }
+
     function linkifyHttp(text) {
-        return escapeHtml(text).replace(
-            /(https?:\/\/[^\s]+)/gi,
-            '<a href="$1" class="chat-web-link" target="_blank" rel="noopener noreferrer">$1</a>'
-        );
+        const source = String(text || '');
+        const pattern = /https?:\/\/[^\s<>"']+/gi;
+        let html = '';
+        let lastIndex = 0;
+        let match;
+
+        while ((match = pattern.exec(source)) !== null) {
+            const url = match[0];
+            html += escapeHtml(source.slice(lastIndex, match.index));
+            html += `<a href="${escapeAttr(url)}" class="chat-web-link" target="_blank" rel="noopener noreferrer">${escapeHtml(url)}</a>`;
+            lastIndex = pattern.lastIndex;
+        }
+
+        return html + escapeHtml(source.slice(lastIndex));
     }
 
     function linkify(text) {

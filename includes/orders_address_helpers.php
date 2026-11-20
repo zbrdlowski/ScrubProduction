@@ -59,10 +59,24 @@ function ordersAddressStateCode(string $country, string $state): string
   return '';
 }
 
+function ordersNormalizeUsZip(string $zip): string
+{
+  // Read only the postal-code field; house numbers are never postal codes.
+  $zip = trim(trim($zip), "'");
+  if (preg_match('/^(\d{5})(?:[ -]?\d{4})?$/D', $zip, $matches)) {
+    return $matches[1];
+  }
+  // Some legacy exports dropped the leading zero from a ZIP code.
+  if (preg_match('/^\d{4}$/D', $zip)) {
+    return '0' . $zip;
+  }
+  return '';
+}
+
 function ordersUsStateFromZip(string $zip): string
 {
-  $zip = preg_replace('/\D+/', '', $zip);
-  if (strlen($zip) < 5) {
+  $zip = ordersNormalizeUsZip($zip);
+  if ($zip === '') {
     return '';
   }
   $n = (int) substr($zip, 0, 5);

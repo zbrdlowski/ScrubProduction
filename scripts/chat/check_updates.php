@@ -1,5 +1,7 @@
 <?php
 require_once __DIR__ . '/helpers.php';
+require_once __DIR__ . '/../../includes/chat_notification_helpers.php';
+header('Cache-Control: no-store');
 
 chat_require_login();
 
@@ -9,6 +11,7 @@ $sql = "
     SELECT
         ct.id AS thread_id,
         ct.thread_type,
+        ctp.last_read_message_id,
         MAX(cm.id) AS last_message_id,
         (
             SELECT cm2.sender_id
@@ -68,7 +71,7 @@ $sql = "
         ON cm.thread_id = ct.id
        AND cm.deleted_at IS NULL
     WHERE ctp.user_id = ?
-    GROUP BY ct.id, ct.thread_type
+    GROUP BY ct.id, ct.thread_type, ctp.last_read_message_id
     ORDER BY last_message_id DESC
 ";
 
@@ -100,6 +103,7 @@ while ($row = $result->fetch_assoc()) {
     $threads[] = [
         'thread_id' => (int)($row['thread_id'] ?? 0),
         'thread_type' => $row['thread_type'] ?? 'dm',
+        'last_read_message_id' => (int)($row['last_read_message_id'] ?? 0),
         'last_message_id' => (int)($row['last_message_id'] ?? 0),
         'last_sender_id' => (int)($row['last_sender_id'] ?? 0),
         'sender_name' => $row['sender_name'] ?? '',
@@ -113,6 +117,10 @@ $stmt->close();
 
 chat_json([
     'status' => 'success',
-    'threads' => $threads
+    'threads' => $threads,
+    'read_positions' => array_map(function ($thread) {
+        return ['thread_id' => $thread['thread_id'], 'last_read_message_id' => $thread['last_read_message_id']];
+    }, $threads),
+    'notification_preferences' => chat_notification_preferences($conn, $userId)
 ]);
 ?>
