@@ -9,6 +9,7 @@ header('Content-Type: application/json; charset=utf-8');
 require_once dirname(__DIR__, 2) . '/includes/conn.php';
 require_once dirname(__DIR__, 2) . '/includes/orders_multishipping_helpers.php';
 require_once __DIR__ . '/activity_helper.php';
+require_once __DIR__ . '/department_config.php';
 
 function multishippingJson(array $payload, int $status = 200): void
 {
@@ -36,6 +37,27 @@ function multishippingOrderLabel(array $row): string
 {
   $label = trim((string) ($row['order_number'] ?? ''));
   return $label !== '' ? $label : trim((string) ($row['external_order_id'] ?? ''));
+}
+
+function multishippingCategoryCode(array $item): string
+{
+  $manual = strtoupper(trim((string) ($item['manual_types_override'] ?? '')));
+  if ($manual !== '') {
+    return $manual;
+  }
+  // Preserve product prefixes such as TFP, whose production rows are G/P/F.
+  foreach (['custom_label', 'sku'] as $field) {
+    $prefix = dept_extract_prefix((string) ($item[$field] ?? ''));
+    if ($prefix === null) {
+      continue;
+    }
+    foreach ([$prefix, explode('_', $prefix)[0]] as $candidate) {
+      if (isset(DEPT_PREFIX_MAP[$candidate])) {
+        return $candidate;
+      }
+    }
+  }
+  return strtoupper(trim((string) ($item['item_type_code'] ?? '')));
 }
 
 function multishippingLoadOrder(mysqli $conn, int $orderId, bool $forUpdate = false): ?array
@@ -160,6 +182,29 @@ if ($action === 'fetch') {
     }
   }
 
+  // Load categories in one query, including existing members already shipped.
+  $categoryMap = [];
+  if ($candidateIds) {
+    $categoryPlaceholders = implode(',', array_fill(0, count($candidateIds), '?'));
+    $categoryTypes = str_repeat('i', count($candidateIds));
+    $categoryStmt = $conn->prepare("SELECT o.id AS order_id, o.manual_types_override,
+        oi.item_type_code, oi.sku, oi.custom_label
+      FROM orders o
+      LEFT JOIN order_items oi ON oi.order_id = o.id AND oi.deleted_at IS NULL
+      WHERE o.id IN ($categoryPlaceholders)
+      ORDER BY o.id, oi.id");
+    $categoryStmt->bind_param($categoryTypes, ...$candidateIds);
+    $categoryStmt->execute();
+    $categoryResult = $categoryStmt->get_result();
+    while ($categoryItem = $categoryResult->fetch_assoc()) {
+      $code = multishippingCategoryCode($categoryItem);
+      if ($code !== '') {
+        $categoryMap[(int) $categoryItem['order_id']][$code] = true;
+      }
+    }
+    $categoryStmt->close();
+  }
+
   $groupMap = ordersMultishippingMap($conn, $candidateIds);
   $locks = ordersMultishippingActiveExportLocks($conn, $candidateIds);
   $baseAddressKey = mb_strtolower(implode('|', array_map('trim', [
@@ -174,12 +219,14 @@ if ($action === 'fetch') {
     $output[] = [
       'id' => $candidateId,
       'label' => multishippingOrderLabel($row),
+      'category_codes' => array_keys($categoryMap[$candidateId] ?? []),
       'status' => (string) $row['status'],
       'customer' => (string) ($row['customer_name'] ?: $row['customer_email']),
       'address' => trim(implode(', ', array_filter([
         (string) $row['ship_name'], (string) $row['ship_street'],
         (string) $row['ship_city'], (string) $row['ship_zip'], (string) $row['ship_country'],
       ], static fn($v) => trim($v) !== ''))),
+      'can_release' => $canEditMultishipping && $group && array_key_exists($candidateId, $selectedMap) && ordersMultishippingCanReleaseOrder($group, $row),
       'selected' => array_key_exists($candidateId, $selectedMap),
       'master' => ($selectedMap[$candidateId] ?? -1) === 0,
       'blocked_group' => $otherGroup,
@@ -346,6 +393,44 @@ if ($action === 'save') {
 
     $conn->commit();
     multishippingJson(['ok' => true, 'group_id' => $groupId]);
+  } catch (Throwable $e) {
+    $conn->rollback();
+    multishippingJson(['ok' => false, 'error' => $e->getMessage()], 409);
+  }
+}
+
+if ($action === 'release_orders') {
+  if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
+    multishippingJson(['ok' => false, 'error' => 'Use POST to release orders.'], 405);
+  }
+  $orderId = (int) ($_POST['order_id'] ?? 0);
+  $expectedGroupId = (int) ($_POST['group_id'] ?? 0);
+  $rawIds = $_POST['order_ids'] ?? [];
+  if (is_string($rawIds)) {
+    $rawIds = json_decode($rawIds, true);
+  }
+  if ($expectedGroupId <= 0 || !is_array($rawIds) || !$rawIds) {
+    multishippingJson(['ok' => false, 'error' => 'Select at least one order from the current group.'], 400);
+  }
+  foreach ($rawIds as $id) {
+    if (!is_scalar($id) || !ctype_digit((string) $id) || (int) $id <= 0) {
+      multishippingJson(['ok' => false, 'error' => 'Invalid selected order.'], 400);
+    }
+  }
+  $conn->begin_transaction();
+  try {
+    $order = multishippingLoadOrder($conn, $orderId, true);
+    $group = ordersMultishippingGroupForOrder($conn, $orderId, true);
+    if (!$order || !$group || (int) $group['id'] !== $expectedGroupId) {
+      throw new RuntimeException('The multishipping group has changed. Refresh and try again.');
+    }
+    if (!$canEditAnyShippingScope && !multishippingOrderMatchesShippingScope($conn, $orderId, $sessionDept)) {
+      throw new RuntimeException('This order belongs to the other shipping workplace.');
+    }
+    $members = ordersMultishippingMembers($conn, $expectedGroupId, true);
+    $releasedIds = ordersMultishippingReleaseOrders($conn, $group, $members, $rawIds, $userId);
+    $conn->commit();
+    multishippingJson(['ok' => true, 'released_order_ids' => $releasedIds]);
   } catch (Throwable $e) {
     $conn->rollback();
     multishippingJson(['ok' => false, 'error' => $e->getMessage()], 409);

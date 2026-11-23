@@ -4,7 +4,7 @@ require_once __DIR__.'/../scripts/product_builder/service.php';
 require_once __DIR__.'/../includes/conn.php';
 function versionAssert(bool $ok,string $message):void{if(!$ok)throw new RuntimeException($message);}
 function versionReject(callable $call,string $message):void{try{$call();}catch(InvalidArgumentException $e){return;}throw new RuntimeException($message);}
-foreach(['product_builder_boxes','product_builder_graphics_versions','product_builder_designs','product_builder_uni_categories','product_builder_products','product_builder_components'] as $table){
+foreach(['product_builder_boxes','product_builder_graphics_versions','product_builder_designs','product_builder_uni_categories','product_builder_products','product_builder_compatibility','product_builder_components'] as $table){
  $ddl=$pdo->query('SHOW CREATE TABLE '.$table)->fetch(PDO::FETCH_NUM)[1];
  $ddl=str_replace('CREATE TABLE','CREATE TEMPORARY TABLE',$ddl);
  $ddl=preg_replace('/^\s*CONSTRAINT[^\n]*\n/m','',$ddl);$ddl=preg_replace('/,\s*\)/',"\n)",$ddl);$pdo->exec($ddl);

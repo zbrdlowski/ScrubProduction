@@ -24,7 +24,7 @@ if (empty($_SESSION['product_builder_csrf'])) $_SESSION['product_builder_csrf'] 
 if (!function_exists('pb_h')) { function pb_h($value): string { return htmlspecialchars((string) $value, ENT_QUOTES, 'UTF-8'); } }
 ?>
 <link rel="stylesheet" href="plugins/select2/css/select2.min.css">
-<link rel="stylesheet" href="assets/product_builder.css?v=35">
+<link rel="stylesheet" href="assets/product_builder.css?v=36">
 <div class="container-fluid pb-page" id="product-builder" lang="<?= pb_language() ?>">
   <div class="pb-language-bar"><div class="btn-group btn-group-sm" role="group" aria-label="<?= pb_h(pb_t('Language')) ?>">
     <?php foreach (['sk'=>'SK','en'=>'EN'] as $language=>$languageLabel): $query=['page'=>'product_'.$pbPageMode,'pb_lang'=>$language]; if($pbEditProductId>0)$query['edit']=$pbEditProductId; if(!empty($_GET['transfer']))$query['transfer']=(int)$_GET['transfer']; ?>
@@ -159,14 +159,13 @@ if (!function_exists('pb_h')) { function pb_h($value): string { return htmlspeci
   <?php endif; ?>
 </div>
 <?php if ($pbShowBuilder): ?>
-<div class="modal fade pb-modal" lang="<?= pb_language() ?>" id="pb-model-modal" tabindex="-1" role="dialog" aria-labelledby="pb-model-title"><div class="modal-dialog modal-lg" role="document"><div class="modal-content">
-  <div class="modal-header"><div><h3 class="modal-title h5" id="pb-model-title"><?= pb_h(pb_t('Category Info')) ?></h3><small class="pb-muted"><?= pb_h(pb_t('Select a specific model from Models Database.')) ?></small></div><button type="button" class="close" data-dismiss="modal" aria-label="<?= pb_h(pb_t('Close')) ?>">&times;</button></div>
+<div class="modal fade pb-modal" lang="<?= pb_language() ?>" id="pb-model-modal" tabindex="-1" role="dialog" aria-labelledby="pb-model-title"><div class="modal-dialog modal-xl" role="document"><div class="modal-content">
+  <div class="modal-header"><div><h3 class="modal-title h5" id="pb-model-title"><?= pb_h(pb_t('Category Info')) ?></h3><small class="pb-muted"><?= pb_h(pb_t('Select all compatible models and year ranges.')) ?></small></div><button type="button" class="close" data-dismiss="modal" aria-label="<?= pb_h(pb_t('Close')) ?>">&times;</button></div>
   <div class="modal-body"><div id="pb-model-error" class="alert alert-danger" role="alert" hidden></div><div class="form-row">
-    <div class="col-md-4 form-group"><label for="pb-model-brand"><?= pb_h(pb_t('Brand')) ?></label><select id="pb-model-brand" class="form-control"></select></div>
-    <div class="col-md-4 form-group"><label for="pb-model-name"><?= pb_h(pb_t('Model')) ?></label><select id="pb-model-name" class="form-control" disabled></select></div>
-    <div class="col-md-4 form-group"><label for="pb-model-years"><?= pb_h(pb_t('Years / modelcode')) ?></label><select id="pb-model-years" class="form-control" disabled></select></div>
+    <div class="col-12 form-group"><label for="pb-model-search"><?= pb_h(pb_t('Search brand, model, years or modelcode…')) ?></label><input type="search" id="pb-model-search" class="form-control" autocomplete="off"></div>
+   </div><div class="pb-model-layout"><div><div id="pb-model-tree" class="pb-model-tree" aria-label="<?= pb_h(pb_t('Compatible models')) ?>"></div><small class="pb-muted"><?= pb_h(pb_t('A brand or model checkbox selects the matching year ranges shown by the search.')) ?></small></div><aside class="pb-model-selection"><div class="pb-model-selection-heading"><strong id="pb-model-count" role="status"></strong><button type="button" id="pb-model-clear" class="btn btn-sm btn-outline-secondary"><?= pb_h(pb_t('Clear selection')) ?></button></div><ul id="pb-model-selected"></ul></aside>
   </div><div class="pb-actions"><a class="btn btn-sm btn-outline-success" href="index.php?page=product_chart&amp;add_model=1" target="_blank" rel="noopener"><i class="fas fa-plus mr-1"></i> <?= pb_h(pb_t('New model / modelcode')) ?></a><button class="btn btn-sm btn-outline-secondary" type="button" id="pb-model-refresh"><i class="fas fa-sync mr-1"></i> <?= pb_h(pb_t('Refresh models')) ?></button></div></div>
-  <div class="modal-footer"><button type="button" class="btn btn-secondary" data-dismiss="modal"><?= pb_h(pb_t('Cancel')) ?></button><button class="btn btn-info" id="pb-model-apply" disabled><?= pb_h(pb_t('Use category')) ?></button></div>
+  <div class="modal-footer"><button type="button" class="btn btn-secondary" data-dismiss="modal"><?= pb_h(pb_t('Cancel')) ?></button><button class="btn btn-info" id="pb-model-apply" disabled><?= pb_h(pb_t('Use selected models')) ?></button></div>
 </div></div></div>
 <?php endif; ?>
 <?php if ($pbShowLibraries): ?>
@@ -259,4 +258,5 @@ if (!function_exists('pb_h')) { function pb_h($value): string { return htmlspeci
 
 <script>window.productBuilderConfig = <?= json_encode(['language'=>pb_language(),'languageCookie'=>pb_language_cookie(),'translations'=>pb_language()==='sk'?pb_i18n_dictionary():new stdClass(),'pageMode'=>$pbPageMode,'editProductId'=>$pbEditProductId,'transfersReady'=>$pbTransfersReady,'openTransferId'=>($pbShowBuilder || $pbIsTransfers) ? (int)($_GET['transfer'] ?? 0) : 0,'csrf'=>$_SESSION['product_builder_csrf'],'canEdit'=>$pbCanEdit,'types'=>pb_component_types(),'bundleComponents'=>array_combine(pb_bundle_types(),array_map('pb_bundle_component_types',pb_bundle_types())),'priceFields'=>pb_price_fields(),'specFields'=>pb_component_spec_fields($conn),'requestKey'=>bin2hex(random_bytes(16))], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;</script>
 <script defer src="plugins/select2/js/select2.full.min.js"></script>
-<?php if ($pbIsTransfers): ?><script src="scripts/product_builder/transfers.js?v=5"></script><?php else: ?><script src="scripts/product_builder/app.js?v=36"></script><?php endif; ?>
+<?php if ($pbShowBuilder): ?><script src="scripts/product_builder/model_picker.js?v=1"></script><?php endif; ?>
+<?php if ($pbIsTransfers): ?><script src="scripts/product_builder/transfers.js?v=5"></script><?php else: ?><script src="scripts/product_builder/app.js?v=37"></script><?php endif; ?>

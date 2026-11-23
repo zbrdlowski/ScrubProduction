@@ -6679,6 +6679,9 @@ $deptOptions = [
         <button type="button" class="btn btn-outline-danger btn-sm mr-auto d-none" id="multishippingCancelBtn">
           Remove group
         </button>
+        <button type="button" class="btn btn-outline-danger btn-sm d-none" id="multishippingReleaseBtn" disabled>
+          Release selected orders
+        </button>
         <button type="button" class="btn btn-outline-warning btn-sm d-none" id="multishippingUnlockBtn">
           Unlock exported group
         </button>
@@ -6799,6 +6802,7 @@ $deptOptions = [
     const $multishippingSaveBtn = $('#multishippingSaveBtn');
     const $multishippingCancelBtn = $('#multishippingCancelBtn');
     const $multishippingUnlockBtn = $('#multishippingUnlockBtn');
+    const $multishippingReleaseBtn = $('#multishippingReleaseBtn');
     let multishippingOrderId = 0;
     let fedexEodImportShouldReload = false;
     let fedexExportResizableInit = false;
@@ -6883,6 +6887,7 @@ $deptOptions = [
       $multishippingSaveBtn.prop('disabled', true).removeClass('d-none');
       $multishippingCancelBtn.addClass('d-none');
       $multishippingUnlockBtn.addClass('d-none');
+      $multishippingReleaseBtn.addClass('d-none').prop('disabled', true).data('group-id', 0);
 
       $.getJSON('scripts/orders/multishipping.php', { action: 'fetch', order_id: multishippingOrderId })
         .done(function (resp) {
@@ -6892,6 +6897,7 @@ $deptOptions = [
           }
           const groupStatus = resp.group ? String(resp.group.status || '') : '';
           const editable = !!resp.editable && (!resp.group || groupStatus === 'DRAFT');
+          const canRelease = !!resp.editable && !!resp.group && (resp.candidates || []).some(row => row.selected && row.can_release);
           let html = '';
           (resp.candidates || []).forEach(function (row) {
             const eligibleStatus = ['READY_TO_SHIP', 'READY_TO_INVOICE'].includes(row.status);
@@ -6899,18 +6905,28 @@ $deptOptions = [
             const disabled = !editable || blocked;
             const checked = !!row.selected;
             const selectedMaster = !!row.master || (!resp.group && parseInt(row.id, 10) === parseInt(resp.requested_order_id, 10));
+            const categoryBadges = (row.category_codes && row.category_codes.length ? row.category_codes : ['-']).map(function (code) {
+              code = String(code);
+              let badge = 'badge-secondary';
+              if (code === 'T' || code === 'M' || code.indexOf('TF') === 0) badge = 'badge-warning';
+              else if (code.indexOf('F') !== -1) badge = 'badge-danger';
+              else if (code.indexOf('S') !== -1) badge = 'badge-success';
+              else if (code.indexOf('P') !== -1) badge = 'badge-primary';
+              else if (code.indexOf('G') !== -1) badge = 'badge-info';
+              return '<span class="badge badge-type mr-1 ' + badge + '" title="Category">' + escapeMultishippingHtml(code) + '</span>';
+            }).join('');
             let warning = '';
             if (row.blocked_group) warning = 'Already in multishipping with ' + row.blocked_group_master;
             else if (row.export_locked) warning = 'Already included in a FedEx CSV at ' + row.exported_at;
             else if (!eligibleStatus) warning = 'Status: ' + row.status;
             else if (row.address_mismatch) warning = 'Shipping address differs from the opened order. Verify before grouping.';
-            html += '<div class="multishipping-candidate' + (blocked ? ' is-blocked' : '') + '">' +
+            html += '<div class="multishipping-candidate' + (blocked && !(canRelease && row.can_release) ? ' is-blocked' : '') + '">' +
               '<div class="d-flex align-items-start">' +
                 '<div class="custom-control custom-checkbox mr-3">' +
                   '<input type="checkbox" class="custom-control-input ms-order-check" id="ms-order-' + row.id + '" value="' + row.id + '" ' + ((checked || (!resp.group && row.id === resp.requested_order_id)) ? 'checked ' : '') + (disabled ? 'disabled' : '') + '>' +
                   '<label class="custom-control-label" for="ms-order-' + row.id + '"></label>' +
                 '</div>' +
-                '<div class="flex-grow-1"><strong>' + escapeMultishippingHtml(row.label) + '</strong>' +
+                '<div class="flex-grow-1"><strong>' + escapeMultishippingHtml(row.label) + '</strong><span class="ml-2">' + categoryBadges + '</span>' +
                   '<div class="small text-muted">' + escapeMultishippingHtml(row.address || 'Shipping address not available') + '</div>' +
                   (warning ? '<div class="small text-warning mt-1">' + escapeMultishippingHtml(warning) +
                     (row.export_locked && editable ? ' <button type="button" class="btn btn-link btn-sm p-0 ml-1 js-ms-unlock-order" data-order-id="' + row.id + '">Release lock</button>' : '') + '</div>' : '') +
@@ -6919,22 +6935,28 @@ $deptOptions = [
                   '<input type="radio" class="custom-control-input ms-master-radio" name="ms-master" id="ms-master-' + row.id + '" value="' + row.id + '" ' + (selectedMaster ? 'checked ' : '') + (disabled ? 'disabled' : '') + '>' +
                   '<label class="custom-control-label text-nowrap" for="ms-master-' + row.id + '">Master</label>' +
                 '</div>' +
-              '</div></div>';
+              '</div>' +
+              (canRelease && row.selected && row.can_release
+                ? '<div class="custom-control custom-checkbox mt-2"><input type="checkbox" class="custom-control-input ms-release-check" id="ms-release-' + row.id + '" value="' + row.id + '">' +
+                  '<label class="custom-control-label text-danger" for="ms-release-' + row.id + '">Release this order for reshipment</label></div>' : '') +
+              '</div>';
           });
           if (!html) html = '<div class="alert alert-warning mb-0">No orders in Ready for Label or Ready for Invoice were found for this customer.</div>';
           $multishippingCandidates.html(html);
           $multishippingSaveBtn.prop('disabled', !editable || (resp.candidates || []).length < 2).toggleClass('d-none', !editable);
+          $multishippingReleaseBtn.toggleClass('d-none', !canRelease).data('group-id', resp.group ? resp.group.id : 0);
           const canUnlock = !!resp.editable && !!resp.group && !!resp.group.can_unlock;
           $multishippingCancelBtn.toggleClass('d-none', !resp.editable || !resp.group || groupStatus !== 'DRAFT');
           $multishippingUnlockBtn.toggleClass('d-none', !canUnlock)
             .text(groupStatus === 'SHIPPED' ? 'Unlock group' : 'Unlock exported group')
             .data('group-status', groupStatus);
           if (resp.group && !editable) {
-            const message = !resp.editable ? 'You do not have permission to change this group.'
+            let message = !resp.editable ? 'You do not have permission to change this group.'
               : canUnlock ? (groupStatus === 'SHIPPED'
                 ? 'All member orders are back in Ready for Label. Unlock the group to edit or remove it.'
                 : 'Unlock the group before changing it.')
               : (resp.group.unlock_error || 'This group cannot be changed.');
+            if (canRelease) message += ' If an order was not actually sent, select Release this order for reshipment below. Its tracking numbers will be removed and it will return to Ready for Label.';
             $multishippingMessage.html('<div class="alert alert-warning py-2">Group status: <strong>' + escapeMultishippingHtml(groupStatus) + '</strong>. ' + escapeMultishippingHtml(message) + '</div>');
           }
         })
@@ -6989,6 +7011,31 @@ $deptOptions = [
       $.post('scripts/orders/multishipping.php', { action: 'unlock_group', order_id: multishippingOrderId }, null, 'json')
         .done(function (resp) { if (resp && resp.ok) loadMultishipping(multishippingOrderId); else alert((resp && resp.error) || 'Unlock failed.'); })
         .fail(function (xhr) { alert(xhr.responseJSON && xhr.responseJSON.error ? xhr.responseJSON.error : 'Unlock failed.'); });
+    });
+
+    $(document).on('change', '.ms-release-check', function () {
+      $multishippingReleaseBtn.prop('disabled', !$('.ms-release-check:checked').length);
+    });
+
+    $multishippingReleaseBtn.on('click', function () {
+      const ids = $('.ms-release-check:checked').map(function () { return parseInt(this.value, 10); }).get();
+      const groupId = parseInt($multishippingReleaseBtn.data('group-id'), 10) || 0;
+      if (!ids.length || !groupId) return;
+      const message = 'Release ' + ids.length + ' selected order(s) from this shipment? Their tracking numbers will be removed, export locks released, and status set to Ready for Label so they can be sent again. Only use this for orders that were not actually sent. This does not cancel the label with the carrier.';
+      if (!confirm(message)) return;
+      $multishippingReleaseBtn.prop('disabled', true);
+      $.post('scripts/orders/multishipping.php', {
+        action: 'release_orders', order_id: multishippingOrderId, group_id: groupId, order_ids: JSON.stringify(ids)
+      }, null, 'json')
+        .done(function (resp) {
+          if (resp && resp.ok) { location.reload(); return; }
+          alert((resp && resp.error) || 'Release failed.');
+          $multishippingReleaseBtn.prop('disabled', false);
+        })
+        .fail(function (xhr) {
+          alert(xhr.responseJSON && xhr.responseJSON.error ? xhr.responseJSON.error : 'Release failed.');
+          $multishippingReleaseBtn.prop('disabled', false);
+        });
     });
 
     $(document).on('click', '.js-ms-unlock-order', function () {

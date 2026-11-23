@@ -160,6 +160,7 @@ if ($otherUserRow) {
         'photo' => $otherUserRow['photo'] ?? '',
         'department_name' => $otherUserRow['department_name'] ?? '',
         'permission' => (int)($otherUserRow['permission'] ?? 0),
+        'is_active' => strcasecmp(trim((string)($otherUserRow['active'] ?? 'Active')), 'Active') === 0,
         'online_status' => (int)($otherUserRow['online_status'] ?? 0),
         'status_label' => $meta['label'],
         'status_icon' => $meta['icon'],

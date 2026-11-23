@@ -5,7 +5,7 @@ require __DIR__.'/../includes/conn.php';
 require_once __DIR__.'/../scripts/product_builder/service.php';
 function transferAssert(bool $ok,string $message):void{if(!$ok)throw new RuntimeException($message);}
 function transferReject(callable $call):void{try{$call();}catch(InvalidArgumentException $e){return;}throw new RuntimeException('Invalid transfer accepted.');}
-foreach(['product_builder_boxes','product_builder_graphics_versions','product_builder_designs','product_builder_uni_categories','product_builder_products','product_builder_components'] as $table){$ddl=$pdo->query('SHOW CREATE TABLE '.$table)->fetch(PDO::FETCH_NUM)[1];$ddl=str_replace('CREATE TABLE','CREATE TEMPORARY TABLE',$ddl);$ddl=preg_replace('/^\s*CONSTRAINT[^\n]*\n/m','',$ddl);$pdo->exec(preg_replace('/,\s*\)/',"\n)",$ddl));}
+foreach(['product_builder_boxes','product_builder_graphics_versions','product_builder_designs','product_builder_uni_categories','product_builder_products','product_builder_compatibility','product_builder_components'] as $table){$ddl=$pdo->query('SHOW CREATE TABLE '.$table)->fetch(PDO::FETCH_NUM)[1];$ddl=str_replace('CREATE TABLE','CREATE TEMPORARY TABLE',$ddl);$ddl=preg_replace('/^\s*CONSTRAINT[^\n]*\n/m','',$ddl);$pdo->exec(preg_replace('/,\s*\)/',"\n)",$ddl));}
 $schema=file_get_contents(__DIR__.'/../db/product_builder_update_012.sql');
 $pdo->exec(str_replace('CREATE TABLE IF NOT EXISTS','CREATE TEMPORARY TABLE IF NOT EXISTS',$schema));
 $pdo->exec("ALTER TABLE product_builder_transfers ADD COLUMN img_status ENUM('skip','gen','ready') NULL DEFAULT NULL");

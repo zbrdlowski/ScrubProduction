@@ -6,7 +6,7 @@ const {chromium}=require('playwright'),fs=require('fs'),assert=require('assert/s
 
   const url=new URL(route.request().url()),action=url.searchParams.get('action');let data={ok:true};
   if(action==='boxes')data.rows=[];
-  else if(action==='models')data.rows=url.searchParams.get('level')==='brands'?[{brand:'KTM'}]:[];
+  else if(action==='model_catalogue')data.rows=[{brand:'KTM',model:'EXC 250',year_range:'2024-2026',modelcode:'AB23'}];
   else{const file=action==='designs'?'designs':action==='categories'?'categories':'overview';const content=JSON.parse(fs.readFileSync('.cache/product-builder/'+file+'.json','utf8'));Object.assign(data,file==='overview'?content:{rows:content});}
   if(action==='designs')data.versions=JSON.parse(fs.readFileSync('.cache/product-builder/graphics-versions.json','utf8'));
   await route.fulfill({json:data});

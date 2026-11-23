@@ -206,6 +206,113 @@ function ordersMultishippingUnlockError(array $group, array $members): string
   return '';
 }
 
+function ordersMultishippingCanReleaseOrder(array $group, array $order): bool
+{
+  return in_array(strtoupper(trim((string) ($group['status'] ?? ''))), ['EXPORTED', 'SHIPPED'], true)
+    && in_array(strtoupper(trim((string) ($order['status'] ?? ''))), ['READY_TO_SHIP', 'READY_TO_INVOICE', 'SHIPPED'], true);
+}
+
+/**
+ * Caller must hold the group and member row locks inside a transaction.
+ * Tracking uses the same soft deletion as the regular Delete tracking action.
+ */
+function ordersMultishippingReleaseOrders(mysqli $conn, array $group, array $members, array $orderIds, int $userId): array
+{
+  $groupId = (int) $group['id'];
+  $orderIds = array_values(array_unique(array_map('intval', $orderIds)));
+  $membersById = [];
+  foreach ($members as $member) {
+    $membersById[(int) $member['order_id']] = $member;
+  }
+  if (!$orderIds) {
+    throw new RuntimeException('Select at least one order to release.');
+  }
+  foreach ($orderIds as $orderId) {
+    if (!isset($membersById[$orderId])) {
+      throw new RuntimeException('A selected order no longer belongs to this group. Refresh and try again.');
+    }
+    if (!ordersMultishippingCanReleaseOrder($group, $membersById[$orderId])) {
+      throw new RuntimeException('Only orders in Ready for Label, Ready for Invoice or Shipped can be released from an exported or shipped group.');
+    }
+  }
+
+  $placeholders = implode(',', array_fill(0, count($orderIds), '?'));
+  $types = str_repeat('i', count($orderIds));
+  $stmt = $conn->prepare("SELECT id, order_id, tracking_number, carrier FROM order_tracking_numbers
+    WHERE order_id IN ($placeholders) AND deleted_at IS NULL FOR UPDATE");
+  $stmt->bind_param($types, ...$orderIds);
+  $stmt->execute();
+  $trackingRows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+  $stmt->close();
+
+  $stmt = $conn->prepare("UPDATE order_tracking_numbers SET deleted_at = NOW()
+    WHERE order_id IN ($placeholders) AND deleted_at IS NULL");
+  $stmt->bind_param($types, ...$orderIds);
+  $stmt->execute();
+  $stmt->close();
+  ordersMultishippingReleaseExportLocks($conn, $orderIds, $userId);
+
+  // Shipment timestamps are optional on older installations.
+  $columns = array_column($conn->query('SHOW COLUMNS FROM orders')->fetch_all(MYSQLI_ASSOC), 'Field');
+  $clearDates = '';
+  foreach (['shipped_at', 'delivered_at'] as $column) {
+    if (in_array($column, $columns, true)) {
+      $clearDates .= ', ' . $column . ' = NULL';
+    }
+  }
+  $params = array_merge([$userId], $orderIds);
+  $updateTypes = 'i' . $types;
+  $stmt = $conn->prepare("UPDATE orders SET status = 'READY_TO_SHIP', status_override = 1,
+    status_override_by = ?, status_override_at = NOW(),
+    status_override_note = 'Released from multishipping for reshipment' $clearDates
+    WHERE id IN ($placeholders)");
+  $stmt->bind_param($updateTypes, ...$params);
+  $stmt->execute();
+  $stmt->close();
+
+  $params = array_merge([$groupId], $orderIds);
+  $stmt = $conn->prepare("DELETE FROM order_multishipping_orders
+    WHERE group_id = ? AND order_id IN ($placeholders)");
+  $stmt->bind_param($updateTypes, ...$params);
+  $stmt->execute();
+  $stmt->close();
+
+  $remaining = array_values(array_filter($members, static fn($member) => !in_array((int) $member['order_id'], $orderIds, true)));
+  usort($remaining, static fn($a, $b) => (int) $a['position'] <=> (int) $b['position']);
+  // Ascending updates avoid collisions with the unique (group_id, position) key.
+  // Keep even a single remaining order attached to its original shipment.
+  $stmt = $conn->prepare('UPDATE order_multishipping_orders SET position = ? WHERE group_id = ? AND order_id = ?');
+  foreach ($remaining as $position => $member) {
+    $memberId = (int) $member['order_id'];
+    $stmt->bind_param('iii', $position, $groupId, $memberId);
+    $stmt->execute();
+  }
+  $stmt->close();
+
+  $groupUpdate = $remaining ? '' : ", status = 'CANCELLED', tracking_number = NULL, shipped_at = NULL, exported_by = NULL, exported_at = NULL";
+  $stmt = $conn->prepare("UPDATE order_multishipping_groups SET updated_by = ? $groupUpdate WHERE id = ?");
+  $stmt->bind_param('ii', $userId, $groupId);
+  $stmt->execute();
+  $stmt->close();
+
+  foreach ($trackingRows as $tracking) {
+    log_order_activity($conn, (int) $tracking['order_id'], $userId, 'tracking_deleted', 'tracking', (int) $tracking['id'], [
+      'tracking_number' => $tracking['tracking_number'], 'carrier' => $tracking['carrier'], 'group_id' => $groupId,
+    ], 'Tracking deleted for multishipping reshipment');
+  }
+  foreach ($orderIds as $orderId) {
+    log_order_activity($conn, $orderId, $userId, 'status_changed', 'order', $orderId, [
+      'old' => $membersById[$orderId]['status'], 'new' => 'READY_TO_SHIP',
+    ], 'Returned to Ready for Label for reshipment');
+    log_order_activity($conn, $orderId, $userId, 'multishipping_released', 'multishipping', $groupId, [
+      'group_id' => $groupId, 'released_order_ids' => $orderIds,
+      'previous_group_status' => $group['status'], 'previous_tracking_number' => $group['tracking_number'] ?? null,
+      'remaining_order_ids' => array_map(static fn($member) => (int) $member['order_id'], $remaining),
+    ], 'Released from multishipping; tracking removed and FedEx export lock released');
+  }
+  return $orderIds;
+}
+
 function ordersMultishippingMap(mysqli $conn, array $orderIds): array
 {
   ordersMultishippingEnsureSchema($conn);

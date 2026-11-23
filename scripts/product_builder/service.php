@@ -1,6 +1,7 @@
 <?php
 declare(strict_types=1);
 require_once __DIR__ . '/helpers.php';
+require_once __DIR__ . '/compatibility.php';
 require_once __DIR__ . '/transfers.php';
 require_once __DIR__ . '/channel_listings.php';
 require_once __DIR__ . '/designs.php';
@@ -159,6 +160,7 @@ function pb_save_product(PDO $pdo, array $data, ?int $userId): array
             if (!$findVersion->fetchColumn()) throw new InvalidArgumentException('A selected Graphics version no longer exists. Refresh the version list.');
         }
         $uniId = null;
+        $compatibility=pb_validate_compatibilities($pdo,$data,$id);
         if ($clean['category_kind'] === 'universal') {
             $uniId = (int) ($data['uni_category_id'] ?? 0);
             $stmt = $pdo->prepare('SELECT brand,category_name AS model,modelcode FROM product_builder_uni_categories WHERE id=? FOR UPDATE'); $stmt->execute([$uniId]);
@@ -166,11 +168,7 @@ function pb_save_product(PDO $pdo, array $data, ?int $userId): array
             if (!$category) throw new InvalidArgumentException('Select an existing UNI category.');
             $category['year_range'] = '';
         } else {
-            $stmt = $pdo->prepare('SELECT brand,model,rangeyear AS year_range,modelcode FROM scrubdata WHERE brand=? AND model=? AND rangeyear=? AND modelcode=? LIMIT 1');
-            $stmt->execute([pb_text($data['brand'] ?? '', 'Brand', 100),pb_text($data['model'] ?? '', 'Model', 150),
-                pb_text($data['year_range'] ?? '', 'Years', 50),pb_text($data['modelcode'] ?? '', 'Modelcode', 7)]);
-            $category = $stmt->fetch(PDO::FETCH_ASSOC);
-            if (!$category) throw new InvalidArgumentException('Select an existing model, year range and modelcode using Category Info.');
+            $category=$compatibility[0];
         }
         $values = [$clean['name'],$clean['bundle_type'],$clean['category_kind'],$uniId,$category['brand'],$category['model'],$category['year_range'],$category['modelcode'],$clean['notes']];
         foreach (array_keys(pb_price_fields()) as $channel) { $values[] = $clean[$channel . '_price']; $values[] = $clean[$channel . '_currency']; }
@@ -191,6 +189,7 @@ function pb_save_product(PDO $pdo, array $data, ?int $userId): array
             $stmt = $pdo->prepare('INSERT INTO product_builder_products (name,bundle_type,category_kind,uni_category_id,brand,model,year_range,modelcode,notes,recommended_price,recommended_currency,web_price,web_currency,ebay_price,ebay_currency,amazon_price,amazon_currency,box_id,weight_kg,sku,request_key,created_by) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)');
             $stmt->execute(array_merge($values, [$sku,$requestKey,$userId])); $id = (int) $pdo->lastInsertId();
         }
+        pb_save_compatibilities($pdo,$id,$compatibility);
         $stmt = $pdo->prepare('INSERT INTO product_builder_components (product_id,component_type,label,reference,color,quantity,notes,sort_order,options_json,design_id,graphics_version_id) VALUES (?,?,?,?,?,?,?,?,?,?,?)');
         foreach ($clean['components'] as $i => $row) $stmt->execute([$id,$row['component_type'],$row['label'],$row['reference'],$row['color'],$row['quantity'],$row['notes'],$i,json_encode((object)$row['options'], JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE),$row['design_id'],$row['graphics_version_id']]);
         if ($transferId) {
@@ -227,6 +226,14 @@ function pb_product_overview(PDO $pdo, string $query = '', $page = 1, $perPage =
         $params[] = '%' . str_replace(['!','%','_'], ['!!','!%','!_'], $term) . '%';
     }
     $where = '(p.name LIKE ? OR p.sku LIKE ? OR p.modelcode LIKE ?' . ($categoryParts ? ' OR (' . implode(' AND ', $categoryParts) . ')' : '') . ')';
+    if ($query !== '') {
+        $modelParts=[];
+        foreach (array_unique($terms) as $term) {
+            $modelParts[]="REPLACE(REPLACE(REPLACE(CONCAT_WS(' ',mc.brand,mc.model,mc.year_range,mc.modelcode),'–','-'),'—','-'),'‑','-') LIKE ? ESCAPE '!'";
+            $params[]='%' . str_replace(['!','%','_'],['!!','!%','!_'],$term) . '%';
+        }
+        if ($modelParts) $where='('.$where." OR (p.category_kind='specific' AND EXISTS(SELECT 1 FROM product_builder_compatibility mc WHERE mc.product_id=p.id AND ".implode(' AND ',$modelParts).')))';
+    }
     $from = ' FROM product_builder_products p LEFT JOIN product_builder_uni_categories u ON u.id=p.uni_category_id';
     // Global statistics remain independent of the search and the current page.
     $counts = $pdo->query("SELECT COUNT(*) AS total_count,
@@ -252,7 +259,8 @@ function pb_product_overview(PDO $pdo, string $query = '', $page = 1, $perPage =
     $stmt->execute();
     $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
     $channelListings = pb_channel_listings($pdo, array_column($rows, 'id'));
-    foreach ($rows as &$row) $row['channel_listings'] = $channelListings[(int)$row['id']];
+    $compatibilities=pb_product_compatibilities($pdo,$rows);
+    foreach ($rows as &$row) { $row['channel_listings'] = $channelListings[(int)$row['id']]; $row['compatibility']=$compatibilities[(int)$row['id']]; }
     unset($row);
     return ['rows' => $rows, 'pagination' => [
         'page'=>$page, 'per_page'=>$perPage, 'total'=>$total, 'pages'=>$pages,

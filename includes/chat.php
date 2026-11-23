@@ -13,734 +13,93 @@ if (empty($_SESSION['user_id'])) {
 }
 ?>
 
+<link rel="stylesheet" href="dist/css/chat.css?v=20261123-1">
 <div id="chatPageRoot" class="chat-page">
-    <div class="row">
-        <div class="col-md-4">
-            <div class="card card-dark card-outline">
-                <div class="card-header">
-                    <h3 class="card-title">Colleagues</h3>
-                    
-                <? if (($_SESSION['permission']) >= 500) { ?>
-                <div class="custom-control custom-switch mb-2">
+    <aside class="chat-contacts" aria-label="Colleagues">
+        <div class="chat-contacts-header" id="chatContactsHeader">
+            <div class="chat-contacts-heading">
+                <h2>Colleagues</h2>
+                <a href="index.php?page=profile&amp;tab=notifications" class="chat-icon-button" title="Notification settings" aria-label="Notification settings">
+                    <i class="fas fa-sliders-h" aria-hidden="true"></i>
+                </a>
+            </div>
+            <div class="chat-search">
+                <i class="fas fa-search" aria-hidden="true"></i>
+                <input type="search" id="chatSearch" class="form-control" placeholder="Search colleagues…" aria-label="Search colleagues">
+            </div>
+            <?php if ((int) ($_SESSION['permission'] ?? 0) >= 500) { ?>
+                <div class="custom-control custom-switch chat-broadcast-switch">
                     <input type="checkbox" class="custom-control-input" id="chatBroadcastModeToggle">
                     <label class="custom-control-label" for="chatBroadcastModeToggle">Broadcast announcement</label>
                 </div>
-                <? } ?>
-                </div>
-                <div class="card-body p-2">
-                    <input type="text" id="chatSearch" class="form-control mb-2" placeholder="Search colleagues...">
-                    <div id="chatContactsList" class="chat-panel-height" style="overflow-y: auto;"></div>
-                </div>
+            <?php } ?>
+        </div>
+        <div id="chatContactsList" class="chat-contacts-list"></div>
+        <div class="chat-contacts-footer">
+            <div class="chat-status-legend" aria-label="Attendance status">
+                <span><i data-status="online"></i>At work</span>
+                <span><i data-status="offline"></i>Out of office</span>
+                <span><i data-status="lunch"></i>Lunch</span>
+                <span><i data-status="break"></i>Break</span>
             </div>
+            <button type="button" id="chatComposeBroadcast" class="btn btn-primary">Write announcement <i class="fas fa-arrow-right ml-1" aria-hidden="true"></i></button>
+        </div>
+    </aside>
+
+    <section class="chat-conversation" aria-label="Conversation">
+        <header class="chat-header" id="chatCardHeader">
+            <button type="button" id="chatShowContacts" class="chat-icon-button" title="Back to colleagues" aria-label="Back to colleagues">
+                <i class="fas fa-arrow-left" aria-hidden="true"></i>
+            </button>
+            <span id="chatHeaderAvatar" class="chat-avatar" data-status="unknown" style="display:none;">
+                <img id="chatHeaderPhoto" src="images/profile.jpg" alt="">
+                <i id="chatHeaderAnnouncementIcon" class="fas fa-bullhorn" aria-hidden="true" style="display:none;"></i>
+            </span>
+            <div class="chat-header-details">
+                <h2 id="chatThreadTitle">Select a colleague</h2>
+                <div id="chatHeaderMeta">Your conversations, all in one place.</div>
+            </div>
+        </header>
+
+        <div id="chatMessages" class="chat-messages" role="region" aria-label="Messages" tabindex="0">
+            <div class="chat-empty-state"><i class="far fa-comments" aria-hidden="true"></i><strong>Start a conversation</strong><span>Select a colleague to view your messages.</span></div>
         </div>
 
-        <div class="col-md-8">
-            <div class="card card-dark card-outline">
-                <div class="card-header bg-dark" id="chatCardHeader">
-                    <div class="d-flex align-items-center w-100">
-                        <img id="chatHeaderPhoto" src="images/profile.jpg" alt="User" class="img-circle mr-2"
-                            style="width:36px; height:36px; object-fit:cover; display:none;">
-                        <div class="flex-grow-1">
-                            <h3 class="card-title mb-0" id="chatThreadTitle">Select a colleague</h3>
-                            <div id="chatHeaderMeta" style="display:none;"></div>
-                        </div>
+        <div class="chat-composer">
+            <form id="chatSendForm" autocomplete="off">
+                <input type="hidden" id="chatThreadId" name="thread_id" value="">
+                <div id="chatAttachmentPreview" class="chat-attachment-preview" style="display:none;">
+                    <i class="fas fa-file-alt" aria-hidden="true"></i>
+                    <div class="chat-attachment-details">
+                        <div class="font-weight-bold" id="chatAttachmentName"></div>
+                        <div class="small text-muted" id="chatAttachmentSize"></div>
                     </div>
+                    <button type="button" class="chat-icon-button" id="chatAttachmentRemove" aria-label="Remove attachment" title="Remove attachment"><i class="fas fa-times" aria-hidden="true"></i></button>
                 </div>
-
-                <div class="card-body p-3 chat-panel-height" id="chatMessages"
-                    style="overflow-y: auto; background: #1f2d3d;">
-                    <div class="text-muted">No conversation is open yet.</div>
+                <div class="chat-input-group">
+                    <button type="button" class="chat-icon-button" id="chatAttachToggle" disabled aria-label="Attach file" title="Attach file"><i class="fas fa-paperclip" aria-hidden="true"></i></button>
+                    <input type="text" id="chatMessageInput" name="message_text" class="form-control" placeholder="Type a message…" aria-label="Message" disabled>
+                    <button type="button" class="chat-icon-button chat-emoji-toggle" id="chatEmojiToggle" disabled aria-label="Pick an emoji" title="Emoji"><i class="far fa-smile" aria-hidden="true"></i></button>
+                    <button type="submit" class="btn btn-primary" id="chatSendBtn" disabled aria-label="Send message" title="Send message"><i class="far fa-paper-plane" aria-hidden="true"></i><span>Send</span></button>
                 </div>
-
-                <div class="card-footer">
-                    <form id="chatSendForm" autocomplete="off">
-                        <input type="hidden" id="chatThreadId" name="thread_id" value="">
-                        <div class="input-group chat-input-group">
-                            <input type="text" id="chatMessageInput" name="message_text" class="form-control"
-                                placeholder="Type a message..." disabled>
-
-                            <div class="input-group-append">
-                                <button type="button" class="btn btn-outline-light" id="chatAttachToggle" disabled
-                                    aria-label="Attach file" title="Attach file">
-                                    <i class="fas fa-paperclip"></i>
-                                </button>
-
-                                <button type="button" class="btn btn-outline-light chat-emoji-toggle"
-                                    id="chatEmojiToggle" disabled aria-label="Pick an emoji" title="Emoji">
-                                    <i class="far fa-smile"></i>
-                                </button>
-
-                                <button type="submit" class="btn btn-primary" id="chatSendBtn" disabled>Send</button>
-                            </div>
-                        </div>
-
-                        <div id="chatAnnouncementHtmlHint" class="small text-muted mt-2" style="display:none;">
-                            HTML formatting is supported, e.g. &lt;h1&gt;Heading&lt;/h1&gt;, &lt;br /&gt;,
-                            &lt;strong&gt;bold&lt;/strong&gt;, lists and links.
-                        </div>
-
-                        <input type="file" id="chatAttachmentInput" style="display:none;">
-
-                        <div id="chatAttachmentDropzone" class="chat-attachment-dropzone is-disabled" role="button"
-                            tabindex="-1" aria-disabled="true">
-                            <div class="chat-attachment-dropzone-icon">
-                                <i class="fas fa-cloud-upload-alt"></i>
-                            </div>
-                            <div class="chat-attachment-dropzone-text">
-                                <div class="font-weight-bold">Drag an attachment here</div>
-                                <div class="small">or click to choose a file</div>
-                            </div>
-                        </div>
-
-                        <div id="chatAttachmentPreview" class="chat-attachment-preview" style="display:none;">
-                            <div class="d-flex align-items-center justify-content-between">
-                                <div class="pr-2">
-                                    <div class="font-weight-bold" id="chatAttachmentName"></div>
-                                    <div class="small text-muted" id="chatAttachmentSize"></div>
-                                </div>
-                                <button type="button" class="btn btn-xs btn-outline-light" id="chatAttachmentRemove">
-                                    <i class="fas fa-times"></i>
-                                </button>
-                            </div>
-                        </div>
-                        <div id="chatEmojiPicker" class="chat-emoji-picker" style="display:none;">
-                            <div class="chat-emoji-picker-header">Emoji</div>
-                            <div class="chat-emoji-grid" id="chatEmojiGrid"></div>
-                        </div>
-                        <audio id="chatNotificationAudio" preload="auto">
-                            <source src="sounds/notification.mp3" type="audio/mpeg">
-                        </audio>
-                    </form>
+                <div id="chatAnnouncementHtmlHint" class="small text-muted mt-2" style="display:none;">
+                    HTML formatting is supported, e.g. &lt;h1&gt;Heading&lt;/h1&gt;, &lt;br /&gt;, &lt;strong&gt;bold&lt;/strong&gt;, lists and links.
                 </div>
-            </div>
+                <input type="file" id="chatAttachmentInput" style="display:none;">
+                <div id="chatEmojiPicker" class="chat-emoji-picker" style="display:none;">
+                    <div class="chat-emoji-picker-header">Emoji</div>
+                    <div class="chat-emoji-grid" id="chatEmojiGrid"></div>
+                </div>
+                <audio id="chatNotificationAudio" preload="auto"><source src="sounds/notification.mp3" type="audio/mpeg"></audio>
+            </form>
         </div>
-    </div>
+        <div id="chatAttachmentDropzone" class="chat-attachment-dropzone is-disabled" role="button" tabindex="-1" aria-disabled="true">
+            <i class="fas fa-cloud-upload-alt" aria-hidden="true"></i>
+            <strong>Drop a file to attach it</strong>
+            <span>Your message will be sent when you press Send.</span>
+        </div>
+    </section>
 </div>
-<style>
-    .chat-contact {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        padding: 10px;
-        border-radius: 8px;
-        cursor: pointer;
-        margin-bottom: 6px;
-        background: rgba(255, 255, 255, 0.03);
-        border: 1px solid transparent;
-        transition: all 0.15s ease-in-out;
-        position: relative;
-    }
-
-    .chat-contact:hover {
-        background: rgba(255, 255, 255, 0.08);
-    }
-
-    .chat-contact.active {
-        border-color: rgba(255, 255, 255, 0.25);
-        background: rgba(0, 123, 255, 0.22);
-    }
-
-    .chat-contact.unread {
-        border: 2px solid rgba(255, 255, 255, 0.85);
-        box-shadow: 0 0 8px rgba(255, 255, 255, 0.25);
-    }
-
-    .chat-contact.unread .chat-contact-name {
-        font-weight: 700;
-    }
-
-    .chat-contact.unread .chat-contact-meta {
-        color: rgba(255, 255, 255, 0.96) !important;
-        font-weight: 600;
-    }
-
-    .chat-unread-badge {
-        min-width: 24px;
-        height: 24px;
-        padding: 0 8px;
-        border-radius: 999px;
-        background: rgba(255, 255, 255, 0.96);
-        color: #1f2d3d;
-        font-size: 12px;
-        font-weight: 800;
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        margin-left: 8px;
-        box-shadow: 0 0 10px rgba(0, 0, 0, 0.18);
-    }
-
-    .chat-contact img {
-        width: 36px;
-        height: 36px;
-        border-radius: 50%;
-        object-fit: cover;
-    }
-
-    .chat-contact-name {
-        font-weight: 600;
-    }
-
-    .chat-contact-meta {
-        font-size: 12px;
-        color: #adb5bd;
-        line-height: 1.25;
-    }
-
-    .chat-contact-status {
-        margin-left: auto;
-        font-size: 16px;
-        color: #343a40;
-        opacity: 0.9;
-    }
-
-    .chat-message-row {
-        display: flex;
-        margin-bottom: 12px;
-    }
-
-    .chat-message-row.own {
-        justify-content: flex-end;
-    }
-
-    .chat-bubble {
-        max-width: 75%;
-        padding: 10px 12px;
-        border-radius: 12px;
-        background: #343a40;
-        color: #fff;
-        word-break: break-word;
-    }
-
-    .chat-message-row.own .chat-bubble {
-        background: #007bff;
-    }
-
-    .chat-meta {
-        font-size: 11px;
-        opacity: 0.8;
-        margin-top: 6px;
-    }
-
-    .chat-panel-height {
-        height: 650px;
-    }
-
-    #chatMessages.chat-panel-height {
-        height: 560px;
-    }
-
-    .chat-toast-container {
-        position: fixed;
-        top: 20px;
-        right: 20px;
-        z-index: 99999;
-        width: 360px;
-        max-width: calc(100vw - 30px);
-    }
-
-    .chat-toast {
-        background: #6f1235;
-        color: #fff;
-        border-radius: 12px;
-        box-shadow: 0 10px 25px rgba(0, 0, 0, 0.35);
-        margin-bottom: 12px;
-        opacity: 0;
-        transform: translateY(-12px);
-        transition: all 0.25s ease;
-        overflow: hidden;
-        border: 1px solid rgba(255, 255, 255, 0.08);
-    }
-
-    .chat-toast.show {
-        opacity: 1;
-        transform: translateY(0);
-    }
-
-    .chat-toast-header {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        padding: 10px 12px;
-        background: rgba(0, 0, 0, 0.18);
-        font-weight: 700;
-    }
-
-    .chat-toast-title {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-    }
-
-    .chat-toast-close {
-        background: transparent;
-        color: #fff;
-        border: 0;
-        font-size: 18px;
-        line-height: 1;
-        cursor: pointer;
-        opacity: 0.9;
-    }
-
-    .chat-toast-body {
-        padding: 12px;
-    }
-
-    .chat-toast-main {
-        display: flex;
-        align-items: flex-start;
-        gap: 10px;
-    }
-
-    .chat-toast-avatar {
-        width: 42px;
-        height: 42px;
-        border-radius: 50%;
-        object-fit: cover;
-        flex: 0 0 42px;
-        border: 1px solid rgba(255, 255, 255, 0.18);
-    }
-
-    .chat-toast-content {
-        flex: 1 1 auto;
-        min-width: 0;
-    }
-
-    .chat-toast-sender {
-        font-weight: 700;
-        margin-bottom: 6px;
-    }
-
-    .chat-toast-preview {
-        font-size: 13px;
-        line-height: 1.35;
-        color: rgba(255, 255, 255, 0.92);
-        margin-bottom: 10px;
-        word-break: break-word;
-    }
-
-    .chat-toast-actions {
-        display: flex;
-        justify-content: flex-end;
-    }
-
-    .chat-toast-link {
-        display: inline-flex;
-        align-items: center;
-        gap: 6px;
-        background: rgba(255, 255, 255, 0.14);
-        color: #fff;
-        padding: 6px 10px;
-        border-radius: 999px;
-        text-decoration: none;
-        font-size: 12px;
-        font-weight: 700;
-    }
-
-    .chat-toast-link:hover {
-        color: #fff;
-        text-decoration: none;
-        background: rgba(255, 255, 255, 0.22);
-    }
-
-    .chat-input-group {
-        position: relative;
-    }
-
-    .chat-attachment-dropzone {
-        display: flex;
-        align-items: center;
-        gap: 12px;
-        min-height: 72px;
-        margin-top: 10px;
-        padding: 12px 14px;
-        border: 1px dashed rgba(255, 255, 255, 0.28);
-        border-radius: 10px;
-        background: rgba(36, 49, 64, 0.78);
-        color: #f8f9fa;
-        cursor: pointer;
-        transition: background 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
-    }
-
-    .chat-attachment-dropzone:hover,
-    .chat-attachment-dropzone:focus,
-    .chat-attachment-dropzone.drag-over {
-        background: rgba(0, 123, 255, 0.16);
-        border-color: rgba(0, 123, 255, 0.72);
-        box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.18);
-        outline: none;
-    }
-
-    .chat-attachment-dropzone.is-disabled {
-        cursor: not-allowed;
-        opacity: 0.48;
-        pointer-events: none;
-    }
-
-    .chat-attachment-dropzone-icon {
-        width: 38px;
-        height: 38px;
-        border-radius: 8px;
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        flex: 0 0 38px;
-        background: rgba(0, 123, 255, 0.18);
-        color: #8ecbff;
-        font-size: 18px;
-    }
-
-    .chat-attachment-dropzone-text {
-        min-width: 0;
-    }
-
-    .chat-attachment-dropzone .small {
-        color: #adb5bd;
-    }
-
-    .chat-emoji-toggle {
-        border-color: rgba(255, 255, 255, 0.12);
-        color: #f8f9fa;
-        background: #2b3645;
-    }
-
-    .chat-emoji-toggle:hover,
-    .chat-emoji-toggle:focus {
-        color: #fff;
-        background: #364455;
-        border-color: rgba(255, 255, 255, 0.22);
-    }
-
-    .chat-emoji-toggle:disabled {
-        opacity: 0.55;
-    }
-
-    .chat-emoji-picker {
-        position: absolute;
-        right: 15px;
-        bottom: 72px;
-        width: 450px;
-        background: #243140;
-        border: 1px solid rgba(255, 255, 255, 0.10);
-        border-radius: 14px;
-        box-shadow: 0 16px 36px rgba(0, 0, 0, 0.42);
-        z-index: 1055;
-        padding: 12px;
-    }
-
-    .chat-emoji-picker-header {
-        color: #ced4da;
-        font-size: 12px;
-        font-weight: 700;
-        text-transform: uppercase;
-        letter-spacing: 0.08em;
-        margin-bottom: 10px;
-    }
-
-    .chat-emoji-grid {
-        display: grid;
-        grid-template-columns: repeat(8, minmax(0, 1fr));
-        gap: 6px;
-        max-height: 450px;
-        overflow-y: auto;
-        overflow-x: hidden;
-        padding: 6px;
-        box-sizing: border-box;
-    }
-
-    .chat-emoji-btn {
-        border: 0;
-        border-radius: 10px;
-        background: transparent;
-        color: #fff;
-        font-size: 22px;
-        line-height: 1;
-        padding: 8px 0;
-        cursor: pointer;
-        transition: background 0.15s ease, transform 0.12s ease;
-    }
-
-    .chat-emoji-btn:hover,
-    .chat-emoji-btn:focus {
-        background: rgba(255, 255, 255, 0.10);
-        outline: none;
-        transform: scale(1.08);
-    }
-
-    #chatHeaderMeta {
-        display: none;
-    }
-
-    #chatContactsList {
-        scrollbar-width: thin;
-        scrollbar-color: #495057 transparent;
-    }
-
-    #chatMessages {
-        scrollbar-width: thin;
-        scrollbar-color: #495057 transparent;
-    }
-
-    #chatContactsList::-webkit-scrollbar,
-    #chatMessages::-webkit-scrollbar,
-    .chat-emoji-grid::-webkit-scrollbar,
-    .chat-broadcast-toolbar select.form-control::-webkit-scrollbar {
-        width: 8px;
-    }
-
-    #chatContactsList::-webkit-scrollbar-track,
-    #chatMessages::-webkit-scrollbar-track,
-    .chat-emoji-grid::-webkit-scrollbar-track,
-    .chat-broadcast-toolbar select.form-control::-webkit-scrollbar-track {
-        background: transparent;
-        margin: 6px 0;
-    }
-
-    #chatContactsList::-webkit-scrollbar-thumb,
-    #chatMessages::-webkit-scrollbar-thumb,
-    .chat-emoji-grid::-webkit-scrollbar-thumb,
-    .chat-broadcast-toolbar select.form-control::-webkit-scrollbar-thumb {
-        background-color: #495057;
-        border-radius: 10px;
-        border: 2px solid transparent;
-        background-clip: content-box;
-    }
-
-    #chatContactsList::-webkit-scrollbar-thumb:hover,
-    #chatMessages::-webkit-scrollbar-thumb:hover,
-    .chat-emoji-grid::-webkit-scrollbar-thumb:hover,
-    .chat-broadcast-toolbar select.form-control::-webkit-scrollbar-thumb:hover {
-        background-color: #6c757d;
-    }
-
-    .chat-attachment-preview {
-        margin-top: 10px;
-        padding: 10px 12px;
-        border-radius: 10px;
-        background: rgba(255, 255, 255, 0.06);
-        border: 1px solid rgba(255, 255, 255, 0.10);
-        color: #fff;
-    }
-
-    .chat-attachment-card {
-        margin-top: 8px;
-        padding: 10px 12px;
-        border-radius: 10px;
-        background: rgba(255, 255, 255, 0.08);
-        border: 1px solid rgba(255, 255, 255, 0.10);
-    }
-
-    .chat-attachment-link {
-        color: #fff;
-        text-decoration: none;
-    }
-
-    .chat-attachment-link:hover {
-        color: #fff;
-        text-decoration: underline;
-    }
-
-    .chat-page .col-md-4 .card.card-dark.card-outline>.card-header {
-        display: flex;
-        flex-wrap: wrap;
-        align-items: flex-start;
-        justify-content: space-between;
-        padding: 12px 14px 10px;
-    }
-
-    .chat-page .col-md-4 .card.card-dark.card-outline>.card-header .card-title {
-        margin: 0;
-        line-height: 1.2;
-        padding-top: 3px;
-    }
-
-    .chat-broadcast-toolbar {
-        width: 100%;
-        margin-top: 0;
-        padding-top: 0;
-        border-top: 0;
-    }
-
-    .chat-broadcast-toolbar .custom-control-label,
-    .chat-broadcast-toolbar .small {
-        color: #ced4da;
-    }
-
-    .chat-broadcast-toolbar .custom-control.custom-switch {
-        margin-bottom: 0 !important;
-        min-height: auto;
-        padding-left: 2.25rem;
-        display: flex;
-        align-items: center;
-        justify-content: flex-end;
-    }
-
-    .chat-broadcast-toolbar .custom-control-input {
-        cursor: pointer;
-    }
-
-    .chat-broadcast-toolbar .custom-control-label {
-        font-size: 13px;
-        font-weight: 600;
-        line-height: 1.2;
-        cursor: pointer;
-        margin-bottom: 0;
-        white-space: nowrap;
-    }
-
-    .chat-broadcast-toolbar .custom-control-label::before,
-    .chat-broadcast-toolbar .custom-control-label::after {
-        top: 0.1rem;
-    }
-
-    #chatBroadcastControls {
-        width: 100%;
-        margin-top: 12px;
-        padding-top: 12px;
-        border-top: 1px solid rgba(255, 255, 255, 0.08);
-    }
-
-    .chat-broadcast-toolbar select.form-control {
-        width: 100%;
-        min-height: 140px;
-        max-height: 220px;
-        background: #2b3645;
-        color: #fff;
-        border-color: rgba(255, 255, 255, 0.12);
-        padding-top: 6px;
-        padding-bottom: 6px;
-        scrollbar-width: thin;
-        scrollbar-color: #495057 transparent;
-    }
-
-    .chat-broadcast-toolbar select.form-control option {
-        color: #fff;
-        background: #2b3645;
-        padding: 8px 10px;
-        line-height: 1.6;
-    }
-
-    .chat-broadcast-toolbar .d-flex.mt-2 {
-        display: flex;
-        width: 100%;
-        gap: 8px;
-    }
-
-    .chat-broadcast-toolbar .d-flex.mt-2 .btn {
-        flex: 1 1 0;
-        width: 50%;
-        margin: 0 !important;
-    }
-
-    .chat-recipient-check {
-        display: none;
-        margin-right: 8px;
-        flex: 0 0 auto;
-    }
-
-    .chat-page.broadcast-mode .chat-recipient-check {
-        display: inline-flex;
-        align-items: center;
-    }
-
-    .chat-page.broadcast-mode .chat-contact[data-thread-type="announcement"] {
-        display: none !important;
-    }
-
-    .chat-broadcast-summary {
-        font-size: 12px;
-        color: #ced4da;
-        margin-top: 10px;
-        line-height: 1.35;
-    }
-
-    .chat-announcement-sender {
-        font-size: 12px;
-        font-weight: 700;
-        color: rgba(255, 255, 255, 0.85);
-        margin-bottom: 6px;
-        text-transform: uppercase;
-        letter-spacing: 0.04em;
-    }
-
-    @media (max-width: 991.98px) {
-        .chat-broadcast-toolbar .custom-control.custom-switch {
-            justify-content: flex-start;
-        }
-
-        .chat-broadcast-toolbar .d-flex.mt-2 {
-            flex-direction: column;
-        }
-
-        .chat-broadcast-toolbar .d-flex.mt-2 .btn {
-            width: 100%;
-        }
-    }
-    .chat-file-wrapper {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    max-width: 100%;
-    background: rgba(255, 193, 7, 0.14);
-    border: 1px solid rgba(255, 193, 7, 0.38);
-    border-radius: 8px;
-    padding: 4px 8px;
-}
-
-.chat-file-link {
-    min-width: 0;
-    color: #ffd166;
-    text-decoration: none;
-    font-weight: 600;
-    overflow-wrap: anywhere;
-}
-
-.chat-file-link:hover {
-    color: #ffe69c;
-    text-decoration: underline;
-}
-
-.chat-web-link,
-.chat-web-link:visited {
-    color: #6fe7ff;
-    font-weight: 600;
-    text-decoration: underline;
-    text-decoration-thickness: 1px;
-    text-underline-offset: 2px;
-    overflow-wrap: anywhere;
-}
-
-.chat-web-link:hover,
-.chat-web-link:focus {
-    color: #b9f4ff;
-}
-
-.chat-message-row.own .chat-web-link,
-.chat-message-row.own .chat-web-link:visited {
-    color: #fff1a8;
-}
-
-.chat-message-row.own .chat-web-link:hover,
-.chat-message-row.own .chat-web-link:focus {
-    color: #ffffff;
-}
-
-.chat-copy-path {
-    border: 0;
-    background: transparent;
-    color: #ced4da;
-    cursor: pointer;
-    padding: 2px 4px;
-    border-radius: 4px;
-    transition: all 0.15s ease;
-}
-
-.chat-copy-path:hover {
-    background: rgba(255,255,255,0.1);
-    color: #fff;
-}
-</style>
-
 <script>
     (function ($) {
         if (!$) {
@@ -760,6 +119,10 @@ if (empty($_SESSION['user_id'])) {
 
         if (chatRuntime.visibilityHandler) {
             document.removeEventListener('visibilitychange', chatRuntime.visibilityHandler);
+        }
+
+        if (chatRuntime.viewportHandler && window.visualViewport) {
+            window.visualViewport.removeEventListener('resize', chatRuntime.viewportHandler);
         }
 
         if (chatRuntime.originalPageTitle) {
@@ -847,6 +210,51 @@ if (empty($_SESSION['user_id'])) {
     chatRuntime.initializedThreadIds = initializedThreadIds;
     chatRuntime.notifiedMessageIds = notifiedMessageIds;
 
+    function isConversationVisible() {
+        return !window.matchMedia('(max-width: 767.98px)').matches || $('#chatPageRoot').hasClass('conversation-open');
+    }
+
+    function showConversation() {
+        $('#chatPageRoot').addClass('conversation-open');
+        requestAnimationFrame(scrollChatToBottom);
+    }
+
+    function syncChatHeight() {
+        const root = document.getElementById('chatPageRoot');
+        if (!root) return;
+        const viewport = window.visualViewport;
+        const bottom = viewport ? viewport.height + viewport.offsetTop : window.innerHeight;
+        const footer = document.querySelector('.main-footer');
+        const footerHeight = footer && getComputedStyle(footer).position === 'fixed' ? footer.getBoundingClientRect().height : 0;
+        root.style.setProperty('--chat-height', Math.max(240, Math.floor(bottom - root.getBoundingClientRect().top - footerHeight - 12)) + 'px');
+    }
+
+    function chatEmptyState(title, description, icon = 'fa-comments') {
+        return `<div class="chat-empty-state"><i class="far ${escapeAttr(icon)}" aria-hidden="true"></i><strong>${escapeHtml(title)}</strong><span>${escapeHtml(description)}</span></div>`;
+    }
+
+    function contactStatus(user) {
+        const states = { 'bg-success': 'online', 'bg-danger': 'offline', 'bg-warning': 'break', 'bg-info': 'lunch' };
+        return states[user.status_bg] || 'unknown';
+    }
+
+    function contactIsInactive(user) {
+        return user.is_active === false || user.is_active === 0 || String(user.active || '').toLowerCase() === 'inactive';
+    }
+
+    function contactTime(datetime) {
+        if (!datetime) return '';
+        const date = new Date(String(datetime).replace(' ', 'T'));
+        if (isNaN(date)) return '';
+        const today = new Date();
+        if (date.toDateString() === today.toDateString()) {
+            return date.toLocaleTimeString('sk-SK', { hour: '2-digit', minute: '2-digit' });
+        }
+        today.setDate(today.getDate() - 1);
+        if (date.toDateString() === today.toDateString()) return 'Yesterday';
+        return date.toLocaleDateString('sk-SK', { day: 'numeric', month: 'numeric' });
+    }
+
     function isChatScrolledNearBottom() {
         const el = $('#chatMessages')[0];
         if (!el) return true;
@@ -929,6 +337,7 @@ if (empty($_SESSION['user_id'])) {
         $('#chatBroadcastSummary').text(
             count > 0 ? ('Selected recipients: ' + count) : 'No recipients selected'
         );
+        $('#chatComposeBroadcast').prop('disabled', count === 0);
     }
 
     function collectDepartmentsFromContacts(contacts) {
@@ -962,10 +371,10 @@ if (empty($_SESSION['user_id'])) {
                     <label for="chatAnnouncementDepartments" class="small mb-1">Departments</label>
                     <select id="chatAnnouncementDepartments" class="form-control form-control-sm" multiple></select>
                     <div class="d-flex mt-2">
-                    <button type="button" class="btn bg-gradient-primary flex-fill mr-2" id="chatBroadcastSelectAll">
+                    <button type="button" class="btn flex-fill" id="chatBroadcastSelectAll">
                         Select all
                     </button>
-                    <button type="button" class="btn bg-gradient-danger flex-fill" id="chatBroadcastClearAll">
+                    <button type="button" class="btn flex-fill" id="chatBroadcastClearAll">
                         Clear selection
                     </button>
                 </div>
@@ -973,7 +382,7 @@ if (empty($_SESSION['user_id'])) {
                 </div>
             </div>
         `;
-            $('.card-title:contains("Colleagues")').closest('.card-header').append(toolbarHtml);
+            $('#chatContactsHeader').append(toolbarHtml);
             toolbar = $('#chatBroadcastToolbar');
         }
 
@@ -1013,7 +422,7 @@ if (empty($_SESSION['user_id'])) {
         if (!canSendAnnouncements) return;
 
         broadcastModeEnabled = !!enabled;
-        $('#chatPageRoot').toggleClass('broadcast-mode', broadcastModeEnabled);
+        $('#chatPageRoot').toggleClass('broadcast-mode', broadcastModeEnabled).removeClass('conversation-open');
         $('#chatBroadcastControls').toggle(broadcastModeEnabled);
         $('#chatAnnouncementHtmlHint').toggle(broadcastModeEnabled);
 
@@ -1024,7 +433,7 @@ if (empty($_SESSION['user_id'])) {
             currentChatUserId = null;
             currentChatUserName = 'Broadcast messages';
             $('#chatThreadId').val('');
-            $('#chatMessages').html('<div class="text-muted">Select recipients on the left and type a broadcast message.</div>');
+            $('#chatMessages').html(chatEmptyState('Broadcast announcement', 'Select recipients from your colleagues, then write your announcement.'));
             renderChatHeader({
                 name: 'Broadcast messages',
                 photo: '',
@@ -1037,7 +446,7 @@ if (empty($_SESSION['user_id'])) {
         } else {
             $('#chatAnnouncementDepartments').val([]);
             $('#chatMessageInput').val('');
-            $('#chatMessages').html('<div class="text-muted">No conversation is open yet.</div>');
+            $('#chatMessages').html(chatEmptyState('Start a conversation', 'Select a colleague to view your messages.'));
             resetAttachmentPreview();
             setComposerEnabled(false);
             renderChatHeader(null);
@@ -1110,6 +519,7 @@ if (empty($_SESSION['user_id'])) {
     function openAnnouncementThread(threadId) {
         const parsedThreadId = parseInt(threadId, 10);
         if (!parsedThreadId) return;
+        showConversation();
 
         currentThreadId = parsedThreadId;
         currentChatUserId = -parsedThreadId;
@@ -1154,73 +564,35 @@ if (empty($_SESSION['user_id'])) {
         });
     }
 
-    function applyChatHeaderStatus(statusBg) {
-        const header = $('#chatCardHeader');
-        const allowedClasses = [
-            'bg-success', 'bg-warning', 'bg-danger', 'bg-info', 'bg-secondary',
-            'bg-primary', 'bg-dark', 'bg-orange', 'bg-teal', 'bg-indigo', 'bg-pink', 'bg-maroon'
-        ];
-
-        header.removeClass(allowedClasses.join(' ')).addClass(statusBg || 'bg-dark');
-    }
-
     function renderChatHeader(user) {
+        const avatar = $('#chatHeaderAvatar');
         if (!user) {
-            $('#chatHeaderPhoto')
-                .attr('src', 'images/profile.jpg')
-                .hide();
-
+            avatar.hide();
             $('#chatThreadTitle').text('Select a colleague');
-            $('#chatHeaderMeta').html('').hide();
-            applyChatHeaderStatus('bg-dark');
+            $('#chatHeaderMeta').text('Your conversations, all in one place.');
             return;
         }
-
-        const shouldHidePhoto =
-            user.hide_photo === true ||
-            user.thread_type === 'announcement' ||
-            user.name === 'Broadcast message' ||
-            user.name === 'Broadcast messages';
-
-        if (shouldHidePhoto) {
-            $('#chatHeaderPhoto')
-                .attr('src', 'images/profile.jpg')
-                .hide();
-
-            $('#chatThreadTitle').text(user.name || 'Conversation');
-            $('#chatHeaderMeta').html('').hide();
-            applyChatHeaderStatus(user.status_bg || 'bg-dark');
-            return;
-        }
-
-        let photo = buildPhotoPath(user.photo);
-        let currentPhoto = $('#chatHeaderPhoto').attr('src') || '';
-
-        if (
-            (!user.photo || String(user.photo).trim() === '') &&
-            currentPhoto &&
-            currentPhoto !== 'images/profile.jpg' &&
-            !currentPhoto.endsWith('/images/profile.jpg')
-        ) {
-            photo = currentPhoto;
-        }
-
-        $('#chatHeaderPhoto')
-            .attr('src', photo)
-            .off('error')
-            .on('error', function () {
+        const announcement = user.hide_photo === true || user.thread_type === 'announcement' || user.status_bg === 'bg-maroon';
+        const inactive = contactIsInactive(user);
+        avatar.attr('data-status', contactStatus(user)).toggleClass('is-inactive', inactive).show();
+        $('#chatHeaderPhoto').toggle(!announcement);
+        $('#chatHeaderAnnouncementIcon').toggle(announcement);
+        if (!announcement) {
+            $('#chatHeaderPhoto').attr('src', buildPhotoPath(user.photo)).off('error').one('error', function () {
                 $(this).attr('src', 'images/profile.jpg');
-            })
-            .show();
-
+            });
+        }
         $('#chatThreadTitle').text(user.name || 'Conversation');
-        $('#chatHeaderMeta').html('').hide();
-        applyChatHeaderStatus(user.status_bg || 'bg-dark');
+        const status = user.status_label === 'At home' ? 'Out of office' : (user.status_label || 'Status unknown');
+        $('#chatHeaderMeta').text(announcement
+            ? (broadcastModeEnabled ? 'Choose recipients and send an announcement' : 'Broadcast announcement · Read only')
+            : [status, user.department_name, inactive ? 'Inactive account' : ''].filter(Boolean).join(' · '));
+        avatar.attr('title', announcement ? 'Announcement' : status);
     }
 
     function setActiveContact(userId) {
-        $('.chat-contact').removeClass('active');
-        $('.chat-contact[data-user-id="' + userId + '"]').addClass('active');
+        $('.chat-contact').removeClass('active').attr('aria-current', 'false');
+        $('.chat-contact[data-user-id="' + userId + '"]').addClass('active').attr('aria-current', 'true');
     }
 
     function populateHeaderFromContactByThread(threadId) {
@@ -1242,7 +614,9 @@ if (empty($_SESSION['user_id'])) {
             department_name: contact.attr('data-department-name') || '',
             status_label: contact.attr('data-status-label') || '',
             status_icon: contact.attr('data-status-icon') || '',
-            status_bg: contact.attr('data-status-bg') || 'bg-dark'
+            status_bg: contact.attr('data-status-bg') || 'bg-dark',
+            is_active: contact.attr('data-is-active') !== 'false',
+            thread_type: contact.attr('data-thread-type') || 'dm'
         });
 
         setActiveContact(userId);
@@ -1535,8 +909,7 @@ if (empty($_SESSION['user_id'])) {
 
         if (count > 0) {
             contact.addClass('unread');
-            contact.find('.chat-contact-name').append(`<span class="chat-unread-badge">${count}</span>`);
-            contact.find('.chat-contact-meta').text(getUnreadMessageLabel(count));
+            contact.find('.chat-contact-bottom').append(`<span class="chat-unread-badge" aria-label="${getUnreadMessageLabel(count)}">${count}</span>`);
         } else {
             contact.removeClass('unread');
         }
@@ -1548,6 +921,7 @@ if (empty($_SESSION['user_id'])) {
     }
 
     function clearContactUnread(threadId) {
+        if (!isConversationVisible() || document.hidden || !document.hasFocus()) return;
         const contact = $('.chat-contact[data-thread-id="' + threadId + '"]');
         updateContactUnreadState(contact, 0);
     }
@@ -1680,95 +1054,55 @@ if (empty($_SESSION['user_id'])) {
 
     function loadContacts(query = '') {
         $.ajax({
-            url: 'scripts/chat/get_contacts.php',
-            method: 'GET',
-            dataType: 'json',
-            data: { q: query },
+            url: 'scripts/chat/get_contacts.php', method: 'GET', dataType: 'json', data: { q: query },
             success: function (res) {
                 if (!res || res.status !== 'success') return;
+                // Ignore an older search response arriving after a newer query.
+                if (query !== ($('#chatSearch').val() || '')) return;
                 contactsCache = res.contacts || [];
                 renderAnnouncementToolbar(contactsCache);
-
-                let html = '';
                 const contacts = sortContactsForList(contactsCache);
-
-                if (!contacts.length) {
-                    html = '<div class="text-muted p-2">No colleagues found.</div>';
-                } else {
-                    contacts.forEach(function (user) {
-                        const itemType = user.item_type || 'user';
-                        const threadType = user.thread_type || 'dm';
-                        const isAnnouncement = threadType === 'announcement';
-                        const isChecked = selectedAnnouncementRecipients.has(parseInt(user.id, 10));
-                        let photo = buildPhotoPath(user.photo);
-                        let dept = user.department_name ? user.department_name : '';
-                        let statusLabel = user.status_label ? user.status_label : 'Unknown';
-                        let statusBg = user.status_bg ? user.status_bg : 'bg-secondary';
-                        let statusIcon = user.status_icon ? user.status_icon : 'fa-question';
-                        let isActive = currentChatUserId && parseInt(currentChatUserId, 10) === parseInt(user.id, 10);
-                        let unreadCount = parseInt(user.unread_count || 0, 10);
-                        let threadId = parseInt(user.thread_id || 0, 10);
-                        let metaText = unreadCount > 0 ? getUnreadMessageLabel(unreadCount) : (dept ? dept : '');
-                        if (isAnnouncement && unreadCount === 0) {
-                            metaText = 'Announcements';
-                        }
-
-                        html += `
-                    <div class="chat-contact ${statusBg} ${isActive ? 'active' : ''} ${unreadCount > 0 ? 'unread' : ''}"
-                        data-user-id="${parseInt(user.id, 10)}"
-                        data-user-name="${escapeAttr(user.name)}"
-                        data-user-photo="${escapeAttr(user.photo || '')}"
-                        data-thread-id="${threadId}"
-                        data-thread-type="${escapeAttr(threadType)}"
-                        data-status-bg="${escapeAttr(statusBg)}"
-                        data-status-label="${escapeAttr(statusLabel)}"
-                        data-status-icon="${escapeAttr(statusIcon)}"
-                        data-department-name="${escapeAttr(dept)}"
-                        data-default-meta="${escapeAttr(dept)}"
-                        style="color:#fff;">
-                        <div class="chat-recipient-check">
-                            ${itemType === 'user' ? `<input type="checkbox" class="chat-recipient-checkbox" ${isChecked ? 'checked' : ''}>` : ''}
+                const html = contacts.map(function (user) {
+                    const threadType = user.thread_type || 'dm';
+                    const announcement = threadType === 'announcement';
+                    const checked = selectedAnnouncementRecipients.has(parseInt(user.id, 10));
+                    const inactive = contactIsInactive(user);
+                    const active = parseInt(currentChatUserId, 10) === parseInt(user.id, 10);
+                    const unread = parseInt(user.unread_count || 0, 10);
+                    const dept = user.department_name || '';
+                    const status = user.status_label === 'At home' ? 'Out of office' : (user.status_label || 'Status unknown');
+                    const preview = chatMessagePreview(user, threadType).replace(/\s+/g, ' ').trim()
+                        || (user.last_message_type === 'attachment' ? 'Attachment' : '')
+                        || (announcement ? 'Announcements' : dept || status);
+                    const avatar = announcement ? '<i class="fas fa-bullhorn" aria-hidden="true"></i>'
+                        : `<img src="${escapeAttr(buildPhotoPath(user.photo))}" alt="" onerror="this.onerror=null;this.src='images/profile.jpg';">`;
+                    return `
+                    <div class="chat-contact ${active ? 'active' : ''} ${unread > 0 ? 'unread' : ''} ${inactive ? 'is-inactive' : ''}"
+                        role="button" tabindex="0" aria-current="${active ? 'true' : 'false'}"
+                        aria-label="${escapeAttr(user.name + '. ' + status + (inactive ? '. Inactive account' : ''))}"
+                        data-user-id="${parseInt(user.id, 10)}" data-user-name="${escapeAttr(user.name)}"
+                        data-user-photo="${escapeAttr(user.photo || '')}" data-thread-id="${parseInt(user.thread_id || 0, 10)}"
+                        data-thread-type="${escapeAttr(threadType)}" data-status-bg="${escapeAttr(user.status_bg || 'bg-secondary')}"
+                        data-status-label="${escapeAttr(status)}" data-department-name="${escapeAttr(dept)}"
+                        data-is-active="${!inactive}" data-default-meta="${escapeAttr(preview)}">
+                        <span class="chat-recipient-check">${!announcement ? `<input type="checkbox" class="chat-recipient-checkbox" tabindex="-1" aria-label="Select ${escapeAttr(user.name)}" ${checked ? 'checked' : ''}>` : ''}</span>
+                        <span class="chat-avatar ${inactive ? 'is-inactive' : ''}" data-status="${contactStatus(user)}" title="${escapeAttr(status + (inactive ? ' · Inactive account' : ''))}">${avatar}</span>
+                        <div class="chat-contact-details">
+                            <div class="chat-contact-top"><span class="chat-contact-name">${escapeHtml(user.name)}</span><time class="chat-contact-time" title="${escapeAttr(formatDateEU(user.last_message_at))}">${escapeHtml(contactTime(user.last_message_at))}</time></div>
+                            <div class="chat-contact-bottom"><span class="chat-contact-meta">${escapeHtml(preview)}</span>${unread > 0 ? `<span class="chat-unread-badge" aria-label="${getUnreadMessageLabel(unread)}">${unread}</span>` : ''}</div>
                         </div>
-                        <img src="${escapeAttr(photo)}" alt="" onerror="this.src='images/profile.jpg';">
-
-                        <div class="flex-grow-1">
-                            <div class="chat-contact-name">
-                                ${escapeHtml(user.name)}
-                                ${unreadCount > 0 ? `<span class="chat-unread-badge">${unreadCount}</span>` : ''}
-                            </div>
-
-                            <div class="chat-contact-meta text-white">
-                                ${escapeHtml(metaText)}
-                            </div>
-                        </div>
-
-                        <div class="chat-contact-status">
-                            <i class="fas ${escapeHtml(statusIcon)}"></i>
-                        </div>
-                    </div>                    
-                `;
-                    });
-                }
-
-                $('#chatContactsList').html(html);
-
-                if (currentThreadId) {
-                    const headerTitle = ($('#chatThreadTitle').text() || '').trim();
-
-                    if (!currentChatUserId || headerTitle === 'Select a colleague') {
-                        populateHeaderFromContactByThread(currentThreadId);
-                    }
-
-                    clearContactUnread(currentThreadId);
-                }
-
-                if (currentChatUserId) {
-                    setActiveContact(currentChatUserId);
-                }
+                    </div>`;
+                }).join('');
+                const list = $('#chatContactsList');
+                const scrollTop = list.scrollTop();
+                const focusedContact = list.find('.chat-contact').filter(function () { return this.contains(document.activeElement); }).attr('data-user-id');
+                list.html(html || '<div class="text-muted p-3">No colleagues found.</div>');
+                if (focusedContact) list.find('.chat-contact[data-user-id="' + focusedContact + '"]').trigger('focus');
+                list.scrollTop(scrollTop);
+                if (currentThreadId && !broadcastModeEnabled) populateHeaderFromContactByThread(currentThreadId);
+                if (currentChatUserId) setActiveContact(currentChatUserId);
             },
-            error: function (xhr) {
-                console.log('loadContacts error:', xhr.responseText);
-            }
+            error: function (xhr) { console.log('loadContacts error:', xhr.responseText); }
         });
     }
 
@@ -1779,7 +1113,7 @@ if (empty($_SESSION['user_id'])) {
         const previousScrollTop = chatEl ? chatEl.scrollTop : 0;
 
         if (!messages || !messages.length) {
-            chatBox.html('<div class="text-muted">No messages yet.</div>');
+            chatBox.html(chatEmptyState('No messages yet', 'Send a message to start the conversation.'));
             return;
         }
 
@@ -1822,7 +1156,7 @@ if (empty($_SESSION['user_id'])) {
                 ${msg.message_text ? `<div>${messageHtml}</div>` : ''}
                 ${attachmentHtml}
                 <div class="chat-meta">
-                    ${formatDateEU(msg.created_at)}
+                    ${escapeHtml(formatDateEU(msg.created_at))}
                 </div>
             </div>
         </div>
@@ -1843,7 +1177,7 @@ if (empty($_SESSION['user_id'])) {
         if (lastMessageId > 0 && currentThreadId) {
             knownLastMessageIds[currentThreadId] = lastMessageId;
             initializedThreadIds[currentThreadId] = true;
-            if (!document.hidden && document.hasFocus()) {
+            if (!document.hidden && document.hasFocus() && isConversationVisible()) {
                 markThreadRead(currentThreadId, lastMessageId);
                 clearContactUnread(currentThreadId);
                 stopTitleBlink();
@@ -1960,6 +1294,7 @@ if (empty($_SESSION['user_id'])) {
     }
 
     function openDmWithUser(userId, userName, userPhoto = '') {
+        showConversation();
         currentChatUserId = parseInt(userId, 10);
         currentChatUserName = userName || 'Conversation';
 
@@ -1974,7 +1309,8 @@ if (empty($_SESSION['user_id'])) {
             department_name: activeContact.attr('data-department-name') || '',
             status_label: activeContact.attr('data-status-label') || '',
             status_icon: activeContact.attr('data-status-icon') || '',
-            status_bg: activeContact.attr('data-status-bg') || 'bg-dark'
+            status_bg: activeContact.attr('data-status-bg') || 'bg-dark',
+            is_active: activeContact.attr('data-is-active') !== 'false'
         });
 
         $('#chatMessages').html('<div class="text-muted">Loading conversation...</div>');
@@ -2103,7 +1439,7 @@ if (empty($_SESSION['user_id'])) {
                     let lastMessageId = parseInt(thread.last_message_id || 0, 10);
                     let unreadCount = parseInt(thread.unread_count || 0, 10);
                     let lastSenderId = parseInt(thread.last_sender_id || 0, 10);
-                    let isCurrentThread = threadId === parseInt(currentThreadId || 0, 10);
+                    let isCurrentThread = threadId === parseInt(currentThreadId || 0, 10) && isConversationVisible();
                     let isOwnLastMessage = lastSenderId > 0 && lastSenderId === currentUserId;
 
                     if (!threadId || !lastMessageId) return;
@@ -2139,7 +1475,7 @@ if (empty($_SESSION['user_id'])) {
                         markContactUnread(threadId, unreadCount);
                     }
 
-                    if (isCurrentThread && !document.hidden && document.hasFocus()) {
+                    if (isCurrentThread && !document.hidden && document.hasFocus() && isConversationVisible()) {
                         clearContactUnread(threadId);
                     }
                 });
@@ -2180,6 +1516,35 @@ if (empty($_SESSION['user_id'])) {
     }
 
     $(document).ready(function () {
+        $('body').addClass('chat-layout-page');
+        $('#chatPageRoot').closest('.card').addClass('chat-page-card');
+        syncChatHeight();
+        $(window).on('resize.darkScrubChat load.darkScrubChat', syncChatHeight);
+        chatRuntime.viewportHandler = syncChatHeight;
+        if (window.visualViewport) window.visualViewport.addEventListener('resize', syncChatHeight);
+        $('#chatShowContacts').off(chatEventNamespace).on('click.darkScrubChat', function () {
+            $('#chatPageRoot').removeClass('conversation-open');
+            toggleEmojiPicker(false);
+            $('#chatSearch').trigger('focus');
+        });
+        $('#chatComposeBroadcast').off(chatEventNamespace).on('click.darkScrubChat', showConversation);
+        $('.chat-conversation').off(chatEventNamespace)
+            .on('dragenter.darkScrubChat dragover.darkScrubChat', function (e) {
+                const transfer = e.originalEvent && e.originalEvent.dataTransfer;
+                if (!transfer || !Array.from(transfer.types || []).includes('Files')) return;
+                e.preventDefault();
+                if (!$('#chatAttachToggle').prop('disabled')) $(this).addClass('is-dragging');
+            })
+            .on('dragleave.darkScrubChat', function (e) {
+                if (!this.contains(e.relatedTarget)) $(this).removeClass('is-dragging');
+            })
+            .on('drop.darkScrubChat', function (e) {
+                e.preventDefault();
+                $(this).removeClass('is-dragging');
+                const transfer = e.originalEvent && e.originalEvent.dataTransfer;
+                handleAttachmentFiles(transfer ? transfer.files : null);
+            });
+        $(document).on('dragend.darkScrubChat', function () { $('.chat-conversation').removeClass('is-dragging'); });
         renderEmojiPicker();
         loadContacts();
         checkForIncomingMessages();
@@ -2194,7 +1559,7 @@ if (empty($_SESSION['user_id'])) {
             requestBrowserNotificationPermission();
         });
 
-        $('#chatSearch').on('keyup.darkScrubChat', function () {
+        $('#chatSearch').on('input.darkScrubChat', function () {
             loadContacts($(this).val());
         });
 
@@ -2216,6 +1581,11 @@ if (empty($_SESSION['user_id'])) {
             }
         });
 
+        $(document).on('keydown.darkScrubChat', '.chat-contact', function (e) {
+            if (e.target !== this || !['Enter', ' '].includes(e.key)) return;
+            e.preventDefault();
+            $(this).trigger('click');
+        });
         $(document).on('click.darkScrubChat', '.chat-contact', function (e) {
             const threadType = $(this).attr('data-thread-type') || 'dm';
             const userId = $(this).data('user-id');
@@ -2272,6 +1642,7 @@ if (empty($_SESSION['user_id'])) {
 
         const preselectedThreadId = getUrlParam('thread_id');
         if (preselectedThreadId) {
+            showConversation();
             currentThreadId = parseInt(preselectedThreadId, 10);
             $('#chatThreadId').val(currentThreadId);
             setComposerEnabled(true);
@@ -2326,6 +1697,7 @@ if (empty($_SESSION['user_id'])) {
                 e.preventDefault();
                 e.stopPropagation();
                 $(this).removeClass('drag-over');
+                $('.chat-conversation').removeClass('is-dragging');
 
                 const dataTransfer = e.originalEvent && e.originalEvent.dataTransfer;
                 handleAttachmentFiles(dataTransfer ? dataTransfer.files : null);

@@ -5,7 +5,7 @@ require_once __DIR__.'/../scripts/product_builder/service.php';
 require_once __DIR__.'/../includes/conn.php';
 function pageAssert(bool $ok,string $message):void{if(!$ok)throw new RuntimeException($message);}
 // Connection-local temporary tables shadow production names for the entire test.
-foreach(['product_builder_uni_categories','product_builder_boxes','product_builder_products','product_builder_components'] as $table){
+foreach(['product_builder_uni_categories','product_builder_boxes','product_builder_products','product_builder_compatibility','product_builder_components'] as $table){
  $ddl=$pdo->query('SHOW CREATE TABLE '.$table)->fetch(PDO::FETCH_NUM)[1];
  $ddl=str_replace('CREATE TABLE','CREATE TEMPORARY TABLE',$ddl);
  $ddl=preg_replace('/^\s*CONSTRAINT[^\n]*\n/m','',$ddl);

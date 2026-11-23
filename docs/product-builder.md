@@ -1,3 +1,36 @@
+## Viac modelových kompatibilít (23. 11. 2026)
+
+Modelovo špecifický listing môže mať viac značiek, modelov a rozsahov rokov. Category Info obsahuje vyhľadávateľný strom značka → model → roky/modelcode, zaškrtávanie vetiev, čiastočne zaškrtnuté vetvy a samostatný zoznam vybraných položiek. Pri filtrovaní označenie vetvy vyberie iba zobrazené zhody. Výber sa do formulára prenesie až cez Použiť vybrané modely; Cancel alebo X pôvodný výber zachová. Refresh models zachová rozpracovaný výber.
+
+Každá kombinácia značky, modelu, rokov a modelcode má samostatný záznam v **product_builder_compatibility** s väzbou product_id na product_builder_products.id. Yamaha WR450F 2019–2023 a WR250F 2020–2024 sa preto uložia ako dve kompatibility aj pri spoločnom NGL2. Presné duplicity sa neukladajú. Pôvodné brand/model/year_range/modelcode na produkte zostávajú zrkadlom prvej vybranej kompatibility kvôli existujúcim integráciám. UNI zostáva samostatný režim; prepnutie na UNI odstráni modelové väzby pri uložení.
+
+Builder aj Listings vracajú pole compatibility. Stĺpec Category ponúka rozbaliteľný zoznam a kopírovanie modelcodes; vyhľadávanie berie do úvahy každý priradený model a kód. SQL používa EXISTS, takže sa listing neobjaví viackrát a počty/stránkovanie zostanú správne. Samostatné štatistiky podľa modelcode môžu používať:
+
+```sql
+SELECT modelcode, COUNT(DISTINCT product_id) AS listing_count
+FROM product_builder_compatibility
+GROUP BY modelcode;
+
+SELECT p.*
+FROM product_builder_products p
+WHERE EXISTS (
+  SELECT 1 FROM product_builder_compatibility c
+  WHERE c.product_id = p.id AND c.modelcode = 'NGL2'
+);
+```
+
+Počet musí používať DISTINCT product_id, keďže rovnaký modelcode môže mať viac modelov. Priamy JOIN bez deduplikácie by mohol násobiť aj predajné štatistiky. Ide o kompatibilitu modelovo špecifických listingov; UNI kódy zostávajú v products/uni_categories.
+
+Uloženie produktu a kompatibilít je jedna transakcia s existujúcou kontrolou version. Nové kombinácie sa validujú proti scrubdata; už uložené historické kombinácie sa pri nezmenenej editácii zachovajú aj po odstránení zo zdrojového číselníka. Starý klient bez poľa compatibility zachová viacnásobný výber pri editácii ostatných údajov, ale nemôže ho potichu nahradiť jednou novou kategóriou. Transfer draft sa načíta ako jedna kompatibilita a operátor môže doplniť ďalšie.
+
+### Nasadenie tejto úpravy
+
+1. V databáze aplikácie importovať **db/product_builder_update_014.sql** cez phpMyAdmin. Je doplnkový a opakovateľný. Existujúcim špecifickým listingom predvyplní ich pôvodnú kompatibilitu; existujúci viacnásobný výber nemení.
+2. Nahrať runtime súbory z **.cache/product-builder/product-builder-multi-model.zip** so zachovaním priečinkov. SQL súbor v ZIP treba importovať, samotné nahratie do db ho nespustí.
+3. Obnoviť Product Builder. Úprava je lokálne nainštalovaná; produkčné nasadenie je manuálne.
+
+Kompletné inštalačné SQL, update_all, diagnostika a CLI inštalátor už obsahujú aj túto tabuľku. Nový výber nemení SKU, ceny, komponenty ani údaje objednávok. Testy pokrývajú spoločné modelcodes, validáciu, atomickosť, starých klientov, UNI, opakovanú migráciu, filtrovanie a celý postup vo formulári.
+
 ## Transfer D-base (16. 11. 2026)
 
 Prenesené grafiky z Orders sú na samostatnej stránke **index.php?page=product_transfers**, v submenu Product database ako **Transfer D-base**. Product Builder už nemá zoznam prenosov ani ich pôvodný modal. Odkaz v detaile objednávky vedie do Transfer D-base a vyfiltruje zdrojovú objednávku.

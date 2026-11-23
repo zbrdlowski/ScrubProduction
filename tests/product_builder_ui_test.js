@@ -19,6 +19,7 @@ const assert = require('assert/strict');
    else if(action==='designs'){body.rows=JSON.parse(fs.readFileSync('.cache/product-builder/designs.json','utf8'));body.versions=JSON.parse(fs.readFileSync('.cache/product-builder/graphics-versions.json','utf8'));}
    else if(action==='categories')body.rows=categories;
    else if(action==='products')body={...body,rows:products,stats};
+   else if(action==='model_catalogue'){body.rows=[{brand:'KTM',model:'EXC 250',year_range:'2024-2026',modelcode:'AB23'}];}
    else if(action==='models'){
     const level=u.searchParams.get('level');body.rows=level==='brands'?[{brand:'KTM'},{brand:'Honda'}]:level==='models'?[{model:'EXC 250'},{model:'EXC 300'}]:[{year_range:'2024-2026',modelcode:'AB23'}];
    }else if(action==='generate_modelcode')body.code='ZZ23';
@@ -79,8 +80,8 @@ const assert = require('assert/strict');
   const fittingLayout=await page.locator('[data-component-row="F"] .pb-item-name').evaluate(cell=>{const inputs=[...cell.querySelectorAll('input')],rects=inputs.map(input=>input.getBoundingClientRect());return {order:inputs.map(input=>input.dataset.field),sameRow:Math.abs(rects[0].y-rects[1].y)<2,sideBySide:rects[1].x>=rects[0].right};});
   assert.deepEqual(fittingLayout,{order:['label','reference'],sameRow:true,sideBySide:true},'Fitting name and reference share one row.');
   await page.locator('[data-target="#pb-model-modal"]').click();
-  await page.selectOption('#pb-model-brand','KTM');await page.selectOption('#pb-model-name','EXC 250');
-  await page.selectOption('#pb-model-years',{index:1});await page.click('#pb-model-apply');
+  await page.fill('#pb-model-search','AB23');await page.locator('[data-model-leaf]').first().check();
+  await page.click('#pb-model-apply');
   await page.waitForFunction(()=>document.getElementById('pb-summary-code').textContent==='AB23');
   await page.locator('[name="category_kind"][value="universal"]').check();
   await page.selectOption('#pb-uni-brand','KTM');

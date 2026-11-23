@@ -1563,6 +1563,7 @@ require_once $base . '/includes/orders_workflow_helpers.php';
 require_once $base . '/includes/orders_customs_helpers.php';
 require_once $base . '/includes/orders_pending_contact_helpers.php';
 require_once $base . '/includes/orders_address_helpers.php';
+require_once $base . '/includes/orders_multishipping_helpers.php';
 require_once $base . '/includes/get_order_detail_product_spec_selects.php';
 require_once $base . '/includes/shipping_methods.php';
 require_once __DIR__ . '/department_config.php';
@@ -6119,6 +6120,13 @@ ob_start();
           <div class="order-header-summary order-header-operations">
             <div class="order-header-operations-card">
               <div class="order-header-operations-title">Tracking</div>
+              <?php $detailMultishipping = ordersMultishippingGroupForOrder($conn, $orderId); ?>
+              <?php if ($detailMultishipping): ?>
+                <button type="button" class="btn btn-sm btn-outline-info mb-2 js-open-multishipping"
+                  data-order-id="<?php echo (int) $orderId; ?>">
+                  <i class="fas fa-box mr-1"></i>Multishipping · <?php echo h($detailMultishipping['status']); ?>
+                </button>
+              <?php endif; ?>
               <?php
               $trackingRows = [];
               $trackingColumns = orderDetailTableColumns($conn, 'order_tracking_numbers');

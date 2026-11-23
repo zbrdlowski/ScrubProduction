@@ -12,7 +12,7 @@ foreach (['',null,'-1','1.234','1e2','100000000','NaN',[]] as $bad) priceReject(
 foreach (['ZZZ','',[], 'EURO'] as $bad) priceReject(fn()=>pb_validate_product_prices(array_merge($prices,['web_currency'=>$bad])), 'Invalid currencies rejected.');
 priceReject(fn()=>pb_validate_product_prices(array_merge($prices,['amazon_price'=>'-0.01'])), 'Optional platform prices are also validated.');
 require __DIR__ . '/../includes/conn.php';
-foreach (['product_builder_boxes','product_builder_graphics_versions','product_builder_designs','product_builder_uni_categories','product_builder_products','product_builder_components'] as $table) {
+foreach (['product_builder_boxes','product_builder_graphics_versions','product_builder_designs','product_builder_uni_categories','product_builder_products','product_builder_compatibility','product_builder_components'] as $table) {
     $ddl = $pdo->query('SHOW CREATE TABLE ' . $table)->fetch(PDO::FETCH_NUM)[1];
     $ddl = str_replace('CREATE TABLE', 'CREATE TEMPORARY TABLE', $ddl);
     $ddl = preg_replace('/^\s*CONSTRAINT[^\n]*\n/m', '', $ddl);

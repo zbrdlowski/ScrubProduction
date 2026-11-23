@@ -4,7 +4,7 @@ if(PHP_SAPI!=='cli'){http_response_code(404);exit;}
 require_once __DIR__.'/../scripts/product_builder/service.php';
 require_once __DIR__.'/../includes/conn.php';
 function categorySearchAssert(bool $ok,string $message):void{if(!$ok)throw new RuntimeException($message);}
-foreach(['product_builder_uni_categories','product_builder_boxes','product_builder_products','product_builder_components'] as $table){
+foreach(['product_builder_uni_categories','product_builder_boxes','product_builder_products','product_builder_compatibility','product_builder_components'] as $table){
  $ddl=$pdo->query('SHOW CREATE TABLE '.$table)->fetch(PDO::FETCH_NUM)[1];$ddl=str_replace('CREATE TABLE','CREATE TEMPORARY TABLE',$ddl);$ddl=preg_replace('/^\s*CONSTRAINT[^\n]*\n/m','',$ddl);$pdo->exec(preg_replace('/,\s*\)/',"\n)",$ddl));
 }
 $pdo->exec("INSERT INTO product_builder_uni_categories (brand,category_name,modelcode,included_models) VALUES ('Kawasaki','Default','UNI1','Models')");$uni=(int)$pdo->lastInsertId();

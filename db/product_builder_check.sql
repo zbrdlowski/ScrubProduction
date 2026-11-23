@@ -1,4 +1,4 @@
--- Read-only verification of the same seven tables and twenty-five columns checked by the application.
+-- Read-only verification of Product Builder tables and required columns.
 -- Select the DarkScrub application database in phpMyAdmin before importing.
 SELECT DATABASE() AS checked_database;
 SELECT 'product_builder_products' AS required_object, IF(EXISTS(SELECT 1 FROM information_schema.tables WHERE table_schema=DATABASE() AND table_name='product_builder_products'),'OK','MISSING') AS status
@@ -67,4 +67,6 @@ SELECT 'product_builder_channel_listings.listed_date', IF(EXISTS(SELECT 1 FROM i
 UNION ALL
 SELECT 'product_builder_transfers', IF(EXISTS(SELECT 1 FROM information_schema.tables WHERE table_schema=DATABASE() AND table_name='product_builder_transfers'),'OK','MISSING')
 UNION ALL
-SELECT 'product_builder_transfers.img_status', IF(EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name='product_builder_transfers' AND column_name='img_status'),'OK','MISSING');
+SELECT 'product_builder_transfers.img_status', IF(EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name='product_builder_transfers' AND column_name='img_status'),'OK','MISSING')
+UNION ALL
+SELECT 'product_builder_compatibility', IF(EXISTS(SELECT 1 FROM information_schema.tables WHERE table_schema=DATABASE() AND table_name='product_builder_compatibility'),'OK','MISSING');

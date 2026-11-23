@@ -42,7 +42,7 @@ echo "Product builder validation and CSV: OK\n";
 if(!in_array('--db',$argv,true))exit;
 require_once __DIR__ . '/../includes/conn.php';
 // Session-local temporary tables shadow live tables. No persisted test rows or deletes.
-foreach(['product_builder_boxes','product_builder_graphics_versions','product_builder_designs','product_builder_uni_categories','product_builder_products','product_builder_components'] as $table) {
+foreach(['product_builder_boxes','product_builder_graphics_versions','product_builder_designs','product_builder_uni_categories','product_builder_products','product_builder_compatibility','product_builder_components'] as $table) {
     $ddl=$pdo->query('SHOW CREATE TABLE '.$table)->fetch(PDO::FETCH_NUM)[1];
     $ddl=str_replace('CREATE TABLE','CREATE TEMPORARY TABLE',$ddl);
     $ddl=preg_replace('/^\s*CONSTRAINT[^\n]*\n/m','',$ddl);

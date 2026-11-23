@@ -443,3 +443,25 @@
 .pb-transfer-created{display:inline-flex;align-items:center;gap:5px;font-size:.76rem;white-space:normal;font-weight:600;color:#e1eff5}
 .pb-transfer-draft-path{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:6px}
 .pb-transfer-draft-path code{overflow-wrap:anywhere;color:inherit}
+
+/* Model compatibility picker uses the same compact dark controls as the product editor. */
+.pb-model-layout{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,1fr);gap:16px;margin-bottom:16px}
+.pb-model-tree{height:48vh;min-height:250px;overflow:auto;padding:8px;border:1px solid #637782;border-radius:4px;background:#2c373e}
+.pb-model-tree details{margin:2px 0}
+.pb-model-tree summary{padding:5px 6px;cursor:pointer;user-select:none}
+.pb-model-tree summary:hover,.pb-model-leaf:hover{background:#3b505c}
+.pb-model-tree summary input,.pb-model-leaf input{width:16px;height:16px;margin:0 7px 0 3px;accent-color:#17a2b8;vertical-align:middle}
+.pb-model-tree summary small{margin-left:8px}
+.pb-model-children{margin-left:19px;border-left:1px solid #52636d;padding-left:8px}
+.pb-model-leaf{display:flex;align-items:center;padding:5px 7px;margin:0;font-weight:400!important;cursor:pointer}
+.pb-model-leaf code{margin-left:5px;color:#8cdae6}
+.pb-model-selection{min-width:0;border:1px solid #637782;border-radius:4px;background:#303b42}
+.pb-model-selection-heading{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:10px;border-bottom:1px solid #637782}
+#pb-model-selected{list-style:none;margin:0;padding:0;max-height:calc(48vh - 55px);overflow:auto}
+#pb-model-selected li{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 10px;border-bottom:1px solid #52636d;font-size:.82rem}
+#pb-model-selected li span{overflow-wrap:anywhere}
+.pb-compatibility-details summary{cursor:pointer;color:#a5e1ed;font-size:.8rem}
+.pb-compatibility-details ul{list-style:none;margin:5px 0;padding:0}
+.pb-compatibility-details li{margin:4px 0;font-size:.78rem;white-space:normal}
+.pb-category-meta{flex-wrap:wrap}
+@media(max-width:767px){.pb-model-layout{grid-template-columns:1fr}.pb-model-tree{height:40vh}#pb-model-selected{max-height:24vh}}

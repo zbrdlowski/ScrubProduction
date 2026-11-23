@@ -18,7 +18,7 @@ $seat=$bad;$seat['bundle_type']='TFPS';trimAssert(array_column(pb_validate_produ
 $bad=$base;$bad['bundle_type']='GFP';$bad['components'][0]['component_type']='T';trimReject(fn()=>pb_validate_product($bad),'Legacy T input is accepted only for T bundles.');
 require_once __DIR__.'/../includes/conn.php';
 // Session-local tables shadow live data. No permanent listing/library/inventory changes.
-foreach(['product_builder_boxes','product_builder_graphics_versions','product_builder_designs','product_builder_uni_categories','product_builder_products','product_builder_components'] as $table){
+foreach(['product_builder_boxes','product_builder_graphics_versions','product_builder_designs','product_builder_uni_categories','product_builder_products','product_builder_compatibility','product_builder_components'] as $table){
  $ddl=$pdo->query('SHOW CREATE TABLE '.$table)->fetch(PDO::FETCH_NUM)[1];$ddl=str_replace('CREATE TABLE','CREATE TEMPORARY TABLE',$ddl);$ddl=preg_replace('/^\s*CONSTRAINT[^\n]*\n/m','',$ddl);$pdo->exec(preg_replace('/,\s*\)/',"\n)",$ddl));
 }
 $pdo->exec('CREATE TEMPORARY TABLE items (id INT PRIMARY KEY,barcode VARCHAR(100),main_supplier VARCHAR(100),quantity INT)');

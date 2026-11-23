@@ -63,6 +63,7 @@ try {
         if ($action === 'designs') pb_reply(['ok'=>true,'rows'=>pb_design_list($pdo),'versions'=>pb_graphics_version_list($pdo)]);
         if ($action === 'categories') pb_reply(['ok'=>true,'rows'=>$pdo->query('SELECT u.*, (SELECT COUNT(*) FROM product_builder_products p WHERE p.uni_category_id=u.id) AS usage_count FROM product_builder_uni_categories u ORDER BY brand,category_name')->fetchAll(PDO::FETCH_ASSOC)]);
         if ($action === 'plastic_item') pb_reply(['ok'=>true,'item'=>pb_find_plastic_item($pdo, pb_text($_GET['barcode'] ?? '', 'Product code', 100))]);
+        if ($action === 'model_catalogue') pb_reply(['ok'=>true,'rows'=>pb_model_catalogue($pdo)]);
         if ($action === 'models') {
             $level = (string) ($_GET['level'] ?? 'brands');
             if ($level === 'brands') $rows = $pdo->query("SELECT DISTINCT brand FROM scrubdata WHERE brand<>'' AND modelcode<>'' ORDER BY brand")->fetchAll(PDO::FETCH_ASSOC);
@@ -77,6 +78,7 @@ try {
         if ($action === 'product') {
             $stmt = $pdo->prepare('SELECT p.*,u.brand AS uni_brand,u.category_name AS uni_name,b.name AS box_name,b.length_cm AS box_length_cm,b.width_cm AS box_width_cm,b.height_cm AS box_height_cm,b.weight_kg AS box_weight_kg FROM product_builder_products p LEFT JOIN product_builder_uni_categories u ON u.id=p.uni_category_id LEFT JOIN product_builder_boxes b ON b.id=p.box_id WHERE p.id=?'); $stmt->execute([(int) ($_GET['id'] ?? 0)]); $row = $stmt->fetch(PDO::FETCH_ASSOC);
             if (!$row) pb_reply(['ok'=>false,'error'=>'Product not found.'],404);
+            $row['compatibility'] = pb_product_compatibilities($pdo,[$row])[(int)$row['id']];
             $row['components'] = pb_product_components($pdo, (int)$row['id']);
             $row['channel_listings'] = pb_channel_listings($pdo, [(int)$row['id']])[(int)$row['id']];
             pb_reply(['ok'=>true,'product'=>$row]);

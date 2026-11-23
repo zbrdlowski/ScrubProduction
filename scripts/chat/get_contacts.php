@@ -39,6 +39,8 @@ $sqlUsers = "SELECT
         tm.last_read_message_id,
         lm.id AS last_message_id,
         lm.created_at AS last_message_at,
+        lm.message_text AS last_message_text,
+        lm.message_type AS last_message_type,
         (
             SELECT COUNT(*)
             FROM chat_messages cmu
@@ -146,12 +148,15 @@ while ($row = $resultUsers->fetch_assoc()) {
         'photo' => $row['photo'] ?? '',
         'department_name' => $row['department_name'] ?? '',
         'permission' => (int)($row['permission'] ?? 0),
+        'is_active' => strcasecmp(trim((string)($row['active'] ?? 'Active')), 'Active') === 0,
         'online_status' => (int)($row['online_status'] ?? 0),
         'status_label' => $meta['label'],
         'status_icon' => $meta['icon'],
         'status_bg' => $meta['bg'],
         'thread_id' => (int)($row['thread_id'] ?? 0),
         'unread_count' => (int)($row['unread_count'] ?? 0),
+        'last_message_text' => $row['last_message_text'] ?? '',
+        'last_message_type' => $row['last_message_type'] ?? '',
         'last_message_at' => $row['last_message_at'] ?? null
     ];
 }
@@ -165,6 +170,8 @@ $sqlAnnouncement = "SELECT
         tm.last_read_message_id,
         lm.id AS last_message_id,
         lm.created_at AS last_message_at,
+        lm.message_text AS last_message_text,
+        lm.message_type AS last_message_type,
         (
             SELECT COUNT(*)
             FROM chat_messages cmu
@@ -236,6 +243,8 @@ if ($row) {
         'status_bg' => 'bg-maroon',
         'thread_id' => $threadId,
         'unread_count' => (int)($row['unread_count'] ?? 0),
+        'last_message_text' => $row['last_message_text'] ?? '',
+        'last_message_type' => $row['last_message_type'] ?? '',
         'last_message_at' => $row['last_message_at'] ?? null
     ];
 }

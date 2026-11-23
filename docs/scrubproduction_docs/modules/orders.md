@@ -95,3 +95,13 @@ Používané JSON keys:
 - Zdokumentovať workflow status transitions.
 - Doplniť ERD pre orders tabuľky.
 - Zaviesť jednotný helper pre filters parsing.
+
+## Uvoľnenie objednávok z multishippingu pre opätovné odoslanie
+
+Pri skupine `EXPORTED` alebo `SHIPPED` otvorte **MULTI** v zozname, prípadne **Multishipping** v časti Tracking v detaile objednávky. Pri objednávkach, ktoré neboli skutočne odoslané, označte **Release this order for reshipment** a potvrďte **Release selected orders**.
+
+Vybrané objednávky sa odpoja od skupiny, vrátia do `READY_TO_SHIP` (Ready for Label) a uvoľní sa ich FedEx exportný zámok. Všetky ich aktívne tracking čísla sa odstránia rovnakým spôsobom ako cez Delete tracking (`deleted_at`); zásah a pôvodné čísla zostávajú v audite. Odstránia sa aj dátumy odoslania/doručenia, ak ich schéma obsahuje. Objednávky možno následne odoslať samostatne alebo zaradiť do iného multishippingu.
+
+Ostatní členovia si zachovajú stav aj tracking. Pri uvoľnení hlavnej objednávky sa hlavnou stane prvý zostávajúci člen; skupina s jediným členom zostáva priradená k pôvodnej zásielke. Po uvoľnení všetkých členov sa prázdna skupina označí `CANCELLED`.
+
+Akcia používa existujúce oprávnenia a obmedzenia pracoviska pre multishipping. Povolené stavy vybraných objednávok sú `READY_TO_SHIP`, `READY_TO_INVOICE` a `SHIPPED`. Je určená pre výnimočné opravy a neruší štítok u dopravcu. Bežné odomknutie skupiny naďalej zachováva tracking históriu.

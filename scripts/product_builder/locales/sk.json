@@ -592,5 +592,22 @@
   "Reload folder path": "Načítať aktuálnu cestu",
   "Folder path saved.": "Cesta k priečinku bola uložená.",
   "Copy failed. Select and copy the folder path manually.": "Kopírovanie zlyhalo. Označte a skopírujte cestu ručne.",
-  "Discard unsaved changes?": "Zahodiť neuložené zmeny?"
+  "Discard unsaved changes?": "Zahodiť neuložené zmeny?",
+  "Select all compatible models and year ranges.": "Vyberte všetky kompatibilné modely a rozsahy rokov.",
+  "Search brand, model, years or modelcode…": "Hľadať značku, model, roky alebo modelcode…",
+  "Compatible models": "Kompatibilné modely",
+  "A brand or model checkbox selects the matching year ranges shown by the search.": "Zaškrtnutie značky alebo modelu vyberie rozsahy rokov zobrazené vo vyhľadávaní.",
+  "Clear selection": "Zrušiť výber",
+  "Use selected models": "Použiť vybrané modely",
+  "{count} compatible models selected": "Vybrané kompatibilné modely: {count}",
+  "{count} compatible models": "Kompatibilné modely: {count}",
+  "+{count} models": "+{count} modelov",
+  "Remove {model}": "Odstrániť {model}",
+  "No compatible models selected.": "Zatiaľ nie sú vybrané kompatibilné modely.",
+  "No models match this search.": "Vyhľadávaniu nezodpovedajú žiadne modely.",
+  "Loading models…": "Načítavajú sa modely…",
+  "Refresh Product Builder before changing multiple compatible models.": "Pred zmenou viacerých kompatibilných modelov obnovte Product Builder.",
+  "Select between 1 and 2000 compatible models.": "Vyberte 1 až 2000 kompatibilných modelov.",
+  "Invalid compatible model selection.": "Neplatný výber kompatibilných modelov.",
+  "A selected model is no longer available. Refresh models and check the selection.": "Vybraný model už nie je dostupný. Obnovte modely a skontrolujte výber."
 }

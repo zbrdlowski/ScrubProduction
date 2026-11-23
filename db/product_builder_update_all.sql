@@ -6,7 +6,7 @@
 -- Previously deleted default designs/versions may be added again.
 -- Does not change user permissions or import UNI categories.
 -- No CREATE DATABASE, USE, DROP or TRUNCATE statements.
--- The final verification must show thirty-four OK rows in the application database.
+-- The final verification must show thirty-five OK rows in the application database.
 SET NAMES utf8mb4;
 
 -- Independent product builder; no dependency on the legacy catalogue.
@@ -1883,7 +1883,7 @@ CREATE TABLE IF NOT EXISTS product_builder_channel_listings (
  CONSTRAINT fk_pb_channel_product FOREIGN KEY (product_id) REFERENCES product_builder_products(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Read-only verification of the same seven tables and twenty-five columns checked by the application.
+-- Read-only verification of Product Builder tables and required columns.
 -- Select the DarkScrub application database in phpMyAdmin before importing.
 -- DARKSCRUB: sales channel listing date (update 011).
 -- Select the application database in phpMyAdmin; run after update 010.
@@ -1932,6 +1932,25 @@ SET @pb_transfer_img_sql=IF(@pb_transfer_img_exists=0,
 PREPARE pb_transfer_img_migration FROM @pb_transfer_img_sql;
 EXECUTE pb_transfer_img_migration;
 DEALLOCATE PREPARE pb_transfer_img_migration;
+
+-- Multiple model-specific compatibilities per product. Modelcodes may be shared by different models.
+CREATE TABLE IF NOT EXISTS product_builder_compatibility (
+ id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+ product_id BIGINT UNSIGNED NOT NULL,
+ brand VARCHAR(100) NOT NULL, model VARCHAR(150) NOT NULL,
+ year_range VARCHAR(50) NOT NULL DEFAULT '', modelcode VARCHAR(7) NOT NULL,
+ sort_order INT UNSIGNED NOT NULL DEFAULT 0,
+ UNIQUE KEY uq_pb_compatibility (product_id,brand,model,year_range,modelcode),
+ KEY idx_pb_compatibility_modelcode (modelcode,product_id),
+ CONSTRAINT fk_pb_compatibility_product FOREIGN KEY (product_id) REFERENCES product_builder_products(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Preserve the original specific category. Re-import never replaces a saved selection.
+INSERT INTO product_builder_compatibility (product_id,brand,model,year_range,modelcode,sort_order)
+SELECT p.id,p.brand,p.model,p.year_range,p.modelcode,0
+FROM product_builder_products p
+WHERE p.category_kind='specific' AND p.modelcode<>''
+AND NOT EXISTS (SELECT 1 FROM product_builder_compatibility c WHERE c.product_id=p.id);
 
 SELECT DATABASE() AS checked_database;
 SELECT 'product_builder_products' AS required_object, IF(EXISTS(SELECT 1 FROM information_schema.tables WHERE table_schema=DATABASE() AND table_name='product_builder_products'),'OK','MISSING') AS status
@@ -2003,4 +2022,6 @@ SELECT 'product_builder_channel_listings.listed_date', IF(EXISTS(SELECT 1 FROM i
 UNION ALL
 SELECT 'product_builder_transfers', IF(EXISTS(SELECT 1 FROM information_schema.tables WHERE table_schema=DATABASE() AND table_name='product_builder_transfers'),'OK','MISSING')
 UNION ALL
-SELECT 'product_builder_transfers.img_status', IF(EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name='product_builder_transfers' AND column_name='img_status'),'OK','MISSING');
+SELECT 'product_builder_transfers.img_status', IF(EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name='product_builder_transfers' AND column_name='img_status'),'OK','MISSING')
+UNION ALL
+SELECT 'product_builder_compatibility', IF(EXISTS(SELECT 1 FROM information_schema.tables WHERE table_schema=DATABASE() AND table_name='product_builder_compatibility'),'OK','MISSING');

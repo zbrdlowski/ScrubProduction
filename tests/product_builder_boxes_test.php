@@ -12,7 +12,7 @@ foreach (['0','0.00','-1','1.234','100000','1e2','',[],null] as $bad) boxReject(
 foreach (['-0.001','0.0001','1000000','',[],null] as $bad) boxReject(fn()=>pb_validate_box(array_merge($box,['weight_kg'=>$bad])),'Reject invalid weight.');
 foreach (['',str_repeat('a',151),"Bad\nname"] as $bad) boxReject(fn()=>pb_validate_box(array_merge($box,['name'=>$bad])),'Reject invalid names.');
 require __DIR__ . '/../includes/conn.php';
-foreach (['product_builder_boxes','product_builder_products'] as $table) {
+foreach (['product_builder_boxes','product_builder_products','product_builder_compatibility'] as $table) {
  $ddl=$pdo->query('SHOW CREATE TABLE '.$table)->fetch(PDO::FETCH_NUM)[1];
  $ddl=str_replace('CREATE TABLE','CREATE TEMPORARY TABLE',$ddl);$ddl=preg_replace('/^\s*CONSTRAINT[^\n]*\n/m','',$ddl);$ddl=preg_replace('/,\s*\)/',"\n)",$ddl);$pdo->exec($ddl);
 }

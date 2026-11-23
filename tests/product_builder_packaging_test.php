@@ -11,7 +11,7 @@ packingAssert(pb_validate_product($base+['weight_kg'=>'2,345'])['weight_kg']==='
 foreach(['-1','0.0001','1000000','1e3',[],true] as $bad)packingReject(fn()=>pb_validate_product($base+['weight_kg'=>$bad]),'Reject invalid total weight.');
 foreach(['-1','abc',[],0,'1.5'] as $bad)packingReject(fn()=>pb_validate_product($base+['box_id'=>$bad]),'Reject invalid box identifier.');
 require __DIR__.'/../includes/conn.php';
-foreach(['product_builder_boxes','product_builder_graphics_versions','product_builder_designs','product_builder_uni_categories','product_builder_products','product_builder_components'] as $table){$ddl=$pdo->query('SHOW CREATE TABLE '.$table)->fetch(PDO::FETCH_NUM)[1];$ddl=str_replace('CREATE TABLE','CREATE TEMPORARY TABLE',$ddl);$ddl=preg_replace('/^\s*CONSTRAINT[^\n]*\n/m','',$ddl);$ddl=preg_replace('/,\s*\)/',"\n)",$ddl);$pdo->exec($ddl);}
+foreach(['product_builder_boxes','product_builder_graphics_versions','product_builder_designs','product_builder_uni_categories','product_builder_products','product_builder_compatibility','product_builder_components'] as $table){$ddl=$pdo->query('SHOW CREATE TABLE '.$table)->fetch(PDO::FETCH_NUM)[1];$ddl=str_replace('CREATE TABLE','CREATE TEMPORARY TABLE',$ddl);$ddl=preg_replace('/^\s*CONSTRAINT[^\n]*\n/m','',$ddl);$ddl=preg_replace('/,\s*\)/',"\n)",$ddl);$pdo->exec($ddl);}
 $pdo->exec("INSERT INTO product_builder_uni_categories (brand,category_name,modelcode,included_models) VALUES ('Test','Packaging','ZZ23','Models')");$base['uni_category_id']=(int)$pdo->lastInsertId();
 $a=pb_save_box($pdo,['name'=>'Box A','length_cm'=>60,'width_cm'=>40,'height_cm'=>30,'weight_kg'=>'0.500']);
 $b=pb_save_box($pdo,['name'=>'Box B','length_cm'=>40,'width_cm'=>30,'height_cm'=>10,'weight_kg'=>'0']);
