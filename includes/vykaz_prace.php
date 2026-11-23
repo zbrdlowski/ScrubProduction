@@ -3,6 +3,7 @@ declare(strict_types=1);
 /** @var mysqli $conn */
 require_once __DIR__ . '/conn.php';
 require_once __DIR__ . '/auth.php';
+require_once dirname(__DIR__) . '/scripts/orders/department_config.php';
 
 if (!isset($conn) || !$conn instanceof mysqli) {
   echo '<div class="alert alert-danger">Database connection error.</div>';
@@ -76,6 +77,7 @@ $subcontractorRateCards = [
 // štruktúru tabuľky ani hlavičku manuálne.
 $reportColumns = [
   'order_number' => 'Order Number',
+  'order_type' => 'Order Type',
   'customer_name' => 'Customer',
   'order_date' => 'Order Date',
   'started_at' => 'Taken (Take/Assign)',
@@ -239,9 +241,29 @@ if ($fWorker > 0) {
 
 $whereSql = 'WHERE ' . implode(' AND ', $where);
 
+$trimPrefixes = array_filter(array_keys(DEPT_PREFIX_MAP), static fn(string $prefix): bool => strpos($prefix, 'TF') === 0);
+$trimPrefixesSql = implode(', ', array_map(static fn(string $prefix): string => "'" . str_replace("'", "''", $prefix) . "'", $trimPrefixes));
+if ($trimPrefixesSql === '') {
+  $trimPrefixesSql = "''";
+}
+
 $sql = "SELECT
     o.id AS order_id,
     o.order_number,
+    o.manual_types_override,
+    (
+      SELECT GROUP_CONCAT(DISTINCT CASE
+        WHEN UPPER(TRIM(type_item.item_type_code)) = 'G'
+          AND (
+            SUBSTRING_INDEX(UPPER(TRIM(SUBSTRING_INDEX(COALESCE(type_item.sku, ''), '|', 1))), '_', 1) IN ($trimPrefixesSql)
+            OR SUBSTRING_INDEX(UPPER(TRIM(SUBSTRING_INDEX(COALESCE(type_item.custom_label, ''), '|', 1))), '_', 1) IN ($trimPrefixesSql)
+          ) THEN 'T'
+        ELSE UPPER(TRIM(type_item.item_type_code))
+        END SEPARATOR '')
+      FROM order_items type_item
+      WHERE type_item.order_id = o.id
+        AND type_item.deleted_at IS NULL
+    ) AS order_type,
     COALESCE(NULLIF(cu.name, ''), NULLIF(cu.email, ''), '') AS customer_name,
     o.order_date,
     o.status AS order_status,
@@ -530,8 +552,17 @@ foreach ($rows as $r) {
     }, $extraCharges);
     $workLevelLabel .= ' + ' . implode(', ', $extraLabels);
   }
+  // Use all active order items, including departments hidden by report filters.
+  $orderType = strtoupper(trim((string) ($r['manual_types_override'] ?? '')));
+  if ($orderType === '') {
+    $orderType = (string) ($r['order_type'] ?? '');
+  }
+  $orderTypeCodes = array_unique(str_split(preg_replace('/[^A-Z]/', '', $orderType)));
+  $orderTypeWeights = ['T' => 0, 'G' => 1, 'F' => 2, 'P' => 3, 'S' => 4, 'M' => 5];
+  usort($orderTypeCodes, static fn(string $a, string $b): int => ($orderTypeWeights[$a] ?? 99) <=> ($orderTypeWeights[$b] ?? 99));
   $displayRows[] = [
     'order_number' => $r['order_number'],
+    'order_type' => implode('', $orderTypeCodes) ?: '—',
     'customer_name' => trim((string) ($r['customer_name'] ?? '')) !== '' ? (string) $r['customer_name'] : '—',
     'order_date' => $r['order_date'],
     'started_at' => $startedAt,
