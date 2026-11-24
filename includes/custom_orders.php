@@ -1285,6 +1285,10 @@ function customOrderRenderSpecFieldInput(mysqli $conn, array $definition, array 
     $currentValue = trim((string) ($selectedOrder['rider_number'] ?? ''));
   }
 
+  if (customOrdersIsExported($selectedOrder)) {
+    $extraAttr .= ' disabled data-custom-export-locked="1"';
+  }
+
   return renderProductSpecField(
     $conn,
     $specKey,
@@ -4642,7 +4646,7 @@ if (!$customOrdersDetailRequest && !$customOrdersFullPageDetail) {
                         <?php
                         $rowStatus = (string) ($row['status'] ?? 'LEAD');
                         $rowStatusLabel = selectedText($statuses, $rowStatus);
-                        $rowStatusCanEdit = $customOrdersCanUpdateStatus;
+                        $rowStatusCanEdit = $customOrdersCanUpdateStatus && !customOrdersIsExported($row);
                         ?>
                         <span class="custom-inline-status<?= $rowStatusCanEdit ? ' is-editable' : '' ?>" data-custom-inline-status-cell data-order-id="<?= (int) $row['id'] ?>">
                           <span class="custom-inline-status-label" data-custom-inline-status-label><?= h($rowStatusLabel) ?></span>
@@ -4831,7 +4835,9 @@ if (!$customOrdersDetailRequest && !$customOrdersFullPageDetail) {
         $customSocialHandleCopy = trim((string) ($selectedOrder['social_handle'] ?? ''));
         $customOrderAndCustomerNameCopy = trim($customDisplayNumber . ($customCustomerNameCopy !== '' ? ' ' . $customCustomerNameCopy : ''));
         $customOrderAndNickCopy = trim($customDisplayNumber . ($customSocialHandleCopy !== '' ? ' ' . $customSocialHandleCopy : ''));
-        $customOfficialNumberLocked = (int) ($selectedOrder['production_order_id'] ?? 0) > 0;
+        $customOfficialNumberLocked = customOrdersIsExported($selectedOrder);
+        $customExportDisabled = $customOfficialNumberLocked ? 'disabled data-custom-export-locked="1"' : '';
+        $customExportFormAttr = $customOfficialNumberLocked ? 'data-custom-export-locked-form="1"' : '';
         $customOfficialNumberEditable = $customOrdersCanManage && $customOfficialNumber !== '' && !$customOfficialNumberLocked;
         $customHeaderHasInvalid = (bool) array_intersect_key($invalidFields, array_flip([
           'customer_name', 'social_handle', 'shipping_name', 'shipping_street', 'shipping_city',
@@ -4947,7 +4953,7 @@ if (!$customOrdersDetailRequest && !$customOrdersFullPageDetail) {
                 </span>
               <?php endif; ?>
               <?php $currentComplexityLevel = (int) ($selectedOrder['complexity_level'] ?? 1); if ($currentComplexityLevel <= 0) { $currentComplexityLevel = 1; } ?>
-              <select name="complexity_level" form="custom-twin-header-form-<?= (int) $selectedOrder['id'] ?>" class="form-control form-control-sm custom-complexity-control" title="Complexity Level" aria-label="Complexity Level" <?= $customOrdersCanManage ? '' : 'disabled' ?>>
+              <select name="complexity_level" form="custom-twin-header-form-<?= (int) $selectedOrder['id'] ?>" class="form-control form-control-sm custom-complexity-control" title="Complexity Level" aria-label="Complexity Level" <?= $customExportDisabled ?> <?= $customOrdersCanManage ? '' : 'disabled' ?>>
                 <?php if (!isset($customOrderComplexityOptions[$currentComplexityLevel])): ?>
                   <option value="<?= (int) $currentComplexityLevel ?>" selected><?= h(customOrderComplexityLabel($currentComplexityLevel, $customOrderComplexityOptions)) ?></option>
                 <?php endif; ?>
@@ -4959,7 +4965,7 @@ if (!$customOrdersDetailRequest && !$customOrdersFullPageDetail) {
                 <i class="fas fa-history mr-1"></i>Activity
                 <span class="badge badge-info"><?= count((array) ($selectedOrder['activity'] ?? [])) ?></span>
               </button>
-              <select name="status" form="custom-twin-header-form-<?= (int) $selectedOrder['id'] ?>" class="form-control form-control-sm custom-status-control" <?= $customOrdersCanUpdateStatus ? '' : 'disabled' ?>>
+              <select name="status" form="custom-twin-header-form-<?= (int) $selectedOrder['id'] ?>" class="form-control form-control-sm custom-status-control" <?= $customExportDisabled ?> <?= $customOrdersCanUpdateStatus ? '' : 'disabled' ?>>
                 <?php $currentOrderStatus = (string) ($selectedOrder['status'] ?? 'LEAD'); ?>
                 <?php foreach ($customOrderStatusChoices as $code => $label): ?>
                   <?php $statusOptionDisabled = !$customOrdersCanManage && isset($customOrderCustomerServiceOnlyStatusCodes[$code]); ?>
@@ -4970,7 +4976,7 @@ if (!$customOrdersDetailRequest && !$customOrdersFullPageDetail) {
                 <?php endif; ?>
               </select>
               <?php if (!$customOrdersCanManage && $customOrdersCanUpdateStatus): ?>
-                <button type="submit" form="custom-twin-header-form-<?= (int) $selectedOrder['id'] ?>" class="btn btn-outline-warning btn-sm custom-status-save-btn" title="Save status">
+                <button type="submit" form="custom-twin-header-form-<?= (int) $selectedOrder['id'] ?>" class="btn btn-outline-warning btn-sm custom-status-save-btn" title="Save status" <?= $customExportDisabled ?>>
                   <i class="fas fa-save mr-1"></i>Status
                 </button>
               <?php endif; ?>
@@ -4986,6 +4992,17 @@ if (!$customOrdersDetailRequest && !$customOrdersFullPageDetail) {
             </div>
           </div>
 
+          <?php if ($customOfficialNumberLocked): ?>
+            <div class="alert alert-warning m-3" role="status">
+              <i class="fas fa-lock mr-1" aria-hidden="true"></i>
+              <?php if ($customOrderHelpLang === 'sk'): ?>
+                Objednávka bola exportovaná do Production. Produkty, ich špecifikácie, množstvá, ceny a údaje custom workflow sú zamknuté, pretože sa nesynchronizujú. Zmeny vykonajte v Production. Kontakty, adresy, doprava, platby, vlastník, zdieľané poznámky a fotografie zostávajú prepojené.
+              <?php else: ?>
+                This order was exported to Production. Products, specifications, quantities, prices and custom workflow fields are locked because they are not synchronized. Make these changes in Production. Contacts, addresses, shipping, payments, owner, shared notes and photos remain linked.
+              <?php endif; ?>
+              <a class="alert-link" href="index.php?page=orders&amp;q=<?= urlencode((string) $selectedOrder['official_order_number']) ?>#order-<?= (int) $selectedOrder['production_order_id'] ?>">Open Production</a>
+            </div>
+          <?php endif; ?>
           <div class="custom-twin-order-body">
             <div class="row align-items-stretch">
               <div class="col-lg-8 d-flex flex-column custom-twin-column-stack">
@@ -5282,7 +5299,7 @@ if (!$customOrdersDetailRequest && !$customOrdersFullPageDetail) {
               $builderStatusDefinitions[$builderCurrentStatus] = ['label' => str_replace('_', ' ', $builderCurrentStatus), 'color' => '#6c757d'];
             }
             ?>
-            <form method="post" action="scripts/custom_orders/save_item.php" class="custom-inline-item-edit-form custom-add-item-form" data-scroll-target="#custom-order-builder-panel">
+            <form method="post" action="scripts/custom_orders/save_item.php" class="custom-inline-item-edit-form custom-add-item-form" data-scroll-target="#custom-order-builder-panel" <?= $customExportFormAttr ?>>
               <input type="hidden" name="custom_order_id" value="<?= (int) $selectedOrder['id'] ?>">
               <input type="hidden" name="custom_item_id" value="<?= (int) ($editItem['id'] ?? 0) ?>">
               <input type="hidden" name="inline_edit" value="1">
@@ -5290,14 +5307,14 @@ if (!$customOrdersDetailRequest && !$customOrdersFullPageDetail) {
                 <div class="custom-builder-picker">
                   <div class="custom-builder-picker-label">
                     <label>Product Type<?= customOrderHelp('item_type_code') ?></label>
-                    <select name="item_type_code" class="form-control form-control-sm custom-item-type-select">
+                    <select name="item_type_code" class="form-control form-control-sm custom-item-type-select" <?= $customExportDisabled ?>>
                       <option value="">Select product type...</option>
                       <?php foreach ($allowedTypes as $code => $label): ?><option value="<?= h($code) ?>" <?= ($currentBuilderType === $code) ? 'selected' : '' ?>><?= h($label) ?></option><?php endforeach; ?>
                     </select>
                   </div>
                   <div class="custom-builder-picker-label" data-graphics-subcategory-wrap <?= $currentBuilderDepartment === 'G' ? '' : 'hidden' ?>>
                     <label>Graphics subcategory<?= customOrderHelp('graphics_subcategory') ?></label>
-                    <select name="graphics_subcategory" class="form-control form-control-sm custom-graphics-subcategory-select">
+                    <select name="graphics_subcategory" class="form-control form-control-sm custom-graphics-subcategory-select" <?= $customExportDisabled ?>>
                       <option value="">Graphics Kit</option>
                       <?php foreach ($graphicsSubcategoryLabels as $subcatCode => $subcatLabel): ?>
                         <option value="<?= h((string) $subcatCode) ?>" <?= $currentBuilderSubcategory === (string) $subcatCode ? 'selected' : '' ?>><?= h((string) $subcatLabel) ?></option>
@@ -5335,17 +5352,17 @@ if (!$customOrdersDetailRequest && !$customOrdersFullPageDetail) {
                             <span class="custom-builder-type-badge" data-builder-type-badge><?= h($currentBuilderType !== '' ? $currentBuilderType : '?') ?></span>
                           </td>
                           <td style="min-width:280px;">
-                            <input type="text" name="title" class="form-control form-control-sm mb-1" value="<?= h($builderTitleValue) ?>" placeholder="Product name" required>
+                            <input type="text" name="title" class="form-control form-control-sm mb-1" value="<?= h($builderTitleValue) ?>" placeholder="Product name" required <?= $customExportDisabled ?>>
                             <div class="custom-existing-item-meta-edit">
-                              <input type="text" name="sku" class="form-control form-control-sm" value="<?= h($editItem['sku'] ?? '') ?>" placeholder="SKU / MANUAL">
-                              <input type="text" name="custom_label" class="form-control form-control-sm" value="<?= h($editItem['custom_label'] ?? '') ?>" placeholder="Custom label">
+                              <input type="text" name="sku" class="form-control form-control-sm" value="<?= h($editItem['sku'] ?? '') ?>" placeholder="SKU / MANUAL" <?= $customExportDisabled ?>>
+                              <input type="text" name="custom_label" class="form-control form-control-sm" value="<?= h($editItem['custom_label'] ?? '') ?>" placeholder="Custom label" <?= $customExportDisabled ?>>
                             </div>
                           </td>
                           <td style="width:72px;">
-                            <input type="number" min="1" name="qty" class="form-control form-control-sm" value="<?= h($editItem['qty'] ?? 1) ?>">
+                            <input type="number" min="1" name="qty" class="form-control form-control-sm" value="<?= h($editItem['qty'] ?? 1) ?>" <?= $customExportDisabled ?>>
                           </td>
                           <td style="width:92px;">
-                            <input type="number" step="0.01" name="unit_price" class="form-control form-control-sm" value="<?= h($builderUnitPriceValue) ?>">
+                            <input type="number" step="0.01" name="unit_price" class="form-control form-control-sm" value="<?= h($builderUnitPriceValue) ?>" <?= $customExportDisabled ?>>
                           </td>
                           <td style="min-width:220px;">
                             <?php $builderCategoryInfo = trim((string) ($builderCategoryFields['category_info'] ?? '')); ?>
@@ -5354,13 +5371,13 @@ if (!$customOrdersDetailRequest && !$customOrdersFullPageDetail) {
                             <input type="hidden" name="category_model" value="<?= h($builderCategoryFields['category_model'] ?? '') ?>">
                             <input type="hidden" name="category_year_range" value="<?= h($builderCategoryFields['category_year_range'] ?? '') ?>">
                             <input type="hidden" name="category_modelcode" value="<?= h($builderCategoryFields['category_modelcode'] ?? '') ?>">
-                            <button type="button" class="btn btn-sm btn-outline-info custom-category-info-trigger<?= $builderCategoryInfo === '' ? ' is-empty' : '' ?>" title="Select or change Brand, Model, Year range and Model Code">
+                            <button type="button" class="btn btn-sm btn-outline-info custom-category-info-trigger<?= $builderCategoryInfo === '' ? ' is-empty' : '' ?>" title="Select or change Brand, Model, Year range and Model Code" <?= $customExportDisabled ?>>
                               <span class="custom-category-info-text"><?= h($builderCategoryInfo !== '' ? $builderCategoryInfo : 'Select Brand / Model / Year / Model Code') ?></span>
                               <i class="fas fa-chevron-right" aria-hidden="true"></i>
                             </button>
                             <div class="custom-existing-item-upsell-edit">
                               <div class="form-check mb-0">
-                                <input class="form-check-input" type="checkbox" name="is_upsell" id="is_upsell" value="1" <?= (int) ($editItem['is_upsell'] ?? 0) === 1 ? 'checked' : '' ?>>
+                                <input class="form-check-input" type="checkbox" name="is_upsell" id="is_upsell" value="1" <?= (int) ($editItem['is_upsell'] ?? 0) === 1 ? 'checked' : '' ?> <?= $customExportDisabled ?>>
                                 <label class="form-check-label" for="is_upsell">Upsell<?= customOrderHelp('item_is_upsell') ?></label>
                               </div>
                             </div>
@@ -5392,7 +5409,7 @@ if (!$customOrdersDetailRequest && !$customOrdersFullPageDetail) {
                             <input type="date" class="form-control form-control-sm" disabled>
                           </td>
                           <td class="text-center" style="width:52px;">
-                            <button type="submit" data-builder-body <?= $currentBuilderType === '' ? 'hidden' : '' ?> class="btn btn-xs btn-outline-success custom-builder-mini-btn">Save</button>
+                            <button type="submit" data-builder-body <?= $currentBuilderType === '' ? 'hidden' : '' ?> class="btn btn-xs btn-outline-success custom-builder-mini-btn" <?= $customExportDisabled ?>>Save</button>
                           </td>
                           <td class="text-center" style="width:58px;">
                             <button type="button" class="btn btn-xs btn-outline-danger custom-builder-mini-btn" disabled>Delete</button>
@@ -5519,7 +5536,7 @@ if (!$customOrdersDetailRequest && !$customOrdersFullPageDetail) {
                 }
                 $itemAssignmentInitials = mb_substr($itemAssignmentInitials, 0, 2);
                 ?>
-                <form method="post" action="scripts/custom_orders/save_item.php" id="<?= h($itemEditFormId) ?>" class="mb-0 custom-inline-item-edit-form" data-scroll-target="#custom-order-builder-panel">
+                <form method="post" action="scripts/custom_orders/save_item.php" id="<?= h($itemEditFormId) ?>" class="mb-0 custom-inline-item-edit-form" data-scroll-target="#custom-order-builder-panel" <?= $customExportFormAttr ?>>
                   <input type="hidden" name="custom_order_id" value="<?= (int) $selectedOrder['id'] ?>">
                   <input type="hidden" name="custom_item_id" value="<?= (int) $item['id'] ?>">
                   <input type="hidden" name="item_type_code" value="<?= h($itemTypeCode) ?>">
@@ -5559,26 +5576,26 @@ if (!$customOrdersDetailRequest && !$customOrdersFullPageDetail) {
                           </td>
                           <td class="text-center" style="width:46px;"><span class="custom-builder-type-badge"><?= h($itemTypeCode) ?></span></td>
                           <td style="min-width:280px;">
-                            <input type="text" name="title" class="form-control form-control-sm mb-1" value="<?= h($item['title']) ?>" placeholder="Product name" required>
+                            <input type="text" name="title" class="form-control form-control-sm mb-1" value="<?= h($item['title']) ?>" placeholder="Product name" required <?= $customExportDisabled ?>>
                             <div class="custom-existing-item-meta-edit">
-                              <input name="sku" class="form-control form-control-sm" value="<?= h($item['sku'] ?: 'MANUAL') ?>" placeholder="SKU">
-                              <input name="custom_label" class="form-control form-control-sm" value="<?= h($item['custom_label']) ?>" placeholder="Custom label">
+                              <input name="sku" class="form-control form-control-sm" value="<?= h($item['sku'] ?: 'MANUAL') ?>" placeholder="SKU" <?= $customExportDisabled ?>>
+                              <input name="custom_label" class="form-control form-control-sm" value="<?= h($item['custom_label']) ?>" placeholder="Custom label" <?= $customExportDisabled ?>>
                             </div>
                           </td>
-                          <td style="width:72px;"><input type="number" min="1" name="qty" class="form-control form-control-sm" value="<?= (int) $item['qty'] ?>"></td>
-                          <td style="width:92px;"><input type="number" step="0.01" name="unit_price" class="form-control form-control-sm" value="<?= number_format((float) $item['unit_price'], 2, '.', '') ?>"></td>
+                          <td style="width:72px;"><input type="number" min="1" name="qty" class="form-control form-control-sm" value="<?= (int) $item['qty'] ?>" <?= $customExportDisabled ?>></td>
+                          <td style="width:92px;"><input type="number" step="0.01" name="unit_price" class="form-control form-control-sm" value="<?= number_format((float) $item['unit_price'], 2, '.', '') ?>" <?= $customExportDisabled ?>></td>
                           <td style="min-width:220px;">
                             <input type="hidden" name="category_info" value="<?= h($itemCategoryInfo) ?>">
                             <input type="hidden" name="category_brand" value="<?= h($itemCategoryFields['category_brand'] ?? '') ?>">
                             <input type="hidden" name="category_model" value="<?= h($itemCategoryFields['category_model'] ?? '') ?>">
                             <input type="hidden" name="category_year_range" value="<?= h($itemCategoryFields['category_year_range'] ?? '') ?>">
                             <input type="hidden" name="category_modelcode" value="<?= h($itemCategoryFields['category_modelcode'] ?? '') ?>">
-                            <button type="button" class="btn btn-sm btn-outline-info custom-category-info-trigger<?= $itemCategoryInfo === '' ? ' is-empty' : '' ?>" title="Select or change Brand, Model, Year range and Model Code">
+                            <button type="button" class="btn btn-sm btn-outline-info custom-category-info-trigger<?= $itemCategoryInfo === '' ? ' is-empty' : '' ?>" title="Select or change Brand, Model, Year range and Model Code" <?= $customExportDisabled ?>>
                               <span class="custom-category-info-text"><?= h($itemCategoryInfo !== '' ? $itemCategoryInfo : 'Select Brand / Model / Year / Model Code') ?></span>
                               <i class="fas fa-chevron-right" aria-hidden="true"></i>
                             </button>
                             <div class="custom-existing-item-upsell-edit">
-                              <div class="form-check mb-0"><input class="form-check-input" type="checkbox" name="is_upsell" id="inline-upsell-<?= (int) $item['id'] ?>" value="1" <?= (int) $item['is_upsell'] === 1 ? 'checked' : '' ?>><label class="form-check-label" for="inline-upsell-<?= (int) $item['id'] ?>">Upsell<?= customOrderHelp('item_is_upsell') ?></label></div>
+                              <div class="form-check mb-0"><input class="form-check-input" type="checkbox" name="is_upsell" id="inline-upsell-<?= (int) $item['id'] ?>" value="1" <?= (int) $item['is_upsell'] === 1 ? 'checked' : '' ?> <?= $customExportDisabled ?>><label class="form-check-label" for="inline-upsell-<?= (int) $item['id'] ?>">Upsell<?= customOrderHelp('item_is_upsell') ?></label></div>
                             </div>
                           </td>
                           <td class="text-center" style="width:76px;"><button type="button" class="btn btn-sm btn-outline-info custom-builder-link-btn" disabled><i class="fas fa-external-link-alt"></i></button></td>
@@ -5599,10 +5616,10 @@ if (!$customOrdersDetailRequest && !$customOrdersFullPageDetail) {
                             <input type="date" class="form-control form-control-sm" disabled>
                           </td>
                           <td class="text-center" style="width:58px;">
-                            <button type="submit" class="btn btn-xs btn-outline-success">Save</button>
+                            <button type="submit" class="btn btn-xs btn-outline-success" <?= $customExportDisabled ?>>Save</button>
                           </td>
                           <td class="text-center" style="width:62px;">
-                            <?php if ($customOrdersCanDeleteItems): ?><button type="submit" form="<?= h($itemDeleteFormId) ?>" class="btn btn-xs btn-outline-danger">Delete</button><?php else: ?><button type="button" class="btn btn-xs btn-outline-danger" disabled title="No permission to delete custom order items">Delete</button><?php endif; ?>
+                            <?php if ($customOrdersCanDeleteItems): ?><button type="submit" form="<?= h($itemDeleteFormId) ?>" class="btn btn-xs btn-outline-danger" <?= $customExportDisabled ?>>Delete</button><?php else: ?><button type="button" class="btn btn-xs btn-outline-danger" disabled title="No permission to delete custom order items">Delete</button><?php endif; ?>
                           </td>
                         </tr>
 
@@ -5626,7 +5643,7 @@ if (!$customOrdersDetailRequest && !$customOrdersFullPageDetail) {
                   </div>
                 </div>
                 </form>
-                <form method="post" action="scripts/custom_orders/delete_item.php" id="<?= h($itemDeleteFormId) ?>" class="d-none" data-scroll-target="#custom-order-builder-panel" onsubmit="return confirm('Delete this custom order item?');">
+                <form method="post" action="scripts/custom_orders/delete_item.php" id="<?= h($itemDeleteFormId) ?>" class="d-none" data-scroll-target="#custom-order-builder-panel" onsubmit="return confirm('Delete this custom order item?');" <?= $customExportFormAttr ?>>
                   <input type="hidden" name="custom_order_id" value="<?= (int) $selectedOrder['id'] ?>">
                   <input type="hidden" name="custom_item_id" value="<?= (int) $item['id'] ?>">
                 </form>
@@ -5986,7 +6003,7 @@ if (!$customOrdersDetailRequest && !$customOrdersFullPageDetail) {
             </span>
           </button>
           <div class="panel-body custom-collapsible-body" data-custom-collapsible-body <?= $followupsDefaultExpanded ? '' : 'hidden' ?>>
-            <fieldset class="custom-field-cluster" id="custom-order-followups-block" data-scroll-block>
+            <fieldset class="custom-field-cluster" id="custom-order-followups-block" data-scroll-block <?= $customExportDisabled ?>>
               <legend class="custom-field-cluster-title">Follow-up Details<?= customOrderHelp('followups_block') ?></legend>
               <?php $deadOrderLocked = !empty($selectedOrder['exported_at']) || !empty($selectedOrder['production_order_id']) || (string) ($selectedOrder['status'] ?? '') === 'EXPORTED'; ?>
               <div class="custom-followup-layout">
@@ -6288,8 +6305,25 @@ if (!$customOrdersDetailRequest && !$customOrdersFullPageDetail) {
       });
     }
 
+    function applyCustomOrdersExportLock(root) {
+      if (!root) return;
+      root.querySelectorAll('[data-custom-export-locked]').forEach(function (control) {
+        control.disabled = true;
+      });
+      root.querySelectorAll('form[data-custom-export-locked-form]').forEach(function (form) {
+        if (form.dataset.exportLockBound === '1') return;
+        form.dataset.exportLockBound = '1';
+        form.addEventListener('submit', function (event) {
+          event.preventDefault();
+          event.stopImmediatePropagation();
+        }, true);
+      });
+    }
+
     function applyCustomOrdersAccess(root) {
-      if (!root || customOrdersCanManage) return;
+      if (!root) return;
+      applyCustomOrdersExportLock(root);
+      if (customOrdersCanManage) return;
 
       root.querySelectorAll('form[action^="scripts/custom_orders/"]').forEach(function (form) {
         var action = String(form.getAttribute('action') || '').toLowerCase();
@@ -6310,7 +6344,7 @@ if (!$customOrdersDetailRequest && !$customOrdersFullPageDetail) {
       root.querySelectorAll('[form^="custom-twin-header-form-"]').forEach(function (control) {
         if (control.classList.contains('btn-copy-inline')) return;
         if (control.classList.contains('custom-status-control') || control.classList.contains('custom-status-save-btn')) {
-          control.disabled = false;
+          control.disabled = control.hasAttribute('data-custom-export-locked');
           return;
         }
         control.disabled = true;

@@ -15,7 +15,7 @@ if (!$order) {
   customOrdersFlash('danger', 'Custom order not found.');
   customOrdersRedirect();
 }
-if ((int) ($order['production_order_id'] ?? 0) > 0) {
+if (customOrdersIsExported($order)) {
   customOrdersFlash('danger', 'Exported custom orders cannot be deleted.');
   customOrdersRedirect($orderId);
 }

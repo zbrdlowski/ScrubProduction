@@ -19,7 +19,7 @@ try {
   $requestedSequenceValue = (int) $parsedOfficialNumber['sequence_value'];
   $requestedSuffix = (string) $parsedOfficialNumber['suffix'];
   $order = customOrdersGetOrder($conn, $orderId);
-  if ($order && (int) ($order['production_order_id'] ?? 0) > 0) {
+  if ($order && customOrdersIsExported($order)) {
     throw new RuntimeException('Official number cannot be changed after export to Production.');
   }
   $number = customOrdersAssignOfficialNumber($conn, $orderId, $prefix, $userId, $requestedSequenceValue, $requestedSuffix);

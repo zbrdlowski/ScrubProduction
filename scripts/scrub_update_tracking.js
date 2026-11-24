@@ -2,8 +2,9 @@
  * scrub_update_tracking.js
  * ------------------------------------------------------------------
  * "Update Tracking" — Web / eBay / Graphics Templates / Seatcover Templates
- * checklisty pre modely, ktorým bol nedávno pridaný/rozšírený modelový rok
+ * Alert modal pre modely, ktorým bol nedávno pridaný/rozšírený modelový rok
  * (cez "Add / Update Model Year"). Endpoint: scrub_update_tracking_ajax.php
+ * Detail modelu a spoločné uloženie spravuje product_chart_actions.js.
  *
  * Celé zabalené v IIFE, aby: (a) sa nič nedeklarovalo do globálneho scope
  * (predíde to konfliktom/duplicitným-deklaráciám, keby sa skript omylom
@@ -52,80 +53,6 @@
 
     function trackingRequestData(action) {
         return Object.assign({ action: action }, getTrackingFilters());
-    }
-
-    // ── VIEW renderer ─────────────────────────────────────────────────────
-
-    function renderTrackingView(rowkey, tracking) {
-        const $container = $('#tracking-view-' + rowkey);
-        if (!$container.length) return;
-
-        if (!tracking) {
-            $container.html(
-                '<div class="col-12 text-muted"><em>Zatiaľ žiadny update na sledovanie — ' +
-                'založí sa automaticky pri pridaní nového roku cez "Add / Update Model Year".</em></div>'
-            );
-            return;
-        }
-
-        let html = '';
-        TRACKING_ITEMS.forEach(function (item) {
-            const label = item[0], field = item[1];
-            const isDone = !!parseInt(tracking[field], 10);
-            const badge = isDone
-                ? '<span class="badge meta-status-badge badge-success"><i class="fas fa-check mr-1"></i>DONE</span>'
-                : '<span class="badge meta-status-badge badge-danger"><i class="fas fa-times mr-1"></i>PENDING</span>';
-
-            html += `
-                <div class="col-track5 mb-3">
-                    <div class="block-card card">
-                        <div class="card-header text-light">${ptEscHtml(label)}</div>
-                        <div class="card-body">
-                            <div class="field-row">
-                                <span class="field-key">Status</span>
-                                <span class="field-val">${badge}</span>
-                            </div>
-                        </div>
-                    </div>
-                </div>`;
-        });
-
-        $container.html(html);
-    }
-
-    // ── EDIT renderer ────────────────────────────────────────────────────
-
-    function renderTrackingEditor(rowkey, tracking) {
-        const $editor = $('#tracking-editor-' + rowkey);
-        if (!tracking) { $editor.html(''); return; }
-
-        let html = '<div class="card bg-secondary mb-2"><div class="card-body py-2">';
-        TRACKING_ITEMS.forEach(function (item) {
-            const label = item[0], field = item[1];
-            const checked = !!parseInt(tracking[field], 10);
-            const toggleId = 'tt-' + rowkey + '-' + field;
-
-            html += `
-                <div class="tracking-toggle-row">
-                    <span class="field-key">${ptEscHtml(label)}</span>
-                    <div class="d-flex align-items-center" style="gap:10px;">
-                        <div class="custom-control custom-switch">
-                            <input type="checkbox"
-                                   class="custom-control-input tracking-field-toggle"
-                                   id="${toggleId}"
-                                   data-field="${field}"
-                                   ${checked ? 'checked' : ''}>
-                            <label class="custom-control-label text-light" for="${toggleId}"></label>
-                        </div>
-                        <span class="tracking-toggle-display badge ${checked ? 'badge-success' : 'badge-danger'}" style="min-width:70px;">
-                            ${checked ? 'DONE' : 'PENDING'}
-                        </span>
-                    </div>
-                </div>`;
-        });
-        html += '</div></div>';
-
-        $editor.html(html);
     }
 
     // ── Alert badge (počet nedokončených) ───────────────────────────────────
@@ -210,12 +137,18 @@
                 done_seatcover_templates: row.done_seatcover_templates,
                 done_products: row.done_products,
             });
-            $row.data('tracking', updated);
+            $row.data('tracking', updated).attr('data-tracking', JSON.stringify(updated));
+            pcUpdateRowBadges($row);
 
             if ($row.hasClass('open')) {
-                renderTrackingView($row.data('rowkey'), updated);
+                renderMetaView($row.data('rowkey'), $row.data('meta'));
+                const $panel = $('#detail-' + $row.data('rowkey'));
+                if ($panel.data('editing')) {
+                    pcMessage($row.data('rowkey'), 'Tracking changed in the alert. Cancel and reopen the editor to load the latest status.', true);
+                }
             }
         });
+        if ($.fn.dataTable && $.fn.dataTable.isDataTable('#scrubTable')) $('#scrubTable').DataTable().draw(false);
     }
 
     // ── Registrácia event handlerov — každá skupina vo vlastnom try/catch,  ──
@@ -243,105 +176,7 @@
         });
     });
 
-    // 2) Prekresli tracking VIEW pri otvorení/zatvorení riadku
-    safeOn('row expand tracking view', function () {
-        $(document)
-            .off('click.trackingExpand', 'tr.model-row')
-            .on('click.trackingExpand', 'tr.model-row', function (e) {
-                if ($(e.target).closest('a, button').length) return;
-                const rowkey = $(this).data('rowkey');
-                const tracking = parseTrackingData($(this).data('tracking'));
-                renderTrackingView(rowkey, tracking);
-            });
-    });
-
-    // 3) Edit tracking blok v rozklikanom riadku
-    safeOn('edit tracking block', function () {
-        $(document)
-            .off('click.trackingEdit', '.btn-edit-tracking')
-            .on('click.trackingEdit', '.btn-edit-tracking', function (e) {
-                e.stopPropagation();
-                if (!CAN_EDIT) return;
-                const rowkey = $(this).data('rowkey');
-                const tracking = parseTrackingData($('tr.model-row[data-rowkey="' + rowkey + '"]').data('tracking'));
-                if (!tracking) return;
-
-                renderTrackingEditor(rowkey, tracking);
-                $('#tracking-view-' + rowkey).hide();
-                $('#tracking-edit-' + rowkey).show();
-                $(this).hide();
-            });
-
-        $(document)
-            .off('click.trackingCancel', '.btn-cancel-tracking-edit')
-            .on('click.trackingCancel', '.btn-cancel-tracking-edit', function (e) {
-                e.stopPropagation();
-                if (!CAN_EDIT) return;
-                const rowkey = $(this).data('rowkey');
-                $('#tracking-edit-' + rowkey).hide();
-                $('#tracking-view-' + rowkey).show();
-                $('.btn-edit-tracking[data-rowkey="' + rowkey + '"]').show();
-            });
-
-        $(document)
-            .off('change.trackingToggle', '.tracking-field-toggle')
-            .on('change.trackingToggle', '.tracking-field-toggle', function () {
-                if (!CAN_EDIT) return;
-                const checked = $(this).is(':checked');
-                $(this).closest('.tracking-toggle-row').find('.tracking-toggle-display')
-                    .text(checked ? 'DONE' : 'PENDING')
-                    .removeClass('badge-success badge-danger')
-                    .addClass(checked ? 'badge-success' : 'badge-danger');
-            });
-
-        $(document)
-            .off('click.trackingSave', '.btn-save-tracking')
-            .on('click.trackingSave', '.btn-save-tracking', function (e) {
-                e.stopPropagation();
-                if (!CAN_EDIT) return;
-                const $btn = $(this);
-                const rowkey = $btn.data('rowkey');
-                const $row = $('tr.model-row[data-rowkey="' + rowkey + '"]');
-                const tracking = parseTrackingData($row.data('tracking'));
-                if (!tracking || !tracking.trackid) return;
-
-                const payload = { action: 'update_flags', trackid: tracking.trackid };
-                $('#tracking-editor-' + rowkey + ' .tracking-field-toggle').each(function () {
-                    payload[$(this).data('field')] = $(this).is(':checked') ? 1 : 0;
-                });
-
-                $btn.prop('disabled', true).html('<i class="fas fa-spinner fa-spin mr-1"></i> Saving...');
-
-                $.post(AJAX_URL, payload, function (resp) {
-                    if (!resp || !resp.ok) {
-                        alert(resp && resp.error ? resp.error : 'Save failed');
-                        $btn.prop('disabled', false).html('<i class="fas fa-save mr-1"></i> Save');
-                        return;
-                    }
-
-                    const updated = Object.assign({}, tracking, {
-                        done_web: resp.done_web,
-                        done_ebay: resp.done_ebay,
-                        done_graphics_templates: resp.done_graphics_templates,
-                        done_seatcover_templates: resp.done_seatcover_templates,
-                        done_products: resp.done_products,
-                    });
-                    $row.data('tracking', updated);
-                    renderTrackingView(rowkey, updated);
-
-                    $('#tracking-edit-' + rowkey).hide();
-                    $('#tracking-view-' + rowkey).show();
-                    $('.btn-edit-tracking[data-rowkey="' + rowkey + '"]').show();
-                    $btn.prop('disabled', false).html('<i class="fas fa-save mr-1"></i> Save');
-
-                    refreshPendingCount();
-                }, 'json').fail(function (xhr) {
-                    console.error('[scrub_update_tracking] update_flags zlyhalo:', xhr.status, xhr.responseText);
-                    alert('Save request failed');
-                    $btn.prop('disabled', false).html('<i class="fas fa-save mr-1"></i> Save');
-                });
-            });
-    });
+    $(document).off('productchart:saved.tracking').on('productchart:saved.tracking', refreshPendingCount);
 
     // 4) Checkboxy priamo v alert modale
     safeOn('alert modal checkboxes', function () {
@@ -370,7 +205,7 @@
                     }
 
                     const row = resp.row;
-                    const allDone = !!(row.done_web && row.done_ebay && row.done_graphics_templates && row.done_seatcover_templates && row.done_products);
+                    const allDone = TRACKING_ITEMS.every(function (item) { return !!Number(row[item[1]]); });
                     const $tr = $cb.closest('tr');
 
                     syncRowTrackingData(row);

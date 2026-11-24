@@ -213,7 +213,7 @@ function pb_transfer_save(PDO $pdo, array $data, ?int $userId): array
         if (!$current || (int)$current['version'] !== $version) throw new InvalidArgumentException('Another user has changed this transfer. Reload it and try again.');
         if ($current['product_id'] && (int)$current['product_id'] !== $productId) throw new InvalidArgumentException('This transfer already has a listing. Open it from Listings.');
         if ($productId) {
-            $stmt = $pdo->prepare('SELECT p.id FROM product_builder_products p WHERE p.id=? AND EXISTS(SELECT 1 FROM product_builder_components c WHERE c.product_id=p.id AND c.component_type=\'G\')'); $stmt->execute([$productId]);
+            $stmt = $pdo->prepare('SELECT p.id FROM product_builder_products p WHERE p.id=? AND p.deleted_at IS NULL AND EXISTS(SELECT 1 FROM product_builder_components c WHERE c.product_id=p.id AND c.component_type=\'G\') FOR UPDATE'); $stmt->execute([$productId]);
             if (!$stmt->fetchColumn()) throw new InvalidArgumentException('Choose an existing listing containing Graphics.');
         }
         // Store a catalogue override alongside the original snapshot; source data stays intact.

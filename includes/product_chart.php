@@ -92,25 +92,27 @@ function metaVal(array $meta, string $block, string $field): string
     return strtolower(trim($meta[$block][$field] ?? 'no'));
 }
 
-// ── Helper: samostatný YES/NO badge pre Available/Web ────────────────────
+// ── Helper: Y/N pre Available/Web, stále E pre eBay ──────────────────────
 function statusBadge(string $value, string $field): string
 {
     $value = strtolower(trim($value));
     $isYes = ($value === 'yes');
     $class = $isYes ? 'badge-success' : 'badge-danger';
-    $label = $isYes ? 'Y' : 'N';
+    $label = $field === 'eBay' ? 'E' : ($isYes ? 'Y' : 'N');
+    $title = $field === 'eBay' ? 'eBay: ' . ($isYes ? 'YES' : 'NO') : $field;
 
-    return '<span class="badge ' . $class . ' meta-status-badge" title="' . htmlspecialchars($field) . '">'
+    return '<span class="badge ' . $class . ' meta-status-badge" title="' . htmlspecialchars($title) . '">'
         . $label
         . '</span>';
 }
 
-// ── Helper: dvojica badges Available + Web s voliteľným linkom ────────────
-function badgePair(string $avail, string $web, string $linkHref = '#'): string
+// ── Helper: badges Available + Web + eBay s voliteľným linkom ─────────────
+function badgePair(string $avail, string $web, string $ebay, string $linkHref = '#'): string
 {
     $html = '<span class="badge-pair">'
         . statusBadge($avail, 'Available')
         . statusBadge($web, 'Web')
+        . statusBadge($ebay, 'eBay')
         . '</span>';
 
     if ($linkHref !== '#') {
@@ -245,66 +247,6 @@ function trackingIsPending(?array $tracking): bool
         padding: 16px 20px;
         background: #1a2a38;
         border-bottom: 2px solid #3c759e;
-    }
-
-    .scrub-detail-inner .block-card {
-        background: #243447;
-        border: 1px solid #344f65;
-        border-radius: 6px;
-        margin-bottom: 0;
-    }
-
-    .scrub-detail-inner .block-card .card-header {
-        background: #2d4560;
-        border-radius: 6px 6px 0 0;
-        padding: 8px 14px;
-        font-weight: 600;
-        font-size: 0.85rem;
-        letter-spacing: 0.04em;
-        text-transform: uppercase;
-    }
-
-    .scrub-detail-inner .block-card .card-body {
-        padding: 10px 14px;
-        font-size: 0.88rem;
-    }
-
-    .scrub-detail-inner .block-card .card-body .field-row {
-        display: flex;
-        justify-content: space-between;
-        padding: 3px 0;
-        border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-    }
-
-    .scrub-detail-inner .block-card .card-body .field-row:last-child {
-        border-bottom: none;
-    }
-
-    .scrub-detail-inner .block-card .card-body .field-key {
-        color: #8eabc4;
-        margin-right: 10px;
-    }
-
-    .scrub-detail-inner .block-card .card-body .field-val {
-        font-weight: 600;
-        color: #e0eaf4;
-    }
-
-    .status-dot {
-        display: inline-block;
-        width: 10px;
-        height: 10px;
-        border-radius: 50%;
-        margin-right: 5px;
-        vertical-align: middle;
-    }
-
-    .status-dot.yes {
-        background: #28a745;
-    }
-
-    .status-dot.no {
-        background: #dc3545;
     }
 
     #scrubTable td .badge {
@@ -600,56 +542,6 @@ function trackingIsPending(?array $tracking): bool
         opacity: 0.4;
     }
 
-    /* ── Update Tracking sekcia (v rozklikanom riadku) — odlíšená farba ── */
-    .tracking-section .tracking-label {
-        color: #f0b429;
-        font-weight: 600;
-        font-size: 0.8rem;
-        letter-spacing: 0.04em;
-        text-transform: uppercase;
-    }
-
-    .tracking-section .block-card .card-header {
-        background: #5c4415;
-        color: #ffd97a;
-    }
-
-    /* Tracking sekcia má teraz 5 položiek (Web/eBay/Graphics Templates/
-       Seatcover Templates/Products) — vlastný rovnomerný 5-stĺpcový layout,
-       nezávislý od .col-md-3 gridu, ktorý používajú kapability bloky nižšie
-       (Graphics/Plastics/Seat Cover/Configuration zostávajú nezmenené na 4). */
-    .tracking-section .col-track5 {
-        flex: 0 0 100%;
-        max-width: 100%;
-        padding-left: 10px;
-        padding-right: 10px;
-        box-sizing: border-box;
-    }
-
-    @media (min-width: 768px) {
-        .tracking-section .col-track5 {
-            flex: 0 0 20%;
-            max-width: 20%;
-        }
-    }
-
-    .tracking-divider {
-        border: none;
-        border-top: 2px dashed #3c4f65;
-        margin: 14px 0 16px 0;
-    }
-
-    .tracking-toggle-row {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        padding: 3px 0;
-    }
-
-    .tracking-toggle-row .field-key {
-        color: #8eabc4;
-    }
-
     /* ── Alert bell button + badge v hlavičke karty ─────────────────────── */
     #btnUpdateTrackingAlert {
         position: relative;
@@ -711,6 +603,64 @@ function trackingIsPending(?array $tracking): bool
     #updateTrackingModal .close:hover {
         color: #fff;
         opacity: 1;
+    }
+    /* Detail form: fixed labels, compact checklists and one save action. */
+    .pc-detail-header { display:flex; justify-content:space-between; align-items:center; gap:16px; margin-bottom:18px; }
+    .pc-eyebrow { color:#8eabc4; font-size:.68rem; font-weight:700; letter-spacing:.12em; margin-bottom:4px; }
+    .pc-detail-header h3 { font-size:1.15rem; font-weight:600; color:#f2f6fa; margin:0 0 4px; }
+    .pc-model-subtitle { color:#a9bfd0; font-size:.85rem; }
+    .pc-model-subtitle code { color:#8dd7f7; margin-left:10px; }
+    .pc-detail-grid { display:grid; grid-template-columns:minmax(0,1.45fr) minmax(280px,1fr); gap:16px; }
+    .pc-section { background:#213546; border:1px solid #365064; border-radius:8px; min-width:0; overflow:hidden; }
+    .pc-section-heading { padding:14px 16px 10px; }
+    .pc-section h4 { color:#eef5fb; font-size:.95rem; font-weight:600; margin:0 0 5px; }
+    .pc-section p { color:#a9bfd0; font-size:.79rem; margin:0; }
+    #scrubTable .pc-matrix, .pc-matrix { width:100%; margin:0; color:#e0eaf4; font-size:.88rem; border:0; }
+    #scrubTable .pc-matrix th, #scrubTable .pc-matrix td { border:0; border-top:1px solid #365064; padding:10px 14px; vertical-align:middle; }
+    #scrubTable .pc-matrix thead th { color:#a9bfd0; font-size:.75rem; font-weight:500; background:#1b2e3e; }
+    .pc-matrix th:not(:first-child), .pc-matrix td { text-align:center; }
+    .pc-matrix tbody th { font-weight:600; }
+    .pc-matrix th small { display:block; color:#a9bfd0; font-weight:400; font-size:.7rem; }
+    .pc-value { display:inline-flex; align-items:center; justify-content:center; min-width:46px; padding:5px 9px; border-radius:4px; font-size:.74rem; font-weight:700; line-height:1.3; }
+    .pc-value.is-yes { color:#bdf3cf; background:#245440; }
+    .pc-value.is-no { color:#ffc2c7; background:#59343e; }
+    .pc-check { display:inline-flex; align-items:center; gap:9px; margin:0; cursor:pointer; font-weight:400; }
+    .pc-check input { width:18px; height:18px; margin:0; accent-color:#28a745; cursor:pointer; }
+    .pc-check input:focus-visible { outline:2px solid #8dd7f7; outline-offset:3px; }
+    .pc-check input:disabled { cursor:wait; }
+    .pc-checklist { padding:0 16px 8px; }
+    .pc-checklist-row { display:flex; justify-content:space-between; align-items:center; gap:12px; min-height:47px; border-top:1px solid #365064; font-size:.84rem; color:#e0eaf4; }
+    .pc-tracking { grid-column:1/-1; border-color:#675632; }
+    .pc-tracking h4 { color:#f4d68c; }
+    .pc-tracking-grid { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:10px; padding:4px 16px 16px; }
+    .pc-tracking-item { background:#1b2e3e; border:1px solid #365064; border-radius:6px; padding:12px; display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; }
+    .pc-tracking-name { font-size:.8rem; color:#e0eaf4; }
+    .pc-empty-tracking { padding:4px 16px 16px; color:#a9bfd0; font-size:.82rem; }
+    .pc-advanced { margin-top:16px; padding:12px 16px; background:#1b2e3e; border:1px solid #365064; border-radius:6px; }
+    .pc-advanced summary { color:#b3c7d8; cursor:pointer; font-size:.83rem; }
+    .pc-advanced-content { padding-top:14px; }
+    .pc-advanced .card { background:#213546 !important; border:1px solid #365064; }
+    .pc-custom-view { display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:14px; }
+    .pc-custom-view h5 { font-size:.9rem; color:#e0eaf4; }
+    .pc-custom-field { display:flex; justify-content:space-between; gap:12px; padding:6px 0; color:#a9bfd0; font-size:.83rem; overflow-wrap:anywhere; }
+    .pc-save-bar { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px; margin-top:16px; padding:14px 0 0; border-top:1px solid #365064; }
+    .pc-edit-hint { color:#a9bfd0; font-size:.8rem; }
+    .pc-save-actions { display:flex; gap:8px; margin-left:auto; }
+    .pc-save-message:empty { display:none; }
+    .pc-save-message { border-radius:5px; margin-bottom:12px; padding:10px 12px; font-size:.85rem; background:#245440; color:#bdf3cf; }
+    .pc-save-message.is-error { background:#59343e; color:#ffc2c7; }
+    @media (max-width:1000px) {
+        .pc-detail-grid { grid-template-columns:minmax(0,1fr); }
+        .pc-tracking-grid { grid-template-columns:repeat(3,minmax(0,1fr)); }
+    }
+    @media (max-width:575px) {
+        .scrub-detail-inner { padding:14px 10px; }
+        .pc-detail-header { align-items:flex-start; flex-wrap:wrap; }
+        #scrubTable .pc-matrix th, #scrubTable .pc-matrix td { padding:10px 5px; }
+        .pc-check { gap:5px; }
+        .pc-check input { width:16px; height:16px; }
+        .pc-value { min-width:32px; padding:5px 6px; }
+        .pc-tracking-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
     }
 </style>
 
@@ -908,6 +858,7 @@ if ($stmtTrackCnt) {
                         <th style="background:#444242; color:#fff;">CODE</th>
                         <th style="background:#444242; color:#fff; text-align:center;">CONFIG</th>
                         <th style="background:#444242; color:#fff; text-align:center;">GRAPHICS</th>
+                        <th style="background:#444242; color:#fff; text-align:center;">GFP</th>
                         <th style="background:#444242; color:#fff; text-align:center;">PLASTICS</th>
                         <th style="background:#444242; color:#fff; text-align:center;">SEAT COVER</th>
                         <th style="background:#444242; color:#fff; text-align:center;"
@@ -943,10 +894,16 @@ if ($stmtTrackCnt) {
                         // Rýchle hodnoty pre badges v riadku
                         $gfx_avail = metaVal($meta, 'Graphics', 'Available');
                         $gfx_web = metaVal($meta, 'Graphics', 'Web');
+                        $gfx_ebay = metaVal($meta, 'Graphics', 'eBay');
+                        $gfp_avail = metaVal($meta, 'GFP', 'Available');
+                        $gfp_web = metaVal($meta, 'GFP', 'Web');
+                        $gfp_ebay = metaVal($meta, 'GFP', 'eBay');
                         $pls_avail = metaVal($meta, 'Plastics', 'Available');
                         $pls_web = metaVal($meta, 'Plastics', 'Web');
+                        $pls_ebay = metaVal($meta, 'Plastics', 'eBay');
                         $sct_avail = metaVal($meta, 'Seat Cover', 'Available');
                         $sct_web = metaVal($meta, 'Seat Cover', 'Web');
+                        $sct_ebay = metaVal($meta, 'Seat Cover', 'eBay');
 
                         $plasticsLink = 'index.php?page=scrublistings&modelcode=' . urlencode($code);
                         ?>
@@ -971,9 +928,10 @@ if ($stmtTrackCnt) {
                             </td>
                             <td class="text-center config-status-cell"><?= configBadges($meta) ?></td>
 
-                            <td class="text-center graphics-status-cell"><?= badgePair($gfx_avail, $gfx_web, '#') ?></td>
-                            <td class="text-center plastics-status-cell"><?= badgePair($pls_avail, $pls_web, $plasticsLink) ?></td>
-                            <td class="text-center seatcover-status-cell"><?= badgePair($sct_avail, $sct_web, '#') ?></td>
+                            <td class="text-center graphics-status-cell"><?= badgePair($gfx_avail, $gfx_web, $gfx_ebay, '#') ?></td>
+                            <td class="text-center gfp-status-cell"><?= badgePair($gfp_avail, $gfp_web, $gfp_ebay, '#') ?></td>
+                            <td class="text-center plastics-status-cell"><?= badgePair($pls_avail, $pls_web, $pls_ebay, $plasticsLink) ?></td>
+                            <td class="text-center seatcover-status-cell"><?= badgePair($sct_avail, $sct_web, $sct_ebay, '#') ?></td>
                             <td class="text-center tracking-status-cell"
                                 data-order="<?= $trackingPending ? '0' : '1' ?>"
                                 data-search="<?= $trackingPending ? 'Pending' : 'Complete' ?>">
@@ -993,6 +951,7 @@ if ($stmtTrackCnt) {
                         <th style="background:#444242; color:#fff;">CODE</th>
                         <th style="background:#444242; color:#fff;">CONFIG</th>
                         <th style="background:#444242; color:#fff;">GRAPHICS</th>
+                        <th style="background:#444242; color:#fff;">GFP</th>
                         <th style="background:#444242; color:#fff;">PLASTICS</th>
                         <th style="background:#444242; color:#fff;">SEAT COVER</th>
                         <th style="background:#444242; color:#fff;">UPDATE</th>
@@ -1019,113 +978,40 @@ if ($stmtTrackCnt) {
     while ($row2 = $query2->fetch_assoc()):
     $code2 = $row2['modelcode'];
     $rowkey2 = md5($row2['brand'] . '|' . $row2['model'] . '|' . $row2['rangeyear'] . '|' . $row2['modelcode']);
-        $meta2 = [];
-        if (!empty($row2['meta_json'])) {
-            $d = json_decode($row2['meta_json'], true);
-            if (is_array($d))
-                $meta2 = $d;
-        }
-        $tracking2 = buildTracking($row2);
         ?>
-        <div class="scrub-detail-panel" id="detail-<?= htmlspecialchars($rowkey2) ?>" style="display:none;">
+        <div class="scrub-detail-panel" id="detail-<?= htmlspecialchars($rowkey2) ?>" data-rowkey="<?= htmlspecialchars($rowkey2) ?>" style="display:none;">
             <div class="scrub-detail-inner">
-
-                <!-- ── Update Tracking — Web / eBay / Graphics Templates / Seatcover Templates / Products ── -->
-                <div class="tracking-section mb-3">
-                    <div class="d-flex justify-content-between align-items-center mb-2">
-                        <span class="tracking-label">
-                            <i class="fas fa-bullhorn mr-1"></i> Update Tracking
-                            <?php if ($tracking2): ?>
-                                <span class="text-muted" style="text-transform:none; font-weight:400;">
-                                    — rok <?= htmlspecialchars((string) $tracking2['new_year']) ?> premietnutý do:
-                                </span>
-                            <?php endif; ?>
-                        </span>
-                        <?php if ($canEditProductChart): ?>
-                            <button type="button" class="btn btn-sm btn-outline-info btn-edit-tracking"
-                                data-rowkey="<?= htmlspecialchars($rowkey2) ?>"
-                                data-trackid="<?= $tracking2 ? (int) $tracking2['trackid'] : '' ?>"
-                                style="<?= $tracking2 ? '' : 'display:none;' ?>">
-                                <i class="fas fa-edit mr-1"></i> Edit tracking
-                            </button>
-                        <?php elseif ($tracking2): ?>
-                            <button type="button" class="btn btn-sm btn-outline-info" disabled
-                                title="Dostupne len pre superadmina a povolenych editorov" data-toggle="tooltip">
-                                <i class="fas fa-lock mr-1"></i> Edit tracking
-                            </button>
-                        <?php endif; ?>
+                <div class="pc-detail-header">
+                    <div>
+                        <div class="pc-eyebrow">MODEL DETAILS</div>
+                        <h3><?= htmlspecialchars($row2['brand']) ?> — <?= htmlspecialchars($row2['model']) ?></h3>
+                        <span class="pc-model-subtitle"><?= htmlspecialchars($row2['rangeyear']) ?> <code><?= htmlspecialchars($code2) ?></code></span>
                     </div>
-
-                    <div class="row tracking-view-area" id="tracking-view-<?= htmlspecialchars($rowkey2) ?>"></div>
-
                     <?php if ($canEditProductChart): ?>
-                        <div class="tracking-edit-area" id="tracking-edit-<?= htmlspecialchars($rowkey2) ?>" style="display:none;">
-                            <div class="tracking-toggles" id="tracking-editor-<?= htmlspecialchars($rowkey2) ?>"></div>
-                            <div class="d-flex justify-content-end mt-2" style="gap:8px;">
-                                <button type="button" class="btn btn-sm btn-secondary btn-cancel-tracking-edit"
-                                    data-rowkey="<?= htmlspecialchars($rowkey2) ?>">Cancel</button>
-                                <button type="button" class="btn btn-sm btn-success btn-save-tracking"
-                                    data-rowkey="<?= htmlspecialchars($rowkey2) ?>">
-                                    <i class="fas fa-save mr-1"></i> Save
-                                </button>
-                            </div>
-                        </div>
+                        <button type="button" class="btn btn-sm btn-outline-info btn-edit-model-meta"
+                            data-rowkey="<?= htmlspecialchars($rowkey2) ?>"><i class="fas fa-pen mr-1"></i> Edit details</button>
                     <?php endif; ?>
                 </div>
-
-                <hr class="tracking-divider">
-
-                <div class="d-flex justify-content-between align-items-center mb-3">
-                    <span class="text-muted" style="font-size:0.85rem;">
-                        <?= htmlspecialchars($row2['brand']) ?>
-                        — <?= htmlspecialchars($row2['model']) ?>
-                        (<?= htmlspecialchars($row2['rangeyear']) ?>)
-                        <code><?= htmlspecialchars($code2) ?></code>
-                    </span>
-                    <?php if ($canEditProductChart): ?>
-                        <button type="button" class="btn btn-sm btn-outline-warning btn-edit-model-meta"
-                            data-rowkey="<?= htmlspecialchars($rowkey2) ?>"
-                            data-brand="<?= htmlspecialchars($row2['brand']) ?>"
-                            data-model="<?= htmlspecialchars($row2['model']) ?>"
-                            data-rangeyear="<?= htmlspecialchars($row2['rangeyear']) ?>"
-                            data-modelcode="<?= htmlspecialchars($code2) ?>">
-                            <i class="fas fa-edit mr-1"></i> Edit meta
-                        </button>
-                    <?php else: ?>
-                        <button type="button" class="btn btn-sm btn-outline-warning" disabled
-                            title="Dostupne len pre superadmina a povolenych editorov" data-toggle="tooltip">
-                            <i class="fas fa-lock mr-1"></i> Edit meta
-                        </button>
-                    <?php endif; ?>
-                </div>
-
-                <div class="row meta-view-area" id="view-<?= htmlspecialchars($rowkey2) ?>"></div>
-
+                <div class="pc-save-message" role="status" aria-live="polite"></div>
+                <div class="meta-view-area" id="view-<?= htmlspecialchars($rowkey2) ?>"></div>
                 <?php if ($canEditProductChart): ?>
                     <div class="meta-edit-area" id="edit-<?= htmlspecialchars($rowkey2) ?>" style="display:none;">
-                        <div class="d-flex justify-content-between align-items-center mb-2">
-                            <small class="text-muted">Pridaj alebo uprav bloky a fieldy.</small>
-                            <button type="button" class="btn btn-sm btn-outline-info btn-add-meta-block"
-                                data-rowkey="<?= htmlspecialchars($rowkey2) ?>">
-                                <i class="fas fa-plus mr-1"></i> Add block
-                            </button>
-                        </div>
                         <div class="meta-blocks-editor" id="editor-<?= htmlspecialchars($rowkey2) ?>"></div>
-                        <div class="d-flex justify-content-end mt-2" style="gap:8px;">
-                            <button type="button" class="btn btn-sm btn-secondary btn-cancel-meta-edit"
-                            data-rowkey="<?= htmlspecialchars($rowkey2) ?>">Cancel</button>
-                            <button type="button" class="btn btn-sm btn-success btn-save-model-meta"
-                                data-rowkey="<?= htmlspecialchars($rowkey2) ?>"
-                                data-brand="<?= htmlspecialchars($row2['brand']) ?>"
-                                data-model="<?= htmlspecialchars($row2['model']) ?>"
-                                data-rangeyear="<?= htmlspecialchars($row2['rangeyear']) ?>"
-                                data-modelcode="<?= htmlspecialchars($code2) ?>">
-                                <i class="fas fa-save mr-1"></i> Save
-                            </button>
+                        <div class="pc-save-bar">
+                            <span class="pc-edit-hint">Changes apply to this model. Save all sections together.</span>
+                            <div class="pc-save-actions">
+                                <button type="button" class="btn btn-sm btn-outline-light btn-cancel-meta-edit"
+                                    data-rowkey="<?= htmlspecialchars($rowkey2) ?>">Cancel</button>
+                                <button type="button" class="btn btn-sm btn-success btn-save-model-meta"
+                                    data-rowkey="<?= htmlspecialchars($rowkey2) ?>"
+                                    data-brand="<?= htmlspecialchars($row2['brand']) ?>"
+                                    data-model="<?= htmlspecialchars($row2['model']) ?>"
+                                    data-rangeyear="<?= htmlspecialchars($row2['rangeyear']) ?>"
+                                    data-modelcode="<?= htmlspecialchars($code2) ?>"><i class="fas fa-save mr-1"></i> Save all changes</button>
+                            </div>
                         </div>
                     </div>
                 <?php endif; ?>
-
             </div>
         </div>
     <?php endwhile; ?>
@@ -1342,6 +1228,7 @@ if ($stmtTrackCnt) {
         { id: 'code', label: 'Code' },
         { id: 'config', label: 'Config' },
         { id: 'graphics', label: 'Graphics' },
+        { id: 'gfp', label: 'GFP' },
         { id: 'plastics', label: 'Plastics' },
         { id: 'seat_cover', label: 'Seat Cover' },
         { id: 'update', label: 'Update' }
@@ -1354,11 +1241,14 @@ if ($stmtTrackCnt) {
 
     function normalizeProductChartColumnOrder(value) {
         const defaults = defaultProductChartColumnOrder();
-        if (!Array.isArray(value) || value.length !== defaults.length) return defaults;
-        const unique = Array.from(new Set(value));
-        return unique.length === defaults.length && defaults.every(function (id) { return unique.includes(id); })
-            ? value
-            : defaults;
+        if (!Array.isArray(value)) return defaults;
+        const order = Array.from(new Set(value.filter(function (id) { return defaults.includes(id); })));
+        defaults.forEach(function (id, index) {
+            if (order.includes(id)) return;
+            const previous = defaults.slice(0, index).reverse().find(function (candidate) { return order.includes(candidate); });
+            order.splice(previous ? order.indexOf(previous) + 1 : 0, 0, id);
+        });
+        return order;
     }
 
     function applyProductChartColumnOrder(order) {
@@ -1438,6 +1328,21 @@ if ($stmtTrackCnt) {
                 paginate: { previous: '‹', next: '›' }
             }
         });
+
+        scrubTable.on('preDraw.dt', function () {
+            const $draft = $('.scrub-detail-panel').filter(function () {
+                return $(this).data('dirty') || $(this).data('saving');
+            }).first();
+            if ($draft.length) {
+                pcMessage($draft.data('rowkey'), 'Save or cancel your changes before filtering or sorting.', true);
+                return false;
+            }
+            $('.scrub-detail-wrapper').each(function () {
+                $('#scrubDetailStore').append($(this).find('.scrub-detail-panel'));
+                $(this).remove();
+            });
+        });
+        scrubTable.on('draw.dt', pcRestoreOpenDetails);
 
         $('#trackingStatusFilter').val(canUseTrackingStatusFilter ? (savedFilters.tracking_status || '') : '');
         if (canUseTrackingStatusFilter && $('#trackingStatusFilter').val()) {

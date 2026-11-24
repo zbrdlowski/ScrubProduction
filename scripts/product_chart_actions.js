@@ -1,4 +1,4 @@
-console.log('PRODUCT CHART ACTIONS LOADED v1.1');
+console.log('PRODUCT CHART ACTIONS LOADED v2.0');
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -101,89 +101,129 @@ function isYesNoValue(val) {
     return ['yes', 'no'].includes(val.toLowerCase().trim());
 }
 
-// ── VIEW renderer ──────────────────────────────────────────────────────────
+// Fixed fields are edited in a compact form. Custom metadata remains in Advanced.
+const PC_PRODUCTS = [
+    ['Graphics', 'graphics-status-cell'], ['GFP', 'gfp-status-cell'],
+    ['Plastics', 'plastics-status-cell'], ['Seat Cover', 'seatcover-status-cell']
+];
+const PC_PRODUCT_FIELDS = ['Available', 'Web', 'eBay'];
+const PC_CONFIG = [
+    ['Create New Categories', 'CNC'], ['Add Filters', 'FLT'],
+    ['Add Accessories', 'ACC'], ['Add Existing Designs', 'EXD']
+];
+const PC_TRACKING = [
+    ['Web', 'done_web', 'WEB'], ['eBay', 'done_ebay', 'EB'],
+    ['Graphics Templates', 'done_graphics_templates', 'GT'],
+    ['Seatcover Templates', 'done_seatcover_templates', 'ST'], ['Products', 'done_products', 'PR']
+];
 
-function renderMetaView(code, meta) {
-    if (typeof meta === 'string') {
-        try { meta = JSON.parse(meta); } catch (e) { meta = {}; }
+function pcObject(value) {
+    if (typeof value === 'string') {
+        try { value = JSON.parse(value); } catch (error) { return {}; }
     }
-    meta = meta || {};
-
-    const $container = $('#view-' + code);
-    if (!$container.length) return;
-
-    if (!meta || Object.keys(meta).length === 0) {
-        $container.html('<div class="col-12 text-muted"><em>Žiadne meta dáta. Klikni Edit meta pre pridanie.</em></div>');
-        return;
-    }
-
-    let html = '';
-    Object.keys(meta).forEach(function (blockName) {
-        const fields = meta[blockName] || {};
-        let fieldsHtml = '';
-
-        Object.keys(fields).forEach(function (key) {
-            const val = String(fields[key] ?? '');
-            let displayVal;
-            const v = val.toLowerCase().trim();
-
-            if (v === 'yes') {
-                displayVal = '<span class="badge meta-status-badge badge-success"><i class="fas fa-check mr-1"></i>YES</span>';
-            } else if (v === 'no') {
-                displayVal = '<span class="badge meta-status-badge badge-danger"><i class="fas fa-times mr-1"></i>NO</span>';
-            } else {
-                displayVal = '<span class="text-light">' + pcEscHtml(val) + '</span>';
-            }
-
-            fieldsHtml += `
-                <div class="field-row">
-                    <span class="field-key">${pcEscHtml(key)}</span>
-                    <span class="field-val">${displayVal}</span>
-                </div>`;
-        });
-
-        html += `
-            <div class="col-md-3 mb-3">
-                <div class="block-card card">
-                    <div class="card-header text-light">${pcEscHtml(blockName)}</div>
-                    <div class="card-body">${fieldsHtml || '<span class="text-muted">Prázdny blok</span>'}</div>
-                </div>
-            </div>`;
-    });
-
-    $container.html(html);
+    return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
 }
-
-// ── EDIT renderer ──────────────────────────────────────────────────────────
-
-function renderMetaEditor(code, meta) {
-    if (typeof meta === 'string') {
-        try { meta = JSON.parse(meta); } catch (e) { meta = {}; }
-    }
-    meta = meta || {};
-
-    if (Object.keys(meta).length === 0) {
-        meta = {
-            'Graphics': { 'Available': 'no', 'Web': 'no' },
-            'Plastics': { 'Available': 'no', 'Web': 'no' },
-            'Seat Cover': { 'Available': 'no', 'Web': 'no' },
-            'Configuration': {
-                'Create New Categories': 'yes',
-                'Add Filters': 'yes',
-                'Add Accessories': 'yes',
-                'Add Existing Designs': 'yes'
-            }
-        };
-    }
-
-    const $editor = $('#editor-' + code);
-    let html = '';
-
-    Object.keys(meta).forEach(function (blockName) {
-        html += buildBlockEditorHtml(blockName, meta[blockName] || {});
+function pcRow(rowkey) { return $('tr.model-row[data-rowkey="' + rowkey + '"]'); }
+function pcTracking(rowkey) {
+    const tracking = pcObject(pcRow(rowkey).data('tracking'));
+    return tracking.trackid ? tracking : null;
+}
+function pcYes(value) { return String(value || '').toLowerCase().trim() === 'yes'; }
+function pcStandardField(block, field) {
+    return (PC_PRODUCTS.some(function (item) { return item[0] === block; }) && PC_PRODUCT_FIELDS.includes(field)) ||
+        (block === 'Configuration' && PC_CONFIG.some(function (item) { return item[0] === field; }));
+}
+function pcCustomMeta(meta) {
+    const custom = {};
+    Object.keys(meta).forEach(function (block) {
+        const fields = pcObject(meta[block]);
+        Object.keys(fields).forEach(function (field) {
+            if (pcStandardField(block, field)) return;
+            if (!custom[block]) custom[block] = {};
+            custom[block][field] = fields[field];
+        });
     });
-
-    $editor.html(html);
+    return custom;
+}
+function pcValue(checked, yesLabel, noLabel, title) {
+    return '<span class="pc-value ' + (checked ? 'is-yes' : 'is-no') + '" title="' + pcEscHtml(title) + '">' +
+        pcEscHtml(checked ? yesLabel : noLabel) + '</span>';
+}
+function pcCheckbox(checked, className, attrs, label, yesLabel, noLabel) {
+    return '<label class="pc-check" title="' + pcEscHtml(label) + '">' +
+        '<input type="checkbox" class="' + className + '" ' + attrs + ' aria-label="' + pcEscHtml(label) + '" ' + (checked ? 'checked' : '') + '>' +
+        pcValue(checked, yesLabel, noLabel, label + ': ' + (checked ? 'YES' : 'NO')) + '</label>';
+}
+function pcDetailHtml(rowkey, rawMeta, tracking, editing) {
+    const meta = pcObject(rawMeta);
+    let html = '<div class="pc-detail-grid"><section class="pc-section"><div class="pc-section-heading">' +
+        '<h4>Product availability</h4><p>Available = product ready · Web / eBay = listed for sale</p></div>' +
+        '<table class="pc-matrix"><thead><tr><th scope="col">Product</th><th scope="col">Available</th><th scope="col">Web</th><th scope="col">eBay</th></tr></thead><tbody>';
+    PC_PRODUCTS.forEach(function (item) {
+        const block = item[0], fields = pcObject(meta[block]);
+        html += '<tr><th scope="row">' + pcEscHtml(block) + '</th>';
+        PC_PRODUCT_FIELDS.forEach(function (field) {
+            const yes = pcYes(fields[field]), label = block + ' — ' + field;
+            const yesText = field === 'eBay' ? 'E' : 'YES', noText = field === 'eBay' ? 'E' : 'NO';
+            html += '<td>' + (editing
+                ? pcCheckbox(yes, 'pc-meta-toggle', 'data-block="' + pcEscHtml(block) + '" data-field="' + field + '"', label, yesText, noText)
+                : pcValue(yes, yesText, noText, label + ': ' + (yes ? 'YES' : 'NO'))) + '</td>';
+        });
+        html += '</tr>';
+    });
+    html += '</tbody></table></section><section class="pc-section"><div class="pc-section-heading">' +
+        '<h4>Configuration</h4><p>Mark the completed setup steps.</p></div><div class="pc-checklist">';
+    PC_CONFIG.forEach(function (item) {
+        const field = item[0], yes = pcYes(pcObject(meta.Configuration)[field]);
+        html += '<div class="pc-checklist-row"><span>' + pcEscHtml(field) + '</span>' + (editing
+            ? pcCheckbox(yes, 'pc-meta-toggle', 'data-block="Configuration" data-field="' + pcEscHtml(field) + '"', field, 'YES', 'NO')
+            : pcValue(yes, 'YES', 'NO', field)) + '</div>';
+    });
+    html += '</div></section><section class="pc-section pc-tracking"><div class="pc-section-heading">' +
+        '<h4>Model year update' + (tracking ? ' · ' + pcEscHtml(tracking.new_year) : '') + '</h4>' +
+        '<p>Confirm where the latest model year has been applied.</p></div>';
+    if (tracking) {
+        html += '<div class="pc-tracking-grid">';
+        PC_TRACKING.forEach(function (item) {
+            const label = item[0], field = item[1], done = !!Number(tracking[field]);
+            html += '<div class="pc-tracking-item"><span class="pc-tracking-name">' + label + '</span>' + (editing
+                ? pcCheckbox(done, 'pc-tracking-toggle', 'data-field="' + field + '"', label + ' — model year update', 'DONE', 'PENDING')
+                : pcValue(done, 'DONE', 'PENDING', label)) + '</div>';
+        });
+        html += '</div>';
+    } else {
+        html += '<div class="pc-empty-tracking">No model year update to track. A checklist is created when a new model year is added.</div>';
+    }
+    html += '</section></div>';
+    const custom = pcCustomMeta(meta);
+    if (editing || Object.keys(custom).length) {
+        html += '<details class="pc-advanced"><summary>Additional fields' + (editing ? ' · advanced' : '') + '</summary><div class="pc-advanced-content">';
+        if (editing) {
+            html += '<div class="d-flex justify-content-between align-items-center mb-3"><span class="pc-edit-hint">Optional custom information.</span>' +
+                '<button type="button" class="btn btn-sm btn-outline-info btn-add-meta-block" data-rowkey="' + rowkey + '"><i class="fas fa-plus mr-1"></i> Add block</button></div><div class="pc-custom-editor">';
+            Object.keys(custom).forEach(function (block) { html += buildBlockEditorHtml(block, custom[block]); });
+            html += '</div>';
+        } else {
+            html += '<div class="pc-custom-view">';
+            Object.keys(custom).forEach(function (block) {
+                html += '<div><h5>' + pcEscHtml(block) + '</h5>';
+                Object.keys(custom[block]).forEach(function (field) {
+                    html += '<div class="pc-custom-field"><span>' + pcEscHtml(field) + '</span><span>' + pcEscHtml(custom[block][field]) + '</span></div>';
+                });
+                html += '</div>';
+            });
+            html += '</div>';
+        }
+        html += '</div></details>';
+    }
+    return html;
+}
+function renderMetaView(rowkey, meta) {
+    $('#view-' + rowkey).html(pcDetailHtml(rowkey, meta, pcTracking(rowkey), false));
+}
+function renderMetaEditor(rowkey, meta) {
+    $('#detail-' + rowkey).data('tracking-original', pcTracking(rowkey));
+    $('#editor-' + rowkey).html(pcDetailHtml(rowkey, meta, pcTracking(rowkey), true));
 }
 
 function buildBlockEditorHtml(blockName, fields) {
@@ -250,7 +290,7 @@ function buildFieldRowHtmlTyped(key, value, type) {
                 </div>
                 <input type="hidden" class="meta-field-value" value="${checked ? 'yes' : 'no'}">
                 <span class="meta-toggle-display badge ${checked ? 'badge-success' : 'badge-danger'}" style="min-width:36px;">
-                    ${checked ? 'YES' : 'NO'}
+                    ${key === 'eBay' ? 'E' : (checked ? 'YES' : 'NO')}
                 </span>
             </div>`;
     } else {
@@ -286,128 +326,112 @@ function buildFieldRowHtmlTyped(key, value, type) {
         </div>`;
 }
 
-// ── Collector ──────────────────────────────────────────────────────────────
-
-function collectMetaEditorData(code) {
+function collectMetaEditorData(rowkey) {
     const data = {};
-
-    $('#editor-' + code + ' .meta-block').each(function () {
-        const blockName = $(this).find('.meta-block-name').val().trim();
-        if (!blockName) return;
-
-        data[blockName] = {};
-
+    $('#editor-' + rowkey + ' .meta-block').each(function () {
+        const block = $(this).find('.meta-block-name').val().trim();
+        if (!block) return;
+        if (!data[block]) data[block] = {};
         $(this).find('.meta-field').each(function () {
             const key = $(this).find('.meta-field-key').val().trim();
-            const value = $(this).find('.meta-field-value').val().trim();
-            if (key) data[blockName][key] = value;
+            if (key) data[block][key] = $(this).find('.meta-field-value').val().trim();
         });
-
-        if (Object.keys(data[blockName]).length === 0) {
-            delete data[blockName];
-        }
     });
-
+    $('#editor-' + rowkey + ' .pc-meta-toggle').each(function () {
+        const block = $(this).data('block'), field = $(this).data('field');
+        if (!data[block]) data[block] = {};
+        data[block][field] = this.checked ? 'yes' : 'no';
+    });
     return data;
 }
-
-// ── Expand / Collapse riadku ───────────────────────────────────────────────
-
-$(document)
-    .off('click.scrubExpand', 'tr.model-row')
-    .on('click.scrubExpand', 'tr.model-row', function (e) {
-        if ($(e.target).closest('a, button').length) return;
-
-        const $row = $(this);
-        const rowkey = $(this).data('rowkey');
-        const code = $(this).data('modelcode');
-        const meta = $(this).data('meta') || {};
-        const $panel = $('#detail-' + rowkey);
-        const $icon = $(this).find('.toggle-icon');
-        const isOpen = $(this).hasClass('open');
-
-        // Zatvor ostatné otvorené
-        $('tr.model-row.open').not(this).each(function () {
-            const otherRowkey = $(this).data('rowkey');
-            const $otherPanel = $('#detail-' + otherRowkey);
-            const $otherWrapper = $otherPanel.closest('tr.scrub-detail-wrapper');
-            $otherPanel.slideUp(150, function () {
-                $otherWrapper.remove();
-                $('#scrubDetailStore').append($otherPanel);
-            });
-            $(this).removeClass('open');
-            $(this).find('.toggle-icon').removeClass('fa-chevron-down').addClass('fa-chevron-right');
-            $('#edit-' + otherRowkey).hide();
-            $('#view-' + otherRowkey).show();
-        });
-
-        if (isOpen) {
-            const $wrapper = $panel.closest('tr.scrub-detail-wrapper');
-            $panel.slideUp(150, function () {
-                $wrapper.remove();
-                $('#scrubDetailStore').append($panel);
-            });
-            $(this).removeClass('open');
-            $icon.removeClass('fa-chevron-down').addClass('fa-chevron-right');
-        } else {
-            renderMetaView(rowkey, meta);
-
-            // Obal panel do tr/td aby bol validný v tbody
-            // Počet stĺpcov sa môže meniť alebo byť používateľsky preskupený.
-            // Neudržiavaj preto colspan ako pevnú hodnotu.
-            const columnCount = $row.children('td').length || $('#scrubTable thead th').length || 1;
-            const $wrapper = $('<tr class="scrub-detail-wrapper"><td style="padding:0; border-top:none;"></td></tr>');
-            $wrapper.children('td').attr('colspan', columnCount);
-            $wrapper.find('td').append($panel);
-            $panel.css('display', 'none');
-            $(this).after($wrapper);
-            $panel.slideDown(200);
-
-            $(this).addClass('open');
-            $icon.removeClass('fa-chevron-right').addClass('fa-chevron-down');
-        }
+function pcMessage(rowkey, text, isError) {
+    $('#detail-' + rowkey + ' .pc-save-message').text(text).toggleClass('is-error', !!isError);
+}
+function pcFinishEditing(rowkey) {
+    $('#detail-' + rowkey).data('editing', false).data('dirty', false);
+    $('#edit-' + rowkey).hide();
+    renderMetaView(rowkey, pcRow(rowkey).data('meta'));
+    $('#view-' + rowkey).show();
+    $('.btn-edit-model-meta[data-rowkey="' + rowkey + '"]').show();
+}
+function pcAttachDetail($row) {
+    const $panel = $('#detail-' + $row.data('rowkey'));
+    if (!$panel.length || $panel.closest('tr.scrub-detail-wrapper').length) return;
+    const $wrapper = $('<tr class="scrub-detail-wrapper"><td style="padding:0; border-top:none;"></td></tr>');
+    $wrapper.children('td').attr('colspan', $row.children('td').length).append($panel);
+    $row.after($wrapper);
+    $panel.show();
+}
+function pcRestoreOpenDetails() {
+    $('#scrubTable tbody > tr.model-row.open').each(function () { pcAttachDetail($(this)); });
+}
+function pcCloseDetail($row) {
+    const rowkey = $row.data('rowkey'), $panel = $('#detail-' + rowkey);
+    const $wrapper = $panel.closest('tr.scrub-detail-wrapper');
+    pcFinishEditing(rowkey);
+    $('#scrubDetailStore').append($panel.hide());
+    $wrapper.remove();
+    $row.removeClass('open').find('.toggle-icon').removeClass('fa-chevron-down').addClass('fa-chevron-right');
+}
+$(document).off('click.scrubExpand', 'tr.model-row').on('click.scrubExpand', 'tr.model-row', function (event) {
+    if ($(event.target).closest('a, button').length) return;
+    const $row = $(this), rowkey = $row.data('rowkey');
+    const $blocked = $('.scrub-detail-panel').filter(function () { return $(this).data('saving') || $(this).data('dirty'); }).first();
+    if ($blocked.length) {
+        pcMessage($blocked.data('rowkey'), $blocked.data('saving') ? 'Saving changes…' : 'Save or cancel your changes before closing this model.', true);
+        return;
+    }
+    if ($row.hasClass('open')) { pcCloseDetail($row); return; }
+    $('tr.model-row.open').each(function () { pcCloseDetail($(this)); });
+    renderMetaView(rowkey, $row.data('meta'));
+    $row.addClass('open').find('.toggle-icon').removeClass('fa-chevron-right').addClass('fa-chevron-down');
+    pcAttachDetail($row);
+});
+$(document).off('click.scrubEditMeta', '.btn-edit-model-meta').on('click.scrubEditMeta', '.btn-edit-model-meta', function () {
+    if (!pcCanEdit()) return;
+    const rowkey = $(this).data('rowkey');
+    renderMetaEditor(rowkey, pcRow(rowkey).data('meta'));
+    $('#detail-' + rowkey).data('editing', true).data('dirty', false);
+    pcMessage(rowkey, '');
+    $('#view-' + rowkey).hide(); $('#edit-' + rowkey).show(); $(this).hide();
+});
+$(document).off('click.scrubCancelMeta', '.btn-cancel-meta-edit').on('click.scrubCancelMeta', '.btn-cancel-meta-edit', function () {
+    const rowkey = $(this).data('rowkey');
+    if ($('#detail-' + rowkey).data('saving')) return;
+    pcFinishEditing(rowkey); pcMessage(rowkey, '');
+    if ($.fn.dataTable && $.fn.dataTable.isDataTable('#scrubTable')) $('#scrubTable').DataTable().draw(false);
+});
+$(document).off('change.pcDetailToggle', '.pc-meta-toggle, .pc-tracking-toggle').on('change.pcDetailToggle', '.pc-meta-toggle, .pc-tracking-toggle', function () {
+    const $input = $(this), checked = this.checked, tracking = $input.hasClass('pc-tracking-toggle');
+    const ebay = !tracking && $input.data('field') === 'eBay';
+    $input.siblings('.pc-value').text(tracking ? (checked ? 'DONE' : 'PENDING') : (ebay ? 'E' : (checked ? 'YES' : 'NO')))
+        .toggleClass('is-yes', checked).toggleClass('is-no', !checked)
+        .attr('title', $input.attr('aria-label') + ': ' + (checked ? 'YES' : 'NO'));
+});
+$(document).off('input.pcDirty change.pcDirty', '.meta-edit-area input').on('input.pcDirty change.pcDirty', '.meta-edit-area input', function () {
+    $(this).closest('.scrub-detail-panel').data('dirty', true);
+});
+$(document).off('click.pcStructureDirty', '.btn-add-meta-block, .btn-add-meta-field, .btn-remove-meta-field, .btn-remove-meta-block, .meta-type-icon')
+    .on('click.pcStructureDirty', '.btn-add-meta-block, .btn-add-meta-field, .btn-remove-meta-field, .btn-remove-meta-block, .meta-type-icon', function () {
+        $(this).closest('.scrub-detail-panel').data('dirty', true);
     });
-
-// ── Edit meta ──────────────────────────────────────────────────────────────
-
-$(document)
-    .off('click.scrubEditMeta', '.btn-edit-model-meta')
-    .on('click.scrubEditMeta', '.btn-edit-model-meta', function (e) {
-        e.stopPropagation();
-        if (!pcCanEdit()) return;
-        const code = $(this).data('modelcode');
-        const rowkey = $(this).data('rowkey');
-        const meta = $('tr.model-row[data-rowkey="' + rowkey + '"]').data('meta') || {};
-
-        renderMetaEditor(rowkey, meta);
-        $('#view-' + rowkey).hide();
-        $('#edit-' + rowkey).show();
-        $(this).hide();
-    });
-
-// ── Cancel edit ────────────────────────────────────────────────────────────
-
-$(document)
-    .off('click.scrubCancelMeta', '.btn-cancel-meta-edit')
-    .on('click.scrubCancelMeta', '.btn-cancel-meta-edit', function (e) {
-        e.stopPropagation();
-        const rowkey = $(this).data('rowkey');
-        $('#edit-' + rowkey).hide();
-        $('#view-' + rowkey).show();
-        $('.btn-edit-model-meta[data-rowkey="' + rowkey + '"]').show();
-    });
+$(window).off('beforeunload.pcDetail').on('beforeunload.pcDetail', function (event) {
+    if ($('.scrub-detail-panel').filter(function () { return $(this).data('dirty') || $(this).data('saving'); }).length) {
+        event.preventDefault(); event.originalEvent.returnValue = '';
+    }
+});
 
 // ── Toggle switch → hidden input sync ─────────────────────────────────────
 
 $(document)
     .off('change.metaToggle', '.meta-field-toggle')
     .on('change.metaToggle', '.meta-field-toggle', function () {
-        if (!pcCanEdit()) return;
+        if (!pcCanEdit() || $(this).closest('.scrub-detail-panel').data('saving')) return;
         const $row = $(this).closest('.meta-field');
         const checked = $(this).is(':checked');
         $row.find('.meta-field-value').val(checked ? 'yes' : 'no');
         $row.find('.meta-toggle-display')
-            .text(checked ? 'YES' : 'NO')
+            .text($row.find('.meta-field-key').val().trim() === 'eBay' ? 'E' : (checked ? 'YES' : 'NO'))
             .removeClass('badge-success badge-danger')
             .addClass(checked ? 'badge-success' : 'badge-danger');
     });
@@ -418,7 +442,7 @@ $(document)
     .off('click.metaTypeSwitch', '.meta-type-icon')
     .on('click.metaTypeSwitch', '.meta-type-icon', function (e) {
         e.stopPropagation();
-        if (!pcCanEdit()) return;
+        if (!pcCanEdit() || $(this).closest('.scrub-detail-panel').data('saving')) return;
         const $field = $(this).closest('.meta-field');
         const current = $(this).data('current');
         const key = $field.find('.meta-field-key').val();
@@ -435,9 +459,9 @@ $(document)
     .off('click.scrubAddBlock', '.btn-add-meta-block')
     .on('click.scrubAddBlock', '.btn-add-meta-block', function (e) {
         e.stopPropagation();
-        if (!pcCanEdit()) return;
+        if (!pcCanEdit() || $(this).closest('.scrub-detail-panel').data('saving')) return;
         const rowkey = $(this).data('rowkey');
-        $('#editor-' + rowkey).append(buildBlockEditorHtml('', {}));
+        $('#editor-' + rowkey + ' .pc-custom-editor').append(buildBlockEditorHtml('', {}));
     });
 
 // ── Add field (dropdown) ───────────────────────────────────────────────────
@@ -447,7 +471,7 @@ $(document)
     .on('click.scrubAddField', '.btn-add-meta-field', function (e) {
         e.preventDefault();
         e.stopPropagation();
-        if (!pcCanEdit()) return;
+        if (!pcCanEdit() || $(this).closest('.scrub-detail-panel').data('saving')) return;
         const type = $(this).data('type') || 'text';
         const newRow = buildFieldRowHtmlTyped('', type === 'toggle' ? 'no' : '', type);
         $(this).closest('.meta-block').find('.meta-fields').append(newRow);
@@ -459,7 +483,7 @@ $(document)
     .off('click.scrubRemoveField', '.btn-remove-meta-field')
     .on('click.scrubRemoveField', '.btn-remove-meta-field', function (e) {
         e.stopPropagation();
-        if (!pcCanEdit()) return;
+        if (!pcCanEdit() || $(this).closest('.scrub-detail-panel').data('saving')) return;
         $(this).closest('.meta-field').remove();
     });
 
@@ -469,112 +493,86 @@ $(document)
     .off('click.scrubRemoveBlock', '.btn-remove-meta-block')
     .on('click.scrubRemoveBlock', '.btn-remove-meta-block', function (e) {
         e.stopPropagation();
-        if (!pcCanEdit()) return;
+        if (!pcCanEdit() || $(this).closest('.scrub-detail-panel').data('saving')) return;
         if (confirm('Odstrániť tento blok?')) {
             $(this).closest('.meta-block').remove();
         }
     });
 
-// ── Save meta ─────────────────────────────────────────────────────────────
-
-$(document)
-    .off('click.scrubSaveMeta', '.btn-save-model-meta')
-    .on('click.scrubSaveMeta', '.btn-save-model-meta', function (e) {
-        e.stopPropagation();
-        if (!pcCanEdit()) return;
-        const $btn = $(this);
-        const rowkey = $btn.data('rowkey');
-        const code = $btn.data('modelcode');
-        const metaData = collectMetaEditorData(rowkey);
-
-        $btn.prop('disabled', true).html('<i class="fas fa-spinner fa-spin mr-1"></i> Saving...');
-
-        $.ajax({
-            url: 'scripts/save_model_meta.php',
-            method: 'POST',
-            dataType: 'json',
-            data: {
-                brand: $btn.data('brand'),
-                model: $btn.data('model'),
-                rangeyear: $btn.data('rangeyear'),
-                modelcode: code,
-                meta_json: JSON.stringify(metaData)
-            },
-            success: function (resp) {
-                if (!resp || !resp.ok) {
-                    alert(resp && resp.error ? resp.error : 'Save failed');
-                    $btn.prop('disabled', false).html('<i class="fas fa-save mr-1"></i> Save');
-                    return;
-                }
-
-                // Aktualizuj data-meta v riadku
-                const $row = $('tr.model-row[data-rowkey="' + rowkey + '"]');
-                $row.data('meta', metaData);
-
-                // Refresh badges v riadku
-                const getVal = function (block, field) {
-                    return String(((metaData[block] || {})[field] || 'no')).toLowerCase().trim();
-                };
-
-                const makeBadgePair = function (avail, web, href) {
-                    const a = avail === 'yes';
-                    const w = web === 'yes';
-
-                    const html =
-                        '<span class="badge meta-status-badge ' + (a ? 'badge-success' : 'badge-danger') + '" title="Available">' +
-                        (a ? 'Y' : 'N') +
-                        '</span>' +
-                        '<span class="badge meta-status-badge ' + (w ? 'badge-success' : 'badge-danger') + ' ml-1" title="Web">' +
-                        (w ? 'Y' : 'N') +
-                        '</span>';
-
-                    return href && href !== '#'
-                        ? '<a href="' + href + '">' + html + '</a>'
-                        : html;
-                };
-
-                const makeConfigBadges = function (meta) {
-                    const fields = [
-                        ['Create New Categories', 'CNC'],
-                        ['Add Filters', 'FLT'],
-                        ['Add Accessories', 'ACC'],
-                        ['Add Existing Designs', 'EXD']
-                    ];
-                    let html = '<span class="badge-pair config-badges">';
-                    fields.forEach(function (f) {
-                        const key = f[0], abbr = f[1];
-                        const val = String(((meta['Configuration'] || {})[key] || 'no')).toLowerCase().trim();
-                        const isYes = val === 'yes';
-                        html += '<span class="badge meta-status-badge config-mini-badge ' +
-                            (isYes ? 'badge-success' : 'badge-danger') + '" title="' + pcEscHtml(key) + '">' +
-                            abbr + '</span>';
-                    });
-                    html += '</span>';
-                    return html;
-                };
-
-                const plasticsHref = 'index.php?page=scrublistings&modelcode=' + encodeURIComponent(code);
-                $row.find('.config-status-cell').html(makeConfigBadges(metaData));
-                $row.find('.graphics-status-cell').html(makeBadgePair(getVal('Graphics', 'Available'), getVal('Graphics', 'Web'), '#'));
-                $row.find('.plastics-status-cell').html(makeBadgePair(getVal('Plastics', 'Available'), getVal('Plastics', 'Web'), plasticsHref));
-                $row.find('.seatcover-status-cell').html(makeBadgePair(getVal('Seat Cover', 'Available'), getVal('Seat Cover', 'Web'), '#'));
-
-                // Prepni späť na view
-                $('#edit-' + rowkey).hide();
-                renderMetaView(rowkey, metaData);
-                $('#view-' + rowkey).show();
-                $('.btn-edit-model-meta[data-rowkey="' + rowkey + '"]').show();
-
-                $btn.prop('disabled', false).html('<i class="fas fa-save mr-1"></i> Save');
-
-                // Flash zelená na riadok
-                $row.css('background-color', '#1a3a1a');
-                setTimeout(function () { $row.css('background-color', ''); }, 1200);
-            },
-            error: function (xhr) {
-                console.error(xhr.responseText);
-                alert('Save request failed');
-                $btn.prop('disabled', false).html('<i class="fas fa-save mr-1"></i> Save');
-            }
+// Both metadata and model-year tracking are saved in one database transaction.
+function pcUpdateRowBadges($row) {
+    const meta = pcObject($row.data('meta')), tracking = pcObject($row.data('tracking'));
+    const badge = function (yes, label, title, small) {
+        return '<span class="badge meta-status-badge ' + (small ? 'config-mini-badge ' : '') +
+            (yes ? 'badge-success' : 'badge-danger') + '" title="' + pcEscHtml(title) + '">' + label + '</span>';
+    };
+    PC_PRODUCTS.forEach(function (item) {
+        const fields = pcObject(meta[item[0]]);
+        let html = '<span class="badge-pair">';
+        PC_PRODUCT_FIELDS.forEach(function (field) {
+            const yes = pcYes(fields[field]);
+            html += badge(yes, field === 'eBay' ? 'E' : (yes ? 'Y' : 'N'), field === 'eBay' ? 'eBay: ' + (yes ? 'YES' : 'NO') : field, false);
         });
+        html += '</span>';
+        if (item[0] === 'Plastics') html = '<a class="badge-pair-link" href="index.php?page=scrublistings&amp;modelcode=' + encodeURIComponent($row.data('modelcode')) + '">' + html + '</a>';
+        $row.find('.' + item[1]).html(html);
     });
+    let configHtml = '<span class="badge-pair config-badges">';
+    PC_CONFIG.forEach(function (item) { configHtml += badge(pcYes(pcObject(meta.Configuration)[item[0]]), item[1], item[0], true); });
+    $row.find('.config-status-cell').html(configHtml + '</span>');
+    let trackingHtml = '<span class="badge-pair config-badges">', pending = false;
+    PC_TRACKING.forEach(function (item) {
+        const done = !tracking.trackid || !!Number(tracking[item[1]]);
+        if (!done) pending = true;
+        trackingHtml += badge(done, item[2], item[0], true);
+    });
+    $row.find('.tracking-status-cell').html(trackingHtml + '</span>').attr('data-order', pending ? '0' : '1').attr('data-search', pending ? 'Pending' : 'Complete');
+    // Invalidate search/order data as well as the visible cells.
+    if ($.fn.dataTable && $.fn.dataTable.isDataTable('#scrubTable')) {
+        $('#scrubTable').DataTable().row($row).invalidate('dom');
+    }
+}
+$(document).off('click.scrubSaveMeta', '.btn-save-model-meta').on('click.scrubSaveMeta', '.btn-save-model-meta', function () {
+    if (!pcCanEdit()) return;
+    const $btn = $(this), rowkey = $btn.data('rowkey'), $panel = $('#detail-' + rowkey), $row = pcRow(rowkey);
+    if ($panel.data('saving')) return;
+    const meta = collectMetaEditorData(rowkey), tracking = $panel.data('tracking-original');
+    const payload = {
+        brand: $btn.data('brand'), model: $btn.data('model'), rangeyear: $btn.data('rangeyear'),
+        modelcode: $btn.data('modelcode'), meta_json: JSON.stringify(meta)
+    };
+    if (tracking) {
+        const flags = { trackid: tracking.trackid };
+        $('#editor-' + rowkey + ' .pc-tracking-toggle').each(function () { flags[$(this).data('field')] = this.checked ? 1 : 0; });
+        payload.tracking_json = JSON.stringify(flags);
+        payload.tracking_original_json = JSON.stringify(tracking);
+    }
+    $panel.data('saving', true);
+    $panel.find('input, button').prop('disabled', true);
+    $('#editor-' + rowkey).prop('inert', true);
+    $btn.html('<i class="fas fa-spinner fa-spin mr-1"></i> Saving…');
+    pcMessage(rowkey, '');
+    $.ajax({
+        url: 'scripts/save_model_meta.php', method: 'POST', dataType: 'json', data: payload,
+        success: function (resp) {
+            if (!resp || !resp.ok) { pcMessage(rowkey, resp && resp.error ? resp.error : 'Changes could not be saved. Please try again.', true); return; }
+            $row.data('meta', meta).attr('data-meta', JSON.stringify(meta));
+            if (resp.tracking) $row.data('tracking', resp.tracking).attr('data-tracking', JSON.stringify(resp.tracking));
+            pcUpdateRowBadges($row);
+            $panel.data('saving', false);
+            pcFinishEditing(rowkey);
+            pcMessage(rowkey, 'All changes saved.');
+            if ($.fn.dataTable && $.fn.dataTable.isDataTable('#scrubTable')) $('#scrubTable').DataTable().draw(false);
+            $(document).trigger('productchart:saved');
+        },
+        error: function (xhr) {
+            pcMessage(rowkey, xhr.responseJSON && xhr.responseJSON.error ? xhr.responseJSON.error : 'Save failed. Your changes are still here; please try again.', true);
+        },
+        complete: function () {
+            $panel.data('saving', false);
+            $panel.find('input, button').prop('disabled', false);
+            $('#editor-' + rowkey).prop('inert', false);
+            $btn.html('<i class="fas fa-save mr-1"></i> Save all changes');
+        }
+    });
+});

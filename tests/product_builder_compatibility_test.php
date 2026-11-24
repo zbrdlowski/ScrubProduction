@@ -23,7 +23,7 @@ $update=$base+['id'=>$id,'version'=>1];$update['compatibility']=[$a,$b,$c];pb_sa
 foreach(['WR250F','Yamaha · WR250F · 2020-2024','VMVQ','Suzuki DR-Z400 SM 1999-2024'] as $query){$result=pb_product_overview($pdo,$query);compatAssert($result['pagination']['total']===1&&(int)$result['rows'][0]['id']===$id,'Secondary compatibility searchable: '.$query);compatAssert(count($result['rows'][0]['compatibility'])===3,'Overview contains every compatibility.');}
 $update['version']=2;$bad=$update;$bad['compatibility']=[array_replace($a,['modelcode'=>'FAKE'])];compatReject(fn()=>pb_save_product($pdo,$bad,7));
 compatAssert($read()===[$a,$b,$c],'Invalid selection rolls back and retains every saved model.');
-foreach([[],null,'NGL2',[false],array_fill(0,2001,$a)] as $invalid){$bad=$update;$bad['compatibility']=$invalid;compatReject(fn()=>pb_save_product($pdo,$bad,7));}
+foreach([[],null,'NGL2',[false],['model'=>$a],[1=>$a],[0=>$a,2=>$b],[1=>$b,0=>$a],array_fill(0,2001,$a)] as $invalid){$bad=$update;$bad['compatibility']=$invalid;compatReject(fn()=>pb_save_product($pdo,$bad,7));}
 $oldClient=$update;unset($oldClient['compatibility']);pb_save_product($pdo,$oldClient,7);compatAssert(count($read())===3,'Old client cannot erase additional models when editing other fields.');
 $oldClient['version']=3;$oldClient['model']='WR250F';compatReject(fn()=>pb_save_product($pdo,$oldClient,7));
 // A source-model deletion must not erase an existing product selection.

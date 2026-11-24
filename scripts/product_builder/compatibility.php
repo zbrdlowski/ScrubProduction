@@ -42,7 +42,8 @@ function pb_validate_compatibilities(PDO $pdo, array $data, int $id): array
         }
         $input=[array_intersect_key($data,array_flip(['brand','model','year_range','modelcode']))];
     }
-    if (!is_array($input) || !array_is_list($input) || !$input || count($input)>2000) throw new InvalidArgumentException('Select between 1 and 2000 compatible models.');
+    // Keep list validation compatible with PHP 8.0, which has no array_is_list().
+    if (!is_array($input) || !$input || count($input)>2000 || array_keys($input)!==range(0,count($input)-1)) throw new InvalidArgumentException('Select between 1 and 2000 compatible models.');
     $allowed=[];
     // Keep historical selections if a model was removed from Models Database later.
     foreach (array_merge($existing,pb_model_catalogue($pdo)) as $row) $allowed[pb_compatibility_key($row)]=$row;

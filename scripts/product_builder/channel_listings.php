@@ -51,8 +51,10 @@ function pb_save_channel_listing(PDO $pdo, array $data, ?int $userId): array
     $pdo->beginTransaction();
     try {
         // Lock the parent too: two initial writes to the same missing channel cannot both succeed.
-        $findProduct = $pdo->prepare('SELECT id FROM product_builder_products WHERE id=? FOR UPDATE'); $findProduct->execute([$id]);
-        if (!$findProduct->fetchColumn()) throw new InvalidArgumentException('Product not found.');
+        $findProduct = $pdo->prepare('SELECT id,deleted_at FROM product_builder_products WHERE id=? FOR UPDATE'); $findProduct->execute([$id]);
+        $parent=$findProduct->fetch(PDO::FETCH_ASSOC);
+        if (!$parent) throw new InvalidArgumentException('Product not found.');
+        if ($parent['deleted_at']) throw new InvalidArgumentException('This product is deleted. Restore it from Deleted products before editing.');
         $find = $pdo->prepare('SELECT * FROM product_builder_channel_listings WHERE product_id=? AND channel=? FOR UPDATE'); $find->execute([$id,$channel]); $current = $find->fetch(PDO::FETCH_ASSOC);
         if ((int)($current['version'] ?? 0) !== $version) throw new InvalidArgumentException('Another user has changed this channel. Reload the latest channel data and try again.');
         // Keep the last real price and URL for reuse when a listing is scheduled again.

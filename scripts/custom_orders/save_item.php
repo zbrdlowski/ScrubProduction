@@ -31,13 +31,16 @@ if ($orderId <= 0) {
   $finish(false, 'Invalid custom order.');
 }
 
-$orderStmt = $conn->prepare('SELECT production_order_id FROM custom_orders WHERE id = ? LIMIT 1');
+$orderStmt = $conn->prepare('SELECT production_order_id, exported_at FROM custom_orders WHERE id = ? LIMIT 1');
 $orderStmt->bind_param('i', $orderId);
 $orderStmt->execute();
 $orderRow = $orderStmt->get_result()->fetch_assoc() ?: null;
 $orderStmt->close();
 if (!$orderRow) {
   $finish(false, 'Custom order not found.');
+}
+if (customOrdersIsExported($orderRow)) {
+  $finish(false, customOrdersExportLockMessage(), $itemId);
 }
 $itemWorkflowStatusEnabled = false;
 

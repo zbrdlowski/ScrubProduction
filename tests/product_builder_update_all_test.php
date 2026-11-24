@@ -39,7 +39,7 @@ $cleanup = static function() use ($pdo, $tables, $prefix): void {
 };
 $ready = static function(array $sets): void {
     $rows = $sets[count($sets)-1];
-    repairAssert(count($rows) === 35, 'Diagnostics must report all thirty-five required schema objects.');
+    repairAssert(count($rows) === 37, 'Diagnostics must report all thirty-seven required schema objects.');
     repairAssert(array_unique(array_column($rows, 'status')) === ['OK'], 'All schema objects must be present.');
 };
 try {
@@ -50,7 +50,7 @@ try {
     $cleanup();
     repairRun($pdo, $translate($legacySql));
     $checks = repairRun($pdo, $checkSql);
-    repairAssert(count(array_filter($checks[count($checks)-1], fn($row) => $row['status'] === 'MISSING')) === 32, 'Legacy diagnostics identify four missing tables and twenty-five columns.');
+    repairAssert(count(array_filter($checks[count($checks)-1], fn($row) => $row['status'] === 'MISSING')) === 34, 'Legacy diagnostics identify four missing tables and twenty-five columns.');
     $pdo->exec("INSERT INTO {$prefix}uni_categories (brand,category_name,modelcode,included_models) VALUES ('Test','Original category','ZQA7','Original models')");
     $pdo->exec("INSERT INTO {$prefix}products (sku,name,bundle_type,category_kind,uni_category_id,brand,model,modelcode,notes,request_key) VALUES ('EXISTING-SHOPTET-SKU','Original listing','P','universal',1,'Test','Original category','ZQA7','Original notes','0123456789abcdef0123456789abcdef')");
     $pdo->exec("INSERT INTO {$prefix}components (product_id,component_type,label,reference,quantity,notes) VALUES (1,'P','Original component','KT00543',2,'Original component notes')");
@@ -68,6 +68,7 @@ try {
     $pdo->exec("INSERT INTO {$prefix}boxes (name,length_cm,width_cm,height_cm,weight_kg) VALUES ('Existing box',60.50,40,30,0)");
     $pdo->exec("UPDATE {$prefix}products SET box_id=1,weight_kg=2.345 WHERE id=1");
     $pdo->exec("INSERT INTO {$prefix}channel_listings (product_id,channel,listing_status,listing_url,listed_price,listed_currency,listed_date) VALUES (1,'web','listed','https://example.test/listing',0,'GBP','2026-10-29')");
+    $pdo->exec("UPDATE {$prefix}products SET deleted_at='2026-11-24 12:00:00',deleted_by=7 WHERE id=1");
     $snapshots = [];
     foreach ($suffixes as $table) $snapshots[$table] = $pdo->query("SELECT * FROM {$prefix}{$table} ORDER BY id")->fetchAll(PDO::FETCH_ASSOC);
     $ready(repairRun($pdo, $updateSql));

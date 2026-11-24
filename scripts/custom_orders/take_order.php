@@ -25,6 +25,7 @@ if ($orderId <= 0 || $userId <= 0) {
 }
 
 try {
+  customOrdersRequireUnexported($conn, $orderId);
   $assignment = customOrdersAssignOrder($conn, $orderId, $userId, $userId);
   $assignmentRow = [
     'custom_order_assignment_id' => (int) ($assignment['assignment_id'] ?? 0),

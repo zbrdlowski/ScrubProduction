@@ -15,9 +15,17 @@ if (!$existing) {
   customOrdersFlash('danger', 'Custom order not found.');
   customOrdersRedirect();
 }
-$orderAlreadyExported = (int) ($existing['production_order_id'] ?? 0) > 0;
+$orderAlreadyExported = customOrdersIsExported($existing);
+if (customOrdersExportLockedHeaderChanges($existing, $_POST)) {
+  customOrdersFlash('danger', customOrdersExportLockMessage());
+  customOrdersRedirect($orderId);
+}
 $customOrdersCanManage = auth_can('custom_orders.manage');
 if (!$customOrdersCanManage) {
+  if ($orderAlreadyExported) {
+    customOrdersFlash('danger', customOrdersExportLockMessage());
+    customOrdersRedirect($orderId);
+  }
   $requestedStatus = strtoupper(trim((string) ($_POST['status'] ?? ($existing['status'] ?? 'LEAD'))));
   if (!isset(customOrdersOrderStatuses()[$requestedStatus])) {
     customOrdersFlash('danger', 'Unknown custom order status.');
@@ -203,6 +211,8 @@ if (!isset(customOrdersOrderStatuses()[$data['status']])) {
   $data['status'] = 'LEAD';
 }
 
+$data = customOrdersPreserveExportLockedHeader($existing, $data);
+
 if (!$orderAlreadyExported && $posted('official_order_number')) {
   $manualOfficialNumber = trim((string) ($_POST['official_order_number'] ?? ''));
   if ($manualOfficialNumber !== '') {
@@ -215,7 +225,7 @@ if (!$orderAlreadyExported && $posted('official_order_number')) {
 }
 
 $autoAssignedOfficialNumber = '';
-if ($data['status'] === 'DRAFT_X' && trim((string) ($existing['official_order_number'] ?? '')) === '' && trim((string) ($data['official_order_number'] ?? '')) === '') {
+if (!$orderAlreadyExported && $data['status'] === 'DRAFT_X' && trim((string) ($existing['official_order_number'] ?? '')) === '' && trim((string) ($data['official_order_number'] ?? '')) === '') {
   $autoAssignedOfficialNumber = customOrdersAssignOfficialNumber($conn, $orderId, 'SO', $userId);
 }
 
@@ -233,7 +243,7 @@ try {
   $types = '';
   $values = [];
   foreach ($updateValues as $column => $value) {
-    if (!isset($availableColumns[$column])) {
+    if (!isset($availableColumns[$column]) || ($orderAlreadyExported && in_array($column, customOrdersExportLockedHeaderFields(), true))) {
       continue;
     }
     $assignments[] = '`' . $column . '` = ?';

@@ -245,25 +245,25 @@ if (isset($conn) && $conn instanceof mysqli) {
         <a href="?page=holidays" class="nav-link">Holidays</a>
       </li>
       <!-- Zablokované, lebo sa im to nelúbilo -->
-      <!--
+      
           <li class="nav-item dropdown">
         <a class="nav-link" data-toggle="dropdown" href="#" id="chatNotifToggle">
           <i class="far fa-comments"></i>
           <span class="badge badge-danger navbar-badge" id="chatUnreadBadge" style="display:none;">0</span>
         </a>
         <div class="dropdown-menu dropdown-menu-lg dropdown-menu-right" id="chatNotifMenu">
-          <span class="dropdown-item dropdown-header" id="chatNotifHeader">0 nových správ</span>
+          <span class="dropdown-item dropdown-header" id="chatNotifHeader">0 new messages</span>
           <div class="dropdown-divider"></div>
 
           <div id="chatNotifList">
-            <span class="dropdown-item text-muted">Žiadne nové správy</span>
+            <span class="dropdown-item text-muted">No New Messages</span>
           </div>
 
           <div class="dropdown-divider"></div>
-          <a href="?page=chat" class="dropdown-item dropdown-footer">Otvoriť chat</a>
+          <a href="?page=chat" class="dropdown-item dropdown-footer">Open Chat</a>
         </div>
       </li>
-    -->
+    
       <!-- Len Žbrdlo a admini z managementu -->
       <?php if ($holidayCanManage): ?>
       <li class="nav-item dropdown">
@@ -282,7 +282,7 @@ if (isset($conn) && $conn instanceof mysqli) {
               <?= htmlspecialchars($holidayNotifText, ENT_QUOTES, 'UTF-8') ?>
             </a>
           <?php else: ?>
-            <span class="dropdown-item text-muted">Ziadne nove ziadosti</span>
+            <span class="dropdown-item text-muted">No New Requests</span>
           <?php endif; ?>
           <div class="dropdown-divider"></div>
           <a href="?page=holidays" class="dropdown-item dropdown-footer"><?= htmlspecialchars($holidayNotifFooter, ENT_QUOTES, 'UTF-8') ?></a>
@@ -305,7 +305,7 @@ if (isset($conn) && $conn instanceof mysqli) {
       <li class="dropdown user user-menu" style="padding-top:5px;">
             <a href="#" style="color:silver;" class="dropdown-toggle" data-toggle="dropdown">
               <img src="<?php echo (!empty($_SESSION['user_photo'])) ? 'images/'.$_SESSION['user_photo'] : 'images/profile.jpg'; ?>" class="user-image" alt="User Image">
-              <span class="hidden-xs"><?php echo $_SESSION['name']; ?></span>
+              
             </a>
             <ul class="dropdown-menu">
               <!-- User image -->
@@ -719,13 +719,13 @@ function loadChatNotifications() {
             } else {
                 $('#chatUnreadBadge').hide();
                 $('#chatNotifToggle').removeClass('navbar-alert-bounce');
-                $('#chatNotifHeader').text('Žiadne nové správy');
+                $('#chatNotifHeader').text('No New Messages');
             }
 
             let html = '';
 
             if (!threads.length) {
-                html = '<span class="dropdown-item text-muted">Žiadne nové správy</span>';
+                html = '<span class="dropdown-item text-muted">No New Messages</span>';
             } else {
                 threads.forEach(function(item) {
                     const key = getChatNotificationKey(item);

@@ -86,9 +86,10 @@ function pb_save_product_image(PDO $pdo, array $data): array
     }
     $pdo->beginTransaction();
     try {
-        $find = $pdo->prepare('SELECT img_status,img_path,img_version FROM product_builder_products WHERE id=? FOR UPDATE');
+        $find = $pdo->prepare('SELECT img_status,img_path,img_version,deleted_at FROM product_builder_products WHERE id=? FOR UPDATE');
         $find->execute([$id]); $current = $find->fetch(PDO::FETCH_ASSOC);
         if (!$current) throw new InvalidArgumentException('Product not found.');
+        if ($current['deleted_at']) throw new InvalidArgumentException('This product is deleted. Restore it from Deleted products before editing.');
         if ((int)$current['img_version'] !== $version) throw new InvalidArgumentException('Another user has changed the IMG status. Reload the latest status and try again.');
         // Keep the last path when switching to a different status; selecting Path offers it again.
         if ($status !== 'Path') $path = $current['img_path'];
@@ -96,6 +97,27 @@ function pb_save_product_image(PDO $pdo, array $data): array
         $save->execute([$status,$path,$id]);
         $pdo->commit();
         return ['id'=>$id,'img_status'=>$status,'img_path'=>$path,'img_version'=>$version+1];
+    } catch (Throwable $e) { if ($pdo->inTransaction()) $pdo->rollBack(); throw $e; }
+}
+
+/** Recoverable deletion preserves SKU ownership and every linked record. */
+function pb_set_product_deleted(PDO $pdo, array $data, ?int $userId, bool $deleted): array
+{
+    $id=filter_var($data['id'] ?? null,FILTER_VALIDATE_INT,['options'=>['min_range'=>1]]);
+    $version=filter_var($data['version'] ?? null,FILTER_VALIDATE_INT,['options'=>['min_range'=>1]]);
+    if (!$id || !$version) throw new InvalidArgumentException('Invalid product or version.');
+    $pdo->beginTransaction();
+    try {
+        $find=$pdo->prepare('SELECT id,sku,name,version,deleted_at FROM product_builder_products WHERE id=? FOR UPDATE');
+        $find->execute([$id]); $row=$find->fetch(PDO::FETCH_ASSOC);
+        if (!$row) throw new InvalidArgumentException('Product not found.');
+        if ((int)$row['version']!==$version || (bool)$row['deleted_at']===$deleted) throw new InvalidArgumentException('This product has changed. Reload it before deleting or restoring it.');
+        $save=$pdo->prepare('UPDATE product_builder_products SET deleted_at='.($deleted?'NOW()':'NULL').',deleted_by=?,version=version+1,img_version=img_version+1 WHERE id=?');
+        $save->execute([$deleted?$userId:null,$id]);
+        // Invalidate old inline editors, including tabs left open before a restore.
+        $pdo->prepare('UPDATE product_builder_channel_listings SET version=version+1 WHERE product_id=?')->execute([$id]);
+        $pdo->commit();
+        return ['id'=>(int)$id,'sku'=>$row['sku'],'version'=>$version+1,'deleted'=>$deleted];
     } catch (Throwable $e) { if ($pdo->inTransaction()) $pdo->rollBack(); throw $e; }
 }
 
@@ -112,18 +134,29 @@ function pb_save_product(PDO $pdo, array $data, ?int $userId): array
             $transfer = pb_transfer_lock_for_product($pdo,$transferId);
             // Two operators processing the same transfer cannot create two products.
             if ($transfer['product_id']) {
-                $existing = $pdo->prepare('SELECT id,sku,request_key FROM product_builder_products WHERE id=?'); $existing->execute([$transfer['product_id']]);
+                $existing = $pdo->prepare('SELECT id,sku,request_key,deleted_at FROM product_builder_products WHERE id=?'); $existing->execute([$transfer['product_id']]);
                 if ($row = $existing->fetch(PDO::FETCH_ASSOC)) {
+                    if ($row['deleted_at']) throw new InvalidArgumentException('This product is deleted. Restore it from Deleted products before editing.');
                     if ($row['request_key'] !== $requestKey) throw new InvalidArgumentException('This transfer already has a listing. Open it from the transfer queue.');
-                    unset($row['request_key']); $pdo->commit(); return $row;
+                    unset($row['request_key'],$row['deleted_at']); $pdo->commit(); return $row;
                 }
                 throw new InvalidArgumentException('The linked listing no longer exists. Reload the transfer.');
             }
             if (isset($data['transfer_version']) && (int)$data['transfer_version'] !== (int)$transfer['version']) throw new InvalidArgumentException('This transfer changed after the form was opened. Open it again from Transfer D-base.');
         }
         if ($id === 0) {
-            $existing = $pdo->prepare('SELECT id,sku FROM product_builder_products WHERE request_key=?'); $existing->execute([$requestKey]);
-            if ($row = $existing->fetch(PDO::FETCH_ASSOC)) { $pdo->commit(); return $row; }
+            $existing = $pdo->prepare('SELECT id,sku,deleted_at FROM product_builder_products WHERE request_key=?'); $existing->execute([$requestKey]);
+            if ($row = $existing->fetch(PDO::FETCH_ASSOC)) {
+                if ($row['deleted_at']) throw new InvalidArgumentException('This product is deleted. Restore it from Deleted products before editing.');
+                unset($row['deleted_at']); $pdo->commit(); return $row;
+            }
+        }
+        if ($id > 0) {
+            $lock=$pdo->prepare('SELECT deleted_at,version FROM product_builder_products WHERE id=? FOR UPDATE'); $lock->execute([$id]);
+            $currentProduct=$lock->fetch(PDO::FETCH_ASSOC);
+            if (!$currentProduct) throw new InvalidArgumentException('Product not found.');
+            if ($currentProduct['deleted_at']) throw new InvalidArgumentException('This product is deleted. Restore it from Deleted products before editing.');
+            if ((int)$currentProduct['version']!==(int)($data['version'] ?? 0)) throw new InvalidArgumentException('Another user has changed this product. Open it again.');
         }
         // Preserve packaging values when an older client omits the new fields.
         if ($id > 0 && (!array_key_exists('box_id', $data) || !array_key_exists('weight_kg', $data))) {
@@ -208,8 +241,9 @@ function pb_save_product(PDO $pdo, array $data, ?int $userId): array
 }
 
 /** Server pagination shared by Builder and Listings; filters apply before the page limit. */
-function pb_product_overview(PDO $pdo, string $query = '', $page = 1, $perPage = 100): array
+function pb_product_overview(PDO $pdo, string $query = '', $page = 1, $perPage = 100, string $status = 'active'): array
 {
+    if (!in_array($status,['active','deleted'],true)) throw new InvalidArgumentException('Invalid product status filter.');
     $page = filter_var($page, FILTER_VALIDATE_INT, ['options'=>['min_range'=>1]]);
     $perPage = filter_var($perPage, FILTER_VALIDATE_INT);
     if ($page === false || !in_array($perPage, [25,50,100], true)) throw new InvalidArgumentException('Select a valid page and page size.');
@@ -234,14 +268,15 @@ function pb_product_overview(PDO $pdo, string $query = '', $page = 1, $perPage =
         }
         if ($modelParts) $where='('.$where." OR (p.category_kind='specific' AND EXISTS(SELECT 1 FROM product_builder_compatibility mc WHERE mc.product_id=p.id AND ".implode(' AND ',$modelParts).')))';
     }
+    $where='p.deleted_at IS '.($status==='deleted'?'NOT NULL':'NULL').' AND ('.$where.')';
     $from = ' FROM product_builder_products p LEFT JOIN product_builder_uni_categories u ON u.id=p.uni_category_id';
     // Global statistics remain independent of the search and the current page.
     $counts = $pdo->query("SELECT COUNT(*) AS total_count,
         COALESCE(SUM(category_kind='specific'),0) AS specific_count,
         COALESCE(SUM(category_kind='universal'),0) AS universal_count
-        FROM product_builder_products")->fetch(PDO::FETCH_ASSOC);
+        FROM product_builder_products WHERE deleted_at IS NULL")->fetch(PDO::FETCH_ASSOC);
     $total = (int) $counts['total_count'];
-    if ($query !== '') {
+    if ($query !== '' || $status === 'deleted') {
         $count = $pdo->prepare('SELECT COUNT(*)' . $from . ' WHERE ' . $where);
         $count->execute($params);
         $total = (int) $count->fetchColumn();

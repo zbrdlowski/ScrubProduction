@@ -12,6 +12,13 @@ if ($orderId <= 0 || $itemId <= 0) {
   customOrdersRedirect($orderId);
 }
 
+try {
+  customOrdersRequireUnexported($conn, $orderId);
+} catch (Throwable $e) {
+  customOrdersFlash('danger', $e->getMessage());
+  customOrdersRedirect($orderId);
+}
+
 $deletedItem = null;
 $stmt = $conn->prepare('SELECT title, item_type_code, qty, unit_price FROM custom_order_items WHERE id = ? AND custom_order_id = ? LIMIT 1');
 $stmt->bind_param('ii', $itemId, $orderId);

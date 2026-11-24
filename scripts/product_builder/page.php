@@ -24,7 +24,7 @@ if (empty($_SESSION['product_builder_csrf'])) $_SESSION['product_builder_csrf'] 
 if (!function_exists('pb_h')) { function pb_h($value): string { return htmlspecialchars((string) $value, ENT_QUOTES, 'UTF-8'); } }
 ?>
 <link rel="stylesheet" href="plugins/select2/css/select2.min.css">
-<link rel="stylesheet" href="assets/product_builder.css?v=36">
+<link rel="stylesheet" href="assets/product_builder.css?v=39">
 <div class="container-fluid pb-page" id="product-builder" lang="<?= pb_language() ?>">
   <div class="pb-language-bar"><div class="btn-group btn-group-sm" role="group" aria-label="<?= pb_h(pb_t('Language')) ?>">
     <?php foreach (['sk'=>'SK','en'=>'EN'] as $language=>$languageLabel): $query=['page'=>'product_'.$pbPageMode,'pb_lang'=>$language]; if($pbEditProductId>0)$query['edit']=$pbEditProductId; if(!empty($_GET['transfer']))$query['transfer']=(int)$_GET['transfer']; ?>
@@ -51,7 +51,7 @@ if (!function_exists('pb_h')) { function pb_h($value): string { return htmlspeci
   <?php if ($pbShowBuilder && $pbCanEdit): ?>
   <form id="pb-product-form">
     <div id="pb-transfer-draft-banner" class="alert alert-info mb-0" role="status" hidden></div>
-    <header class="pb-editor-header"><h2 id="pb-editor-title"><i class="fas fa-pen mr-2" aria-hidden="true"></i><?= pb_h(pb_t('Product editor')) ?></h2><span class="pb-editor-mode" id="pb-edit-label" role="status"><?= pb_h(pb_t('New product')) ?></span></header>
+    <header class="pb-editor-header"><h2 id="pb-editor-title"><i class="fas fa-pen mr-2" aria-hidden="true"></i><?= pb_h(pb_t('Product editor')) ?></h2><div class="pb-editor-tools"><span class="pb-editor-mode" id="pb-edit-label" role="status"><?= pb_h(pb_t('New product')) ?></span><button type="button" class="btn btn-sm btn-outline-danger" id="pb-delete-product" hidden><i class="far fa-trash-alt mr-1" aria-hidden="true"></i><?= pb_h(pb_t('Delete product')) ?></button></div></header>
     <div class="pb-top-grid">
       <section class="card pb-panel" id="pb-type-panel">
         <div class="card-header"><h2 class="card-title"><span class="pb-step">1</span> <?= pb_h(pb_t('Product type')) ?></h2></div>
@@ -147,13 +147,13 @@ if (!function_exists('pb_h')) { function pb_h($value): string { return htmlspeci
       <?php foreach (['unset'=>'—','skip'=>'Skip','gen'=>'Gen','ready'=>'Ready','completed'=>'Listing created'] as $filter=>$label): ?>
       <label class="pb-transfer-filter" data-filter-tone="<?= $filter ?>" title="<?= pb_h(pb_t($filter==='unset'?'Not set':($filter==='completed'?'Completed transfers':'Show {status} transfers'),['status'=>$label])) ?>"><input type="checkbox" role="switch" data-transfer-filter="<?= $filter ?>" <?= $filter!=='completed'?'checked':'' ?> aria-label="<?= pb_h(pb_t($filter==='unset'?'Not set':$label)) ?>"><span><?= pb_h(pb_t($label)) ?></span></label>
       <?php endforeach; ?>
-    </div></div><?php endif; ?><input type="search" id="pb-search" class="form-control form-control-sm" maxlength="150" aria-label="<?= pb_h(pb_t('Search products')) ?>" placeholder="<?= pb_h(pb_t($pbIsTransfers ? 'Name, order, modelcode or category…' : 'Name, SKU, modelcode or category…')) ?>"></div>
+    </div></div><?php endif; ?><?php if (!$pbIsTransfers && $pbCanEdit): ?><label class="pb-deleted-filter"><input type="checkbox" id="pb-show-deleted"><span><?= pb_h(pb_t('Deleted products')) ?></span></label><?php endif; ?><input type="search" id="pb-search" class="form-control form-control-sm" maxlength="150" aria-label="<?= pb_h(pb_t('Search products')) ?>" placeholder="<?= pb_h(pb_t($pbIsTransfers ? 'Name, order, modelcode or category…' : 'Name, SKU, modelcode or category…')) ?>"></div>
     <?php if ($pbIsTransfers): ?><small id="pb-transfer-search-hint" class="pb-muted px-3 pt-2" role="status" hidden><?= pb_h(pb_t('Search also includes created listings.')) ?></small><?php endif; ?>
     <span id="pb-channel-status-message" class="sr-only" role="status" aria-live="polite"></span>
     <span id="pb-img-status-message" class="sr-only" role="status" aria-live="polite"></span>
     <span id="pb-copy-status" class="sr-only" role="status" aria-live="polite"></span>
     <?php $pbRenderPagination('top'); ?>
-    <div class="table-responsive"><table class="table table-bordered table-hover table-sm mb-0 pb-table pb-products-table"><thead><tr><th class="pb-created-column" title="<?= pb_h(pb_t('Listing creation date')) ?>"><?= pb_h(pb_t('Created')) ?></th><th><?= pb_h(pb_t($pbIsTransfers ? 'Product / Source order' : 'Product / SKU')) ?></th><th><?= pb_h(pb_t('Bundle')) ?></th><th><?= pb_h(pb_t('Category')) ?></th><th class="pb-img-heading">IMG</th><th class="pb-icon-column" title="<?= pb_h(pb_t('Image folder')) ?>" aria-label="<?= pb_h(pb_t('Image folder')) ?>"><i class="far fa-folder-open" aria-hidden="true"></i></th><?php foreach (pb_price_fields() as $priceChannel=>$priceLabel): ?><th class="pb-price-column"><?= pb_h(pb_t($priceLabel)) ?></th><?php if ($priceChannel !== 'recommended'): ?><th class="pb-icon-column" aria-label="<?= pb_h($priceLabel . ' · ' . pb_t('Listing links')) ?>"><i class="fas fa-link" aria-hidden="true"></i></th><th class="pb-channel-stats" title="<?= pb_h($priceLabel . ' · ' . pb_t('Sold units / Listing date')) ?>"><?= pb_h(pb_t('Sold / Date')) ?></th><?php endif; ?><?php endforeach; ?><th><?= pb_h(pb_t('Box')) ?></th><th><?= pb_h(pb_t('Components')) ?></th><th><?= pb_h(pb_t('Actions')) ?></th></tr></thead><tbody id="pb-products"><tr><td colspan="19" class="pb-muted"><?= pb_h(pb_t('Loading products…')) ?></td></tr></tbody></table></div>
+    <div class="table-responsive" tabindex="0" role="region" aria-labelledby="pb-list-title"><table class="table table-bordered table-hover table-sm mb-0 pb-table pb-products-table"><thead><tr><th class="pb-created-column" title="<?= pb_h(pb_t('Listing creation date')) ?>"><?= pb_h(pb_t('Created')) ?></th><th><?= pb_h(pb_t($pbIsTransfers ? 'Product / Source order' : 'Product / SKU')) ?></th><th><?= pb_h(pb_t('Bundle')) ?></th><th><?= pb_h(pb_t('Category')) ?></th><th class="pb-img-heading">IMG</th><th class="pb-icon-column" title="<?= pb_h(pb_t('Image folder')) ?>" aria-label="<?= pb_h(pb_t('Image folder')) ?>"><i class="far fa-folder-open" aria-hidden="true"></i></th><?php foreach (pb_price_fields() as $priceChannel=>$priceLabel): ?><th class="pb-price-column" title="<?= pb_h(pb_t($priceLabel)) ?>"><?= pb_h(pb_t($priceChannel === 'recommended' ? 'Rec. price' : $priceLabel)) ?></th><?php if ($priceChannel !== 'recommended'): ?><th class="pb-icon-column" aria-label="<?= pb_h($priceLabel . ' · ' . pb_t('Listing links')) ?>"><i class="fas fa-link" aria-hidden="true"></i></th><th class="pb-channel-stats" title="<?= pb_h($priceLabel . ' · ' . pb_t('Sold units / Listing date')) ?>"><?= pb_h(pb_t('Sold / Date')) ?></th><?php endif; ?><?php endforeach; ?><th><?= pb_h(pb_t('Box')) ?></th><th><?= pb_h(pb_t('Components')) ?></th><th><?= pb_h(pb_t('Actions')) ?></th></tr></thead><tbody id="pb-products"><tr><td colspan="19" class="pb-muted"><?= pb_h(pb_t('Loading products…')) ?></td></tr></tbody></table></div>
     <?php $pbRenderPagination('bottom'); ?>
   </section>
   <?php endif; ?>
@@ -231,6 +231,13 @@ if (!function_exists('pb_h')) { function pb_h($value): string { return htmlspeci
 </div></div></div>
 <?php endif; ?>
 <?php if ($pbShowListings && !$pbIsTransfers): ?>
+<?php if ($pbCanEdit): ?>
+<div class="modal fade pb-modal" lang="<?= pb_language() ?>" id="pb-product-state-modal" tabindex="-1" role="dialog" aria-labelledby="pb-product-state-title"><div class="modal-dialog"><div class="modal-content">
+ <div class="modal-header"><h3 class="modal-title h5" id="pb-product-state-title"></h3><button type="button" class="close" data-dismiss="modal" aria-label="<?= pb_h(pb_t('Close')) ?>">&times;</button></div>
+ <div class="modal-body"><div id="pb-product-state-message" class="alert" role="alert" hidden></div><p><strong id="pb-product-state-name"></strong><br><code id="pb-product-state-sku"></code></p><p id="pb-product-state-description"></p><small class="pb-muted" id="pb-product-state-note"></small></div>
+ <div class="modal-footer"><button type="button" class="btn btn-secondary" data-dismiss="modal"><?= pb_h(pb_t('Cancel')) ?></button><button type="button" class="btn btn-danger" id="pb-product-state-confirm"></button></div>
+</div></div></div>
+<?php endif; ?>
 <div class="modal fade pb-modal" lang="<?= pb_language() ?>" id="pb-img-modal" tabindex="-1" role="dialog" aria-labelledby="pb-img-title"><div class="modal-dialog modal-lg"><div class="modal-content">
   <div class="modal-header"><h3 class="modal-title h5" id="pb-img-title"><?= pb_h(pb_t('Image folder')) ?></h3><button type="button" class="close" data-dismiss="modal" aria-label="<?= pb_h(pb_t('Close')) ?>">&times;</button></div>
   <form id="pb-img-form"><div class="modal-body">
@@ -259,4 +266,4 @@ if (!function_exists('pb_h')) { function pb_h($value): string { return htmlspeci
 <script>window.productBuilderConfig = <?= json_encode(['language'=>pb_language(),'languageCookie'=>pb_language_cookie(),'translations'=>pb_language()==='sk'?pb_i18n_dictionary():new stdClass(),'pageMode'=>$pbPageMode,'editProductId'=>$pbEditProductId,'transfersReady'=>$pbTransfersReady,'openTransferId'=>($pbShowBuilder || $pbIsTransfers) ? (int)($_GET['transfer'] ?? 0) : 0,'csrf'=>$_SESSION['product_builder_csrf'],'canEdit'=>$pbCanEdit,'types'=>pb_component_types(),'bundleComponents'=>array_combine(pb_bundle_types(),array_map('pb_bundle_component_types',pb_bundle_types())),'priceFields'=>pb_price_fields(),'specFields'=>pb_component_spec_fields($conn),'requestKey'=>bin2hex(random_bytes(16))], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;</script>
 <script defer src="plugins/select2/js/select2.full.min.js"></script>
 <?php if ($pbShowBuilder): ?><script src="scripts/product_builder/model_picker.js?v=1"></script><?php endif; ?>
-<?php if ($pbIsTransfers): ?><script src="scripts/product_builder/transfers.js?v=5"></script><?php else: ?><script src="scripts/product_builder/app.js?v=37"></script><?php endif; ?>
+<?php if ($pbIsTransfers): ?><script src="scripts/product_builder/transfers.js?v=5"></script><?php else: ?><script src="scripts/product_builder/app.js?v=38"></script><?php endif; ?>

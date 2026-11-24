@@ -10,6 +10,13 @@ if ($orderId <= 0) {
   customOrdersRedirect();
 }
 
+try {
+  customOrdersRequireUnexported($conn, $orderId);
+} catch (Throwable $e) {
+  customOrdersFlash('danger', $e->getMessage());
+  customOrdersRedirect($orderId);
+}
+
 $contactedAt = trim((string) ($_POST['contacted_at'] ?? ''));
 if ($contactedAt === '') {
   $contactedAt = customOrdersNow();

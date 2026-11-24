@@ -1952,6 +1952,31 @@ FROM product_builder_products p
 WHERE p.category_kind='specific' AND p.modelcode<>''
 AND NOT EXISTS (SELECT 1 FROM product_builder_compatibility c WHERE c.product_id=p.id);
 
+-- Product builder update 015: recoverable product deletion.
+-- Import into the same database after update 014. Existing products remain active.
+-- No products, components, SKU values, platform listings or transfers are removed.
+SET NAMES utf8mb4;
+SET @pb_delete_exists = (SELECT COUNT(*) FROM information_schema.columns
+ WHERE table_schema=DATABASE() AND table_name='product_builder_products' AND column_name='deleted_at');
+SET @pb_delete_sql = IF(@pb_delete_exists=0, 'ALTER TABLE product_builder_products ADD COLUMN deleted_at DATETIME NULL', 'DO 0');
+PREPARE pb_delete_migration FROM @pb_delete_sql;
+EXECUTE pb_delete_migration;
+DEALLOCATE PREPARE pb_delete_migration;
+SET @pb_delete_exists = (SELECT COUNT(*) FROM information_schema.columns
+ WHERE table_schema=DATABASE() AND table_name='product_builder_products' AND column_name='deleted_by');
+SET @pb_delete_sql = IF(@pb_delete_exists=0, 'ALTER TABLE product_builder_products ADD COLUMN deleted_by INT NULL', 'DO 0');
+PREPARE pb_delete_migration FROM @pb_delete_sql;
+EXECUTE pb_delete_migration;
+DEALLOCATE PREPARE pb_delete_migration;
+SET @pb_delete_exists = (SELECT COUNT(*) FROM information_schema.statistics
+ WHERE table_schema=DATABASE() AND table_name='product_builder_products' AND index_name='idx_pb_deleted_created');
+SET @pb_delete_sql = IF(@pb_delete_exists=0, 'ALTER TABLE product_builder_products ADD INDEX idx_pb_deleted_created (deleted_at,created_at,id)', 'DO 0');
+PREPARE pb_delete_migration FROM @pb_delete_sql;
+EXECUTE pb_delete_migration;
+DEALLOCATE PREPARE pb_delete_migration;
+
+-- Read-only verification of Product Builder tables and required columns.
+-- Select the DarkScrub application database in phpMyAdmin before importing.
 SELECT DATABASE() AS checked_database;
 SELECT 'product_builder_products' AS required_object, IF(EXISTS(SELECT 1 FROM information_schema.tables WHERE table_schema=DATABASE() AND table_name='product_builder_products'),'OK','MISSING') AS status
 UNION ALL
@@ -1963,9 +1988,6 @@ SELECT 'product_builder_designs' AS required_object, IF(EXISTS(SELECT 1 FROM inf
 UNION ALL
 SELECT 'product_builder_graphics_versions' AS required_object, IF(EXISTS(SELECT 1 FROM information_schema.tables WHERE table_schema=DATABASE() AND table_name='product_builder_graphics_versions'),'OK','MISSING') AS status
 UNION ALL
-
-
-
 SELECT 'product_builder_boxes' AS required_object, IF(EXISTS(SELECT 1 FROM information_schema.tables WHERE table_schema=DATABASE() AND table_name='product_builder_boxes'),'OK','MISSING') AS status
 UNION ALL
 SELECT 'product_builder_components.color', IF(EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name='product_builder_components' AND column_name='color'),'OK','MISSING')
@@ -2024,4 +2046,8 @@ SELECT 'product_builder_transfers', IF(EXISTS(SELECT 1 FROM information_schema.t
 UNION ALL
 SELECT 'product_builder_transfers.img_status', IF(EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name='product_builder_transfers' AND column_name='img_status'),'OK','MISSING')
 UNION ALL
-SELECT 'product_builder_compatibility', IF(EXISTS(SELECT 1 FROM information_schema.tables WHERE table_schema=DATABASE() AND table_name='product_builder_compatibility'),'OK','MISSING');
+SELECT 'product_builder_compatibility', IF(EXISTS(SELECT 1 FROM information_schema.tables WHERE table_schema=DATABASE() AND table_name='product_builder_compatibility'),'OK','MISSING')
+UNION ALL
+SELECT 'product_builder_products.deleted_at', IF(EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name='product_builder_products' AND column_name='deleted_at'),'OK','MISSING')
+UNION ALL
+SELECT 'product_builder_products.deleted_by', IF(EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name='product_builder_products' AND column_name='deleted_by'),'OK','MISSING');

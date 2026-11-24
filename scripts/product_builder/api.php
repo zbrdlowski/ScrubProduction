@@ -43,6 +43,7 @@ try {
         if ($action === 'generate_sku') pb_reply(['ok'=>true,'sku'=>pb_generate_sku($pdo,pb_text($data['bundle_type'] ?? '', 'Bundle type', 5))]);
         if ($action === 'save_channel_listing') pb_reply(['ok'=>true,'listing'=>pb_save_channel_listing($pdo,$data,(int) ($_SESSION['user_id'] ?? 0) ?: null)]);
         if ($action === 'save_product_image') pb_reply(['ok'=>true,'image'=>pb_save_product_image($pdo,$data)]);
+        if ($action === 'delete_product' || $action === 'restore_product') pb_reply(['ok'=>true,'product'=>pb_set_product_deleted($pdo,$data,(int)($_SESSION['user_id'] ?? 0) ?: null,$action==='delete_product')]);
         if ($action === 'save_product') pb_reply(['ok'=>true,'product'=>pb_save_product($pdo,$data,(int) ($_SESSION['user_id'] ?? 0) ?: null)]);
         if ($action === 'import_uni') {
             $file = $_FILES['csv'] ?? [];
@@ -56,7 +57,7 @@ try {
         if ($action === 'transfer_products') {
             $q=pb_text($_GET['q'] ?? '', 'Search',150,false);
             $like='%'.str_replace(['!','%','_'],['!!','!%','!_'],$q).'%';
-            $stmt=$pdo->prepare("SELECT p.id,p.name,p.sku FROM product_builder_products p WHERE (p.name LIKE ? ESCAPE '!' OR p.sku LIKE ? ESCAPE '!' OR p.modelcode LIKE ? ESCAPE '!') AND EXISTS(SELECT 1 FROM product_builder_components c WHERE c.product_id=p.id AND c.component_type='G') ORDER BY p.id DESC LIMIT 25");
+            $stmt=$pdo->prepare("SELECT p.id,p.name,p.sku FROM product_builder_products p WHERE p.deleted_at IS NULL AND (p.name LIKE ? ESCAPE '!' OR p.sku LIKE ? ESCAPE '!' OR p.modelcode LIKE ? ESCAPE '!') AND EXISTS(SELECT 1 FROM product_builder_components c WHERE c.product_id=p.id AND c.component_type='G') ORDER BY p.id DESC LIMIT 25");
             $stmt->execute([$like,$like,$like]); pb_reply(['ok'=>true,'rows'=>$stmt->fetchAll(PDO::FETCH_ASSOC)]);
         }
         if ($action === 'boxes') pb_reply(['ok'=>true,'rows'=>pb_box_list($pdo)]);
@@ -77,14 +78,16 @@ try {
         }
         if ($action === 'product') {
             $stmt = $pdo->prepare('SELECT p.*,u.brand AS uni_brand,u.category_name AS uni_name,b.name AS box_name,b.length_cm AS box_length_cm,b.width_cm AS box_width_cm,b.height_cm AS box_height_cm,b.weight_kg AS box_weight_kg FROM product_builder_products p LEFT JOIN product_builder_uni_categories u ON u.id=p.uni_category_id LEFT JOIN product_builder_boxes b ON b.id=p.box_id WHERE p.id=?'); $stmt->execute([(int) ($_GET['id'] ?? 0)]); $row = $stmt->fetch(PDO::FETCH_ASSOC);
-            if (!$row) pb_reply(['ok'=>false,'error'=>'Product not found.'],404);
+            if (!$row || ($row['deleted_at'] && !pb_can_manage_products())) pb_reply(['ok'=>false,'error'=>'Product not found.'],404);
             $row['compatibility'] = pb_product_compatibilities($pdo,[$row])[(int)$row['id']];
             $row['components'] = pb_product_components($pdo, (int)$row['id']);
             $row['channel_listings'] = pb_channel_listings($pdo, [(int)$row['id']])[(int)$row['id']];
             pb_reply(['ok'=>true,'product'=>$row]);
         }
         if ($action === 'products') {
-            pb_reply(['ok' => true] + pb_product_overview($pdo, pb_text($_GET['q'] ?? '', 'Search', 150, false), $_GET['page'] ?? 1, $_GET['per_page'] ?? 100));
+            $status=(string)($_GET['status'] ?? 'active');
+            if ($status==='deleted' && !pb_can_manage_products()) pb_reply(['ok'=>false,'error'=>'You do not have permission to perform this action.'],403);
+            pb_reply(['ok' => true] + pb_product_overview($pdo, pb_text($_GET['q'] ?? '', 'Search', 150, false), $_GET['page'] ?? 1, $_GET['per_page'] ?? 100,$status));
         }
     } else pb_reply(['ok'=>false,'error'=>'Method not allowed.'],405);
     pb_reply(['ok'=>false,'error'=>'Unknown action.'],400);

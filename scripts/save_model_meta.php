@@ -30,63 +30,20 @@ if (!is_file($connFile)) {
 }
 require_once $connFile;
 
-$brand     = trim((string)($_POST['brand'] ?? ''));
-$model     = trim((string)($_POST['model'] ?? ''));
-$rangeyear = trim((string)($_POST['rangeyear'] ?? ''));
-$modelcode = trim((string)($_POST['modelcode'] ?? ''));
-$metaRaw   = trim((string)($_POST['meta_json'] ?? ''));
+require_once __DIR__ . '/product_chart_service.php';
 
-if ($brand === '' || $model === '' || $rangeyear === '' || $modelcode === '') {
-    out(400, ['ok' => false, 'error' => 'Missing product identity']);
-}
-if ($metaRaw === '') {
-    out(400, ['ok' => false, 'error' => 'Missing meta_json']);
+if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+    out(405, ['ok' => false, 'error' => 'POST required.']);
 }
 
-// Validácia JSON
-$decoded = json_decode($metaRaw, true);
-if (!is_array($decoded)) {
-    out(400, ['ok' => false, 'error' => 'Invalid JSON']);
+try {
+    $result = pcSaveModelDetails($pdo, $_POST, $productChartUserId);
+    out(200, $result);
+} catch (Throwable $error) {
+    $status = (int)$error->getCode();
+    if (!in_array($status, [400, 404, 409], true)) {
+        error_log('Product chart save failed: ' . $error->getMessage());
+        out(500, ['ok' => false, 'error' => 'Changes could not be saved. Nothing was saved; please try again.']);
+    }
+    out($status, ['ok' => false, 'error' => $error->getMessage()]);
 }
-
-// Normalizácia — čistý re-encode
-$metaClean = json_encode($decoded, JSON_UNESCAPED_UNICODE);
-
-// Overenie, že modelcode existuje
-$check = $conn->prepare("
-    SELECT lineid
-    FROM scrubdata
-    WHERE brand = ?
-      AND model = ?
-      AND rangeyear = ?
-      AND modelcode = ?
-    LIMIT 1
-");
-$check->bind_param('ssss', $brand, $model, $rangeyear, $modelcode);
-$check->execute();
-$exists = $check->get_result()->fetch_assoc();
-$check->close();
-
-if (!$exists) {
-    out(404, ['ok' => false, 'error' => 'Model not found: ' . $modelcode]);
-}
-
-// Upsert do scrubdata_meta
-$updatedBy = (int)($_SESSION['user_id'] ?? 0) ?: null;
-
-$stmt = $conn->prepare("
-    INSERT INTO scrubdata_meta (brand, model, rangeyear, modelcode, meta_json, updated_by)
-    VALUES (?, ?, ?, ?, ?, ?)
-    ON DUPLICATE KEY UPDATE
-        meta_json  = VALUES(meta_json),
-        updated_by = VALUES(updated_by),
-        updated_at = CURRENT_TIMESTAMP
-");
-$stmt->bind_param('sssssi', $brand, $model, $rangeyear, $modelcode, $metaClean, $updatedBy);
-
-if (!$stmt->execute()) {
-    out(500, ['ok' => false, 'error' => 'DB error: ' . $stmt->error]);
-}
-$stmt->close();
-
-out(200, ['ok' => true, 'modelcode' => $modelcode]);

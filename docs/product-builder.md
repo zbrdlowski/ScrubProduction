@@ -1,3 +1,23 @@
+## Vymazanie a obnova produktu (24. 11. 2026)
+
+Pri úprave uloženého produktu je v hlavičke editora tlačidlo **Vymazať produkt / Delete product**. Pri novom produkte sa nezobrazuje. Potvrdzovací modal ukazuje uložený názov a SKU; zrušenie aj chyba zachovajú rozpracovaný formulár. Po úspešnom vymazaní sa formulár vyčistí.
+
+Vymazanie je obnoviteľné: do product_builder_products sa zapíše deleted_at a deleted_by. Produkt sa skryje z aktívneho výpisu, vyhľadávania a štatistík; komponenty, kompatibility, ceny, platformové URL, priečinok obrázkov aj dokončené transfery ostávajú uložené. SKU zostáva rezervované pre pôvodný produkt. Pri potrebe opravy sa produkt obnoví a upraví, namiesto vytvárania ďalšieho záznamu s rovnakým SKU. Vymazanie nemení ani neukončuje reálne ponuky na Webe, eBay či Amazone.
+
+Používatelia s products.view + products.manage majú pri hlavičke tabuľky filter **Vymazané produkty / Deleted products**. Zobrazí samostatný prehľad s vyhľadávaním a stránkovaním. V pôvodnom stĺpci Akcie je **Obnoviť / Restore**. Komponenty, URL a cesta k obrázkom sa dajú prezerať, inline zmeny sú vypnuté. Bežní čitatelia vymazané produkty nevidia ani cez priame API volanie.
+
+Vymazanie aj obnova kontrolujú verziu produktu pod databázovým zámkom. Zmenia verziu hlavného formulára, IMG aj uložených platformových editorov, aby starý tab nemohol po obnove prepísať údaje. Počas vymazania API odmieta bežné uloženie, zmenu IMG, zmenu platformy aj nové priradenie transferu. Dokončený transfer ostáva naviazaný na pôvodný produkt.
+
+**Nasadenie:** najprv importovať db/product_builder_update_015.sql do aplikačnej databázy, potom nahrať súbory z product-builder-delete-restore.zip. Migrácia je opakovateľná a nemení existujúce údaje ani stav už vymazaných produktov. Úplná inštalácia, phpMyAdmin balík, update_all, kontrolný SQL a CLI installer obsahujú tú istú migráciu.
+
+Overenie: tests/product_builder_deletion_test.php používa iba dočasné tabuľky; tests/product_builder_deletion_ui_test.js používa mockované API a statické testovacie náhľady.
+
+## Oprava ukladania pri PHP 8.0 (24. 11. 2026)
+
+Kontrola zoznamu modelových kompatibilít už nepoužíva `array_is_list()`, dostupné až od PHP 8.1. Pri PHP 8.0 táto funkcia vyvolala `Call to undefined function array_is_list()` a API zobrazilo všeobecné „The operation failed. Please try again.“. Overenie súvislých číselných indexov ostáva zachované.
+
+Na už aktualizovanú inštaláciu stačí nahrať `scripts/product_builder/compatibility.php`; ďalšie SQL netreba. Regresný test: `php -d disable_functions=array_is_list tests/product_builder_compatibility_test.php` (iba dočasné tabuľky). Simuluje nedostupnosť tejto funkcie, nie celý runtime PHP 8.0.
+
 ## Viac modelových kompatibilít (23. 11. 2026)
 
 Modelovo špecifický listing môže mať viac značiek, modelov a rozsahov rokov. Category Info obsahuje vyhľadávateľný strom značka → model → roky/modelcode, zaškrtávanie vetiev, čiastočne zaškrtnuté vetvy a samostatný zoznam vybraných položiek. Pri filtrovaní označenie vetvy vyberie iba zobrazené zhody. Výber sa do formulára prenesie až cez Použiť vybrané modely; Cancel alebo X pôvodný výber zachová. Refresh models zachová rozpracovaný výber.

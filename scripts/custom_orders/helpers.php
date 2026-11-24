@@ -5,6 +5,7 @@ require_once dirname(__DIR__, 2) . '/includes/get_order_detail_product_spec_sele
 require_once dirname(__DIR__, 2) . '/includes/orders_status_helpers.php';
 require_once dirname(__DIR__, 2) . '/includes/orders_plastics_gate_helpers.php';
 require_once dirname(__DIR__) . '/orders/department_config.php';
+require_once __DIR__ . '/export_lock.php';
 
 function customOrdersFlash(string $type, string $message, array $meta = []): void
 {
@@ -1970,6 +1971,7 @@ function customOrdersEmployeeInitials(string $name): string
 function customOrdersRenderOrderAssignmentHtml(array $row, int $orderId, bool $canTake, int $currentUserId): string
 {
   $assignment = customOrdersAssignmentFromRow($row);
+  $exportDisabled = customOrdersIsExported($row) ? ' disabled data-custom-export-locked="1"' : '';
 
   if ($assignment) {
     $canManageAssignments = function_exists('auth_can') && auth_can('custom_orders.manage');
@@ -1982,7 +1984,7 @@ function customOrdersRenderOrderAssignmentHtml(array $row, int $orderId, bool $c
     $mineClass = (int) ($assignment['employee_id'] ?? 0) === $currentUserId ? ' is-mine' : '';
     $canRemove = $assignmentId > 0 && ($canManageAssignments || $employeeId === $currentUserId);
     $removeButton = $canRemove
-      ? '<button type="button" class="custom-order-remove-assignment-btn" data-assignment-id="' . $assignmentId . '" data-custom-order-id="' . (int) $orderId . '" title="' . htmlspecialchars($employeeId === $currentUserId ? 'Remove my assignment' : 'Remove assignment', ENT_QUOTES, 'UTF-8') . '">&times;</button>'
+      ? '<button type="button" class="custom-order-remove-assignment-btn" data-assignment-id="' . $assignmentId . '" data-custom-order-id="' . (int) $orderId . '" title="' . htmlspecialchars($employeeId === $currentUserId ? 'Remove my assignment' : 'Remove assignment', ENT_QUOTES, 'UTF-8') . '"' . $exportDisabled . '>&times;</button>'
       : '';
 
     if ($photo !== '') {
@@ -1993,7 +1995,7 @@ function customOrdersRenderOrderAssignmentHtml(array $row, int $orderId, bool $c
   }
 
   if ($canTake && $orderId > 0) {
-    return '<button type="button" class="btn btn-xs btn-success custom-order-take-btn" data-action="scripts/custom_orders/take_order.php" data-custom-order-id="' . (int) $orderId . '" title="Take this custom order">Take</button>';
+    return '<button type="button" class="btn btn-xs btn-success custom-order-take-btn" data-action="scripts/custom_orders/take_order.php" data-custom-order-id="' . (int) $orderId . '" title="Take this custom order"' . $exportDisabled . '>Take</button>';
   }
 
   return '<span class="text-muted" title="Open custom order">-</span>';

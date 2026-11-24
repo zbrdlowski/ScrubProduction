@@ -29,6 +29,10 @@ if (!$existing) {
   $finish(['ok' => false, 'message' => 'Custom order not found.'], 404);
 }
 
+if (customOrdersIsExported($existing)) {
+  $finish(['ok' => false, 'message' => customOrdersExportLockMessage()], 409);
+}
+
 $customOrdersCanManage = auth_can('custom_orders.manage');
 if (!$customOrdersCanManage && !customOrdersCanWorkerSetOrderStatus($requestedStatus)) {
   $finish(['ok' => false, 'message' => 'This status belongs to customer service and cannot be changed here.'], 403);

@@ -200,17 +200,17 @@ function categoryCell(row) {
 const imageRows=new Map(),imagePending=new Set(),imageErrors=new Map();
 let imageModalId=null,imageModalVersion=1,imageModalClosing=false,imageModalNext=null;
 function rememberImage(row) {
-  const id=String(row.id),old=imageRows.get(id),next={id,img_status:row.img_status||'none',img_path:row.img_path||'',img_version:Number(row.img_version)||1};
+  const id=String(row.id),old=imageRows.get(id),next={id,deleted_at:row.deleted_at||null,img_status:row.img_status||'none',img_path:row.img_path||'',img_version:Number(row.img_version)||1};
   if(!old||(!imagePending.has(id)&&next.img_version>=old.img_version))imageRows.set(id,next);
   return imageRows.get(id);
 }
 function imageCellContents(row) {
   const id=String(row.id),pending=imagePending.has(id),error=imageErrors.get(id);
-  return '<div class="pb-img-controls"><select class="form-control form-control-sm pb-img-select" data-img-select="'+esc(id)+'" aria-label="'+esc(t('IMG status'))+'"'+(!cfg.canEdit||pending?' disabled':'')+'>'+[['none','✗'],['R','R'],['A','A'],['Path','Path']].map(([value,label])=>'<option value="'+value+'"'+(row.img_status===value?' selected':'')+'>'+label+'</option>').join('')+'</select></div>'+(pending?'<span class="pb-img-feedback" role="status">'+esc(t('Saving…'))+'</span>':error?'<span class="pb-img-feedback" role="alert">'+esc(error)+'</span><button type="button" class="btn btn-sm btn-outline-light" data-img-reload="'+esc(id)+'">'+esc(t('Reload IMG status'))+'</button>':'');
+  return '<div class="pb-img-controls"><select class="form-control form-control-sm pb-img-select" data-img-select="'+esc(id)+'" aria-label="'+esc(t('IMG status'))+'"'+(!cfg.canEdit||row.deleted_at||pending?' disabled':'')+'>'+[['none','✗'],['R','R'],['A','A'],['Path','Path']].map(([value,label])=>'<option value="'+value+'"'+(row.img_status===value?' selected':'')+'>'+label+'</option>').join('')+'</select></div>'+(pending?'<span class="pb-img-feedback" role="status">'+esc(t('Saving…'))+'</span>':error?'<span class="pb-img-feedback" role="alert">'+esc(error)+'</span><button type="button" class="btn btn-sm btn-outline-light" data-img-reload="'+esc(id)+'">'+esc(t('Reload IMG status'))+'</button>':'');
 }
 function imageActions(row) {
   const id=String(row.id),pending=imagePending.has(id);
-  return row.img_status==='Path'?'<div class="pb-cell-actions"><button type="button" class="btn pb-img-open" data-img-path="'+esc(id)+'" title="'+esc(t(cfg.canEdit?'Edit folder path':'View folder path'))+'" aria-label="'+esc(t(cfg.canEdit?'Edit folder path':'View folder path'))+'"'+(pending?' disabled':'')+'><i class="far fa-folder-open" aria-hidden="true"></i></button>'+copyButton(row.img_path,t('Copy folder path'))+'</div>':'<span class="pb-muted">—</span>';
+  return row.img_status==='Path'?'<div class="pb-cell-actions"><button type="button" class="btn pb-img-open" data-img-path="'+esc(id)+'" title="'+esc(t(cfg.canEdit&&!row.deleted_at?'Edit folder path':'View folder path'))+'" aria-label="'+esc(t(cfg.canEdit&&!row.deleted_at?'Edit folder path':'View folder path'))+'"'+(pending?' disabled':'')+'><i class="far fa-folder-open" aria-hidden="true"></i></button>'+copyButton(row.img_path,t('Copy folder path'))+'</div>':'<span class="pb-muted">—</span>';
 }
 function imageCell(row) {
   const state=rememberImage(row);
@@ -223,7 +223,7 @@ function renderImage(id) {
 }
 
 async function saveImage(id,status,path,version) {
-  id=String(id);if(!cfg.canEdit||imagePending.has(id))return false;
+  id=String(id);if(!cfg.canEdit||imageRows.get(id)?.deleted_at||imagePending.has(id))return false;
   imagePending.add(id);imageErrors.delete(id);renderImage(id);
   try {
     const result=await api('save_product_image',{id,img_status:status,img_path:path,img_version:version});
@@ -237,7 +237,7 @@ async function reloadImage(id) {
   imagePending.add(id);renderImage(id);
   try {
     const row=(await api('product',undefined,{id})).product;
-    imageRows.set(id,{id,img_status:row.img_status||'none',img_path:row.img_path||'',img_version:Number(row.img_version)||1});imageErrors.delete(id);
+    imageRows.set(id,{id,deleted_at:row.deleted_at||null,img_status:row.img_status||'none',img_path:row.img_path||'',img_version:Number(row.img_version)||1});imageErrors.delete(id);
     if(imageModalId===id){imageModalVersion=imageRows.get(id).img_version;msg('pb-img-message','');el('pb-img-reload').hidden=true;}
     return true;
   } catch(e){imageErrors.set(id,e.message);if(imageModalId===id)msg('pb-img-message',e.message);return false;}
@@ -250,8 +250,8 @@ function openImagePath(id) {
   id=String(id);const row=imageRows.get(id);if(!row||imagePending.has(id))return;
   if(imageModalClosing){imageModalNext=id;return;}
   imageModalId=id;imageModalVersion=row.img_version;
-  const pathForm=el('pb-img-form');pathForm.reset();el('pb-img-path-input').value=row.img_path;el('pb-img-path-input').readOnly=!cfg.canEdit;
-  el('pb-img-save').hidden=!cfg.canEdit;el('pb-img-reload').hidden=true;msg('pb-img-message','');updatePathCopy();modalAction('pb-img-modal','show');
+  const pathForm=el('pb-img-form');pathForm.reset();el('pb-img-path-input').value=row.img_path;el('pb-img-path-input').readOnly=!cfg.canEdit||!!row.deleted_at;
+  el('pb-img-save').hidden=!cfg.canEdit||!!row.deleted_at;el('pb-img-reload').hidden=true;msg('pb-img-message','');updatePathCopy();modalAction('pb-img-modal','show');
 }
 el('pb-products')?.addEventListener('change',async event=>{
   const select=event.target.closest('[data-img-select]');if(!select||!cfg.canEdit)return;
@@ -278,6 +278,7 @@ $('#pb-img-modal').on('hide.bs.modal',event=>{
 }).on('shown.bs.modal',()=>el('pb-img-path-input').focus());
 window.addEventListener('beforeunload',event=>{if(imagePending.size||el('pb-img-form')?.dataset.unsaved==='1'){event.preventDefault();event.returnValue='';}});
 function productAction(row) {
+  if(row.deleted_at&&cfg.canEdit)return '<button type="button" class="btn btn-sm btn-outline-success" data-product-restore="'+esc(row.id)+'">'+esc(t('Restore'))+'</button>';
   if(pageMode==='listings'&&cfg.canEdit)return '<a class="btn btn-sm btn-outline-info" data-product-edit-link="'+esc(row.id)+'" href="index.php?page=product_builder&amp;edit='+encodeURIComponent(row.id)+("\">"+esc(t("Edit"))+"</a>");
   return '<button type="button" class="btn btn-sm btn-outline-info" data-product="'+esc(row.id)+'">'+(form?t("Edit"):t("Detail"))+'</button>';
 }
@@ -292,7 +293,7 @@ function rememberChannel(row,channel) {
   const key=channelKey(row.id,channel),old=channelRows.get(key),saved=row.channel_listings?.[channel];
   const next={product_id:Number(row.id),channel,status:'do_not_list',url:null,price:null,currency:'EUR',listed_date:null,sold_quantity:null,version:0,...saved};
   const state=old&&(channelPending.has(key)||old.version>Number(next.version))?old:next;
-  state.name=row.name;state.sku=row.sku;state.suggestedPrice=row[channel+'_price'];state.suggestedCurrency=row[channel+'_currency']||'EUR';
+  state.name=row.name;state.sku=row.sku;state.deleted_at=row.deleted_at||null;state.suggestedPrice=row[channel+'_price'];state.suggestedCurrency=row[channel+'_currency']||'EUR';
   channelRows.set(key,state);return state;
 }
 function channelPrice(state) {
@@ -301,12 +302,12 @@ function channelPrice(state) {
 }
 function channelContents(state) {
   const key=channelKey(state.product_id,state.channel),pending=channelPending.has(key),error=channelErrors.get(key);
-  return '<div class="pb-channel-controls"><select class="form-control form-control-sm pb-channel-select" data-channel-select="'+esc(key)+'" aria-label="'+esc(t('{channel} listing status',{channel:listingChannels[state.channel]}))+'"'+(!cfg.canEdit||pending||error?' disabled':'')+'>'+Object.entries(listingStatuses).map(([value,label])=>'<option value="'+value+'"'+(state.status===value?' selected':'')+'>'+esc(t(label))+'</option>').join('')+'</select></div><div class="pb-channel-price" title="'+esc(t(state.status==='listed'?'Listed price':'Suggested price'))+'">'+esc(channelPrice(state))+'</div>'+(pending?'<small class="pb-channel-feedback" role="status">'+esc(t('Saving…'))+'</small>':error?'<small class="pb-channel-feedback" role="alert">'+esc(error)+'</small><button type="button" class="btn btn-sm btn-outline-light" data-channel-reload="'+esc(key)+'">'+esc(t('Reload channel data'))+'</button>':'');
+  return '<div class="pb-channel-controls"><select class="form-control form-control-sm pb-channel-select" data-channel-select="'+esc(key)+'" aria-label="'+esc(t('{channel} listing status',{channel:listingChannels[state.channel]}))+'"'+(!cfg.canEdit||state.deleted_at||pending||error?' disabled':'')+'>'+Object.entries(listingStatuses).map(([value,label])=>'<option value="'+value+'"'+(state.status===value?' selected':'')+'>'+esc(t(label))+'</option>').join('')+'</select></div><div class="pb-channel-price" title="'+esc(t(state.status==='listed'?'Listed price':'Suggested price'))+'">'+esc(channelPrice(state))+'</div>'+(pending?'<small class="pb-channel-feedback" role="status">'+esc(t('Saving…'))+'</small>':error?'<small class="pb-channel-feedback" role="alert">'+esc(error)+'</small><button type="button" class="btn btn-sm btn-outline-light" data-channel-reload="'+esc(key)+'">'+esc(t('Reload channel data'))+'</button>':'');
 }
 function channelActions(state) {
   if(state.status!=='listed')return '<span class="pb-muted">—</span>';
   const key=channelKey(state.product_id,state.channel),pending=channelPending.has(key),url=listingUrl(state.url);
-  return '<div class="pb-cell-actions">'+(url?'<a class="pb-channel-link" href="'+esc(url)+'" target="_blank" rel="noopener noreferrer" title="'+esc(t('Open listing')+' · '+url)+'" aria-label="'+esc(t('Open listing')+' · '+listingChannels[state.channel])+'"><i class="fas fa-external-link-alt" aria-hidden="true"></i></a>':'')+(cfg.canEdit?'<button type="button" class="btn pb-channel-edit" data-channel-edit="'+esc(key)+'" title="'+esc(t('Edit listing details'))+'" aria-label="'+esc(t('Edit listing details')+' · '+listingChannels[state.channel])+'"'+(pending?' disabled':'')+'><i class="fas fa-pen" aria-hidden="true"></i></button>':'')+'</div>';
+  return '<div class="pb-cell-actions">'+(url?'<a class="pb-channel-link" href="'+esc(url)+'" target="_blank" rel="noopener noreferrer" title="'+esc(t('Open listing')+' · '+url)+'" aria-label="'+esc(t('Open listing')+' · '+listingChannels[state.channel])+'"><i class="fas fa-external-link-alt" aria-hidden="true"></i></a>':'')+(cfg.canEdit&&!state.deleted_at?'<button type="button" class="btn pb-channel-edit" data-channel-edit="'+esc(key)+'" title="'+esc(t('Edit listing details'))+'" aria-label="'+esc(t('Edit listing details')+' · '+listingChannels[state.channel])+'"'+(pending?' disabled':'')+'><i class="fas fa-pen" aria-hidden="true"></i></button>':'')+'</div>';
 }
 function channelStats(state) {
   const quantity=state.sold_quantity,known=quantity!==null&&quantity!==undefined,date=productCreatedDate(state.listed_date);
@@ -426,6 +427,7 @@ function productCreatedDate(value) {
   if(!match||match[1]==='0000'||Number(match[2])<1||Number(match[2])>12||Number(match[3])<1||Number(match[3])>31)return {key:'',short:'—',label:t("No creation date")};
   return {key:match[1]+'-'+match[2]+'-'+match[3],short:match[3]+'.'+match[2]+'.'+match[1].slice(-2),label:match[3]+'.'+match[2]+'.'+match[1]};
 }
+const listingProducts=new Map();
 let listPage=1,listPerPage=100,listPages=1,listTotal=0,listFrom=0,listTo=0,listLoading=false,listLoaded=false;
 function renderPagination() {
   document.querySelectorAll('[data-list-pagination]').forEach(pager=>{
@@ -479,16 +481,17 @@ async function loadProducts({page=listPage,perPage=listPerPage}={}) {
   if(!el('pb-products'))return;
   const seq=++listSeq;showListLoading();
   try {
-    const data=await api('products',undefined,{q:el('pb-search').value,page,per_page:perPage}); if(seq!==listSeq)return;
+    const data=await api('products',undefined,{q:el('pb-search').value,page,per_page:perPage,status:el('pb-show-deleted')?.checked?'deleted':'active'}); if(seq!==listSeq)return;
     const pagination=data.pagination||{page:1,per_page:perPage,pages:1,total:data.rows.length,from:data.rows.length?1:0,to:data.rows.length};
     listPage=pagination.page;listPerPage=pagination.per_page;listPages=pagination.pages;listTotal=pagination.total;listFrom=pagination.from;listTo=pagination.to;listLoaded=true;
     Object.entries(data.stats).forEach(([k,v])=>{if(el('pb-stat-'+k))el('pb-stat-'+k).textContent=v;});
+    listingProducts.clear();data.rows.forEach(row=>listingProducts.set(String(row.id),row));
     let previousDay=null;
     el('pb-products').innerHTML=data.rows.map((r,index)=>{
       const created=productCreatedDate(r.created_at);
       const separator=created.key!==previousDay?'<tr class="pb-day-separator-row"><td colspan="19"><div class="pb-day-separator"><span>'+esc(created.label)+'</span></div></td></tr>':'';
       previousDay=created.key;
-      return separator+'<tr class="pb-product-row'+(index%2===0?' pb-row-tinted':'')+'"><td class="pb-created-column" title="'+esc(r.created_at||t("No creation date"))+'">'+(created.key?'<time datetime="'+esc(created.key)+'">'+esc(created.short)+'</time>':'—')+'</td><td class="pb-product-identity"><strong>'+esc(r.name)+'</strong><div>'+copyableCode(r.sku,'sku')+'</div></td><td><span class="badge pb-bundle-badge" data-bundle="'+esc(r.bundle_type)+'">'+esc(r.bundle_type)+'</span></td><td class="pb-category-cell">'+categoryCell(r)+'</td>'+imageCell(r)+priceFields.map(channel=>channel==='recommended'?'<td class="pb-price-column" data-price-cell="'+channel+'">'+esc(priceText(r,channel))+'</td>':channelCell(r,channel)).join('')+'<td data-box-cell>'+packagingCell(r)+'</td><td><button type="button" class="btn btn-sm btn-outline-info pb-expand" data-product-expand="'+r.id+'" aria-expanded="false" aria-controls="pb-list-components-'+r.id+'" aria-label="'+esc(t('Show components for {name}',{name:r.name}))+'"><i class="fas fa-chevron-right mr-1" aria-hidden="true"></i> '+esc(t('{count} components',{count:Number(r.component_count)}))+'</button></td><td>'+productAction(r)+'</td></tr><tr id="pb-list-components-'+r.id+'" class="pb-expanded-row" hidden><td colspan="19"><div data-component-detail role="region" aria-label="'+esc(t('Components of {name}',{name:r.name}))+'"></div></td></tr>';
+      return separator+'<tr class="pb-product-row'+(index%2===0?' pb-row-tinted':'')+'"><td class="pb-created-column" title="'+esc(r.created_at||t("No creation date"))+'">'+(created.key?'<time datetime="'+esc(created.key)+'">'+esc(created.short)+'</time>':'—')+'</td><td class="pb-product-identity"><strong>'+esc(r.name)+'</strong>'+(r.deleted_at?'<small class="pb-deleted-badge">'+esc(t('Deleted'))+' · '+esc(productCreatedDate(r.deleted_at).label)+'</small>':'')+'<div>'+copyableCode(r.sku,'sku')+'</div></td><td><span class="badge pb-bundle-badge" data-bundle="'+esc(r.bundle_type)+'">'+esc(r.bundle_type)+'</span></td><td class="pb-category-cell">'+categoryCell(r)+'</td>'+imageCell(r)+priceFields.map(channel=>channel==='recommended'?'<td class="pb-price-column" data-price-cell="'+channel+'">'+esc(priceText(r,channel))+'</td>':channelCell(r,channel)).join('')+'<td data-box-cell>'+packagingCell(r)+'</td><td><button type="button" class="btn btn-sm btn-outline-info pb-expand" data-product-expand="'+r.id+'" aria-expanded="false" aria-controls="pb-list-components-'+r.id+'" aria-label="'+esc(t('Show components for {name}',{name:r.name}))+'"><i class="fas fa-chevron-right mr-1" aria-hidden="true"></i> '+esc(t('{count} components',{count:Number(r.component_count)}))+'</button></td><td>'+productAction(r)+'</td></tr><tr id="pb-list-components-'+r.id+'" class="pb-expanded-row" hidden><td colspan="19"><div data-component-detail role="region" aria-label="'+esc(t('Components of {name}',{name:r.name}))+'"></div></td></tr>';
     }).join('')||("<tr><td colspan=\"19\" class=\"text-center py-4 pb-muted\">"+esc(t("No products match this selection yet."))+"</td></tr>");
   } catch(e) {
     if(seq!==listSeq)return;
@@ -499,6 +502,38 @@ async function loadProducts({page=listPage,perPage=listPerPage}={}) {
     if(seq===listSeq){listLoading=false;renderPagination();}
   }
 }
+let productStateTarget=null,productStateBusy=false;
+function openProductState(row,deleted) {
+  if(!cfg.canEdit||!row||productStateBusy)return;
+  productStateTarget={id:row.id,version:row.version,deleted};
+  el('pb-product-state-name').textContent=row.name;el('pb-product-state-sku').textContent=row.sku;
+  el('pb-product-state-title').textContent=t(deleted?'Delete product?':'Restore product?');
+  el('pb-product-state-description').textContent=t(deleted?'The product will move to Deleted products. Its SKU, components and listing data will be kept so it can be restored.':'The product will return to the active list with its original SKU and saved data.');
+  el('pb-product-state-note').textContent=t(deleted?'This does not remove listings from Web, eBay or Amazon. Unsaved form changes will be discarded.':'Listings on Web, eBay and Amazon are unchanged.');
+  const confirm=el('pb-product-state-confirm');confirm.textContent=t(deleted?'Delete product':'Restore');confirm.className='btn '+(deleted?'btn-danger':'btn-success');
+  msg('pb-product-state-message','');modalAction('pb-product-state-modal','show');
+}
+el('pb-delete-product')?.addEventListener('click',()=>openProductState(product,true));
+el('pb-products')?.addEventListener('click',event=>{const button=event.target.closest('[data-product-restore]');if(button)openProductState(listingProducts.get(button.dataset.productRestore),false);});
+el('pb-show-deleted')?.addEventListener('change',()=>{clearTimeout(timer);loadProducts({page:1});});
+$('#pb-product-state-modal').on('hide.bs.modal',event=>{if(productStateBusy)event.preventDefault();});
+el('pb-product-state-confirm')?.addEventListener('click',async()=>{
+  if(!productStateTarget||productStateBusy)return;
+  const target={...productStateTarget},modal=el('pb-product-state-modal');productStateBusy=true;
+  modal.querySelectorAll('button').forEach(button=>{button.disabled=true;});if(form)form.inert=true;
+  try {
+    await api(target.deleted?'delete_product':'restore_product',{id:target.id,version:target.version});
+    if(target.deleted&&String(product?.id)===String(target.id)){
+      dirty=false;resetProduct(false);const url=new URL(location.href);url.searchParams.delete('edit');url.searchParams.delete('transfer');history.replaceState(null,'',url);
+    }
+    productStateBusy=false;modalAction('pb-product-state-modal','hide');
+    msg('pb-message',t(target.deleted?'Product deleted. You can restore it from Deleted products.':'Product restored.'),true);
+    await loadProducts();
+  } catch(e) {msg('pb-product-state-message',e.message);}
+  finally{productStateBusy=false;modal.querySelectorAll('button').forEach(button=>{button.disabled=false;});if(form)form.inert=false;}
+});
+window.addEventListener('beforeunload',event=>{if(productStateBusy){event.preventDefault();event.returnValue='';}});
+
 let designs=[],graphicsVersions=[],designGroup='G',designsReady=false,designLoadSeq=0;
 const designGroupName=type=>type==='V'?t("Graphics versions"):type==='G'?t("Graphics"):t("Seat Covers");
 const currentDesignLibrary=()=>designGroup==='V'?graphicsVersions:designs.filter(d=>d.component_type===designGroup);
@@ -879,10 +914,11 @@ function resetProduct(ask=true) {
   cancelSkuGeneration();
   transferDraftId=0;transferDraftVersion=0;if(el('pb-transfer-draft-banner'))el('pb-transfer-draft-banner').hidden=true;
   productWeightEdited=false;product=null;specific=null;specificModels=[];cache={};bundle='';key=Array.from(crypto.getRandomValues(new Uint8Array(16)),b=>b.toString(16).padStart(2,'0')).join('');form.reset();renderBoxPicker('');
-  el('pb-edit-label').textContent=t("New product");el('pb-cancel').hidden=true;
+  el('pb-edit-label').textContent=t("New product");el('pb-cancel').hidden=true;el('pb-delete-product').hidden=true;
   setSpecificModels([]);uniBrand();renderComponents();categoryKind();dirty=false;
 }
 function editProduct(row) {
+  if(row.deleted_at)throw new Error(t('This product is deleted. Restore it from Deleted products before editing.'));
   resetProduct(false);product=row;key=row.request_key;el('pb-sku').value=row.sku;el('pb-name').value=row.name;el('pb-bundle').value=row.bundle_type;el('pb-notes').value=row.notes;
   renderBoxPicker(row.box_id||'');el('pb-product-weight').value=row.weight_kg??'';
   for(const channel of priceFields){el('pb-'+channel+'-price').value=row[channel+'_price']??'';el('pb-'+channel+'-currency').value=row[channel+'_currency']||'EUR';}
@@ -890,7 +926,7 @@ function editProduct(row) {
   if(row.category_kind==='universal'){el('pb-uni-brand').value=categories.find(c=>String(c.id)===String(row.uni_category_id))?.brand||'';uniBrand(String(row.uni_category_id));}
   else setSpecificModels(productModels(row));
   row.components.map(normalizeComponent).forEach(c=>{(cache[c.component_type]||=[]).push(c);});
-  el('pb-edit-label').textContent=t('Editing product #{id}',{id:row.id});el('pb-cancel').hidden=false;renderComponents();categoryKind();dirty=false;
+  el('pb-edit-label').textContent=t('Editing product #{id}',{id:row.id});el('pb-cancel').hidden=false;el('pb-delete-product').hidden=false;renderComponents();categoryKind();dirty=false;
   // Older listings predate the separate color field. Fill only missing colors on opening.
   el('pb-components').querySelectorAll('[data-component-row="P"]').forEach(component=>{
     if(component.querySelector('[data-field="reference"]').value.trim()&&!component.querySelector('[data-field="color"]').value.trim()){

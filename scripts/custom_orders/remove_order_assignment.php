@@ -55,6 +55,11 @@ if (!$assignment) {
 
 $orderId = (int) ($assignment['custom_order_id'] ?? 0);
 $employeeId = (int) ($assignment['employee_id'] ?? 0);
+try {
+  customOrdersRequireUnexported($conn, $orderId);
+} catch (Throwable $e) {
+  $finish(false, $e->getMessage());
+}
 
 if (!$canManageCustomOrders && $employeeId !== $userId) {
   $finish(false, 'No permission to remove this assignment.');

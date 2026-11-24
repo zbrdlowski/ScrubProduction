@@ -23,7 +23,7 @@ foreach([999001=>[false,false],999002=>[true,false],999003=>[true,true],999004=>
     $_SESSION=['permission'=>100,'user_id'=>$id,'name'=>'Test user'];
     pagesAssert(pb_can_access_api('GET','products')&&pb_can_access_api('GET','product'),'All signed-in users can read listings and components.');
     foreach(['categories','designs','boxes','models','model_catalogue','plastic_item','transfers','transfer','transfer_draft','transfer_products'] as $action)pagesAssert(pb_can_access_api('GET',$action)===$view,'Protected library/inventory read: '.$action);
-    foreach(['save_transfer_folder','save_transfer_image','save_transfer','save_product','save_product_image','save_channel_listing','save_uni','delete_uni','import_uni','generate_modelcode','generate_sku','save_design','delete_design','save_box','delete_box','save_graphics_version','delete_graphics_version'] as $action)pagesAssert(pb_can_access_api('POST',$action)===$manage,'Protected write: '.$action);
+    foreach(['delete_product','restore_product','save_transfer_folder','save_transfer_image','save_transfer','save_product','save_product_image','save_channel_listing','save_uni','delete_uni','import_uni','generate_modelcode','generate_sku','save_design','delete_design','save_box','delete_box','save_graphics_version','delete_graphics_version'] as $action)pagesAssert(pb_can_access_api('POST',$action)===$manage,'Protected write: '.$action);
     pagesAssert(pb_can_access_api('POST','products')===$manage,'Read whitelist must not grant POST access.');
     pagesAssert(pb_can_manage_products()===$manage,'Editor permission requires both Builder access and manage.');
 }
@@ -40,6 +40,7 @@ $readerHtml=renderProductPage('product_listings',$normal);
 pagesAssert(str_contains($readerHtml,'id="pb-products"')&&!str_contains($readerHtml,'id="pb-product-form"')&&!str_contains($readerHtml,'id="pb-uni-modal"')&&!str_contains($readerHtml,'class="pb-stats"'),'Listings contains only the listing interface and detail modal.');
 pagesAssert(str_contains($readerHtml,'"canEdit":false'),'Regular reader has no edit capability.');
 $editorHtml=renderProductPage('product_listings',$editor);pagesAssert(str_contains($editorHtml,'"canEdit":true')&&!str_contains($editorHtml,'id="pb-product-form"'),'Editors still use the separate Builder page.');
+pagesAssert(!str_contains($readerHtml,'id="pb-show-deleted"')&&str_contains($editorHtml,'id="pb-show-deleted"'),'Deleted-products filter is available only to managers.');
 $controlsHtml=renderProductPage('product_controls',$editor);pagesAssert(substr_count($controlsHtml,'class="pb-control-tile ')===5,'Five management tiles are rendered.');
 pagesAssert(!str_contains($controlsHtml,'id="pb-products"')&&!str_contains($controlsHtml,'id="pb-product-form"'),'Controls has no product editor or listing table.');
 foreach(['pb-uni-form','pb-design-form','pb-box-form','pb-import-form'] as $id)pagesAssert(str_contains($controlsHtml,'id="'.$id.'"'),'Management form is available: '.$id);

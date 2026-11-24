@@ -69,4 +69,8 @@ SELECT 'product_builder_transfers', IF(EXISTS(SELECT 1 FROM information_schema.t
 UNION ALL
 SELECT 'product_builder_transfers.img_status', IF(EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name='product_builder_transfers' AND column_name='img_status'),'OK','MISSING')
 UNION ALL
-SELECT 'product_builder_compatibility', IF(EXISTS(SELECT 1 FROM information_schema.tables WHERE table_schema=DATABASE() AND table_name='product_builder_compatibility'),'OK','MISSING');
+SELECT 'product_builder_compatibility', IF(EXISTS(SELECT 1 FROM information_schema.tables WHERE table_schema=DATABASE() AND table_name='product_builder_compatibility'),'OK','MISSING')
+UNION ALL
+SELECT 'product_builder_products.deleted_at', IF(EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name='product_builder_products' AND column_name='deleted_at'),'OK','MISSING')
+UNION ALL
+SELECT 'product_builder_products.deleted_by', IF(EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name='product_builder_products' AND column_name='deleted_by'),'OK','MISSING');

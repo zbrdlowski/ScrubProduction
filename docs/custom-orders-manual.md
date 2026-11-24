@@ -125,6 +125,22 @@ Po exporte:
 - custom objednavka dostane status `EXPORTED`
 - dalsie produkcne zmeny uz ries v standardnom order module
 
+## Úpravy po exporte do Production
+
+Po exporte zostávajú pôvodné údaje v custom objednávke viditeľné. Údaje, ktoré sa priebežne neprenášajú do Production, sú zamknuté aj na serveri; odmietne sa aj zmena zo starého otvoreného formulára. Použite odkaz `Open Production`.
+
+| Oblasť | Správanie po exporte |
+| --- | --- |
+| Produkty a upsells | Zamknuté pridanie, úprava aj zmazanie. Platí pre typ, SKU, názov, custom label, množstvo, cenu, kategóriu/kompatibilitu, všetky špecifikácie, poznámky položky a upsell údaje. Detail sa dá naďalej otvoriť. |
+| Custom workflow | Zamknutý status (aj v zozname), complexity, prevzatie/odobratie custom objednávky, follow-up a dead-order údaje. |
+| Jednorazové/nesynchronizované údaje hlavičky | Zamknuté official number/prefix, motorka, rider name/number, graphics brief, interné poznámky hlavičky, revízie, mena a samostatné customer country. |
+| Kontakty, adresy, doprava | Naďalej upraviteľné podľa oprávnení. Uloženie synchronizuje zákazníka, billing/shipping adresy, kontakt, spôsob a cenu dopravy, DDP, payment method a customer notes. |
+| Zdroj, sociálny kontakt, odkazy na fotky/referencie | Naďalej sa synchronizujú cez hlavičku Production. |
+| Platby/deposity, lead owner a zdieľané poznámky | Production ich načítava priamo z custom tabuliek; zostávajú upraviteľné podľa oprávnení. Zdieľané poznámky sú samostatné správy, nie pole `internal_notes` hlavičky. |
+| Nahrané fotografie | Pridanie aj odstránenie sa prenáša do Production; zostávajú dostupné podľa oprávnení. |
+
+Prepojenie hlavičky zabezpečuje `customOrdersSyncProductionHeader`; produkty a bike/revision údaje sa kopírujú pri `customOrdersExportToProduction`. Samotná existencia exportovanej kópie produktu neznamená živú synchronizáciu. Zámok používa `production_order_id` alebo uložený čas exportu, nie ručne zvolený status.
+
 ## Vyznam poli
 
 ### Header And Customer Snapshot
