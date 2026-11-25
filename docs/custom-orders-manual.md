@@ -141,6 +141,12 @@ Po exporte zostávajú pôvodné údaje v custom objednávke viditeľné. Údaje
 
 Prepojenie hlavičky zabezpečuje `customOrdersSyncProductionHeader`; produkty a bike/revision údaje sa kopírujú pri `customOrdersExportToProduction`. Samotná existencia exportovanej kópie produktu neznamená živú synchronizáciu. Zámok používa `production_order_id` alebo uložený čas exportu, nie ručne zvolený status.
 
+### Oprava starších stavov po exporte
+
+Ak bol stav už vyexportovanej objednávky ručne zmenený pred zavedením zámku, nahraj `scripts/custom_orders/repair_exported_status.php` a otvor ho ako administrátor Orders. Stránka najprv ukáže zoznam; tlačidlo **Nastaviť Exported všetkým vyexportovaným objednávkam** uloží opravu. Vyberá objednávky s `production_order_id > 0` alebo vyplneným `exported_at`, ktoré nemajú presný stav `EXPORTED`.
+
+Oprava mení stav a údaje o poslednej úprave, do histórie uloží pôvodný stav a používateľa. Celá dávka sa uloží v jednej transakcii; pri chybe sa vráti späť. Produkčné objednávky sa nemenia a existujúci zámok zostáva aktívny. Opakované spustenie už opravené objednávky preskočí. CLI: `php scripts/custom_orders/repair_exported_status.php` zobrazí náhľad, parameter `--apply` vykoná opravu.
+
 ## Vyznam poli
 
 ### Header And Customer Snapshot
