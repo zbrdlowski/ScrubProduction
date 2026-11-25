@@ -337,7 +337,7 @@ function isMenuOpen($pages = [])
           <ul class="nav nav-treeview">
             <?php if (auth_can('products.view')): ?><li class="nav-item"><a href="index.php?page=product_builder" class="nav-link <?= isActive('product_builder') ?>"><i class="fas fa-pen nav-icon"></i><p>Product Builder</p></a></li><?php endif; ?>
             <li class="nav-item"><a href="index.php?page=product_listings" class="nav-link <?= isActive('product_listings') ?>"><i class="fas fa-table nav-icon"></i><p>Listings</p></a></li>
-            <?php if (auth_can('products.view')): ?><li class="nav-item"><a href="index.php?page=product_transfers" class="nav-link <?= isActive('product_transfers') ?>"><i class="fas fa-share-square nav-icon"></i><p>Transfer D-base</p></a></li><?php endif; ?>
+            <li class="nav-item"><a href="index.php?page=product_transfers" class="nav-link <?= isActive('product_transfers') ?>"><i class="fas fa-share-square nav-icon"></i><p>Transfer D-base</p></a></li>
             <?php if (auth_can('products.view')): ?><li class="nav-item"><a href="index.php?page=product_controls" class="nav-link <?= isActive('product_controls') ?>"><i class="fas fa-sliders-h nav-icon"></i><p>Product Controls</p></a></li><?php endif; ?>
           </ul>
         </li>  

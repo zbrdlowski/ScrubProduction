@@ -22,7 +22,7 @@ if (!pb_can_access_api($_SERVER['REQUEST_METHOD'] ?? '', $action)) pb_reply(['ok
 try {
     if (!pb_schema_ready($pdo)) pb_reply(['ok'=>false,'error'=>'The product database needs to be installed or updated. Contact an administrator.'],503);
     if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-        if (!auth_can('products.manage')) pb_reply(['ok'=>false,'error'=>'You do not have permission to make changes.'],403);
+        // Action-specific permissions are checked above; every write still requires CSRF.
         if (!hash_equals((string) ($_SESSION['product_builder_csrf'] ?? ''), (string) ($_SERVER['HTTP_X_CSRF_TOKEN'] ?? '')) || empty($_SESSION['product_builder_csrf'])) {
             pb_reply(['ok'=>false,'error'=>'Your form has expired. Refresh the page and try again.'],403);
         }

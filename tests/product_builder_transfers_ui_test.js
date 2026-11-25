@@ -119,9 +119,28 @@ const {chromium}=require('playwright'),fs=require('fs'),assert=require('assert/s
   await page.waitForFunction(()=>!document.querySelector('[data-transfer-row="63"]')&&!document.querySelector('[data-list-page-size]').disabled);
   assert.match(await page.locator('[data-list-range]').first().textContent(),/0–0 of 0/);
 
-  await page.goto(base+'transfers-viewer.html');await page.locator('[data-transfer-row="62"]').waitFor();assert.equal(await page.locator('[data-transfer-img]:enabled').count(),0);assert.equal(await page.locator('[data-transfer-prepare]').count(),0);
+  await page.goto(base+'transfers-viewer.html');await page.locator('[data-transfer-img="62"]:enabled').waitFor();
+  assert.equal(await page.locator('[data-transfer-prepare]').count(),0,'Preparing transfers does not grant Builder access.');
+  assert.equal(await page.locator('.pb-channel-select:enabled').count(),0,'Platform controls remain unavailable until a product exists.');
+  for(const state of ['','skip','gen','ready']){
+   await page.selectOption('[data-transfer-img="62"]',state);
+   await page.waitForFunction(value=>{const input=document.querySelector('[data-transfer-img="62"]');return input&&!input.disabled&&input.value===value;},state);
+   assert.equal(rows[1].img_status,state||null);
+  }
+  await page.locator('[data-transfer-folder="62"]:enabled').click();await page.locator('#pb-transfer-folder-modal.show').waitFor();
+  assert.equal(await page.locator('#pb-transfer-folder-input').getAttribute('readonly'),null);
+  const operatorFolder=folderPath+' FROM OPERATOR';
+  await page.fill('#pb-transfer-folder-input',operatorFolder);await page.click('#pb-transfer-folder-save');
+  await page.locator('#pb-transfer-folder-modal').waitFor({state:'hidden'});assert.equal(rows[1].folder_path,operatorFolder);
+  assert.equal(await page.locator('[data-transfer-prepare]').count(),0);
+  await page.fill('#pb-search','G_GENERATED');await page.locator('[data-transfer-row="61"]').waitFor();
+  assert.equal(await page.locator('[data-transfer-img="61"]').count(),0,'Completed transfers stay locked for operators.');
+  await page.locator('[data-transfer-folder="61"]').click();await page.locator('#pb-transfer-folder-modal.show').waitFor();
+  assert.equal(await page.locator('#pb-transfer-folder-input').getAttribute('readonly'),'');assert.equal(await page.locator('#pb-transfer-folder-save').isVisible(),false);
+  await page.locator('#pb-transfer-folder-modal .close').click();await page.locator('#pb-transfer-folder-modal').waitFor({state:'hidden'});
+  await page.fill('#pb-search','');await page.locator('[data-transfer-img="62"]:enabled').waitFor();
   await page.setViewportSize({width:430,height:930});await page.screenshot({path:'.cache/product-builder/transfer-database-mobile.png',fullPage:true});
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),true);
-  assert.deepEqual(errors,[]);console.log('Transfer D-base UI: shared 19 columns, dates, states/colors, disabled placeholders, stale save recovery, search, Ready handoff/save, completed lock, read-only access and mobile OK.');
+  assert.deepEqual(errors,[]);console.log('Transfer D-base UI: shared 19 columns, dates, states/colors, disabled placeholders, stale save recovery, search, Ready handoff/save, completed lock, operator status/folder editing without product access and mobile OK.');
  }finally{await browser.close();}
 })().catch(error=>{console.error(error);process.exit(1);});

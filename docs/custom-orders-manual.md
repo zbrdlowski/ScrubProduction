@@ -136,7 +136,7 @@ Po exporte zostávajú pôvodné údaje v custom objednávke viditeľné. Údaje
 | Jednorazové/nesynchronizované údaje hlavičky | Zamknuté official number/prefix, motorka, rider name/number, graphics brief, interné poznámky hlavičky, revízie, mena a samostatné customer country. |
 | Kontakty, adresy, doprava | Naďalej upraviteľné podľa oprávnení. Uloženie synchronizuje zákazníka, billing/shipping adresy, kontakt, spôsob a cenu dopravy, DDP, payment method a customer notes. |
 | Zdroj, sociálny kontakt, odkazy na fotky/referencie | Naďalej sa synchronizujú cez hlavičku Production. |
-| Platby/deposity, lead owner a zdieľané poznámky | Production ich načítava priamo z custom tabuliek; zostávajú upraviteľné podľa oprávnení. Zdieľané poznámky sú samostatné správy, nie pole `internal_notes` hlavičky. |
+| Platby/deposity, lead owner a zdieľané poznámky | Production ich načítava priamo z custom tabuliek; zostávajú upraviteľné podľa oprávnení. Financial breakdown pri každom načítaní detailu použije aktuálne platby vrátane úprav a zmazaní, aj keď export obsahuje starší snapshot. Zostatok vychádza z aktuálnej celkovej sumy Production mínus prijaté platby; refund znižuje zaplatenú sumu a advance invoice sa nepočíta ako platba. Zdieľané poznámky sú samostatné správy, nie pole `internal_notes` hlavičky. |
 | Nahrané fotografie | Pridanie aj odstránenie sa prenáša do Production; zostávajú dostupné podľa oprávnení. |
 
 Prepojenie hlavičky zabezpečuje `customOrdersSyncProductionHeader`; produkty a bike/revision údaje sa kopírujú pri `customOrdersExportToProduction`. Samotná existencia exportovanej kópie produktu neznamená živú synchronizáciu. Zámok používa `production_order_id` alebo uložený čas exportu, nie ručne zvolený status.

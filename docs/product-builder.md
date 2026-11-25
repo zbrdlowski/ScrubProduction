@@ -1,3 +1,9 @@
+## Prístup do Transfer D-base (25. 11. 2026)
+
+Transfer D-base je dostupný všetkým prihláseným používateľom cez horné aj bočné menu, vrátane vyhľadávania, filtrovania a čítania transferov. Všetci prihlásení môžu meniť IMG (Skip / Gen / Ready) a pri Ready uložiť cestu k obrázkom. Presun do Product Buildera a ukladanie produktov naďalej vyžadujú products.view + products.manage. Dokončené transfery zostávajú uzamknuté; platformové stĺpce sú dostupné až po vytvorení produktu. Neprihlásení používatelia nemajú prístup.
+
+Nasadenie: nahrať súbory z product-builder-transfer-edit-access.zip. SQL zmena ani pridávanie oprávnení používateľom nie sú potrebné.
+
 ## Vymazanie a obnova produktu (24. 11. 2026)
 
 Pri úprave uloženého produktu je v hlavičke editora tlačidlo **Vymazať produkt / Delete product**. Pri novom produkte sa nezobrazuje. Potvrdzovací modal ukazuje uložený názov a SKU; zrušenie aj chyba zachovajú rozpracovaný formulár. Po úspešnom vymazaní sa formulár vyčistí.

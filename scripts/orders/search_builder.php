@@ -154,6 +154,95 @@ function orderSearchJsonExpr(string $columnExpr, string $path): string
   return "CASE WHEN JSON_VALID($columnExpr) THEN JSON_UNQUOTE(JSON_EXTRACT($columnExpr, $pathSql)) ELSE '' END";
 }
 
+function orderSearchNormalizeJsonPath(string $path): string
+{
+  $path = trim($path);
+  if (substr($path, 0, 2) === '$.') {
+    $path = substr($path, 2);
+  } elseif (substr($path, 0, 2) === '$[') {
+    $path = substr($path, 1);
+  }
+  if ($path === '' || strlen($path) > 1024) {
+    throw new InvalidArgumentException('Enter a valid JSON path, for example _followup.customs_ddp_amount.');
+  }
+
+  $keyPattern = <<<'REGEX'
+~\G(?:"(?:[^"\\]|\\.)*"|[^.\[\]"\\$*\s]+)~u
+REGEX;
+  $out = '$';
+  $offset = 0;
+  $length = strlen($path);
+  $needsKey = false;
+  while ($offset < $length) {
+    if (!$needsKey && $path[$offset] === '[' && preg_match('/\G\[(0|[1-9][0-9]*)\]/', $path, $match, 0, $offset)) {
+      $out .= $match[0];
+    } elseif (preg_match($keyPattern, $path, $match, 0, $offset)) {
+      $key = $match[0][0] === '"' ? json_decode($match[0], true) : $match[0];
+      if (!is_string($key)) {
+        throw new InvalidArgumentException('Invalid quoted JSON key.');
+      }
+      $out .= '.' . json_encode($key, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
+    } else {
+      throw new InvalidArgumentException('Invalid JSON path. Choose a suggested path or use dot-separated keys and array indexes.');
+    }
+    $offset += strlen($match[0]);
+    $needsKey = false;
+    if ($offset < $length && $path[$offset] === '.') {
+      $offset++;
+      $needsKey = true;
+    } elseif ($offset < $length && $path[$offset] !== '[') {
+      throw new InvalidArgumentException('Invalid JSON path separator.');
+    }
+  }
+  if ($needsKey) {
+    throw new InvalidArgumentException('JSON path cannot end with a dot.');
+  }
+  return $out;
+}
+
+function orderSearchBuildJsonPathCondition(array $field, string $operator, string $value, string $path): ?array
+{
+  if (empty($field['json_path']) || !in_array($operator, $field['json_operators'] ?? [], true)) {
+    throw new InvalidArgumentException('This field or operator does not support a JSON path.');
+  }
+  $path = orderSearchNormalizeJsonPath($path);
+  $column = (string) $field['expr'];
+  // Keep paths bound, including quoted keys. Invalid documents and JSON null are empty values.
+  $extract = "JSON_EXTRACT(CASE WHEN JSON_VALID($column) THEN $column ELSE '{}' END, {{json_path}})";
+  $expr = "CASE WHEN JSON_TYPE($extract) IN ('NULL', 'OBJECT', 'ARRAY') THEN NULL ELSE JSON_UNQUOTE($extract) END";
+  if (in_array($operator, ['equals', 'not_equals'], true) && is_numeric($value)) {
+    // Amounts saved as 5, 5.0 or "5.00" have the same value; non-numbers must not match zero.
+    $numeric = "TRIM(($expr)) REGEXP '^[+-]{0,1}([0-9]+([.][0-9]*){0,1}|[.][0-9]+)([eE][+-]{0,1}[0-9]+){0,1}$'";
+    $sql = "($numeric AND CAST(($expr) AS DECIMAL(40,12)) = ?)";
+    if ($operator === 'not_equals') {
+      $sql = "NOT COALESCE($sql, 0)";
+    }
+    $built = ['sql' => $sql, 'types' => 'd', 'params' => [(float) $value]];
+  } else {
+    $built = orderSearchBuildTextCondition($expr, $operator, $value);
+  }
+  if (!$built) {
+    return null;
+  }
+  $types = '';
+  $params = [];
+  $valueIndex = 0;
+  $sql = preg_replace_callback('/\{\{json_path\}\}|\?/', static function (array $match) use ($path, $built, &$types, &$params, &$valueIndex): string {
+    if ($match[0] === '{{json_path}}') {
+      $types .= 's';
+      $params[] = $path;
+    } else {
+      $types .= $built['types'][$valueIndex];
+      $params[] = $built['params'][$valueIndex++];
+    }
+    return '?';
+  }, $built['sql']);
+  if ($field['kind'] === 'exists') {
+    $sql = "EXISTS (SELECT 1 FROM {$field['from']} WHERE {$field['where']} AND ($sql))";
+  }
+  return ['sql' => $sql, 'types' => $types, 'params' => $params];
+}
+
 function orderSearchAliasFromFrom(string $from): string
 {
   if (preg_match('/\s+([a-zA-Z_][a-zA-Z0-9_]*)$/', trim($from), $m)) {
@@ -314,8 +403,11 @@ function orderSearchBuildJsonMultiCondition(array $field, string $operator, stri
   return ['sql' => "EXISTS (SELECT 1 FROM $from WHERE $where AND (" . implode(' OR ', $parts) . '))', 'types' => $types, 'params' => $params];
 }
 
-function orderSearchBuildFieldCondition(array $field, string $operator, string $value, string $value2 = ''): ?array
+function orderSearchBuildFieldCondition(array $field, string $operator, string $value, string $value2 = '', string $jsonPath = ''): ?array
 {
+  if ($jsonPath !== '') {
+    return orderSearchBuildJsonPathCondition($field, $operator, $value, $jsonPath);
+  }
   $kind = (string) ($field['kind'] ?? 'direct');
   if ($kind === 'global_text') {
     return orderSearchBuildGlobalCondition($operator, $value);
@@ -346,10 +438,13 @@ function orderSearchBuildFieldCondition(array $field, string $operator, string $
   return null;
 }
 
-function orderSearchFilterLabel(array $field, string $operator, string $value, string $value2): string
+function orderSearchFilterLabel(array $field, string $operator, string $value, string $value2, string $jsonPath = ''): string
 {
   $ops = orderSearchOperatorLabels();
   $label = (string) ($field['label'] ?? 'Filter');
+  if ($jsonPath !== '') {
+    $label .= ' -> ' . $jsonPath;
+  }
   $opLabel = $ops[$operator] ?? $operator;
   if (in_array($operator, ['is_empty', 'is_not_empty'], true)) {
     return $label . ' ' . $opLabel;
@@ -450,18 +545,20 @@ function orderSearchJsonExplorerValue($value): string
 
 function orderSearchJsonExplorerFlatten($value, string $prefix, array &$out): void
 {
-  if (is_array($value)) {
-    if ($value === []) {
+  if (is_array($value) || is_object($value)) {
+    if ((array) $value === []) {
       if ($prefix !== '') {
         $out[$prefix][] = '[]';
       }
       return;
     }
 
-    $isList = array_keys($value) === range(0, count($value) - 1);
+    $isList = is_array($value) && array_keys($value) === range(0, count($value) - 1);
     foreach ($value as $key => $child) {
-      $keyPart = $isList ? '[]' : (string) $key;
-      $path = $prefix === '' ? $keyPart : ($isList ? $prefix . '[]' : $prefix . '.' . $keyPart);
+      $keyPart = preg_match('/^[a-zA-Z_][a-zA-Z0-9_-]*$/D', (string) $key)
+        ? (string) $key
+        : json_encode((string) $key, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+      $path = $isList ? $prefix . '[' . $key . ']' : ($prefix === '' ? $keyPart : $prefix . '.' . $keyPart);
       orderSearchJsonExplorerFlatten($child, $path, $out);
     }
     return;
@@ -511,8 +608,8 @@ function orderSearchJsonExplorer(mysqli $conn): void
       if ($json === '') {
         continue;
       }
-      $data = json_decode($json, true);
-      if (!is_array($data)) {
+      $data = json_decode($json);
+      if (!is_array($data) && !is_object($data)) {
         continue;
       }
       $scanned[$sourceKey]++;
@@ -689,8 +786,8 @@ function orderSearchRawJsonFieldRows(mysqli $conn, string $sourceKey, string $q)
     if ($json === '') {
       continue;
     }
-    $data = json_decode($json, true);
-    if (!is_array($data)) {
+    $data = json_decode($json);
+    if (!is_array($data) && !is_object($data)) {
       continue;
     }
     $flattened = [];
@@ -889,12 +986,21 @@ function orderSearchRun(mysqli $conn): void
     }
     $field = $fields[$fieldKey];
     $operator = (string) ($filter['operator'] ?? 'contains');
-    if (!in_array($operator, $field['operators'], true)) {
+    $jsonPath = trim((string) ($filter['json_path'] ?? ''));
+    $operators = $jsonPath !== '' ? ($field['json_operators'] ?? []) : $field['operators'];
+    if (!in_array($operator, $operators, true)) {
+      if ($jsonPath !== '') {
+        orderSearchOut(400, ['ok' => false, 'error' => 'Invalid operator for the selected JSON path.']);
+      }
       continue;
     }
     $value = trim((string) ($filter['value'] ?? ''));
     $value2 = trim((string) ($filter['value2'] ?? ''));
-    $built = orderSearchBuildFieldCondition($field, $operator, $value, $value2);
+    try {
+      $built = orderSearchBuildFieldCondition($field, $operator, $value, $value2, $jsonPath);
+    } catch (InvalidArgumentException $e) {
+      orderSearchOut(400, ['ok' => false, 'error' => $e->getMessage()]);
+    }
     if (!$built) {
       continue;
     }
@@ -903,7 +1009,7 @@ function orderSearchRun(mysqli $conn): void
     foreach ($built['params'] as $param) {
       $params[] = $param;
     }
-    $labels[] = orderSearchFilterLabel($field, $operator, $value, $value2);
+    $labels[] = orderSearchFilterLabel($field, $operator, $value, $value2, $jsonPath);
   }
 
   if (!$where) {

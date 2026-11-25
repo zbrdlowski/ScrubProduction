@@ -2043,25 +2043,19 @@ if ($isCustomOrder && !$isFollowupOrder) {
   if (is_array($sourceMeta['financial_breakdown'] ?? null)) {
     $customFinancialBreakdown = orderDetailNormalizeCustomFinancialBreakdown($sourceMeta['financial_breakdown']);
   }
-  if (empty($customFinancialBreakdown) || empty($customFinancialBreakdown['payment_lines'])) {
-    $customFinancialBreakdownFallback = orderDetailLoadCustomFinancialBreakdownFallback($conn, $sourceMeta);
-    if (empty($customFinancialBreakdown)) {
-      $customFinancialBreakdown = $customFinancialBreakdownFallback;
-    } elseif (!empty($customFinancialBreakdownFallback)) {
-      foreach (['deposits', 'paid_net', 'balance_due'] as $paymentSummaryKey) {
-        if (array_key_exists($paymentSummaryKey, $customFinancialBreakdownFallback)) {
-          $customFinancialBreakdown[$paymentSummaryKey] = $customFinancialBreakdownFallback[$paymentSummaryKey];
-        }
-      }
-      if (!empty($customFinancialBreakdownFallback['payment_lines'])) {
-        $customFinancialBreakdown['payment_lines'] = $customFinancialBreakdownFallback['payment_lines'];
+  // Payments remain editable after export. Always refresh their values, even
+  // when the export snapshot already contains payments (or all were deleted).
+  $customFinancialBreakdownFallback = orderDetailLoadCustomFinancialBreakdownFallback($conn, $sourceMeta);
+  if (empty($customFinancialBreakdown)) {
+    $customFinancialBreakdown = $customFinancialBreakdownFallback;
+  } elseif (!empty($customFinancialBreakdownFallback)) {
+    foreach (['deposits', 'paid_net', 'balance_due', 'payment_lines'] as $paymentSummaryKey) {
+      if (array_key_exists($paymentSummaryKey, $customFinancialBreakdownFallback)) {
+        $customFinancialBreakdown[$paymentSummaryKey] = $customFinancialBreakdownFallback[$paymentSummaryKey];
       }
     }
   }
   if (!isset($customFinancialBreakdown['customs_ddp']) && $linkedCustomOrderId > 0) {
-    if (empty($customFinancialBreakdownFallback)) {
-      $customFinancialBreakdownFallback = orderDetailLoadCustomFinancialBreakdownFallback($conn, $sourceMeta);
-    }
     foreach (['shipping', 'customs_ddp', 'customs_ddp_note'] as $customsFallbackKey) {
       if (array_key_exists($customsFallbackKey, $customFinancialBreakdownFallback)) {
         $customFinancialBreakdown[$customsFallbackKey] = $customFinancialBreakdownFallback[$customsFallbackKey];

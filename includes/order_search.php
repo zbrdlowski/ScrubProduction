@@ -45,6 +45,14 @@ $orderSearchOperatorsJson = json_encode(orderSearchOperatorLabels(), JSON_UNESCA
     border-bottom: 1px solid rgba(255, 255, 255, .08);
   }
 
+  .order-search-filter-row.has-json-path {
+    grid-template-columns: minmax(190px, 1.2fr) minmax(230px, 1.4fr) minmax(130px, .8fr) minmax(160px, 1fr) 40px;
+  }
+
+  .order-search-path-wrap .input-group {
+    flex-wrap: nowrap;
+  }
+
   .order-search-filter-row:last-child {
     border-bottom: 0;
   }
@@ -314,8 +322,9 @@ $orderSearchOperatorsJson = json_encode(orderSearchOperatorLabels(), JSON_UNESCA
     color: #f4f6f9;
   }
   @media (max-width: 991.98px) {
-    .order-search-filter-row {
-      grid-template-columns: 1fr;
+    .order-search-filter-row,
+    .order-search-filter-row.has-json-path {
+      grid-template-columns: minmax(0, 1fr);
     }
 
     .order-search-filter-row .btn {
@@ -453,6 +462,8 @@ $orderSearchOperatorsJson = json_encode(orderSearchOperatorLabels(), JSON_UNESCA
   let jsonExplorerLoaded = false;
   let jsonExplorerTimer = null;
   let fieldValuesTimer = null;
+  let fieldValuesRequest = 0;
+  const pathSuggestionTimers = {};
   const suggestionTimers = {};
 
   function escapeHtml(value) {
@@ -530,6 +541,7 @@ $orderSearchOperatorsJson = json_encode(orderSearchOperatorLabels(), JSON_UNESCA
 
   function renderFieldHelp(field) {
     const $help = $('#orderSearchFieldHelp');
+    ++fieldValuesRequest;
     if (!field) {
       $help.hide().empty();
       return;
@@ -545,8 +557,8 @@ $orderSearchOperatorsJson = json_encode(orderSearchOperatorLabels(), JSON_UNESCA
     }
 
     const badges = [];
-    if (field.group) badges.push('<span class="badge badge-secondary">' + escapeHtml(field.group) + '</span>');
-    if (field.advanced) badges.push('<span class="badge badge-warning">Advanced raw JSON</span>');
+    if (field.group && !field.advanced) badges.push('<span class="badge badge-secondary">' + escapeHtml(field.group) + '</span>');
+    if (field.advanced) badges.push('<span class="badge badge-warning">Advanced JSON</span>');
 
     let html = '<div class="order-search-help-title"><strong>' + escapeHtml(field.label) + '</strong>' + badges.join('') + '</div>';
     if (field.help) {
@@ -570,15 +582,15 @@ $orderSearchOperatorsJson = json_encode(orderSearchOperatorLabels(), JSON_UNESCA
 
     if (isJsonLike) {
       html += '<div class="order-search-help-actions">' +
-        '<button type="button" class="btn btn-sm btn-outline-info order-search-values-open" data-field-key="' + escapeHtml(field.key) + '"><i class="fas fa-list-ul mr-1"></i>Browse values</button>' +
-        '<span class="small order-search-muted ml-2">Real database values for this field</span>' +
+        '<button type="button" class="btn btn-sm btn-outline-info order-search-values-open" data-field-key="' + escapeHtml(field.key) + '"><i class="fas fa-list-ul mr-1"></i>' + (field.json_path ? 'Browse JSON paths' : 'Browse values') + '</button>' +
+        '<span class="small order-search-muted ml-2">' + (field.json_path ? 'Select a key to compare its value' : 'Real database values for this field') + '</span>' +
         '<div class="order-search-values-popover" id="orderSearchValuesPopover" data-field-key="' + escapeHtml(field.key) + '">' +
           '<div class="order-search-values-head">' +
-            '<strong>Values for ' + escapeHtml(field.label) + '</strong>' +
+            '<strong>' + (field.json_path ? 'JSON paths for ' : 'Values for ') + escapeHtml(field.label) + '</strong>' +
             '<button type="button" class="btn btn-sm btn-outline-secondary order-search-values-close" title="Close"><i class="fas fa-times"></i></button>' +
           '</div>' +
           '<div class="order-search-values-body">' +
-            '<input type="text" class="form-control form-control-sm" id="orderSearchValuesQuery" placeholder="Filter values">' +
+            '<input type="text" class="form-control form-control-sm" id="orderSearchValuesQuery" placeholder="' + (field.json_path ? 'Filter JSON paths' : 'Filter values') + '">' +
             '<div class="small order-search-muted mt-2" id="orderSearchValuesMeta">Ready</div>' +
             '<div class="order-search-values-list" id="orderSearchValuesList"><div class="text-center order-search-muted py-3">Loading...</div></div>' +
           '</div>' +
@@ -602,14 +614,20 @@ $orderSearchOperatorsJson = json_encode(orderSearchOperatorLabels(), JSON_UNESCA
   function syncFilterRow($row) {
     const field = getRowField($row);
     const $operator = $row.find('.order-search-operator');
-    const currentOperator = $operator.val() || (field.operators && field.operators[0]) || 'contains';
-    $operator.html(operatorOptions(field, currentOperator));
+    const hasPath = !!field.json_path && $.trim($row.find('.order-search-path').val() || '') !== '';
+    const operatorField = hasPath ? { operators: field.json_operators } : field;
+    let currentOperator = $operator.val() || (field.operators && field.operators[0]) || 'contains';
+    if (hasPath && !$row.data('jsonPathSelected')) currentOperator = 'equals';
+    $row.data('jsonPathSelected', hasPath);
+    $operator.html(operatorOptions(operatorField, currentOperator));
+    $row.toggleClass('has-json-path', !!field.json_path);
+    $row.find('.order-search-path-wrap').toggle(!!field.json_path);
 
     const operator = $operator.val();
     const needsValue = operatorNeedsValue(operator);
     const needsSecond = operatorNeedsSecondValue(operator);
     const type = inputTypeForField(field);
-    const placeholder = field.placeholder || '';
+    const placeholder = hasPath ? 'Value at selected JSON path' : (field.placeholder || '');
     const listId = 'orderSearchValueList' + $row.data('filterId');
 
     $row.find('.order-search-value').attr('type', type).attr('placeholder', placeholder);
@@ -621,7 +639,7 @@ $orderSearchOperatorsJson = json_encode(orderSearchOperatorLabels(), JSON_UNESCA
       $row.find('.order-search-value').attr('list', listId);
     } else {
       $row.find('.order-search-value').removeAttr('list');
-      $row.find('datalist').empty();
+      $('#' + listId).empty();
     }
 
     if (String($row.data('filterId')) === String(activeFilterId)) {
@@ -638,6 +656,12 @@ $orderSearchOperatorsJson = json_encode(orderSearchOperatorLabels(), JSON_UNESCA
     const html = '' +
       '<div class="order-search-filter-row" data-filter-id="' + id + '">' +
         '<select class="form-control form-control-sm order-search-field">' + fieldOptions(fieldKey) + '</select>' +
+        '<div class="order-search-path-wrap" style="display:none;">' +
+          '<div class="input-group input-group-sm">' +
+            '<input type="text" class="form-control order-search-path" list="orderSearchJsonPathList' + id + '" aria-label="JSON path" placeholder="JSON path (blank = whole JSON)">' +
+            '<div class="input-group-append"><button type="button" class="btn btn-outline-info order-search-paths-open" title="Browse JSON paths" aria-label="Browse JSON paths"><i class="fas fa-list-ul"></i></button></div>' +
+          '</div><datalist id="orderSearchJsonPathList' + id + '"></datalist>' +
+        '</div>' +
         '<select class="form-control form-control-sm order-search-operator">' + operatorOptions(field, operator) + '</select>' +
         '<div class="order-search-value-wrap"><input class="form-control form-control-sm order-search-value" value="' + escapeHtml(value || '') + '"><datalist id="orderSearchValueList' + id + '"></datalist></div>' +
         '<div class="order-search-value2-wrap" style="display:none;"><input class="form-control form-control-sm order-search-value2"></div>' +
@@ -658,7 +682,8 @@ $orderSearchOperatorsJson = json_encode(orderSearchOperatorLabels(), JSON_UNESCA
         field: $row.find('.order-search-field').val(),
         operator: $row.find('.order-search-operator').val(),
         value: $row.find('.order-search-value').val(),
-        value2: $row.find('.order-search-value2').val()
+        value2: $row.find('.order-search-value2').val(),
+        json_path: getRowField($row).json_path ? $.trim($row.find('.order-search-path').val() || '') : ''
       });
     });
     return filters;
@@ -697,6 +722,25 @@ $orderSearchOperatorsJson = json_encode(orderSearchOperatorLabels(), JSON_UNESCA
     const id = $row.data('filterId');
     clearTimeout(suggestionTimers[id]);
     suggestionTimers[id] = setTimeout(function () { loadSuggestions($row); }, 180);
+  }
+
+  function loadPathSuggestions($row) {
+    const field = getRowField($row);
+    if (!field.json_path) return;
+    const q = $row.find('.order-search-path').val() || '';
+    $.getJSON(endpoint, { action: 'field_values', field: field.key, q: q, limit: 120 })
+      .done(function (resp) {
+        if (!resp || !resp.ok || getRowField($row).key !== field.key || ($row.find('.order-search-path').val() || '') !== q) return;
+        $('#orderSearchJsonPathList' + $row.data('filterId')).html((resp.rows || []).map(function (row) {
+          return '<option value="' + escapeHtml(row.path) + '">' + escapeHtml((row.examples || []).join(', ')) + '</option>';
+        }).join(''));
+      });
+  }
+
+  function schedulePathSuggestions($row) {
+    const id = $row.data('filterId');
+    clearTimeout(pathSuggestionTimers[id]);
+    pathSuggestionTimers[id] = setTimeout(function () { loadPathSuggestions($row); }, 250);
   }
 
   function jsonExplorerSourceOptions(sources, selected) {
@@ -792,6 +836,8 @@ $orderSearchOperatorsJson = json_encode(orderSearchOperatorLabels(), JSON_UNESCA
     const fieldKey = $popover.attr('data-field-key') || '';
     if (!fieldKey) return;
 
+    const request = ++fieldValuesRequest;
+    $('#orderSearchValuesList').empty();
     $('#orderSearchValuesMeta').html('<span class="spinner-border spinner-border-sm mr-1"></span>Loading');
     $.getJSON(endpoint, {
       action: 'field_values',
@@ -799,10 +845,12 @@ $orderSearchOperatorsJson = json_encode(orderSearchOperatorLabels(), JSON_UNESCA
       q: $('#orderSearchValuesQuery').val() || '',
       limit: 120
     }).done(function (resp) {
+      if (request !== fieldValuesRequest) return;
       if (!resp || !resp.ok) {
         $('#orderSearchValuesMeta').text(resp && resp.error ? resp.error : 'Values failed to load.');
         return;
       }
+      $popover.attr('data-mode', resp.mode || 'values');
       const noun = resp.mode === 'paths' ? 'JSON paths' : 'values';
       let meta = String(resp.total || 0) + ' ' + noun;
       if (resp.limited) meta += ', showing ' + (resp.rows || []).length;
@@ -810,6 +858,7 @@ $orderSearchOperatorsJson = json_encode(orderSearchOperatorLabels(), JSON_UNESCA
       $('#orderSearchValuesList').html(renderFieldValueRows(resp.mode || 'values', resp.rows || []));
     }).fail(function (xhr) {
       const resp = xhr.responseJSON || null;
+      if (request !== fieldValuesRequest) return;
       $('#orderSearchValuesMeta').text(resp && resp.error ? resp.error : 'Values request failed.');
     });
   }
@@ -836,9 +885,15 @@ $orderSearchOperatorsJson = json_encode(orderSearchOperatorLabels(), JSON_UNESCA
   function applyFieldValue(value) {
     const $row = activeFilterRow();
     if (!$row.length || value === '') return;
-    $row.find('.order-search-value').val(value).trigger('input').focus();
+    if ($('#orderSearchValuesPopover').attr('data-mode') === 'paths' && getRowField($row).json_path) {
+      $row.find('.order-search-path').val(value);
+      syncFilterRow($row);
+      $row.find('.order-search-value').focus();
+    } else {
+      $row.find('.order-search-value').val(value).trigger('input').focus();
+      scheduleSuggestions($row);
+    }
     $('#orderSearchValuesPopover').hide();
-    scheduleSuggestions($row);
   }
 
   function renderOrder(data, type, row) {
@@ -991,9 +1046,26 @@ $orderSearchOperatorsJson = json_encode(orderSearchOperatorLabels(), JSON_UNESCA
       })
       .on('change', '.order-search-field, .order-search-operator', function () {
         const $row = $(this).closest('.order-search-filter-row');
+        if ($(this).hasClass('order-search-field')) {
+          $row.find('.order-search-path').val('');
+          $('#orderSearchJsonPathList' + $row.data('filterId')).empty();
+          $row.data('jsonPathSelected', false);
+        }
         setActiveFilterRow($row);
         syncFilterRow($row);
         scheduleSuggestions($row);
+      })
+      .on('focus input change', '.order-search-path', function () {
+        const $row = $(this).closest('.order-search-filter-row');
+        setActiveFilterRow($row);
+        syncFilterRow($row);
+        schedulePathSuggestions($row);
+      })
+      .on('click', '.order-search-paths-open', function (e) {
+        e.stopPropagation();
+        const $row = $(this).closest('.order-search-filter-row');
+        setActiveFilterRow($row);
+        openFieldValues(getRowField($row).key);
       })
       .on('focus input', '.order-search-value', function () {
         const $row = $(this).closest('.order-search-filter-row');
@@ -1003,13 +1075,15 @@ $orderSearchOperatorsJson = json_encode(orderSearchOperatorLabels(), JSON_UNESCA
       .on('click', '.order-search-remove', function () {
         const $rows = $('#orderSearchFilters .order-search-filter-row');
         if ($rows.length <= 1) {
-          $(this).closest('.order-search-filter-row').find('.order-search-value, .order-search-value2').val('');
+          const $row = $(this).closest('.order-search-filter-row');
+          $row.find('.order-search-value, .order-search-value2, .order-search-path').val('');
+          syncFilterRow($row);
           return;
         }
         $(this).closest('.order-search-filter-row').remove();
         updateActiveFieldHelp();
       })
-      .on('keydown', '.order-search-value, .order-search-value2', function (e) {
+      .on('keydown', '.order-search-value, .order-search-value2, .order-search-path', function (e) {
         if (e.key === 'Enter') {
           e.preventDefault();
           runSearch();

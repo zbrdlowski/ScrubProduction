@@ -16,15 +16,19 @@ $permissionIds=$pdo->query('SELECT permission_key,id FROM auth_permissions')->fe
 $grant=$pdo->prepare("INSERT INTO auth_employee_overrides(employee_id,permission_id,effect) VALUES (?,?,'allow')");
 foreach([[999002,'products.view'],[999003,'products.view'],[999003,'products.manage'],[999004,'products.manage']] as [$id,$key])$grant->execute([$id,$permissionIds[$key]]);
 $_SESSION=[];
-pagesAssert(!pb_can_access_api('GET','products')&&!pb_can_manage_products(),'Anonymous users cannot read products or write.');
+foreach(['products','product','transfers','transfer'] as $action)pagesAssert(!pb_can_access_api('GET',$action),'Anonymous users cannot read: '.$action);
+pagesAssert(!pb_can_manage_products()&&!pb_can_prepare_transfers(),'Anonymous users cannot write.');
+foreach(['save_transfer_image','save_transfer_folder'] as $action)pagesAssert(!pb_can_access_api('POST',$action),'Anonymous users cannot prepare transfers: '.$action);
 pagesAssert(auth_page_permission('product_listings')===null,'Listings is available to all signed-in employees.');
 pagesAssert(auth_page_permission('product_builder')==='products.view' && auth_page_permission('product_controls')==='products.view','Builder and Controls retain explicit access.');
 foreach([999001=>[false,false],999002=>[true,false],999003=>[true,true],999004=>[false,false]] as $id=>[$view,$manage]) {
     $_SESSION=['permission'=>100,'user_id'=>$id,'name'=>'Test user'];
-    pagesAssert(pb_can_access_api('GET','products')&&pb_can_access_api('GET','product'),'All signed-in users can read listings and components.');
-    foreach(['categories','designs','boxes','models','model_catalogue','plastic_item','transfers','transfer','transfer_draft','transfer_products'] as $action)pagesAssert(pb_can_access_api('GET',$action)===$view,'Protected library/inventory read: '.$action);
-    foreach(['delete_product','restore_product','save_transfer_folder','save_transfer_image','save_transfer','save_product','save_product_image','save_channel_listing','save_uni','delete_uni','import_uni','generate_modelcode','generate_sku','save_design','delete_design','save_box','delete_box','save_graphics_version','delete_graphics_version'] as $action)pagesAssert(pb_can_access_api('POST',$action)===$manage,'Protected write: '.$action);
-    pagesAssert(pb_can_access_api('POST','products')===$manage,'Read whitelist must not grant POST access.');
+    foreach(['products','product','transfers','transfer'] as $action)pagesAssert(pb_can_access_api('GET',$action),'All signed-in users can read: '.$action);
+    foreach(['categories','designs','boxes','models','model_catalogue','plastic_item','transfer_draft','transfer_products'] as $action)pagesAssert(pb_can_access_api('GET',$action)===$view,'Protected library/inventory read: '.$action);
+    foreach(['delete_product','restore_product','save_transfer','save_product','save_product_image','save_channel_listing','save_uni','delete_uni','import_uni','generate_modelcode','generate_sku','save_design','delete_design','save_box','delete_box','save_graphics_version','delete_graphics_version'] as $action)pagesAssert(pb_can_access_api('POST',$action)===$manage,'Protected write: '.$action);
+    foreach(['products','product','transfers','transfer'] as $action)pagesAssert(pb_can_access_api('POST',$action)===$manage,'Read whitelist must not grant POST access: '.$action);
+    pagesAssert(pb_can_prepare_transfers(),'Every signed-in user can prepare transfers.');
+    foreach(['save_transfer_image','save_transfer_folder'] as $action)pagesAssert(pb_can_access_api('POST',$action),'All signed-in users can prepare transfers: '.$action);
     pagesAssert(pb_can_manage_products()===$manage,'Editor permission requires both Builder access and manage.');
 }
 function renderProductPage(string $name,array $session,array $query=[]): string {
@@ -52,11 +56,12 @@ $viewerBuilder=renderProductPage('product_builder',$viewer,['edit'=>'801']);page
 $target=__DIR__.'/../.cache/product-builder';
 foreach(['listings-reader'=>$readerHtml,'listings-editor'=>$editorHtml,'controls-editor'=>$controlsHtml,'controls-viewer'=>$viewerControls,'builder-deeplink'=>$builderHtml] as $name=>$html)file_put_contents($target.'/'.$name.'.html',wrapProductPage($html));
 $transferHtml=renderProductPage('product_transfers',$editor);
-pagesAssert(auth_page_permission('product_transfers')==='products.view','Transfer D-base requires the same read permission as Builder.');
+pagesAssert(auth_page_permission('product_transfers')===null,'Transfer D-base is available to every signed-in employee.');
 pagesAssert(str_contains($transferHtml,'id="pb-products"')&&!str_contains($transferHtml,'id="pb-product-form"')&&!str_contains($transferHtml,'id="pb-transfer-modal"'),'Transfers reuse the listing table without the old modal or builder.');
 pagesAssert(!str_contains($builderHtml,'id="pb-transfers"')&&!str_contains($builderHtml,'id="pb-transfer-modal"'),'Builder no longer contains the preparation queue or modal.');
-pagesAssert(!str_contains(renderProductPage('product_transfers',$normal),'id="pb-products"'),'Transfer D-base remains protected.');
-$transferReader=renderProductPage('product_transfers',$viewer);
+pagesAssert(!str_contains(renderProductPage('product_transfers',[]),'id="pb-products"')&&http_response_code()===401,'Transfer D-base still requires signing in.');
+$transferReader=renderProductPage('product_transfers',$normal);
+pagesAssert(str_contains($transferReader,'id="pb-products"')&&str_contains($transferReader,'"canEdit":false')&&str_contains($transferReader,'"canPrepareTransfers":true')&&http_response_code()===200,'Users without product permissions can prepare transfers without gaining product editing access.');
 $transferDraft=renderProductPage('product_builder',$editor,['transfer'=>61]);
 file_put_contents($target.'/transfers-editor.html',wrapProductPage($transferHtml));
 file_put_contents($target.'/transfers-viewer.html',wrapProductPage($transferReader));
@@ -66,10 +71,10 @@ foreach(['reader'=>$normal,'editor'=>$editor] as $name=>$session) {
     $_SESSION=$session;ob_start();include __DIR__.'/../includes/navbar.php';$nav=ob_get_clean();
     $doc=new DOMDocument();@$doc->loadHTML($nav);$xpath=new DOMXPath($doc);
     $links=$xpath->query('//*[@aria-labelledby="navbarProductDatabase"]/a');$labels=[];foreach($links as $link)$labels[]=trim($link->textContent);
-    pagesAssert($labels===($name==='editor'?['Product Builder','Listings','Transfer D-base','Product Controls']:['Listings']),'Navbar respects page access for '.$name);
+    pagesAssert($labels===($name==='editor'?['Product Builder','Listings','Transfer D-base','Product Controls']:['Listings','Transfer D-base']),'Navbar respects page access for '.$name);
     pagesAssert(!str_contains($nav,'page=product_listing_catalog'),'Retired catalogue is absent from the navbar.');
     // Isolate the actual dropdown markup for a static Bootstrap interaction fixture.
     $menu=$xpath->query('//*[@id="navbarProductDatabase"]/parent::*')->item(0);
     file_put_contents($target.'/navigation-'.$name.'.html',wrapProductPage('<ul class="nav">'.$doc->saveHTML($menu).'</ul>'));
 }
-echo "Product pages: signed-in listing reads, protected writes/libraries, read-only pages, Controls forms, direct edit links and role-aware navigation OK (temporary permission tables only).\n";
+echo "Product pages: signed-in listing/transfer reads, protected writes/libraries, read-only pages, Controls forms, direct edit links and role-aware navigation OK (temporary permission tables only).\n";

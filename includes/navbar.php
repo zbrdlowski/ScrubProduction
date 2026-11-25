@@ -216,7 +216,7 @@ if (isset($conn) && $conn instanceof mysqli) {
         <div class="dropdown-menu" aria-labelledby="navbarProductDatabase">
           <?php if (auth_can('products.view')): ?><a href="index.php?page=product_builder" class="dropdown-item">Product Builder</a><?php endif; ?>
           <a href="index.php?page=product_listings" class="dropdown-item">Listings</a>
-          <?php if (auth_can('products.view')): ?><a href="index.php?page=product_transfers" class="dropdown-item">Transfer D-base</a><?php endif; ?>
+          <a href="index.php?page=product_transfers" class="dropdown-item">Transfer D-base</a>
           <?php if (auth_can('products.view')): ?><a href="index.php?page=product_controls" class="dropdown-item">Product Controls</a><?php endif; ?>
         </div>
       </li>

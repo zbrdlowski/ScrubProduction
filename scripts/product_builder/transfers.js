@@ -21,7 +21,7 @@ function icon(name,label){return '<button type="button" class="btn btn-sm btn-ou
 function unavailable(extra=''){return '<td class="pb-transfer-unavailable '+extra+'" aria-disabled="true">—</td>';}
 function rowHtml(row){
  const state=row.img_status||'',linked=!!row.product_id||row.status==='completed',busy=saving.has(Number(row.id));
- const editable=cfg.canEdit&&!linked&&!busy&&!loading,ready=state==='ready'&&!linked,displayState=linked?'completed':state;
+ const editable=cfg.canPrepareTransfers&&!linked&&!busy&&!loading,ready=state==='ready'&&!linked,displayState=linked?'completed':state;
  const category=row.snapshot?.category||{},categoryText=[category.brand,category.model,category.year_range].filter(Boolean).join(' · ')||row.snapshot?.category_text||'—';
  const dateText=date(row.created_at),target=Number(cfg.openTransferId)===Number(row.id);
  let html='<tr class="pb-product-row'+(target?' pb-transfer-target':'')+'" data-transfer-row="'+Number(row.id)+'" data-transfer-state="'+esc(displayState)+'">';
@@ -33,8 +33,8 @@ function rowHtml(row){
  if(linked)html+='<span class="pb-transfer-created"><i class="fas fa-check-circle" aria-hidden="true"></i>'+esc(t('Listing created'))+'</span>';
  else html+='<select class="form-control form-control-sm pb-img-select" data-transfer-img="'+Number(row.id)+'" aria-label="IMG · '+esc(row.order_number)+'"'+(editable?'':' disabled')+'>'+[['','—'],['skip','Skip'],['gen','Gen'],['ready','Ready']].map(([value,label])=>'<option value="'+value+'"'+(state===value?' selected':'')+'>'+label+'</option>').join('')+'</select>';
  html+='<span class="pb-transfer-feedback" role="status">'+(busy?esc(t('Saving…')):'')+'</span></td>';
- const folderEnabled=!busy&&!loading&&((ready&&cfg.canEdit)||((ready||linked)&&row.folder_path));
- const folderLabel=t(ready&&cfg.canEdit?'Edit folder path':'View folder path');
+ const folderEnabled=!busy&&!loading&&((ready&&cfg.canPrepareTransfers)||((ready||linked)&&row.folder_path));
+ const folderLabel=t(ready&&cfg.canPrepareTransfers?'Edit folder path':'View folder path');
  html+='<td class="pb-icon-column"><div class="pb-cell-actions"><button type="button" class="btn btn-sm btn-outline-info" data-transfer-folder="'+Number(row.id)+'" title="'+esc(folderLabel)+'" aria-label="'+esc(folderLabel)+'"'+(folderEnabled?'':' disabled')+'><i class="far fa-folder-open" aria-hidden="true"></i></button>';
  if(row.folder_path&&(ready||linked))html+='<button type="button" class="btn pb-copy-code" data-transfer-copy="'+Number(row.id)+'" title="'+esc(t('Copy folder path'))+'" aria-label="'+esc(t('Copy folder path'))+'"><i class="far fa-copy" aria-hidden="true"></i></button>';
  html+='</div></td>'+unavailable('pb-price-column');
@@ -71,7 +71,7 @@ async function refresh(){
 }
 body.addEventListener('change',async event=>{
  const input=event.target.closest('[data-transfer-img]');if(!input)return;
- const id=Number(input.dataset.transferImg),row=rows.find(item=>Number(item.id)===id);if(!row||saving.has(id)||loading||!cfg.canEdit)return;
+ const id=Number(input.dataset.transferImg),row=rows.find(item=>Number(item.id)===id);if(!row||saving.has(id)||loading||!cfg.canPrepareTransfers)return;
  const state=input.value;saving.add(id);renderRows();pagination();message('');
  try{const result=await api('save_transfer_image',{id,version:row.version,img_status:state});rows=rows.map(item=>Number(item.id)===id?result.transfer:item);message(t('Transfer saved.'),true);}
  catch(error){
@@ -92,7 +92,7 @@ function folderControls(){
  el('pb-transfer-folder-reload').disabled=folderBusy;
 }
 function fillFolder(row){
- folderContext={id:Number(row.id),version:row.version,editable:!!cfg.canEdit&&!row.product_id&&row.status==='pending'&&row.img_status==='ready'};
+ folderContext={id:Number(row.id),version:row.version,editable:!!cfg.canPrepareTransfers&&!row.product_id&&row.status==='pending'&&row.img_status==='ready'};
  folderInput.value=row.folder_path||'';el('pb-transfer-folder-source').textContent=row.title+' · '+row.order_number;
  folderDirty=false;folderError('');el('pb-transfer-folder-reload').hidden=true;folderControls();
 }
