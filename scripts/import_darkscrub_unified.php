@@ -432,7 +432,7 @@ function import_darkscrub_unified_csv(mysqli $conn, string $csvPath, string $mod
     $seenShipping = false;
     $autoLineNo = 1000; // synthetic line numbers for auto-generated items start here
     foreach ($itemRows as $r) {
-      if (oi_is_shipping_or_payment_line($r)) {
+      if (!ordersIsDiscountItem($r) && oi_is_shipping_or_payment_line($r)) {
         $stats['skipped_shipping_items']++;
         $seenShipping = true;
         continue;
@@ -469,6 +469,17 @@ function import_darkscrub_unified_csv(mysqli $conn, string $csvPath, string $mod
       } else {
         // EBAY, MXLOCKER aj ostatné — unit price priamo
         $rawUnitPrice = oi_parse_money($r['item_unit_price_with_vat'] ?? null);
+      }
+
+      // Keep discount amounts and source data, but give coupons no production
+      // department, categories, status or automatically generated companion items.
+      if (ordersIsDiscountItem($r)) {
+        oi_insert_item_unified_with_internal(
+          $conn, $orderId, $lineNo ?: null,
+          $sku, $title, $customLabel, null, $qty, $optionsJson, $rawUnitPrice
+        );
+        $stats['items']++;
+        continue;
       }
 
       // --- Department + subcategory detekcia cez department_config.php ---
@@ -709,6 +720,9 @@ function oi_detect_item_type(?string $sku, ?string $customLabel, ?string $title,
 }
 
 function oi_detect_import_row_departments(array $r, ?string $sku, ?string $customLabel, ?string $title): array {
+  if (ordersIsDiscountItem(array_merge($r, ['sku' => $sku, 'custom_label' => $customLabel, 'title' => $title]))) {
+    return [];
+  }
   $departments = dept_get_departments($customLabel, $sku);
   if (!empty($departments)) {
     return $departments;
@@ -725,7 +739,7 @@ function oi_is_shipping_or_billing_sku(?string $sku): bool {
 
 function oi_order_has_graphics_draft_request(array $itemRows): bool {
   foreach ($itemRows as $r) {
-    if (oi_is_shipping_or_payment_line($r)) {
+    if (ordersIsDiscountItem($r) || oi_is_shipping_or_payment_line($r)) {
       continue;
     }
 

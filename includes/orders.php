@@ -1749,7 +1749,7 @@ if ($orderIds) {
   $placeholders = implode(',', array_fill(0, count($orderIds), '?'));
   $types = str_repeat('i', count($orderIds));
   $stmtDeptStatuses = $conn->prepare("
-    SELECT order_id, item_type_code, status, sku, custom_label, options_json, internal_options_json
+    SELECT order_id, item_type_code, status, sku, title, custom_label, options_json, internal_options_json
     FROM order_items
     WHERE deleted_at IS NULL
       AND order_id IN ($placeholders)
@@ -1765,6 +1765,9 @@ if ($orderIds) {
 
     $groupsByOrder = [];
     while ($deptRow = $resDeptStatuses->fetch_assoc()) {
+      if (ordersIsDiscountItem($deptRow)) {
+        continue;
+      }
       $orderId = (int)($deptRow['order_id'] ?? 0);
       $itemType = ordersNormalizeDepartmentCode((string)($deptRow['item_type_code'] ?? ''));
 

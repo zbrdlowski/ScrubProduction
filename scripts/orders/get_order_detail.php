@@ -2104,6 +2104,7 @@ foreach ($customProductionPaymentLines as $customProductionPaymentLine) {
 }
 
 $financialInfo = order_financial_effective_totals($conn, $order, $sourceMeta);
+$financialAppliedDiscounts = ordersLoadAppliedDiscounts($conn, $orderId);
 $financialAdjustmentRows = order_financial_fetch_adjustments($conn, $orderId);
 $financialBaseTotal = (float) $financialInfo['base_total'];
 $financialAdjustmentsTotal = (float) $financialInfo['adjustments_total'];
@@ -5443,6 +5444,17 @@ ob_start();
     color: #b8c3ca;
   }
 
+  .order-financial-discounts {
+    margin-top: 14px;
+    padding-top: 8px;
+    border-top: 1px solid rgba(255, 255, 255, .14);
+    overflow-wrap: anywhere;
+  }
+
+  .order-financial-discount + .order-financial-discount {
+    margin-top: 8px;
+  }
+
   .order-financial-adjustment-list {
     margin: 8px 0 10px;
     padding: 8px 0;
@@ -6444,6 +6456,25 @@ ob_start();
               <div class="order-value-breakdown-row font-weight-bold">
                 <span>Balance due:</span>
                 <span><?php echo number_format((float) $orderValueBreakdown['total'] - $customPaidNet, 2, '.', ''); ?><?php echo h($orderCurrencySuffix); ?></span>
+              </div>
+            <?php endif; ?>
+            <?php if (!empty($financialAppliedDiscounts)): ?>
+              <div class="order-financial-discounts" aria-label="Applied discounts">
+                <?php foreach ($financialAppliedDiscounts as $appliedDiscount): ?>
+                  <div class="order-financial-discount">
+                    <div class="order-value-breakdown-row text-info">
+                      <span><i class="fas fa-tag mr-1" aria-hidden="true"></i>Discount applied</span>
+                      <?php if ($appliedDiscount['percentage'] !== ''): ?>
+                        <span class="font-weight-bold"><?php echo h($appliedDiscount['percentage']); ?></span>
+                      <?php endif; ?>
+                    </div>
+                    <?php if ($appliedDiscount['code'] !== ''): ?>
+                      <div class="order-financial-meta">Discount code: <strong><?php echo h($appliedDiscount['code']); ?></strong></div>
+                    <?php elseif ($appliedDiscount['description'] !== ''): ?>
+                      <div class="order-financial-meta"><?php echo h($appliedDiscount['description']); ?></div>
+                    <?php endif; ?>
+                  </div>
+                <?php endforeach; ?>
               </div>
             <?php endif; ?>
           </div>

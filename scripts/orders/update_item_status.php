@@ -314,35 +314,7 @@ $departmentStatuses = [];
 $departmentColors = [];
 $departmentLabels = [];
 
-$deptStmt = $pdo->prepare("
-    SELECT item_type_code, status, sku, custom_label, options_json, internal_options_json
-    FROM order_items
-    WHERE order_id = ?
-      AND deleted_at IS NULL
-      AND item_type_code IS NOT NULL
-      AND item_type_code <> ''
-    ORDER BY id ASC
-");
-$deptStmt->execute([$orderId]);
-$deptGroups = [];
-while ($deptItem = $deptStmt->fetch(PDO::FETCH_ASSOC)) {
-    $itemDept = ordersNormalizeDepartmentCode((string)($deptItem['item_type_code'] ?? ''));
-    if ($itemDept === '') {
-        continue;
-    }
-
-    if (!isset($deptGroups[$itemDept])) {
-        $deptGroups[$itemDept] = [];
-    }
-
-    $deptGroups[$itemDept][] = [
-        'status' => strtoupper((string)($deptItem['status'] ?? 'NEW')),
-        'sku' => $deptItem['sku'] ?? null,
-        'custom_label' => $deptItem['custom_label'] ?? null,
-        'options_json' => $deptItem['options_json'] ?? null,
-        'internal_options_json' => $deptItem['internal_options_json'] ?? null,
-    ];
-}
+$deptGroups = ordersBuildWorkflowGroups($conn, $orderId);
 $departmentStatuses = ordersResolveDepartmentStatusesFromGroups($conn, $deptGroups);
 
 foreach ($departmentStatuses as $department => $statusCode) {

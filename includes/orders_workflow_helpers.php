@@ -1,6 +1,7 @@
 <?php
 
 require_once __DIR__ . '/orders_status_helpers.php';
+require_once __DIR__ . '/orders_discount_helpers.php';
 
 function seatCoverOptionIsPositive($value): bool
 {
@@ -229,9 +230,12 @@ function ordersDepartmentWorkflowStatus(mysqli $conn, string $department, array 
             $hasWaiting = true;
         }
 
-        if (!isOrderItemReady($department, $status, $optionsJson, $internalOptionsJson)) {
-            $allReady = false;
+        if (isOrderItemReady($department, $status, $optionsJson, $internalOptionsJson)) {
+            // READY must never win over an unfinished item, regardless of the
+            // display order (Draft, Reprint and custom statuses can follow it).
+            continue;
         }
+        $allReady = false;
 
         if (!in_array($status, ['NEW', 'WAITING'], true)) {
             $hasStarted = true;
@@ -251,14 +255,8 @@ function ordersDepartmentWorkflowStatus(mysqli $conn, string $department, array 
     }
 
     if ($matchedActiveStatuses) {
-        // Chceme "bottleneck" status - ten NAJMENEJ pokrocily spomedzi
-        // polozok (najnizsi sort_order), pretoze prave ten este blokuje
-        // department od READY. arsort (zostupne) + array_key_first tu
-        // predtym vratal presny opak - najviac pokrocily status (napr.
-        // READY namiesto RTP_✗, ked bola v departmente zmiesana jedna
-        // hotova a jedna nehotova polozka) - preto sa department
-        // nespravne vyhodnocoval ako READY aj ked nie vsetky polozky boli
-        // hotove.
+        // Select the first unfinished status in the configured display order.
+        // Completed items are excluded above; only allReady can return READY.
         asort($matchedActiveStatuses, SORT_NUMERIC);
         return (string) array_key_first($matchedActiveStatuses);
     }
@@ -689,7 +687,7 @@ function ordersHasManualStatusOverride(mysqli $conn, int $orderId): bool
 function ordersBuildWorkflowGroups(mysqli $conn, int $orderId): array
 {
     $stmt = $conn->prepare("
-        SELECT item_type_code, status, sku, custom_label, options_json, internal_options_json
+        SELECT item_type_code, status, sku, title, custom_label, options_json, internal_options_json
         FROM order_items
         WHERE order_id = ?
           AND deleted_at IS NULL
@@ -704,6 +702,10 @@ function ordersBuildWorkflowGroups(mysqli $conn, int $orderId): array
     $groups = [];
 
     while ($item = $res->fetch_assoc()) {
+        // Also protects orders imported before discount lines were excluded.
+        if (ordersIsDiscountItem($item)) {
+            continue;
+        }
         $type = ordersNormalizeDepartmentCode((string) $item['item_type_code']);
         $status = strtoupper((string) ($item['status'] ?? 'NEW'));
 
@@ -855,6 +857,16 @@ function recalculateOrderWorkflow(mysqli $conn, int $orderId): void
         // Objednavka bez akehokolvek doterajsieho statusu (edge-case,
         // typicky len tesne po importe) - bezpecny minimalny default.
         $orderStatus = 'NEW';
+    }
+
+    // Automatic dispatch readiness always requires every production item.
+    // This also releases stale Ready orders when no corrective policy matches.
+    if (
+        $currentStatusIsWorkflowScoped
+        && $traffic !== 'GREEN'
+        && in_array($orderStatus, ['READY_TO_INVOICE', 'READY_TO_SHIP'], true)
+    ) {
+        $orderStatus = $traffic === 'ORANGE' ? 'IN_PROGRESS' : 'NEW';
     }
 
     $requiresPostProductionInvoice = ordersOrderRequiresPostProductionInvoice($conn, $orderId);

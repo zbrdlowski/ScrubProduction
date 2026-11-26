@@ -4,7 +4,8 @@ declare(strict_types=1);
 require_once dirname(__DIR__) . '/scripts/custom_orders/helpers.php';
 $cases = ['item_edit', 'item_add', 'item_form', 'item_delete', 'status', 'worker_status',
   'followup', 'take', 'remove_assignment', 'linked_header', 'payment', 'note',
-  'unexported_item', 'unexported_status', 'timestamp_only', 'ui_exported', 'ui_unexported'];
+  'unexported_item', 'unexported_status', 'timestamp_only', 'ui_exported', 'ui_unexported',
+  'ui_unexported_fitting', 'ui_unexported_edit_fitting'];
 foreach (customOrdersExportLockedHeaderFields() as $field) $cases[] = 'header_' . $field;
 $case = $argv[1] ?? '';
 if ($case === '') {
@@ -50,7 +51,7 @@ $conn->query("INSERT INTO custom_order_items (id,custom_order_id,line_no,item_ty
 $conn->query("INSERT INTO custom_order_assignments (id,custom_order_id,employee_id,assigned_by) VALUES (234,123,7,7)");
 $conn->query("INSERT INTO orders (id,source_id,external_order_id,order_number,currency,total,status,source_meta)
   VALUES (789,1,'CO-TEST','SO-TEST','EUR',100,'NEW','{\"custom_order_id\":123}')");
-if (strpos($case, 'unexported_') === 0 || $case === 'ui_unexported') $conn->query("UPDATE custom_orders SET status='LEAD',production_order_id=NULL,exported_at=NULL");
+if (strpos($case, 'unexported_') === 0 || strpos($case, 'ui_unexported') === 0) $conn->query("UPDATE custom_orders SET status='LEAD',production_order_id=NULL,exported_at=NULL");
 if ($case === 'timestamp_only') $conn->query('UPDATE custom_orders SET production_order_id=NULL');
 $_SESSION = ['user_id' => 7, 'permission' => $case === 'worker_status' ? 0 : 900];
 $_SERVER['REQUEST_METHOD'] = 'POST';
@@ -76,6 +77,12 @@ if ($case === 'payment') { $endpoint = 'save_payment.php'; $_POST['amount'] = 25
 if ($case === 'note') { $endpoint = 'save_note.php'; $_POST['note_body'] = 'Live shared note'; }
 if (strpos($case, 'ui_') === 0) {
   $_GET = ['custom_order_id' => 123, 'detail' => '1', 'help_lang' => 'en'];
+  // Reuse the isolated page renderer for Fitting defaults and saved-item regression tests.
+  if ($case === 'ui_unexported_fitting') $_GET['builder_type'] = 'F';
+  if ($case === 'ui_unexported_edit_fitting') {
+    $_GET['edit_item_id'] = 456;
+    $conn->query("UPDATE custom_order_items SET item_type_code='F',title='Fitting',unit_price=39.90 WHERE id=456");
+  }
   $_SERVER['REQUEST_URI'] = '/darkscrub/index.php?page=custom_orders&custom_order_id=123&detail=1';
   // Render the real page with temporary order data; omit schema initialization from this test.
   $file = dirname(__DIR__) . '/includes/custom_orders.php';

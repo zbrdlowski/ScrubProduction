@@ -5286,6 +5286,7 @@ if (!$customOrdersDetailRequest && !$customOrdersFullPageDetail) {
             <?php $currentBuilderSubcategory = $currentBuilderDepartment === 'G' ? customOrdersGraphicsSubcategoryFromItemData((string) ($editInternalOptions['_subcat'] ?? ''), (string) ($editItem['custom_label'] ?? ''), (string) ($editItem['sku'] ?? '')) : ''; ?>
             <?php $builderTitleValue = $editItem ? (string) ($editItem['title'] ?? '') : ($currentBuilderType === 'F' ? 'Fitting' : ''); ?>
             <?php $builderUnitPriceValue = $editItem ? ($editItem['unit_price'] ?? 0) : ($currentBuilderType === 'F' ? '39.90' : 0); ?>
+            <?php $builderFittingDefaultAttr = !$editItem && $currentBuilderType === 'F' ? 'data-custom-fitting-default="1"' : ''; ?>
             <?php
             $builderStatusItem = [
               'item_type_code' => $currentBuilderType !== '' ? $currentBuilderType : 'G',
@@ -5352,7 +5353,7 @@ if (!$customOrdersDetailRequest && !$customOrdersFullPageDetail) {
                             <span class="custom-builder-type-badge" data-builder-type-badge><?= h($currentBuilderType !== '' ? $currentBuilderType : '?') ?></span>
                           </td>
                           <td style="min-width:280px;">
-                            <input type="text" name="title" class="form-control form-control-sm mb-1" value="<?= h($builderTitleValue) ?>" placeholder="Product name" required <?= $customExportDisabled ?>>
+                            <input type="text" name="title" class="form-control form-control-sm mb-1" value="<?= h($builderTitleValue) ?>" placeholder="Product name" required <?= $builderFittingDefaultAttr ?> <?= $customExportDisabled ?>>
                             <div class="custom-existing-item-meta-edit">
                               <input type="text" name="sku" class="form-control form-control-sm" value="<?= h($editItem['sku'] ?? '') ?>" placeholder="SKU / MANUAL" <?= $customExportDisabled ?>>
                               <input type="text" name="custom_label" class="form-control form-control-sm" value="<?= h($editItem['custom_label'] ?? '') ?>" placeholder="Custom label" <?= $customExportDisabled ?>>
@@ -5362,7 +5363,7 @@ if (!$customOrdersDetailRequest && !$customOrdersFullPageDetail) {
                             <input type="number" min="1" name="qty" class="form-control form-control-sm" value="<?= h($editItem['qty'] ?? 1) ?>" <?= $customExportDisabled ?>>
                           </td>
                           <td style="width:92px;">
-                            <input type="number" step="0.01" name="unit_price" class="form-control form-control-sm" value="<?= h($builderUnitPriceValue) ?>" <?= $customExportDisabled ?>>
+                            <input type="number" step="0.01" name="unit_price" class="form-control form-control-sm" value="<?= h($builderUnitPriceValue) ?>" <?= $builderFittingDefaultAttr ?> <?= $customExportDisabled ?>>
                           </td>
                           <td style="min-width:220px;">
                             <?php $builderCategoryInfo = trim((string) ($builderCategoryFields['category_info'] ?? '')); ?>
@@ -6794,20 +6795,43 @@ if (!$customOrdersDetailRequest && !$customOrdersFullPageDetail) {
     }
 
     function applyCustomFittingDefaults(form, typeCode) {
-      if (!form || String(typeCode || '').toUpperCase() !== 'F') return;
+      if (!form) return;
       var itemIdInput = form.querySelector('input[name="custom_item_id"]');
       if (itemIdInput && parseInt(itemIdInput.value || '0', 10) > 0) return;
-      var titleInput = form.querySelector('input[name="title"]');
-      var priceInput = form.querySelector('input[name="unit_price"]');
-      if (titleInput && titleInput.value.trim() === '') {
-        titleInput.value = 'Fitting';
-      }
-      if (priceInput) {
-        var currentPrice = parseFloat(String(priceInput.value || '').replace(',', '.'));
-        if (!Number.isFinite(currentPrice) || currentPrice <= 0) {
-          priceInput.value = '39.90';
+      var isFitting = String(typeCode || '').toUpperCase() === 'F';
+      ['title', 'unit_price'].forEach(function (fieldName) {
+        var input = form.querySelector('input[name="' + fieldName + '"]');
+        if (!input) return;
+        var defaultValue = fieldName === 'title' ? 'Fitting' : '39.90';
+        var emptyValue = fieldName === 'title' ? '' : '0';
+        function forgetDefault() {
+          delete input.dataset.customFittingDefault;
+          delete input.dataset.customFittingPrevious;
         }
-      }
+        if (input.dataset.customFittingInputBound !== '1') {
+          input.dataset.customFittingInputBound = '1';
+          input.addEventListener('input', forgetDefault);
+        }
+        if (!isFitting) {
+          // Remove only values supplied automatically for Fitting, not manual edits.
+          if (input.dataset.customFittingDefault === '1') {
+            if (input.value === defaultValue) {
+              input.value = input.dataset.customFittingPrevious !== undefined
+                ? input.dataset.customFittingPrevious : emptyValue;
+            }
+            forgetDefault();
+          }
+          return;
+        }
+        var currentPrice = parseFloat(String(input.value || '').replace(',', '.'));
+        var needsDefault = fieldName === 'title'
+          ? input.value.trim() === '' : (!Number.isFinite(currentPrice) || currentPrice <= 0);
+        if (needsDefault) {
+          input.dataset.customFittingPrevious = input.value;
+          input.dataset.customFittingDefault = '1';
+          input.value = defaultValue;
+        }
+      });
     }
 
     function syncCustomItemSpecGroups(selectEl) {
