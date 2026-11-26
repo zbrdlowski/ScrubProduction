@@ -73,4 +73,14 @@ SELECT 'product_builder_compatibility', IF(EXISTS(SELECT 1 FROM information_sche
 UNION ALL
 SELECT 'product_builder_products.deleted_at', IF(EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name='product_builder_products' AND column_name='deleted_at'),'OK','MISSING')
 UNION ALL
-SELECT 'product_builder_products.deleted_by', IF(EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name='product_builder_products' AND column_name='deleted_by'),'OK','MISSING');
+SELECT 'product_builder_products.deleted_by', IF(EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name='product_builder_products' AND column_name='deleted_by'),'OK','MISSING')
+UNION ALL
+SELECT 'product_builder_transfers.source_kind', IF(EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name='product_builder_transfers' AND column_name='source_kind'),'OK','MISSING')
+UNION ALL
+SELECT 'product_builder_transfers.request_key', IF(EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name='product_builder_transfers' AND column_name='request_key'),'OK','MISSING')
+UNION ALL
+SELECT 'product_builder_transfers.order_item_id.nullable', IF(EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name='product_builder_transfers' AND column_name='order_item_id' AND is_nullable='YES'),'OK','MISSING')
+UNION ALL
+SELECT 'product_builder_transfers.order_id.nullable', IF(EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name='product_builder_transfers' AND column_name='order_id' AND is_nullable='YES'),'OK','MISSING')
+UNION ALL
+SELECT 'product_builder_transfers.uq_pb_transfer_request', IF(EXISTS(SELECT 1 FROM information_schema.statistics WHERE table_schema=DATABASE() AND table_name='product_builder_transfers' AND index_name='uq_pb_transfer_request' AND non_unique=0),'OK','MISSING');

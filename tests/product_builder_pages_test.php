@@ -16,19 +16,19 @@ $permissionIds=$pdo->query('SELECT permission_key,id FROM auth_permissions')->fe
 $grant=$pdo->prepare("INSERT INTO auth_employee_overrides(employee_id,permission_id,effect) VALUES (?,?,'allow')");
 foreach([[999002,'products.view'],[999003,'products.view'],[999003,'products.manage'],[999004,'products.manage']] as [$id,$key])$grant->execute([$id,$permissionIds[$key]]);
 $_SESSION=[];
-foreach(['products','product','transfers','transfer'] as $action)pagesAssert(!pb_can_access_api('GET',$action),'Anonymous users cannot read: '.$action);
+foreach(['products','product','transfers','transfer','transfer_form_options'] as $action)pagesAssert(!pb_can_access_api('GET',$action),'Anonymous users cannot read: '.$action);
 pagesAssert(!pb_can_manage_products()&&!pb_can_prepare_transfers(),'Anonymous users cannot write.');
-foreach(['save_transfer_image','save_transfer_folder'] as $action)pagesAssert(!pb_can_access_api('POST',$action),'Anonymous users cannot prepare transfers: '.$action);
+foreach(['save_transfer_image','save_transfer_folder','save_manual_transfer'] as $action)pagesAssert(!pb_can_access_api('POST',$action),'Anonymous users cannot prepare transfers: '.$action);
 pagesAssert(auth_page_permission('product_listings')===null,'Listings is available to all signed-in employees.');
 pagesAssert(auth_page_permission('product_builder')==='products.view' && auth_page_permission('product_controls')==='products.view','Builder and Controls retain explicit access.');
 foreach([999001=>[false,false],999002=>[true,false],999003=>[true,true],999004=>[false,false]] as $id=>[$view,$manage]) {
     $_SESSION=['permission'=>100,'user_id'=>$id,'name'=>'Test user'];
-    foreach(['products','product','transfers','transfer'] as $action)pagesAssert(pb_can_access_api('GET',$action),'All signed-in users can read: '.$action);
+    foreach(['products','product','transfers','transfer','transfer_form_options'] as $action)pagesAssert(pb_can_access_api('GET',$action),'All signed-in users can read: '.$action);
     foreach(['categories','designs','boxes','models','model_catalogue','plastic_item','transfer_draft','transfer_products'] as $action)pagesAssert(pb_can_access_api('GET',$action)===$view,'Protected library/inventory read: '.$action);
     foreach(['delete_product','restore_product','save_transfer','save_product','save_product_image','save_channel_listing','save_uni','delete_uni','import_uni','generate_modelcode','generate_sku','save_design','delete_design','save_box','delete_box','save_graphics_version','delete_graphics_version'] as $action)pagesAssert(pb_can_access_api('POST',$action)===$manage,'Protected write: '.$action);
-    foreach(['products','product','transfers','transfer'] as $action)pagesAssert(pb_can_access_api('POST',$action)===$manage,'Read whitelist must not grant POST access: '.$action);
+    foreach(['products','product','transfers','transfer','transfer_form_options'] as $action)pagesAssert(pb_can_access_api('POST',$action)===$manage,'Read whitelist must not grant POST access: '.$action);
     pagesAssert(pb_can_prepare_transfers(),'Every signed-in user can prepare transfers.');
-    foreach(['save_transfer_image','save_transfer_folder'] as $action)pagesAssert(pb_can_access_api('POST',$action),'All signed-in users can prepare transfers: '.$action);
+    foreach(['save_transfer_image','save_transfer_folder','save_manual_transfer'] as $action)pagesAssert(pb_can_access_api('POST',$action),'All signed-in users can prepare transfers: '.$action);
     pagesAssert(pb_can_manage_products()===$manage,'Editor permission requires both Builder access and manage.');
 }
 function renderProductPage(string $name,array $session,array $query=[]): string {
@@ -62,6 +62,7 @@ pagesAssert(!str_contains($builderHtml,'id="pb-transfers"')&&!str_contains($buil
 pagesAssert(!str_contains(renderProductPage('product_transfers',[]),'id="pb-products"')&&http_response_code()===401,'Transfer D-base still requires signing in.');
 $transferReader=renderProductPage('product_transfers',$normal);
 pagesAssert(str_contains($transferReader,'id="pb-products"')&&str_contains($transferReader,'"canEdit":false')&&str_contains($transferReader,'"canPrepareTransfers":true')&&http_response_code()===200,'Users without product permissions can prepare transfers without gaining product editing access.');
+pagesAssert(str_contains($transferReader,'id="pb-new-transfer"')&&str_contains($transferReader,'id="pb-manual-transfer-form"'),'Every signed-in user sees the manual transfer editor.');
 $transferDraft=renderProductPage('product_builder',$editor,['transfer'=>61]);
 file_put_contents($target.'/transfers-editor.html',wrapProductPage($transferHtml));
 file_put_contents($target.'/transfers-viewer.html',wrapProductPage($transferReader));

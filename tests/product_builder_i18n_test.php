@@ -29,7 +29,7 @@ function localizedPage(string $mode,string $lang):string{
  ob_start();require __DIR__.'/../includes/product_'.$mode.'.php';$body=ob_get_clean();
  return '<!doctype html><html lang="'.$lang.'"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><base href="/darkscrub/"><link rel="stylesheet" href="plugins/fontawesome-free/css/all.min.css"><link rel="stylesheet" href="dist/css/adminlte.min.css"><script src="js/jquery-3.6.0.min.js"></script><script src="js/bootstrap.min.js"></script></head><body class="dark-mode" style="padding:24px;background:#343a40">'.$body.'<script src="plugins/jquery/jquery.min.js"></script><script src="plugins/jquery-ui/jquery-ui.min.js"></script><script src="plugins/bootstrap/js/bootstrap.bundle.min.js"></script></body></html>';
 }
-foreach(['builder','listings','controls'] as $mode)foreach(['sk','en'] as $lang){
+foreach(['builder','listings','controls','transfers'] as $mode)foreach(['sk','en'] as $lang){
  $html=localizedPage($mode,$lang);$dom=new DOMDocument();@$dom->loadHTML($html);$xpath=new DOMXPath($dom);
  langAssert($xpath->query('//*[@data-pb-language]')->length===2,'Both language options: '.$mode);
  langAssert($xpath->query('//*[@id="product-builder"]')->item(0)->getAttribute('lang')===$lang,'Page language attribute.');

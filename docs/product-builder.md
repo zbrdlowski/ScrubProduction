@@ -1,3 +1,17 @@
+## Manuálne transfery (26. 11. 2026)
+
+V Transfer D-base môže každý prihlásený používateľ cez **Nový manuálny transfer / New manual transfer** uložiť grafiku bez objednávky. Modal obsahuje iba Product name, Source SKU, Graphics design, Version a Category & compatibility. Názov sa po zmene dizajnu, verzie alebo kategórie automaticky skladá ako „Artlex ST For KTM EXC 2008-2011“, bez modelcode, a dá sa ručne upraviť. Pri otvorení existujúceho transferu sa jeho uložený názov zachová. Kategória môže zostať nezadaná a doplniť sa v Product Builderi. Návrhy dizajnov a verzií sa načítajú z číselníkov; uloženie transferu číselníky nemení. Staršie parametre, zdrojová referencia, URL, množstvo a poznámka sa pri oprave cez zjednodušený modal zachovajú. Nové transfery používajú množstvo 1 a prázdne doplnkové údaje.
+
+Záznam je označený **Manuálny / Manual**, bez referencie sa zobrazí Manual #ID. Ceruzka v stĺpci Akcie umožní opraviť údaje iba pri manuálnych nedokončených transferoch. Kontrola pôvodu, dokončenia a verzie prebieha aj na serveri. Úprava zachová stav IMG, priečinok, dátum vytvorenia a autora; aktualizuje posledného editora a verziu. Opakovaný pokus o vytvorenie s rovnakým request_key vráti pôvodný záznam.
+
+Používa sa rovnaký snapshot a postup ako pri prenose z Orders: po Ready možno uložiť priečinok, oprávnený editor otvorí Product Builder a uložením produktu sa transfer dokončí a uzamkne. Grafika používa rovnakých sedem povolených polí; osobné údaje, zákaznícke poznámky ani skutočné číslo jazdca sa neprenášajú. Automatické transfery majú source_kind=order, manuálne source_kind=manual a order_id/order_item_id NULL. Neukladajú sa vymyslené objednávky.
+
+**Zjednodušenie modalu:** nahrať product-builder-manual-transfer-form.zip (4 súbory); na už nainštalované manuálne transfery netreba nový SQL import.
+
+**Nasadenie:** importovať db/product_builder_update_016.sql a potom nahrať súbory z product-builder-manual-transfers.zip. Migračný SQL je opakovateľný, zachová existujúce záznamy a unikátnosť transferu na položku objednávky. Full install/phpMyAdmin/update_all/CLI installer sú aktualizované. Staršie SQL aktualizácie musia byť už nainštalované.
+
+Overenie: product_builder_manual_transfers_test.php (dočasné tabuľky, úplný prechod do produktu), product_builder_manual_transfers_ui_test.js (mock API, vytvorenie/oprava/chyba/mobil), product_builder_transfer_access_test.php (skutočná API vstupná kontrola a CSRF, relácie iba v pamäti), product_builder_update_all_test.php (izolované tabuľky, opakovaný import a zachovanie dát).
+
 ## Prístup do Transfer D-base (25. 11. 2026)
 
 Transfer D-base je dostupný všetkým prihláseným používateľom cez horné aj bočné menu, vrátane vyhľadávania, filtrovania a čítania transferov. Všetci prihlásení môžu meniť IMG (Skip / Gen / Ready) a pri Ready uložiť cestu k obrázkom. Presun do Product Buildera a ukladanie produktov naďalej vyžadujú products.view + products.manage. Dokončené transfery zostávajú uzamknuté; platformové stĺpce sú dostupné až po vytvorení produktu. Neprihlásení používatelia nemajú prístup.

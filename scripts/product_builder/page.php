@@ -6,7 +6,7 @@ $_SESSION['product_builder_languages'][(int) ($_SESSION['user_id'] ?? 0)] = pb_l
 require_once __DIR__ . '/access.php';
 require_once __DIR__ . '/helpers.php';
 require_once __DIR__ . '/specs.php';
-require_once __DIR__ . '/transfers.php';
+require_once __DIR__ . '/manual_transfers.php';
 if (!isset($_SESSION['permission'])) { http_response_code(401); echo '<div class="alert alert-danger">' . htmlspecialchars(pb_t('Please sign in to the application.'), ENT_QUOTES, 'UTF-8') . '</div>'; return; }
 $pbPageMode = in_array($pbPageMode ?? '', ['builder','listings','controls','transfers'], true) ? $pbPageMode : 'builder';
 $pbShowBuilder = $pbPageMode === 'builder';
@@ -24,7 +24,7 @@ if (empty($_SESSION['product_builder_csrf'])) $_SESSION['product_builder_csrf'] 
 if (!function_exists('pb_h')) { function pb_h($value): string { return htmlspecialchars((string) $value, ENT_QUOTES, 'UTF-8'); } }
 ?>
 <link rel="stylesheet" href="plugins/select2/css/select2.min.css">
-<link rel="stylesheet" href="assets/product_builder.css?v=39">
+<link rel="stylesheet" href="assets/product_builder.css?v=40">
 <div class="container-fluid pb-page" id="product-builder" lang="<?= pb_language() ?>">
   <div class="pb-language-bar"><div class="btn-group btn-group-sm" role="group" aria-label="<?= pb_h(pb_t('Language')) ?>">
     <?php foreach (['sk'=>'SK','en'=>'EN'] as $language=>$languageLabel): $query=['page'=>'product_'.$pbPageMode,'pb_lang'=>$language]; if($pbEditProductId>0)$query['edit']=$pbEditProductId; if(!empty($_GET['transfer']))$query['transfer']=(int)$_GET['transfer']; ?>
@@ -143,7 +143,7 @@ if (!function_exists('pb_h')) { function pb_h($value): string { return htmlspeci
     </div>
   <?php }; ?>
   <section class="card pb-panel pb-list-panel <?= $pbIsTransfers ? 'pb-transfer-database' : '' ?>" id="pb-saved-products" aria-labelledby="pb-list-title"><div class="card-header pb-list-header"><?php if ($pbIsTransfers): ?><div class="pb-transfer-heading"><?php endif; ?><h2 class="card-title" id="pb-list-title"><i class="fas fa-table mr-2" aria-hidden="true"></i><?= pb_h(pb_t($pbIsTransfers ? 'Transferred graphics' : 'Saved products')) ?></h2>
-    <?php if ($pbIsTransfers): ?><div class="pb-transfer-filters" role="group" aria-label="<?= pb_h(pb_t('Status filters')) ?>">
+    <?php if ($pbIsTransfers): ?><button type="button" class="btn btn-sm btn-success" id="pb-new-transfer" <?= pb_manual_transfers_ready($pdo)?'':'disabled' ?> title="<?= pb_h(pb_t(pb_manual_transfers_ready($pdo)?'New manual transfer':'Import product_builder_update_016.sql to enable manual transfers.')) ?>"><i class="fas fa-plus mr-1" aria-hidden="true"></i><?= pb_h(pb_t('New manual transfer')) ?></button><div class="pb-transfer-filters" role="group" aria-label="<?= pb_h(pb_t('Status filters')) ?>">
       <?php foreach (['unset'=>'—','skip'=>'Skip','gen'=>'Gen','ready'=>'Ready','completed'=>'Listing created'] as $filter=>$label): ?>
       <label class="pb-transfer-filter" data-filter-tone="<?= $filter ?>" title="<?= pb_h(pb_t($filter==='unset'?'Not set':($filter==='completed'?'Completed transfers':'Show {status} transfers'),['status'=>$label])) ?>"><input type="checkbox" role="switch" data-transfer-filter="<?= $filter ?>" <?= $filter!=='completed'?'checked':'' ?> aria-label="<?= pb_h(pb_t($filter==='unset'?'Not set':$label)) ?>"><span><?= pb_h(pb_t($label)) ?></span></label>
       <?php endforeach; ?>
@@ -219,6 +219,7 @@ if (!function_exists('pb_h')) { function pb_h($value): string { return htmlspeci
 </div></div></div>
 <?php endif; ?>
 <?php if ($pbIsTransfers): ?>
+<?php require __DIR__ . '/manual_transfer_modal.php'; ?>
 <div class="modal fade pb-modal" lang="<?= pb_language() ?>" id="pb-transfer-folder-modal" tabindex="-1" role="dialog" aria-labelledby="pb-transfer-folder-title"><div class="modal-dialog modal-lg"><div class="modal-content">
   <div class="modal-header"><div><h3 class="modal-title h5" id="pb-transfer-folder-title"><?= pb_h(pb_t('Image folder')) ?></h3><small id="pb-transfer-folder-source" class="pb-muted"></small></div><button type="button" class="close" data-dismiss="modal" aria-label="<?= pb_h(pb_t('Close')) ?>">&times;</button></div>
   <form id="pb-transfer-folder-form"><div class="modal-body">
@@ -266,4 +267,4 @@ if (!function_exists('pb_h')) { function pb_h($value): string { return htmlspeci
 <script>window.productBuilderConfig = <?= json_encode(['language'=>pb_language(),'languageCookie'=>pb_language_cookie(),'translations'=>pb_language()==='sk'?pb_i18n_dictionary():new stdClass(),'pageMode'=>$pbPageMode,'editProductId'=>$pbEditProductId,'transfersReady'=>$pbTransfersReady,'openTransferId'=>($pbShowBuilder || $pbIsTransfers) ? (int)($_GET['transfer'] ?? 0) : 0,'csrf'=>$_SESSION['product_builder_csrf'],'canEdit'=>$pbCanEdit,'canPrepareTransfers'=>$pbIsTransfers && pb_can_prepare_transfers(),'types'=>pb_component_types(),'bundleComponents'=>array_combine(pb_bundle_types(),array_map('pb_bundle_component_types',pb_bundle_types())),'priceFields'=>pb_price_fields(),'specFields'=>pb_component_spec_fields($conn),'requestKey'=>bin2hex(random_bytes(16))], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;</script>
 <script defer src="plugins/select2/js/select2.full.min.js"></script>
 <?php if ($pbShowBuilder): ?><script src="scripts/product_builder/model_picker.js?v=1"></script><?php endif; ?>
-<?php if ($pbIsTransfers): ?><script src="scripts/product_builder/transfers.js?v=6"></script><?php else: ?><script src="scripts/product_builder/app.js?v=38"></script><?php endif; ?>
+<?php if ($pbIsTransfers): ?><script src="scripts/product_builder/transfers.js?v=8"></script><?php else: ?><script src="scripts/product_builder/app.js?v=39"></script><?php endif; ?>

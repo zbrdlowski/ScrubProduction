@@ -513,3 +513,12 @@
 .pb-deleted-filter{display:flex;align-items:center;gap:6px;margin:0 0 0 auto;white-space:nowrap;font-weight:400!important}
 .pb-deleted-filter input{accent-color:#dc6b76}
 .pb-deleted-badge{display:block;color:#edabb2;margin-top:3px}
+
+/* Manual transfer controls share the existing compact Actions column. */
+.pb-manual-badge{display:inline-block;margin-left:5px;color:#f4d36b;font-size:.7rem}
+.pb-transfer-manual-edit{margin:3px}
+#pb-manual-transfer-modal .modal-body{max-height:72vh;overflow-y:auto}
+#pb-manual-transfer-modal .select2-container{max-width:100%}
+#pb-manual-transfer-modal .select2-selection--single{background:#343a40;border-color:#66717c;height:38px;padding:0}
+#pb-manual-transfer-modal .select2-selection__rendered{color:#edf2f6;line-height:36px;padding-left:12px}
+#pb-manual-transfer-modal .select2-selection__arrow{height:36px}

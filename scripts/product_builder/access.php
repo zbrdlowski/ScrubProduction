@@ -14,8 +14,8 @@ function pb_can_access_api(string $method, string $action): bool
 {
     if (!isset($_SESSION['permission'])) return false;
     // All signed-in employees may read listings and the transfer database.
-    if ($method === 'GET' && in_array($action, ['products', 'product', 'transfers', 'transfer'], true)) return true;
-    if ($method === 'POST' && in_array($action, ['save_transfer_image', 'save_transfer_folder'], true)) return pb_can_prepare_transfers();
+    if ($method === 'GET' && in_array($action, ['products', 'product', 'transfers', 'transfer', 'transfer_form_options'], true)) return true;
+    if ($method === 'POST' && in_array($action, ['save_transfer_image', 'save_transfer_folder', 'save_manual_transfer'], true)) return pb_can_prepare_transfers();
     if (!auth_can('products.view')) return false;
     return $method !== 'POST' || pb_can_manage_products();
 }

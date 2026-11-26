@@ -4,6 +4,9 @@ declare(strict_types=1);
 if (PHP_SAPI !== 'cli') { http_response_code(404); exit; }
 $cases = [
     'anonymous' => ['save_transfer_image', false, 'test-token', 401, 'Please sign in to the application.'],
+    'manual' => ['save_manual_transfer', true, 'test-token', 422, 'Invalid form data.'],
+    'manual-anonymous' => ['save_manual_transfer', false, 'test-token', 401, 'Please sign in to the application.'],
+    'manual-csrf' => ['save_manual_transfer', true, '', 403, 'Your form has expired. Refresh the page and try again.'],
     'image' => ['save_transfer_image', true, 'test-token', 422, 'Invalid form data.'],
     'folder' => ['save_transfer_folder', true, 'test-token', 422, 'Invalid form data.'],
     'missing-csrf' => ['save_transfer_image', true, '', 403, 'Your form has expired. Refresh the page and try again.'],

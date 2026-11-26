@@ -17,6 +17,7 @@ require_once __DIR__ . '/service.php';
 require_once __DIR__ . '/access.php';
 require_once __DIR__ . '/csv.php';
 require_once __DIR__ . '/boxes.php';
+require_once __DIR__ . '/manual_transfers.php';
 $action = (string) ($_GET['action'] ?? '');
 if (!pb_can_access_api($_SERVER['REQUEST_METHOD'] ?? '', $action)) pb_reply(['ok'=>false,'error'=>'You do not have permission to perform this action.'],403);
 try {
@@ -28,6 +29,7 @@ try {
         }
         $data = json_decode(file_get_contents('php://input'), true);
         if ($action !== 'import_uni' && !is_array($data)) throw new InvalidArgumentException('Invalid form data.');
+        if ($action === 'save_manual_transfer') pb_reply(['ok'=>true,'transfer'=>pb_save_manual_transfer($pdo,$data,(int)($_SESSION['user_id'] ?? 0) ?: null)]);
         if ($action === 'save_transfer_folder') pb_reply(['ok'=>true,'transfer'=>pb_transfer_save_folder($pdo,$data,(int)($_SESSION['user_id'] ?? 0) ?: null)]);
         if ($action === 'save_transfer_image') pb_reply(['ok'=>true,'transfer'=>pb_transfer_save_image($pdo,$data,(int)($_SESSION['user_id'] ?? 0) ?: null)]);
         if ($action === 'save_transfer') pb_reply(['ok'=>true,'transfer'=>pb_transfer_save($pdo,$data,(int)($_SESSION['user_id'] ?? 0) ?: null)]);
@@ -51,6 +53,7 @@ try {
             pb_reply(['ok'=>true,'result'=>pb_import_uni($pdo,$conn,pb_parse_csv($file['tmp_name']))]);
         }
     } elseif ($_SERVER['REQUEST_METHOD'] === 'GET') {
+        if ($action === 'transfer_form_options') pb_reply(['ok'=>true] + pb_manual_transfer_options($pdo));
         if ($action === 'transfers') pb_reply(['ok'=>true] + pb_transfer_list($pdo,$_GET));
         if ($action === 'transfer') pb_reply(['ok'=>true,'transfer'=>pb_transfer_get($pdo,(int)($_GET['id'] ?? 0))]);
         if ($action === 'transfer_draft') pb_reply(['ok'=>true,'draft'=>pb_transfer_draft($pdo,(int)($_GET['id'] ?? 0))]);

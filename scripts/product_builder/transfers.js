@@ -5,6 +5,7 @@ const el=id=>document.getElementById(id),body=el('pb-products'),panel=el('pb-sav
 const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const t=(key,values={})=>(cfg.language==='sk'?(cfg.translations?.[key]??key):key).replace(/\{(\w+)\}/g,(m,k)=>Object.hasOwn(values,k)?String(values[k]):m);
 if(cfg.languageCookie)document.cookie=cfg.languageCookie+'='+cfg.language+'; Max-Age=31536000; Path=/; SameSite=Lax'+(location.protocol==='https:'?'; Secure':'');
+let manualContext=null,manualBusy=false,manualLoading=false,manualDirty=false,manualCategories=[];
 let page=1,perPage=100,pages=1,total=0,from=0,to=0,seq=0,loading=false,loaded=false,rows=[],timer;
 const filterInputs=Array.from(panel.querySelectorAll('[data-transfer-filter]'));
 const selectedFilters=()=>filterInputs.filter(input=>input.checked).map(input=>input.dataset.transferFilter).join(',');
@@ -26,7 +27,7 @@ function rowHtml(row){
  const dateText=date(row.created_at),target=Number(cfg.openTransferId)===Number(row.id);
  let html='<tr class="pb-product-row'+(target?' pb-transfer-target':'')+'" data-transfer-row="'+Number(row.id)+'" data-transfer-state="'+esc(displayState)+'">';
  html+='<td class="pb-created-column" title="'+esc(row.created_at)+'">'+esc(dateText.replace(/\.(\d{2})(\d{2})$/,'.$2'))+'</td>';
- html+='<td class="pb-product-identity"><strong>'+esc(row.title)+'</strong><div><code title="'+esc(t('Source order'))+'">'+esc(row.order_number)+'</code></div></td>';
+ html+='<td class="pb-product-identity"><strong>'+esc(row.title)+'</strong><div><code title="'+esc(t('Source order'))+'">'+esc(row.order_number||(row.source_kind==='manual'?t('Manual #{id}',{id:row.id}):''))+'</code>'+(row.source_kind==='manual'?'<span class="pb-manual-badge">'+esc(t('Manual'))+'</span>':'')+'</div></td>';
  html+='<td><span class="badge pb-bundle-badge" data-bundle="G">G</span></td>';
  html+='<td class="pb-category-cell">'+(category.modelcode?'<div class="pb-category-meta"><code>'+esc(category.modelcode)+'</code></div>':'')+'<small>'+esc(categoryText)+'</small></td>';
  html+='<td class="pb-transfer-img" data-state="'+esc(displayState)+'">';
@@ -45,6 +46,7 @@ function rowHtml(row){
  html+=unavailable()+'<td><button type="button" class="btn btn-sm btn-outline-secondary" disabled>'+esc(t('{count} components',{count:1}))+'</button></td><td>';
  if(ready&&cfg.canEdit&&!busy&&!loading)html+='<a class="btn btn-sm btn-success" title="'+esc(t('Move to Product Builder'))+'" data-transfer-prepare="'+Number(row.id)+'" href="index.php?page=product_builder&amp;transfer='+Number(row.id)+'"><i class="fas fa-arrow-right mr-1" aria-hidden="true"></i>'+esc(t('Product Builder'))+'</a>';
  else html+='<button type="button" class="btn btn-sm btn-outline-secondary" disabled title="'+esc(linked?(row.product_sku||t('Listing created')):t('Set IMG to Ready to continue.'))+'">'+esc(t(linked?'Listing created':'Product Builder'))+'</button>';
+ if(row.source_kind==='manual'&&!linked&&cfg.canPrepareTransfers)html+='<button type="button" class="btn btn-sm btn-outline-info pb-transfer-manual-edit" data-manual-transfer-edit="'+Number(row.id)+'" title="'+esc(t('Edit manual transfer'))+'" aria-label="'+esc(t('Edit manual transfer'))+'"'+(busy||loading?' disabled':'')+'><i class="fas fa-pencil-alt" aria-hidden="true"></i></button>';
  return html+'</td></tr>';
 }
 function renderRows(){
@@ -61,7 +63,7 @@ function pagination(){
  });
 }
 async function refresh(){
- if(saving.size||folderContext)return;
+ if(saving.size||folderContext||manualContext)return;
  el('pb-transfer-search-hint').hidden=!el('pb-search').value.trim()||filterInputs.find(input=>input.dataset.transferFilter==='completed').checked;
  const request=++seq;loading=true;pagination();renderRows();
  try{const result=await api('transfers',undefined,{page,per_page:perPage,q:el('pb-search').value,img_filters:selectedFilters()});if(request!==seq)return;
@@ -145,6 +147,77 @@ panel.addEventListener('change',event=>{
  if(event.target.matches('[data-list-page-number]')){page=Math.max(1,Math.min(pages,Number(event.target.value)||1));refresh();}
 });
 panel.addEventListener('keydown',event=>{if(event.key==='Enter'&&event.target.matches('[data-list-page-number]')){event.preventDefault();event.target.blur();}});
+
+// Manual records have their own edit capability; imported order snapshots remain immutable.
+const manualModal=el('pb-manual-transfer-modal'),manualForm=el('pb-manual-transfer-form'),manualCategory=el('pb-manual-category');
+const manualFields=['title','source_sku','design_name','version_name'];
+const categoryKey=row=>JSON.stringify([row?.brand||'',row?.model||'',row?.year_range||'',row?.modelcode||'']);
+function manualProductName(){
+ const clean=value=>String(value||'').trim().replace(/\s+/g,' ');
+ const design=clean(el('pb-manual-design_name').value),version=clean(el('pb-manual-version_name').value);
+ const category=manualCategory.value===''?null:manualCategories[Number(manualCategory.value)];
+ const compatibility=category?[category.brand,category.model,category.year_range].map(clean).filter(Boolean).join(' '):'';
+ el('pb-manual-title').value=[design,version,compatibility?'For '+compatibility:''].filter(Boolean).join(' ');
+}
+function manualError(text){const node=el('pb-manual-transfer-error');node.textContent=text;node.hidden=!text;}
+function manualControls(){
+ manualForm.querySelectorAll('input,select,textarea').forEach(node=>node.disabled=manualBusy||manualLoading);
+ el('pb-manual-transfer-save').disabled=manualBusy||manualLoading||!manualContext?.optionsReady;
+ el('pb-manual-transfer-retry').disabled=manualBusy||manualLoading;
+ manualModal.querySelectorAll('[data-dismiss]').forEach(node=>node.disabled=manualBusy);
+}
+async function manualLibraries(context){
+ manualLoading=true;manualControls();manualError('');el('pb-manual-transfer-retry').hidden=true;
+ try{
+  const data=await api('transfer_form_options');if(manualContext!==context)return;
+  manualCategories=[...data.models,...data.categories.map(row=>({brand:row.brand,model:row.category_name,year_range:'',modelcode:row.modelcode}))];
+  const old=context.row?.snapshot?.category;
+  if(old?.modelcode&&!manualCategories.some(row=>categoryKey(row)===categoryKey(old)))manualCategories.push(old);
+  manualCategory.innerHTML='<option value="">'+esc(t('Select a category…'))+'</option>'+manualCategories.map((row,index)=>'<option value="'+index+'">'+esc([row.brand,row.model,row.year_range,row.modelcode].filter(Boolean).join(' · '))+'</option>').join('');
+  const index=old?.modelcode?manualCategories.findIndex(row=>categoryKey(row)===categoryKey(old)):-1;manualCategory.value=index>=0?String(index):'';
+  if($.fn.select2){if($(manualCategory).hasClass('select2-hidden-accessible'))$(manualCategory).select2('destroy');$(manualCategory).select2({dropdownParent:$(manualModal),width:'100%',dropdownCssClass:'pb-design-dropdown',language:{noResults:()=>t('No results found'),searching:()=>t('Searching…'),search:()=>t('Search')}});}
+  el('pb-manual-designs').innerHTML=data.designs.map(name=>'<option value="'+esc(name)+'"></option>').join('');
+  el('pb-manual-versions').innerHTML=data.versions.map(name=>'<option value="'+esc(name)+'"></option>').join('');
+  context.optionsReady=true;
+ }catch(error){if(manualContext===context){manualError(error.message);el('pb-manual-transfer-retry').hidden=false;}}
+ finally{if(manualContext===context){manualLoading=false;manualControls();}}
+}
+function openManual(row=null){
+ if(manualContext||!cfg.canPrepareTransfers)return;
+ if(row&&(row.source_kind!=='manual'||row.product_id||row.status==='completed'))return;
+ const bytes=crypto.getRandomValues(new Uint8Array(16));
+ manualContext={row,id:row?Number(row.id):0,version:row?.version||0,requestKey:Array.from(bytes,b=>b.toString(16).padStart(2,'0')).join(''),optionsReady:false};
+ manualDirty=false;manualLoading=true;manualError('');manualForm.reset();
+ el('pb-manual-transfer-title').textContent=t(row?'Edit manual transfer':'New manual transfer');
+ manualFields.forEach(key=>{el('pb-manual-'+key).value=['title','source_sku'].includes(key)?row?.[key]||'':row?.snapshot?.[key]||'';});
+ manualControls();modalInterface.call($(manualModal),'show');manualLibraries(manualContext);
+}
+el('pb-new-transfer').addEventListener('click',()=>openManual());
+body.addEventListener('click',event=>{const button=event.target.closest('[data-manual-transfer-edit]');if(button&&!button.disabled)openManual(rows.find(row=>Number(row.id)===Number(button.dataset.manualTransferEdit)));});
+$(manualForm).on('input change','input,select',event=>{
+ if(manualLoading)return;
+ manualDirty=true;
+ if(['pb-manual-design_name','pb-manual-version_name','pb-manual-category'].includes(event.target.id))manualProductName();
+});
+el('pb-manual-transfer-retry').addEventListener('click',()=>{if(manualContext)manualLibraries(manualContext);});
+manualModal.querySelectorAll('[data-dismiss]').forEach(button=>button.addEventListener('click',event=>{event.preventDefault();event.stopPropagation();modalInterface.call($(manualModal),'hide');}));
+$(manualModal).on('hide.bs.modal',event=>{if(manualBusy||(manualDirty&&!confirm(t('Discard unsaved changes?'))))event.preventDefault();});
+$(manualModal).on('hidden.bs.modal',()=>{manualContext=null;manualLoading=false;manualDirty=false;refresh();});
+manualForm.addEventListener('submit',async event=>{
+ event.preventDefault();if(!manualContext?.optionsReady||manualBusy||manualLoading||!manualForm.reportValidity())return;
+ const data={id:manualContext.id,version:manualContext.version,request_key:manualContext.requestKey,category:manualCategory.value===''?{}:manualCategories[Number(manualCategory.value)]};
+ manualFields.forEach(key=>data[key]=el('pb-manual-'+key).value);
+ manualBusy=true;manualControls();manualError('');let saved=false;
+ try{
+  const result=await api('save_manual_transfer',data);saved=true;manualDirty=false;message(t('Manual transfer saved.'),true);
+  if(!manualContext.id){page=1;el('pb-search').value='';lastSearch='';filterInputs.find(input=>input.dataset.transferFilter==='unset').checked=true;}
+  rows=rows.map(row=>Number(row.id)===Number(result.transfer.id)?result.transfer:row);
+ }catch(error){manualError(error.message);}
+ finally{manualBusy=false;manualControls();}
+ if(saved)modalInterface.call($(manualModal),'hide');
+});
+window.addEventListener('beforeunload',event=>{if(manualBusy||manualDirty){event.preventDefault();event.returnValue='';}});
+
 window.addEventListener('focus',()=>{if(!saving.size&&!loading)refresh();});
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&!saving.size&&!loading)refresh();});
 (async()=>{
