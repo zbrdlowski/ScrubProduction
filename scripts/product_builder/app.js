@@ -1116,7 +1116,7 @@ function prepareTransferredDraft(transfer,draft) {
   }else if(draft.modelcode)setSpecificModels(productModels(draft));
   cache={G:draft.components};renderComponents();categoryKind();transferDraftId=transfer.id;transferDraftVersion=draft.transfer_version;dirty=true;
   el('pb-cancel').hidden=false;el('pb-edit-label').textContent=t('Transferred graphics');
-  const banner=el('pb-transfer-draft-banner');banner.textContent=transfer.source_kind==='manual'?t('Draft from manual transfer {reference}. Check the category, design and price, then save.',{reference:transfer.order_number||'#'+transfer.id}):t('Draft from order {order}. Check the category, design and price, then save.',{order:transfer.order_number});banner.hidden=false;
+  const banner=el('pb-transfer-draft-banner');banner.textContent=transfer.source_kind==='manual'?t('Draft from manual transfer {reference}. Check the category, design and price, then save.',{reference:transfer.source_sku||transfer.order_number||'#'+transfer.id}):t('Draft from order {order}. Check the category, design and price, then save.',{order:transfer.order_number});banner.hidden=false;
   if(draft.folder_path){
     const path=document.createElement('div');path.className='pb-transfer-draft-path';
     path.innerHTML='<strong>'+esc(t('Image folder'))+':</strong> <code>'+esc(draft.folder_path)+'</code>'+copyButton(draft.folder_path,t('Copy folder path'));

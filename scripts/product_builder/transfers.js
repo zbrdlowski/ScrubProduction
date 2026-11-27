@@ -20,19 +20,21 @@ async function api(action,data,query={}){
 function message(text,ok=false){const node=el('pb-message');node.textContent=text;node.hidden=!text;node.className='alert alert-'+(ok?'success':'danger');}
 function icon(name,label){return '<button type="button" class="btn btn-sm btn-outline-secondary" disabled aria-label="'+esc(t(label))+'" title="'+esc(t('Available after creating the listing.'))+'"><i class="fas fa-'+name+'" aria-hidden="true"></i></button>';}
 function unavailable(extra=''){return '<td class="pb-transfer-unavailable '+extra+'" aria-disabled="true">—</td>';}
+// Manual transfers use the editable Order No. / SKU; older references remain a fallback.
+function transferReference(row){return row.source_kind==='manual'?(row.source_sku||row.order_number||''):(row.order_number||'');}
 function rowHtml(row){
  const state=row.img_status||'',linked=!!row.product_id||row.status==='completed',busy=saving.has(Number(row.id));
  const editable=cfg.canPrepareTransfers&&!linked&&!busy&&!loading,ready=state==='ready'&&!linked,displayState=linked?'completed':state;
  const category=row.snapshot?.category||{},categoryText=[category.brand,category.model,category.year_range].filter(Boolean).join(' · ')||row.snapshot?.category_text||'—';
- const dateText=date(row.created_at),target=Number(cfg.openTransferId)===Number(row.id);
+ const reference=transferReference(row),dateText=date(row.created_at),target=Number(cfg.openTransferId)===Number(row.id);
  let html='<tr class="pb-product-row'+(target?' pb-transfer-target':'')+'" data-transfer-row="'+Number(row.id)+'" data-transfer-state="'+esc(displayState)+'">';
  html+='<td class="pb-created-column" title="'+esc(row.created_at)+'">'+esc(dateText.replace(/\.(\d{2})(\d{2})$/,'.$2'))+'</td>';
- html+='<td class="pb-product-identity"><strong>'+esc(row.title)+'</strong><div><code title="'+esc(t('Source order'))+'">'+esc(row.order_number||(row.source_kind==='manual'?t('Manual #{id}',{id:row.id}):''))+'</code>'+(row.source_kind==='manual'?'<span class="pb-manual-badge">'+esc(t('Manual'))+'</span>':'')+'</div></td>';
+ html+='<td class="pb-product-identity"><strong>'+esc(row.title)+'</strong><div><code title="'+esc(t(row.source_kind==='manual'?'Order No. / SKU':'Source order'))+'">'+esc(reference||(row.source_kind==='manual'?t('Manual #{id}',{id:row.id}):''))+'</code>'+(row.source_kind==='manual'?'<span class="pb-manual-badge">'+esc(t('Manual'))+'</span>':'')+'</div></td>';
  html+='<td><span class="badge pb-bundle-badge" data-bundle="G">G</span></td>';
  html+='<td class="pb-category-cell">'+(category.modelcode?'<div class="pb-category-meta"><code>'+esc(category.modelcode)+'</code></div>':'')+'<small>'+esc(categoryText)+'</small></td>';
  html+='<td class="pb-transfer-img" data-state="'+esc(displayState)+'">';
  if(linked)html+='<span class="pb-transfer-created"><i class="fas fa-check-circle" aria-hidden="true"></i>'+esc(t('Listing created'))+'</span>';
- else html+='<select class="form-control form-control-sm pb-img-select" data-transfer-img="'+Number(row.id)+'" aria-label="IMG · '+esc(row.order_number)+'"'+(editable?'':' disabled')+'>'+[['','—'],['skip','Skip'],['gen','Gen'],['ready','Ready']].map(([value,label])=>'<option value="'+value+'"'+(state===value?' selected':'')+'>'+label+'</option>').join('')+'</select>';
+ else html+='<select class="form-control form-control-sm pb-img-select" data-transfer-img="'+Number(row.id)+'" aria-label="IMG · '+esc(reference)+'"'+(editable?'':' disabled')+'>'+[['','—'],['skip','Skip'],['gen','Gen'],['ready','Ready']].map(([value,label])=>'<option value="'+value+'"'+(state===value?' selected':'')+'>'+label+'</option>').join('')+'</select>';
  html+='<span class="pb-transfer-feedback" role="status">'+(busy?esc(t('Saving…')):'')+'</span></td>';
  const folderEnabled=!busy&&!loading&&((ready&&cfg.canPrepareTransfers)||((ready||linked)&&row.folder_path));
  const folderLabel=t(ready&&cfg.canPrepareTransfers?'Edit folder path':'View folder path');
@@ -95,7 +97,7 @@ function folderControls(){
 }
 function fillFolder(row){
  folderContext={id:Number(row.id),version:row.version,editable:!!cfg.canPrepareTransfers&&!row.product_id&&row.status==='pending'&&row.img_status==='ready'};
- folderInput.value=row.folder_path||'';el('pb-transfer-folder-source').textContent=row.title+' · '+row.order_number;
+ folderInput.value=row.folder_path||'';el('pb-transfer-folder-source').textContent=row.title+' · '+transferReference(row);
  folderDirty=false;folderError('');el('pb-transfer-folder-reload').hidden=true;folderControls();
 }
 body.addEventListener('click',async event=>{
@@ -221,7 +223,7 @@ window.addEventListener('beforeunload',event=>{if(manualBusy||manualDirty){event
 window.addEventListener('focus',()=>{if(!saving.size&&!loading)refresh();});
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&!saving.size&&!loading)refresh();});
 (async()=>{
- if(cfg.openTransferId){try{const result=await api('transfer',undefined,{id:cfg.openTransferId});el('pb-search').value=result.transfer.order_number;lastSearch=el('pb-search').value;}catch(error){message(error.message);}}
+ if(cfg.openTransferId){try{const result=await api('transfer',undefined,{id:cfg.openTransferId});el('pb-search').value=transferReference(result.transfer)||result.transfer.title;lastSearch=el('pb-search').value;}catch(error){message(error.message);}}
  await refresh();const target=body.querySelector('.pb-transfer-target');if(target)target.scrollIntoView({block:'center'});
 })();
 });})();

@@ -52,7 +52,8 @@ if (empty($_SESSION['accounting_payout_csrf'])) {
 }
 
 $today = date('Y-m-d');
-$from = omegaExportNormalizeDateInput($_GET['import_from'] ?? $today, $today);
+$defaultFrom = omega_export_previous_workday($today, $pdo instanceof PDO ? $pdo : null);
+$from = omegaExportNormalizeDateInput($_GET['import_from'] ?? $defaultFrom, $defaultFrom);
 $to = omegaExportNormalizeDateInput($_GET['import_to'] ?? $today, $today);
 $processingDate = omegaExportNormalizeDateInput($_GET['processing_date'] ?? $today, $today);
 
@@ -209,7 +210,7 @@ natcasesort($manualCustomers);
       <form class="form-row align-items-end" method="get" id="omegaExportFilter">
         <input type="hidden" name="page" value="accounting_omega_export">
         <div class="form-group col-md-3 mb-2">
-          <label for="omegaImportFrom">Import objednávok od<?= accountingUiInfo('Prvý deň intervalu, v ktorom boli eBay, Shoptet aj Custom objednávky importované do Darkscrubu.') ?></label>
+          <label for="omegaImportFrom">Import objednávok od<?= accountingUiInfo('Prvý deň intervalu, v ktorom boli eBay, Shoptet aj Custom objednávky importované do Darkscrubu. Predvolene predchádzajúci pracovný deň so zohľadnením sviatkov a celozávodnej dovolenky.') ?></label>
           <div class="input-group date omega-export-date-picker" id="omegaImportFromPicker" data-target-input="nearest">
             <input class="form-control datetimepicker-input" id="omegaImportFrom" type="text" name="import_from" value="<?= omegaExportH(omegaExportDisplayDate($from)) ?>" placeholder="01.01.1970" inputmode="numeric" autocomplete="off" data-target="#omegaImportFromPicker">
             <div class="input-group-append" data-target="#omegaImportFromPicker" data-toggle="datetimepicker"><div class="input-group-text"><i class="far fa-calendar-alt"></i></div></div>

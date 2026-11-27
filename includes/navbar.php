@@ -226,6 +226,7 @@ if (isset($conn) && $conn instanceof mysqli) {
     </ul>
     <!-- Right navbar links -->
     <ul class="navbar-nav ml-auto">
+      <?php include __DIR__ . '/project_notification_nav.php'; ?>
        <!--
       <li class="nav-item d-none d-sm-inline-block">
         <a href="?page=chat" class="nav-link">Chat</a>

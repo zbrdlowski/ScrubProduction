@@ -1,0 +1,123 @@
+<?php
+require __DIR__ . '/project_workflow_fixture.php';
+$checks = 0;
+function check(bool $ok, string $message): void {
+ global $checks; ++$checks;
+ if (!$ok) throw new RuntimeException($message);
+}
+function denied(callable $action, string $message): void {
+ try { $action(); } catch (DomainException $error) { check(true, $message); return; }
+ check(false, $message);
+}
+function notices(mysqli $conn, int $user, string $kind): array {
+ return array_values(array_filter(projectWorkflowUnread($conn,$user),fn($n)=>$n['kind']===$kind));
+}
+function mutate(mysqli $conn, string $action, int $id, array $extra = [], int $actor = 8): int {
+ return projectWorkflowMutate($conn,$actor,$action,['project_id'=>1,'task_id'=>$id]+$extra);
+}
+$main=fixtureAdd($conn,'Create designz for honda crf 450',8,null,true);
+$web=fixtureAdd($conn,'List new designz on website',9,$main);
+$ebay=fixtureAdd($conn,'List new designz on eBay',10,$main,true);
+$other=fixtureAdd($conn,'Unrelated task',8,null,false,2);
+$standalone=fixtureAdd($conn,'Standalone task',9);
+check(projectWorkflowInstalled($conn),'Fixture schema detected');
+check(!projectWorkflowUnread($conn,9) && !projectWorkflowUnread($conn,10),'No assignment alerts before parent completion');
+denied(fn()=>mutate($conn,'update_task_status',$web,['task_status'=>'done'],9),'Blocked completion rejected');
+denied(fn()=>mutate($conn,'update_task_status',$web,['task_status'=>'in_progress'],9),'Blocked start rejected');
+denied(fn()=>mutate($conn,'move_task',$standalone,['parent_task_id'=>$standalone]),'Self-parent rejected');
+denied(fn()=>mutate($conn,'move_task',$standalone,['parent_task_id'=>$other]),'Cross-project parent rejected');
+denied(fn()=>mutate($conn,'move_task',$standalone,['parent_task_id'=>$web]),'Third level rejected');
+denied(fn()=>mutate($conn,'move_task',$main,['parent_task_id'=>$standalone]),'Parent with children cannot become subtask');
+denied(fn()=>mutate($conn,'delete_task',$main),'Parent deletion cannot lose subtasks');
+check(count(projectWorkflowRows($conn,'SELECT * FROM project_tasks'))===5,'Invalid moves/deletes rolled back');
+mutate($conn,'move_task',$standalone,['parent_task_id'=>$main]);
+check((int)fixtureGet($conn,$standalone)['parent_task_id']===$main,'Existing task becomes subtask');
+mutate($conn,'move_task',$standalone,['parent_task_id'=>0]);
+check(fixtureGet($conn,$standalone)['parent_task_id']===null,'Subtask becomes standalone');
+mutate($conn,'update_task_status',$main,['task_status'=>'done']);
+check(fixtureGet($conn,$main)['status']==='pending_review','Completion waits for owner');
+check(count(notices($conn,7,'task_review'))===1,'Owner notified of review');
+check(!notices($conn,9,'task_ready') && !notices($conn,10,'task_ready'),'No early subtask alerts while awaiting review');
+mutate($conn,'update_task_status',$main,['task_status'=>'done']);
+check(count(notices($conn,7,'task_review'))===1,'Repeated done is idempotent');
+denied(fn()=>mutate($conn,'approve_task',$main),'Non-owner approval rejected');
+$edit=['task_title'=>'Create designz for honda crf 450','assigned_to'=>8,'task_status'=>'pending_review','requires_review'=>0];
+denied(fn()=>mutate($conn,'edit_task',$main,$edit),'Cannot bypass review by disabling requirement');
+$edit['requires_review']=1;
+mutate($conn,'edit_task',$main,$edit);
+check(count(notices($conn,7,'task_review'))===1,'Pending modal save does not duplicate review');
+$notice=notices($conn,7,'task_review')[0];
+projectWorkflowMarkRead($conn,7,(int)$notice['id']);
+check(count(notices($conn,7,'task_review'))===1,'Review cannot be dismissed as ordinary read');
+$conn->query('UPDATE projects SET assigned_to=10 WHERE id=1');
+check(!notices($conn,7,'task_review') && count(notices($conn,10,'task_review'))===1,'Review follows changed project owner');
+denied(fn()=>mutate($conn,'approve_task',$main,[],7),'Previous owner cannot approve');
+mutate($conn,'reject_task',$main,[],10);
+check(fixtureGet($conn,$main)['status']==='in_progress','Rejected task reopens');
+check(count(notices($conn,8,'task_rejected'))===1 && !notices($conn,10,'task_review'),'Assignee receives return-for-changes notice');
+mutate($conn,'update_task_status',$main,['task_status'=>'done']);
+mutate($conn,'approve_task',$main,[],10);
+check(fixtureGet($conn,$main)['status']==='done' && (int)fixtureGet($conn,$main)['reviewed_by']===10,'Owner approval recorded');
+check(count(notices($conn,9,'task_ready'))===1 && count(notices($conn,10,'task_ready'))===1,'Each subtask assignee receives release alert');
+check(count(notices($conn,10,'task_done'))===1,'Owner receives completed notification');
+denied(fn()=>mutate($conn,'approve_task',$main,[],10),'Duplicate approval rejected without extra alerts');
+check(count(notices($conn,9,'task_ready'))===1,'No duplicate release');
+$ready=notices($conn,9,'task_ready')[0];
+projectWorkflowMarkRead($conn,8,(int)$ready['id']);
+check(count(notices($conn,9,'task_ready'))===1,'Cannot mark another user notice read');
+projectWorkflowMarkRead($conn,9,(int)$ready['id']);
+check(!notices($conn,9,'task_ready'),'Assignee can acknowledge alert');
+$late=fixtureAdd($conn,'Late subtask',9,$main);
+check(count(notices($conn,9,'task_ready'))===1,'New subtask under completed parent alerts immediately');
+mutate($conn,'update_task_status',$main,['task_status'=>'in_progress']);
+check(!notices($conn,9,'task_ready') && !notices($conn,10,'task_ready'),'Reopening parent invalidates stale ready notices');
+mutate($conn,'update_task_status',$main,['task_status'=>'done']);
+mutate($conn,'approve_task',$main,[],10);
+check(count(notices($conn,9,'task_ready'))===2,'New completion cycle releases waiting tasks again');
+mutate($conn,'update_task_status',$web,['task_status'=>'done'],9);
+check(fixtureGet($conn,$web)['status']==='done','Unchecked review flag completes immediately');
+mutate($conn,'update_task_status',$ebay,['task_status'=>'done'],10);
+check(fixtureGet($conn,$ebay)['status']==='pending_review','Owner-assigned task still needs explicit review');
+mutate($conn,'update_task_status',$standalone,['task_status'=>'done'],9);
+mutate($conn,'update_task_status',$late,['task_status'=>'done'],9);
+check(projectWorkflowRows($conn,'SELECT status FROM projects WHERE id=1')[0]['status']!=='done','Pending review excluded from completed project');
+mutate($conn,'approve_task',$ebay,[],10);
+check(projectWorkflowRows($conn,'SELECT status FROM projects WHERE id=1')[0]['status']==='done','All approved tasks finish project');
+mutate($conn,'update_task_status',$web,['task_status'=>'in_progress'],9);
+check(projectWorkflowRows($conn,'SELECT status FROM projects WHERE id=1')[0]['status']==='in_progress','Reopening task reopens project');
+$parent2=fixtureAdd($conn,'Another parent',8);
+denied(fn()=>mutate($conn,'move_task',$web,['parent_task_id'=>$parent2]),'Active work cannot silently move under unfinished parent');
+mutate($conn,'update_task_status',$web,['task_status'=>'waiting'],9);
+mutate($conn,'move_task',$web,['parent_task_id'=>$parent2]);
+check((int)fixtureGet($conn,$web)['parent_task_id']===$parent2,'Waiting subtask can move to another main task');
+mutate($conn,'update_task_status',$parent2,['task_status'=>'done']);
+check(count(array_filter(notices($conn,9,'task_ready'),fn($n)=>(int)$n['task_id']===$web))===1,'Parent without review releases subtask immediately');
+$conn->query('UPDATE projects SET assigned_to=NULL WHERE id=1');
+$general=fixtureAdd($conn,'Review in general project',8,null,true);
+mutate($conn,'update_task_status',$general,['task_status'=>'done']);
+check(count(notices($conn,7,'task_review'))===1,'Creator reviews general projects');
+$editReview=fixtureAdd($conn,'Review via edit modal',8,null,true);
+mutate($conn,'edit_task',$editReview,['task_title'=>'Review via edit modal','assigned_to'=>8,'task_status'=>'done','requires_review'=>1]);
+check(fixtureGet($conn,$editReview)['status']==='pending_review','Edit modal cannot bypass completion review');
+$newParent=fixtureAdd($conn,'Reopened parent',8);
+mutate($conn,'update_task_status',$newParent,['task_status'=>'done']);
+$newChild=fixtureAdd($conn,'Completed child',9,$newParent);
+mutate($conn,'update_task_status',$newChild,['task_status'=>'done'],9);
+mutate($conn,'update_task_status',$newParent,['task_status'=>'waiting']);
+mutate($conn,'update_task_status',$newChild,['task_status'=>'in_progress'],9);
+check(fixtureGet($conn,$newChild)['status']==='in_progress','Completed child can reopen while parent waits');
+mutate($conn,'update_task_status',$newParent,['task_status'=>'done']);
+$reviewChild=fixtureAdd($conn,'Pending child',9,$newParent,true);
+mutate($conn,'update_task_status',$reviewChild,['task_status'=>'done'],9);
+mutate($conn,'update_task_status',$newParent,['task_status'=>'waiting']);
+denied(fn()=>mutate($conn,'approve_task',$reviewChild,[],7),'Owner cannot approve child while parent is reopened');
+mutate($conn,'reject_task',$reviewChild,[],7);
+check(fixtureGet($conn,$reviewChild)['status']==='in_progress','Pending child can be returned while parent waits');
+
+mutate($conn,'approve_task',$general,[],7);
+mutate($conn,'delete_task',$general);
+check(!projectWorkflowRows($conn,'SELECT * FROM project_notifications WHERE task_id=?','i',[$general]),'Deletion removes notifications');
+denied(fn()=>projectWorkflowMutate($conn,0,'add_task',['project_id'=>1]),'Anonymous mutation rejected');
+$_SESSION=['project_workflow_csrf'=>str_repeat('a',64)];
+check(projectWorkflowValidToken(str_repeat('a',64)) && !projectWorkflowValidToken('bad'),'CSRF tokens verified');
+echo 'project_task_workflow: ', $checks, " assertions passed\n";

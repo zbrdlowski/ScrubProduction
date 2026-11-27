@@ -1271,11 +1271,12 @@ function customOrderItemOptionGroups(
   return $groups;
 }
 
-function customOrderRenderSpecFieldInput(mysqli $conn, array $definition, array $editOptions, array $selectedOrder, string $cssClass = '', string $extraAttr = ''): string
+function customOrderRenderSpecFieldInput(mysqli $conn, array $definition, array $editOptions, array $selectedOrder, string $cssClass = '', string $extraAttr = '', bool $scrubNoteOnly = false): string
 {
   $specKey = trim((string) ($definition['spec_key'] ?? ''));
   $sourceKey = trim((string) ($definition['source_key'] ?? ''));
   $fieldName = 'spec_' . $specKey;
+  if ($scrubNoteOnly && $sourceKey === 'my-item-note') $fieldName = 'scrub_note';
   $currentValue = trim((string) ($editOptions[$sourceKey] ?? ''));
 
   if ($currentValue === '' && $sourceKey === 'name') {
@@ -4838,6 +4839,12 @@ if (!$customOrdersDetailRequest && !$customOrdersFullPageDetail) {
         $customOfficialNumberLocked = customOrdersIsExported($selectedOrder);
         $customExportDisabled = $customOfficialNumberLocked ? 'disabled data-custom-export-locked="1"' : '';
         $customExportFormAttr = $customOfficialNumberLocked ? 'data-custom-export-locked-form="1"' : '';
+        $customOrderItemNoteOnly = !$customOrdersCanManage && $customOrdersCanContribute
+          && !$customOfficialNumberLocked && $customOrdersCurrentUserId > 0
+          && (int) ($selectedOrder['assigned_employee_id'] ?? 0) === $customOrdersCurrentUserId;
+        if ($customOrderItemNoteOnly && empty($_SESSION['custom_order_item_note_csrf'])) {
+          $_SESSION['custom_order_item_note_csrf'] = bin2hex(random_bytes(32));
+        }
         $customOfficialNumberEditable = $customOrdersCanManage && $customOfficialNumber !== '' && !$customOfficialNumberLocked;
         $customHeaderHasInvalid = (bool) array_intersect_key($invalidFields, array_flip([
           'customer_name', 'social_handle', 'shipping_name', 'shipping_street', 'shipping_city',
@@ -5525,6 +5532,10 @@ if (!$customOrdersDetailRequest && !$customOrdersFullPageDetail) {
                 $itemModalId = 'custom-item-modal-' . (int) $item['id'];
                 $itemEditFormId = 'custom-item-inline-edit-' . (int) $item['id'];
                 $itemDeleteFormId = 'custom-item-inline-delete-' . (int) $item['id'];
+                $itemNoteOnly = $customOrderItemNoteOnly && (bool) array_filter(
+                  array_merge($itemMainDefinitions, $itemTextDefinitions),
+                  static function (array $definition): bool { return ($definition['source_key'] ?? '') === 'my-item-note'; }
+                );
                 $itemAssignment = is_array($item['assignment'] ?? null) ? $item['assignment'] : null;
                 $itemAssignmentEmployeeId = (int) ($itemAssignment['employee_id'] ?? 0);
                 $itemAssignmentName = trim((string) ($itemAssignment['employee_name'] ?? ''));
@@ -5537,9 +5548,10 @@ if (!$customOrdersDetailRequest && !$customOrdersFullPageDetail) {
                 }
                 $itemAssignmentInitials = mb_substr($itemAssignmentInitials, 0, 2);
                 ?>
-                <form method="post" action="scripts/custom_orders/save_item.php" id="<?= h($itemEditFormId) ?>" class="mb-0 custom-inline-item-edit-form" data-scroll-target="#custom-order-builder-panel" <?= $customExportFormAttr ?>>
+                <form method="post" action="scripts/custom_orders/<?= $itemNoteOnly ? 'save_item_note.php' : 'save_item.php' ?>" id="<?= h($itemEditFormId) ?>" class="mb-0 custom-inline-item-edit-form" data-scroll-target="#custom-order-builder-panel" <?= $itemNoteOnly ? 'data-custom-item-note-only="1"' : '' ?> <?= $customExportFormAttr ?>>
                   <input type="hidden" name="custom_order_id" value="<?= (int) $selectedOrder['id'] ?>">
                   <input type="hidden" name="custom_item_id" value="<?= (int) $item['id'] ?>">
+                  <?php if ($itemNoteOnly): ?><input type="hidden" name="csrf_token" value="<?= h($_SESSION['custom_order_item_note_csrf']) ?>"><?php endif; ?>
                   <input type="hidden" name="item_type_code" value="<?= h($itemTypeCode) ?>">
                   <input type="hidden" name="inline_edit" value="1">
                   <?php if ($itemDepartment === 'G'): ?><input type="hidden" name="graphics_subcategory" value="<?= h($itemSubcategory) ?>"><?php endif; ?>
@@ -5617,7 +5629,7 @@ if (!$customOrdersDetailRequest && !$customOrdersFullPageDetail) {
                             <input type="date" class="form-control form-control-sm" disabled>
                           </td>
                           <td class="text-center" style="width:58px;">
-                            <button type="submit" class="btn btn-xs btn-outline-success" <?= $customExportDisabled ?>>Save</button>
+                            <button type="submit" class="btn btn-xs btn-outline-success" <?= $itemNoteOnly ? 'data-custom-item-note-save="1"' : '' ?> <?= $customExportDisabled ?>><?= $itemNoteOnly ? 'Save note' : 'Save' ?></button>
                           </td>
                           <td class="text-center" style="width:62px;">
                             <?php if ($customOrdersCanDeleteItems): ?><button type="submit" form="<?= h($itemDeleteFormId) ?>" class="btn btn-xs btn-outline-danger" <?= $customExportDisabled ?>>Delete</button><?php else: ?><button type="button" class="btn btn-xs btn-outline-danger" disabled title="No permission to delete custom order items">Delete</button><?php endif; ?>
@@ -5627,7 +5639,7 @@ if (!$customOrdersDetailRequest && !$customOrdersFullPageDetail) {
                         <?php if ($itemMainDefinitions): ?>
                           <tr class="g-item-options-row item-type-<?= h($itemTypeCode) ?>">
                             <td colspan="99"><div class="g-options-bar">
-                              <?php foreach ($itemMainDefinitions as $itemDefinition): ?><label class="product-spec-label"><span class="product-spec-label-title"><?= h(customOrderBuilderSpecLabel($itemDepartment, $itemDefinition)) ?></span><?= customOrderRenderSpecFieldInput($conn, $itemDefinition, $itemOptions, $selectedOrder) ?></label><?php endforeach; ?>
+                              <?php foreach ($itemMainDefinitions as $itemDefinition): ?><label class="product-spec-label"><span class="product-spec-label-title"><?= h(customOrderBuilderSpecLabel($itemDepartment, $itemDefinition)) ?></span><?= customOrderRenderSpecFieldInput($conn, $itemDefinition, $itemOptions, $selectedOrder, '', '', $itemNoteOnly) ?></label><?php endforeach; ?>
                             </div></td>
                           </tr>
                         <?php endif; ?>
@@ -5635,7 +5647,7 @@ if (!$customOrdersDetailRequest && !$customOrdersFullPageDetail) {
                         <?php if ($itemTextDefinitions): ?>
                           <tr class="g-item-options-row item-type-<?= h($itemTypeCode) ?>">
                             <td colspan="99"><div class="g-options-bar">
-                              <?php foreach ($itemTextDefinitions as $itemDefinition): ?><label class="product-spec-label"><span class="product-spec-label-title"><?= h(customOrderBuilderSpecLabel($itemDepartment, $itemDefinition)) ?></span><?= customOrderRenderSpecFieldInput($conn, $itemDefinition, $itemOptions, $selectedOrder) ?></label><?php endforeach; ?>
+                              <?php foreach ($itemTextDefinitions as $itemDefinition): ?><label class="product-spec-label"><span class="product-spec-label-title"><?= h(customOrderBuilderSpecLabel($itemDepartment, $itemDefinition)) ?></span><?= customOrderRenderSpecFieldInput($conn, $itemDefinition, $itemOptions, $selectedOrder, '', '', $itemNoteOnly) ?></label><?php endforeach; ?>
                             </div></td>
                           </tr>
                         <?php endif; ?>
@@ -6331,8 +6343,12 @@ if (!$customOrdersDetailRequest && !$customOrdersFullPageDetail) {
         if (action.endsWith('/save_note.php') || action.endsWith('/edit_note.php') || action.endsWith('/delete_note.php') || action.endsWith('/take_item.php')) return;
         if (customOrdersCanDeleteItems && action.endsWith('/delete_item.php')) return;
 
+        var noteOnly = action.endsWith('/save_item_note.php')
+          && form.dataset.customItemNoteOnly === '1' && !form.hasAttribute('data-custom-export-locked-form');
         form.classList.add('custom-orders-readonly-form');
         form.querySelectorAll('input, select, textarea, button').forEach(function (control) {
+          if (noteOnly && (['custom_order_id', 'custom_item_id', 'inline_edit', 'csrf_token', 'scrub_note'].indexOf(control.name) >= 0
+              || control.hasAttribute('data-custom-item-note-save'))) return;
           if (action.endsWith('/save_order.php') && String(control.getAttribute('name') || '') === 'custom_order_id') return;
           if (control.classList.contains('btn-copy-inline')) return;
           if (control.classList.contains('custom-item-take-btn')) return;
@@ -6466,6 +6482,19 @@ if (!$customOrdersDetailRequest && !$customOrdersFullPageDetail) {
         rememberCustomOrdersScroll(form);
         window.location.reload();
       }
+    }
+
+    function refreshCustomOrderAssignmentAccess(orderId) {
+      if (customOrdersCanManage) return;
+      var wrap = document.getElementById('custom-detail-' + orderId);
+      if (wrap) {
+        wrap.dataset.loaded = '0';
+        var row = document.querySelector('.custom-order-table-row[data-order-id="' + orderId + '"]');
+        if (row && row.classList.contains('order-row-open')) openCustomOrderDetail(orderId);
+        return;
+      }
+      var form = document.getElementById('custom-twin-header-form-' + orderId);
+      if (form) refreshCustomOrderDetailFromForm(form);
     }
 
     function initializeCustomDetailRefreshForms(root) {
@@ -7888,7 +7917,7 @@ if (!$customOrdersDetailRequest && !$customOrdersFullPageDetail) {
         form.dataset.inlineSaveBound = '1';
         form.addEventListener('submit', function (event) {
           event.preventDefault();
-          if (!confirmCustomOrderMissingCategoryInfo(form)) return;
+          if (form.dataset.customItemNoteOnly !== '1' && !confirmCustomOrderMissingCategoryInfo(form)) return;
           var saveButton = form.querySelector('button[type="submit"]');
           var originalText = saveButton ? saveButton.textContent : 'Save';
           if (saveButton) {
@@ -8220,6 +8249,7 @@ if (!$customOrdersDetailRequest && !$customOrdersFullPageDetail) {
           document.querySelectorAll('[data-custom-assigned-cell="' + orderId + '"]').forEach(function (cell) {
             cell.innerHTML = payload.assignment_html || '';
           });
+          refreshCustomOrderAssignmentAccess(orderId);
         })
         .catch(function (error) {
           button.dataset.takeOrderBusy = '0';
@@ -8268,6 +8298,7 @@ if (!$customOrdersDetailRequest && !$customOrdersFullPageDetail) {
           document.querySelectorAll('[data-custom-assigned-cell="' + orderId + '"]').forEach(function (cell) {
             cell.innerHTML = payload.assignment_html || '';
           });
+          refreshCustomOrderAssignmentAccess(orderId);
         })
         .catch(function (error) {
           button.dataset.removeAssignmentBusy = '0';

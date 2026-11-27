@@ -29,13 +29,43 @@ function omega_export_schema_ready(PDO $pdo): bool
     return true;
 }
 
-function omega_export_previous_workday(string $date): string
+function omega_export_previous_workday(string $date, ?PDO $pdo = null): string
 {
+    $sviatky = [];
+    require dirname(__DIR__, 2) . '/sviatky.php';
+
+    $companyHolidays = [];
+    if ($pdo !== null && omega_export_table_exists($pdo, 'holiday_requests')) {
+        // Bulk leave is stored per employee with this marker, not in a separate calendar.
+        $stmt = $pdo->prepare("SELECT DISTINCT start_date, end_date FROM holiday_requests
+            WHERE request_type = 'holiday' AND status = 'approved'
+              AND admin_note = 'Company-wide holiday' AND start_date < ?");
+        $stmt->execute([$date]);
+        $companyHolidays = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    }
+
     $day = new DateTimeImmutable($date);
-    do {
+    while (true) {
         $day = $day->modify('-1 day');
-    } while ((int) $day->format('N') >= 6);
-    return $day->format('Y-m-d');
+        if ((int) $day->format('N') >= 6 || in_array($day->format('d-m'), $sviatky, true)) {
+            continue;
+        }
+
+        $year = (int) $day->format('Y');
+        // Calendar arithmetic avoids timestamp limits and daylight-saving offsets.
+        $easterSunday = $day->setDate($year, 3, 21)->modify('+' . easter_days($year) . ' days');
+        $candidate = $day->format('Y-m-d');
+        if ($candidate === $easterSunday->modify('-2 days')->format('Y-m-d')
+            || $candidate === $easterSunday->modify('+1 day')->format('Y-m-d')) {
+            continue;
+        }
+        foreach ($companyHolidays as $holiday) {
+            if ($holiday['start_date'] <= $candidate && $holiday['end_date'] >= $candidate) {
+                continue 2;
+            }
+        }
+        return $candidate;
+    }
 }
 
 function omega_export_decimal($value): float

@@ -177,7 +177,7 @@ let markRequests = 0;
     async function save(mode, sound) {
       await settings.locator('#chatNotificationMode').selectOption(mode);
       await settings.locator('#chatNotificationSound').setChecked(sound, { force: true });
-      await settings.locator('button[type="submit"]').click();
+      await settings.locator('#chatNotificationSettingsForm button[type="submit"]').click();
       await settings.waitForFunction(() => document.querySelector('#chatNotificationSettingsStatus').textContent === 'Nastavenia upozornení boli uložené.');
       await b.waitForFunction(mode => window.darkScrubChatNotifications.getPreferences().toast_mode === mode, mode);
     }

@@ -9,6 +9,14 @@ if (!$canManageProjects) {
   return;
 }
 
+require_once __DIR__ . '/project_workflow.php';
+$projectWorkflowReady = projectWorkflowInstalled($conn);
+$projectWorkflowCsrf = projectWorkflowToken();
+if (!$projectWorkflowReady) {
+  echo '<div class="alert alert-warning">Projects update requires the database migration <code>db/project_task_workflow.sql</code>.</div>';
+  return;
+}
+
 // ---------- helpers ----------
 function projectStatusBadge(string $s): string
 {
@@ -17,6 +25,7 @@ function projectStatusBadge(string $s): string
     'in_progress' => ['primary', 'In Progress'],
     'stuck' => ['danger', 'Stuck'],
     'done' => ['success', 'Done'],
+    'pending_review' => ['warning', 'Awaiting review'],
     'cancelled' => ['dark', 'Cancelled'],
   ];
   [$cls, $label] = $map[$s] ?? ['light', ucfirst($s)];
@@ -352,186 +361,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     projectRedirect($_SERVER['PHP_SELF'] . '?page=projects');
   }
 
-  // ── Add task ──────────────────────────────────────────────
-  if ($act === 'add_task') {
-    $pid = intval($_POST['project_id']);
-    $taskTitle = trim($_POST['task_title'] ?? '');
-    $assignedTo = intval($_POST['assigned_to'] ?? 0) ?: null;
-    $taskStatus = $_POST['task_status'] ?? 'waiting';
-    $taskPrio = $_POST['task_priority'] ?? 'medium';
-    $taskDue = $_POST['task_due_date'] ?: null;
-    $taskNotes = trim($_POST['task_notes'] ?? '');
-
-    if ($taskTitle !== '' && $pid > 0) {
-      $stmt = $conn->prepare("INSERT INTO project_tasks
-                (project_id, title, assigned_to, status, priority, due_date, notes)
-                VALUES (?,?,?,?,?,?,?)");
-      $stmt->bind_param('isissss', $pid, $taskTitle, $assignedTo, $taskStatus, $taskPrio, $taskDue, $taskNotes);
-      $stmt->execute();
-      $tid = (int) $conn->insert_id;
-      $stmt->close();
-
-      require_once dirname(__DIR__) . '/scripts/orders/activity_helper.php';
-      log_order_activity(
-        $conn,
-        null,
-        $empId,
-        'task_created',
-        'project_task',
-        $tid,
-        ['project_id' => $pid, 'title' => $taskTitle, 'assigned_to' => $assignedTo]
-      );
-    }
-    projectRedirect($_SERVER['PHP_SELF'] . '?page=projects&view=' . $pid);
-  }
-
-  // Edit task
-  if ($act === 'edit_task' && $canManageProjects) {
-    $tid = intval($_POST['task_id'] ?? 0);
+  // Every task mutation uses the same transactional workflow, including modal edits.
+  if (in_array($act, ['add_task','edit_task','update_task_status','move_task','approve_task','reject_task','delete_task'], true)) {
     $pid = intval($_POST['project_id'] ?? 0);
-    $taskTitle = trim($_POST['task_title'] ?? '');
-    $assignedTo = intval($_POST['assigned_to'] ?? 0) ?: null;
-    $taskStatus = $_POST['task_status'] ?? 'waiting';
-    $taskPrio = $_POST['task_priority'] ?? 'medium';
-    $taskDue = $_POST['task_due_date'] ?: null;
-    $taskNotes = trim($_POST['task_notes'] ?? '');
-
-    if ($tid > 0 && $pid > 0 && $taskTitle !== '') {
-      $stmt = $conn->prepare("UPDATE project_tasks SET
-                title=?, assigned_to=?, status=?, priority=?, due_date=?, notes=?
-                WHERE id=? AND project_id=?");
-      $stmt->bind_param('sissssii', $taskTitle, $assignedTo, $taskStatus, $taskPrio, $taskDue, $taskNotes, $tid, $pid);
-      $stmt->execute();
-      $stmt->close();
-
-      require_once dirname(__DIR__) . '/scripts/orders/activity_helper.php';
-      log_order_activity(
-        $conn,
-        null,
-        $empId,
-        'task_updated',
-        'project_task',
-        $tid,
-        [
-          'project_id' => $pid,
-          'title' => $taskTitle,
-          'assigned_to' => $assignedTo,
-          'status' => $taskStatus,
-          'priority' => $taskPrio,
-          'due_date' => $taskDue,
-        ]
-      );
-    }
-    projectRedirect($_SERVER['PHP_SELF'] . '?page=projects&view=' . $pid);
-  }
-
-  // Update task status (quick toggle)
-  if ($act === 'update_task_status') {
-    $tid = intval($_POST['task_id']);
-    $status = $_POST['task_status'] ?? 'waiting';
-    $pid = intval($_POST['project_id']);
-    $allowedTaskStatuses = ['waiting', 'in_progress', 'stuck', 'done'];
-    if (!in_array($status, $allowedTaskStatuses, true)) {
-      $status = 'waiting';
-    }
-
-    if ($tid > 0 && $pid > 0 && $canManageProjects) {
-      $stmt = $conn->prepare("UPDATE project_tasks SET status=? WHERE id=? AND project_id=?");
-      $stmt->bind_param('sii', $status, $tid, $pid);
-
-      $stmt->execute();
-      $changed = $stmt->affected_rows > 0;
-      $stmt->close();
-
-      if ($changed) {
-        require_once dirname(__DIR__) . '/scripts/orders/activity_helper.php';
-        log_order_activity(
-          $conn,
-          null,
-          $empId,
-          'task_status_changed',
-          'project_task',
-          $tid,
-          ['project_id' => $pid, 'new_status' => $status]
-        );
-
-        // ── Auto-sync stavu projektu podľa hotových úloh ────────
-        $countStmt = $conn->prepare("
-          SELECT COUNT(*) AS total_tasks, SUM(status = 'done') AS done_tasks
-          FROM project_tasks
-          WHERE project_id = ?
-        ");
-        if ($countStmt) {
-          $countStmt->bind_param('i', $pid);
-          $countStmt->execute();
-          $counts = $countStmt->get_result()->fetch_assoc();
-          $countStmt->close();
-
-          $totalTasks = intval($counts['total_tasks'] ?? 0);
-          $doneTasksCnt = intval($counts['done_tasks'] ?? 0);
-
-          $projStmt = $conn->prepare("SELECT status FROM projects WHERE id = ?");
-          $projStmt->bind_param('i', $pid);
-          $projStmt->execute();
-          $currentProject = $projStmt->get_result()->fetch_assoc();
-          $projStmt->close();
-          $currentProjectStatus = $currentProject['status'] ?? null;
-
-          $newProjectStatus = null;
-
-          if ($totalTasks > 0 && $doneTasksCnt >= $totalTasks) {
-            // Všetky úlohy hotové -> projekt Done
-            if ($currentProjectStatus !== 'done' && $currentProjectStatus !== 'cancelled') {
-              $newProjectStatus = 'done';
-            }
-          } elseif ($currentProjectStatus === 'done'
-            || ($currentProjectStatus === 'waiting' && $status !== 'waiting')) {
-            // First task activity starts a waiting project; undoing completion reopens it.
-            $newProjectStatus = 'in_progress';
-          }
-
-          if ($newProjectStatus !== null && $newProjectStatus !== $currentProjectStatus) {
-            $updProjStmt = $conn->prepare("UPDATE projects SET status = ? WHERE id = ?");
-            $updProjStmt->bind_param('si', $newProjectStatus, $pid);
-            $updProjStmt->execute();
-            $updProjStmt->close();
-
-            log_order_activity(
-              $conn,
-              null,
-              $empId,
-              'project_status_autoupdated',
-              'project',
-              $pid,
-              ['old_status' => $currentProjectStatus, 'new_status' => $newProjectStatus, 'reason' => 'task_completion_sync']
-            );
-          }
-        }
+    try {
+      if (!projectWorkflowValidToken($_POST['csrf_token'] ?? null)) {
+        throw new DomainException('The form expired. Reload the page and try again.');
       }
-    }
-    projectRedirect($_SERVER['PHP_SELF'] . '?page=projects&view=' . $pid);
-  }
-
-  // ── Delete task ───────────────────────────────────────────
-  if ($act === 'delete_task' && $canManageProjects) {
-    $tid = intval($_POST['task_id']);
-    $pid = intval($_POST['project_id']);
-    if ($tid > 0) {
-      $stmt = $conn->prepare("DELETE FROM project_tasks WHERE id=?");
-      $stmt->bind_param('i', $tid);
-      $stmt->execute();
-      $stmt->close();
-
-      require_once dirname(__DIR__) . '/scripts/orders/activity_helper.php';
-      log_order_activity(
-        $conn,
-        null,
-        $empId,
-        'task_deleted',
-        'project_task',
-        $tid,
-        ['project_id' => $pid]
-      );
+      projectWorkflowMutate($conn, $empId, $act, $_POST);
+    } catch (DomainException $error) {
+      $_SESSION['project_workflow_error'] = $error->getMessage();
+    } catch (Throwable $error) {
+      error_log('Project task workflow: ' . $error->getMessage());
+      $_SESSION['project_workflow_error'] = 'Could not save the task. Please try again.';
     }
     projectRedirect($_SERVER['PHP_SELF'] . '?page=projects&view=' . $pid);
   }
@@ -641,7 +483,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   }
 }
 ?>
+<?php if (!empty($_SESSION['project_workflow_error'])): ?>
+  <div class="alert alert-danger" role="alert"><?= htmlspecialchars($_SESSION['project_workflow_error'], ENT_QUOTES, 'UTF-8') ?></div>
+  <?php unset($_SESSION['project_workflow_error']); ?>
+<?php endif; ?>
 <style>
+  .project-task-subtask .project-task-title { padding-left: 28px; border-left: 3px solid #5878a0; }
+  .project-task-pending-review { background: rgba(255,193,7,.1); }
+  .project-task-drag { cursor: grab; padding: 5px; color: #a7b3c5; }
+  .project-task-drop-target { outline: 2px dashed #59b6ff; outline-offset: -2px; background: rgba(60,150,240,.18); }
+  .project-task-root-drop { border: 1px dashed #7c8b9d; padding: 10px; margin: 10px; border-radius: 4px; }
+  .project-task-row:target { outline: 2px solid #ffc107; outline-offset: -2px; }
+  .project-task-complete { width: 17px; height: 17px; cursor: pointer; }
+
   .project-avatar,
   .project-avatar-sm,
   .project-avatar-lg {
@@ -973,6 +827,22 @@ if ($viewId > 0) {
     while ($r = $res->fetch_assoc())
       $tasks[] = $r;
 
+  $tasksById = [];
+  $taskChildren = [];
+  foreach ($tasks as $task) {
+    $tasksById[(int)$task['id']] = $task;
+    if ($task['parent_task_id']) $taskChildren[(int)$task['parent_task_id']][] = $task;
+  }
+  $orderedTasks = [];
+  foreach ($tasks as $task) {
+    if ($task['parent_task_id']) continue;
+    $orderedTasks[] = $task;
+    foreach ($taskChildren[(int)$task['id']] ?? [] as $child) $orderedTasks[] = $child;
+  }
+  $tasks = $orderedTasks;
+  $projectReviewerId = projectWorkflowOwner($project);
+  $pendingReviewCount = count(array_filter($tasks, fn($task) => $task['status'] === 'pending_review'));
+
   $totalTasks = count($tasks);
   $doneTasks = count(array_filter($tasks, fn($t) => $t['status'] === 'done'));
   $progress = $totalTasks > 0 ? round(($doneTasks / $totalTasks) * 100) : 0;
@@ -1036,12 +906,22 @@ if ($viewId > 0) {
   <!-- ===== DETAIL PAGE ===== -->
   <div class="container-fluid">
 
-    <!-- Breadcrumb back -->
-    <div class="mb-3">
+    <!-- Breadcrumb back and personal notification settings -->
+    <div class="d-flex flex-wrap justify-content-between align-items-center mb-3" style="gap:8px;">
       <a href="?page=projects" class="btn btn-sm btn-outline-secondary">
         <i class="fas fa-arrow-left"></i> All Projects
       </a>
+      <a href="index.php?page=profile&amp;tab=notifications#projectNotificationSettingsForm" class="btn btn-sm btn-outline-info">
+        <i class="fas fa-bell mr-1" aria-hidden="true"></i> Nastavenia upozornení
+      </a>
     </div>
+
+    <?php if ($pendingReviewCount > 0 && $empId === $projectReviewerId): ?>
+      <div class="alert alert-warning" role="status">
+        <i class="fas fa-clipboard-check mr-1"></i> <?= $pendingReviewCount ?> task(s) awaiting your review.
+        Use <strong>Approve</strong> or <strong>Return for changes</strong> in the task list.
+      </div>
+    <?php endif; ?>
 
     <!-- Header row -->
     <div class="row mb-3">
@@ -1157,7 +1037,11 @@ if ($viewId > 0) {
             <?php if (empty($tasks)): ?>
               <p class="text-muted text-center py-4">No tasks yet. Add the first one!</p>
             <?php else: ?>
-              <table class="table table-sm table-hover mb-0">
+              <p class="text-muted small px-3 pt-2 mb-1">Drag the grip onto a main task to make a subtask. Subtasks wait until their parent is complete and approved, if review is required.</p>
+              <div id="projectTaskRootDrop" class="project-task-root-drop small" data-parent-id="0">Drop here to make a standalone task</div>
+              <div id="projectTaskMoveError" class="alert alert-danger mx-3" role="alert" hidden></div>
+              <div class="table-responsive">
+              <table id="projectTasksTable" class="table table-sm table-hover mb-0">
                 <thead>
                   <tr>
                     <th style="width:36px;"></th>
@@ -1172,7 +1056,9 @@ if ($viewId > 0) {
                 </thead>
                 <tbody>
                   <?php foreach ($tasks as $t):
-                    $canToggleTask = $canManageProjects;
+                    $parentTask = $tasksById[(int)$t['parent_task_id']] ?? null;
+                    $taskBlocked = $parentTask && $parentTask['status'] !== 'done';
+                    $canToggleTask = $canManageProjects && (!$taskBlocked || in_array($t['status'], ['done', 'pending_review'], true));
                     $taskRowClass = '';
                     if ($t['status'] === 'done') {
                       $taskRowClass = 'project-task-done';
@@ -1180,27 +1066,33 @@ if ($viewId > 0) {
                       $taskRowClass = 'project-task-in-progress';
                     } elseif ($t['status'] === 'stuck') {
                       $taskRowClass = 'project-task-stuck';
+                    } elseif ($t['status'] === 'pending_review') {
+                      $taskRowClass = 'project-task-pending-review';
                     }
                     ?>
-                    <tr class="<?= $taskRowClass ?>">
+                    <tr id="project-task-<?= (int)$t['id'] ?>" class="project-task-row <?= $taskRowClass ?> <?= $parentTask ? 'project-task-subtask' : '' ?>"
+                      data-task-id="<?= (int)$t['id'] ?>" data-parent-id="<?= (int)$t['parent_task_id'] ?>"
+                      data-has-children="<?= empty($taskChildren[(int)$t['id']]) ? '0' : '1' ?>">
                       <td>
                         <?php if ($canToggleTask): ?>
                           <!-- Quick toggle done/undone -->
                           <form method="POST" style="display:inline;">
+                            <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($projectWorkflowCsrf, ENT_QUOTES, 'UTF-8') ?>">
                             <input type="hidden" name="action" value="update_task_status">
                             <input type="hidden" name="task_id" value="<?= $t['id'] ?>">
                             <input type="hidden" name="project_id" value="<?= $viewId ?>">
-                            <input type="hidden" name="task_status"
-                              value="<?= $t['status'] === 'done' ? 'in_progress' : 'done' ?>">
-                            <button type="submit"
-                              class="btn btn-xs <?= $t['status'] === 'done' ? 'btn-success' : 'btn-outline-secondary' ?>"
-                              title="<?= $t['status'] === 'done' ? 'Mark undone' : 'Mark done' ?>">
-                              <i class="fas fa-check"></i>
-                            </button>
+                            <input type="hidden" name="task_status" value="<?= in_array($t['status'], ['done','pending_review'], true) ? 'in_progress' : 'done' ?>">
+                            <input type="checkbox" class="project-task-complete" aria-label="<?= htmlspecialchars('Complete / reopen: ' . $t['title'], ENT_QUOTES, 'UTF-8') ?>"
+                              <?= in_array($t['status'], ['done','pending_review'], true) ? 'checked' : '' ?> onchange="this.form.submit()"
+                              title="<?= $t['status'] === 'pending_review' ? 'Submitted for review; uncheck to reopen' : 'Mark complete / reopen' ?>">
                           </form>
                         <?php endif; ?>
                       </td>
-                      <td>
+                      <td class="project-task-title">
+                        <?php if (empty($taskChildren[(int)$t['id']])): ?>
+                          <span class="project-task-drag" draggable="true" title="Drag into a main task" aria-label="Drag task"><i class="fas fa-grip-vertical"></i></span>
+                        <?php endif; ?>
+                        <?php if ($parentTask): ?><i class="fas fa-level-up-alt fa-rotate-90 mr-1 text-muted" title="Subtask"></i><?php endif; ?>
                         <span class="<?= $t['status'] === 'done' ? 'text-muted' : '' ?>"
                           style="<?= $t['status'] === 'done' ? 'text-decoration:line-through;' : '' ?>"
                           title="<?= htmlspecialchars($t['notes'] ?? '', ENT_QUOTES, 'UTF-8') ?>" data-toggle="tooltip"
@@ -1224,7 +1116,20 @@ if ($viewId > 0) {
                       </td>
                       <td><?= priorityBadge($t['priority']) ?></td>
                       <td><?= $t['due_date'] ? date('d.m.Y', strtotime($t['due_date'])) : '—' ?></td>
-                      <td><?= projectStatusBadge($t['status']) ?></td>
+                      <td>
+                        <?= projectStatusBadge($t['status']) ?>
+                        <?php if ($taskBlocked): ?><small class="d-block text-warning">Waiting for parent</small><?php endif; ?>
+                        <?php if ($t['requires_review']): ?><small class="d-block text-muted">Owner review required</small><?php endif; ?>
+                        <?php if ($t['status'] === 'pending_review' && $empId === $projectReviewerId): ?>
+                          <form method="POST" class="mt-1">
+                            <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($projectWorkflowCsrf, ENT_QUOTES, 'UTF-8') ?>">
+                            <input type="hidden" name="task_id" value="<?= (int)$t['id'] ?>">
+                            <input type="hidden" name="project_id" value="<?= $viewId ?>">
+                            <button name="action" value="approve_task" class="btn btn-xs btn-success" <?= $taskBlocked ? 'disabled' : '' ?>>Approve</button>
+                            <button name="action" value="reject_task" class="btn btn-xs btn-outline-warning">Return for changes</button>
+                          </form>
+                        <?php endif; ?>
+                      </td>
                       <?php if ($canManageProjects): ?>
                         <td>
                           <div class="d-flex" style="gap:4px;">
@@ -1237,10 +1142,14 @@ if ($viewId > 0) {
                               'priority' => $t['priority'],
                               'due_date' => $t['due_date'],
                               'notes' => $t['notes'],
+                              'parent_task_id' => $t['parent_task_id'],
+                              'requires_review' => $t['requires_review'],
+                              'has_children' => !empty($taskChildren[(int)$t['id']]),
                             ]), ENT_QUOTES, 'UTF-8') ?>)">
                               <i class="fas fa-pencil-alt"></i>
                             </button>
-                            <form method="POST" onsubmit="return confirm('Delete task?');" style="display:inline;">
+                            <form method="POST" onsubmit="return confirm('Delete task? Move or delete its subtasks first.');" style="display:inline;">
+                              <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($projectWorkflowCsrf, ENT_QUOTES, 'UTF-8') ?>">
                               <input type="hidden" name="action" value="delete_task">
                               <input type="hidden" name="task_id" value="<?= $t['id'] ?>">
                               <input type="hidden" name="project_id" value="<?= $viewId ?>">
@@ -1253,6 +1162,7 @@ if ($viewId > 0) {
                   <?php endforeach; ?>
                 </tbody>
               </table>
+              </div>
             <?php endif; ?>
           </div>
         </div>
@@ -1317,6 +1227,7 @@ if ($viewId > 0) {
                               <i class="fas fa-pencil-alt"></i>
                             </button>
                             <form method="POST" onsubmit="return confirm('Delete time log?');" style="display:inline;">
+                              <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($projectWorkflowCsrf, ENT_QUOTES, 'UTF-8') ?>">
                               <input type="hidden" name="action" value="delete_time_log">
                               <input type="hidden" name="time_log_id" value="<?= intval($tl['id']) ?>">
                               <input type="hidden" name="project_id" value="<?= $viewId ?>">
@@ -1351,6 +1262,7 @@ if ($viewId > 0) {
           <div class="card-body">
             <?php if ($canManageProjects): ?>
               <form method="POST" class="mb-3">
+                <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($projectWorkflowCsrf, ENT_QUOTES, 'UTF-8') ?>">
                 <input type="hidden" name="action" value="assign_project">
                 <input type="hidden" name="project_id" value="<?= $viewId ?>">
                 <label class="mb-1" style="font-size:12px;">Responsible Employee</label>
@@ -1481,6 +1393,7 @@ if ($viewId > 0) {
       <div class="modal-dialog">
         <div class="modal-content">
           <form method="POST">
+            <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($projectWorkflowCsrf, ENT_QUOTES, 'UTF-8') ?>">
             <input type="hidden" name="action" value="add_task">
             <input type="hidden" name="project_id" value="<?= $viewId ?>">
             <div class="modal-header bg-primary">
@@ -1488,6 +1401,20 @@ if ($viewId > 0) {
               <button type="button" class="close text-white" data-dismiss="modal">&times;</button>
             </div>
             <div class="modal-body">
+              <div class="form-group">
+                <label for="addTaskParent">Parent task</label>
+                <select name="parent_task_id" id="addTaskParent" class="form-control">
+                  <option value="">Standalone task</option>
+                  <?php foreach ($tasks as $parentOption): if ($parentOption['parent_task_id']) continue; ?>
+                    <option value="<?= (int)$parentOption['id'] ?>"><?= htmlspecialchars($parentOption['title']) ?></option>
+                  <?php endforeach; ?>
+                </select>
+                <small class="text-muted">Two levels only. A task with subtasks must remain a main task.</small>
+              </div>
+              <div class="form-group form-check">
+                <input type="checkbox" name="requires_review" value="1" id="addTaskReview" class="form-check-input">
+                <label class="form-check-label" for="addTaskReview">Completion requires project owner review</label>
+              </div>
               <div class="form-group">
                 <label>Task Title *</label>
                 <input type="text" name="task_title" class="form-control" required>
@@ -1544,6 +1471,7 @@ if ($viewId > 0) {
         <div class="modal-dialog">
           <div class="modal-content">
             <form method="POST">
+              <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($projectWorkflowCsrf, ENT_QUOTES, 'UTF-8') ?>">
               <input type="hidden" name="action" value="edit_task">
               <input type="hidden" name="task_id" id="editTaskId">
               <input type="hidden" name="project_id" id="editTaskProjectId" value="<?= $viewId ?>">
@@ -1552,6 +1480,20 @@ if ($viewId > 0) {
                 <button type="button" class="close" data-dismiss="modal">&times;</button>
               </div>
               <div class="modal-body">
+              <div class="form-group">
+                <label for="editTaskParent">Parent task</label>
+                <select name="parent_task_id" id="editTaskParent" class="form-control">
+                  <option value="">Standalone task</option>
+                  <?php foreach ($tasks as $parentOption): if ($parentOption['parent_task_id']) continue; ?>
+                    <option value="<?= (int)$parentOption['id'] ?>"><?= htmlspecialchars($parentOption['title']) ?></option>
+                  <?php endforeach; ?>
+                </select>
+                <small class="text-muted">Two levels only. A task with subtasks must remain a main task.</small>
+              </div>
+              <div class="form-group form-check">
+                <input type="checkbox" name="requires_review" value="1" id="editTaskReview" class="form-check-input">
+                <label class="form-check-label" for="editTaskReview">Completion requires project owner review</label>
+              </div>
                 <div class="form-group">
                   <label>Task Title *</label>
                   <input type="text" name="task_title" id="editTaskTitle" class="form-control" required>
@@ -1584,6 +1526,7 @@ if ($viewId > 0) {
                   <div class="form-group col-md-6">
                     <label>Status</label>
                     <select name="task_status" id="editTaskStatus" class="form-control form-control-sm">
+                      <option value="pending_review" disabled>Awaiting review</option>
                       <option value="waiting">Waiting</option>
                       <option value="in_progress">In Progress</option>
                       <option value="stuck">Stuck</option>
@@ -1609,6 +1552,7 @@ if ($viewId > 0) {
       <div class="modal-dialog modal-sm">
         <div class="modal-content">
           <form method="POST">
+            <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($projectWorkflowCsrf, ENT_QUOTES, 'UTF-8') ?>">
             <input type="hidden" name="action" value="log_time">
             <input type="hidden" name="project_id" value="<?= $viewId ?>">
             <div class="modal-header bg-info">
@@ -1653,6 +1597,7 @@ if ($viewId > 0) {
       <div class="modal-dialog modal-sm">
         <div class="modal-content">
           <form method="POST">
+            <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($projectWorkflowCsrf, ENT_QUOTES, 'UTF-8') ?>">
             <input type="hidden" name="action" value="edit_time_log">
             <input type="hidden" name="time_log_id" id="editTimeLogId">
             <input type="hidden" name="project_id" id="editTimeLogProjectId" value="<?= $viewId ?>">
@@ -1708,6 +1653,7 @@ if ($viewId > 0) {
         <div class="modal-dialog modal-lg">
           <div class="modal-content">
             <form method="POST">
+              <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($projectWorkflowCsrf, ENT_QUOTES, 'UTF-8') ?>">
               <input type="hidden" name="action" value="edit_project">
               <input type="hidden" name="project_id" value="<?= $viewId ?>">
               <input type="hidden" name="return_to_view" value="<?= $viewId ?>">
@@ -1789,6 +1735,7 @@ if ($viewId > 0) {
         <div class="modal-dialog modal-sm">
           <div class="modal-content">
             <form method="POST">
+              <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($projectWorkflowCsrf, ENT_QUOTES, 'UTF-8') ?>">
               <input type="hidden" name="action" value="delete_project">
               <input type="hidden" name="project_id" value="<?= $viewId ?>">
               <div class="modal-header bg-danger">
@@ -1809,6 +1756,15 @@ if ($viewId > 0) {
       </div>
     <?php endif; ?>
 
+    <form method="POST" id="projectTaskMoveForm" hidden>
+
+      <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($projectWorkflowCsrf, ENT_QUOTES, 'UTF-8') ?>">
+      <input type="hidden" name="action" value="move_task">
+      <input type="hidden" name="project_id" value="<?= $viewId ?>">
+      <input type="hidden" name="task_id">
+      <input type="hidden" name="parent_task_id">
+    </form>
+    <script src="scripts/projects/tasks.js?v=20261127-1" defer></script>
     <script>
       function openEditTask(data) {
         data = data || {};
@@ -1820,6 +1776,12 @@ if ($viewId > 0) {
         $('#editTaskPriority').val(data.priority || 'medium');
         $('#editTaskDue').val(data.due_date ? String(data.due_date).substring(0, 10) : '');
         $('#editTaskNotes').val(data.notes || '');
+        $('#editTaskParent option').each(function () {
+          this.disabled = !!this.value && (Number(this.value) === Number(data.id) || !!data.has_children);
+        });
+        $('#editTaskParent').val(data.parent_task_id || '');
+        $('#editTaskReview').prop('checked', !!Number(data.requires_review));
+        $('#editTaskStatus option[value="pending_review"]').prop('disabled', data.status !== 'pending_review');
         $('#editTaskModal').modal('show');
       }
 
@@ -2001,13 +1963,18 @@ if ($viewId > 0) {
 
   <div class="container-fluid">
     <!-- Header -->
-    <div class="d-flex justify-content-between align-items-center mb-3">
+    <div class="d-flex flex-wrap justify-content-between align-items-center mb-3" style="gap:8px;">
       <h4 class="mb-0" style="color:#e4e6eb;"><i class="fas fa-project-diagram mr-2"></i>Projects</h4>
-      <?php if ($canManageProjects): ?>
-        <button class="btn btn-primary" data-toggle="modal" data-target="#createProjectModal">
-          <i class="fas fa-plus"></i> New Project
-        </button>
-      <?php endif; ?>
+      <div class="d-flex flex-wrap align-items-center" style="gap:8px;">
+        <a href="index.php?page=profile&amp;tab=notifications#projectNotificationSettingsForm" class="btn btn-outline-info">
+          <i class="fas fa-bell mr-1" aria-hidden="true"></i> Nastavenia upozornení
+        </a>
+        <?php if ($canManageProjects): ?>
+          <button class="btn btn-primary" data-toggle="modal" data-target="#createProjectModal">
+            <i class="fas fa-plus"></i> New Project
+          </button>
+        <?php endif; ?>
+      </div>
     </div>
 
     <?php if (!empty($employeeStats)): ?>
@@ -2288,6 +2255,7 @@ if ($viewId > 0) {
       <div class="modal-dialog modal-lg">
         <div class="modal-content">
           <form method="POST">
+            <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($projectWorkflowCsrf, ENT_QUOTES, 'UTF-8') ?>">
             <input type="hidden" name="action" value="create_project">
             <div class="modal-header bg-primary">
               <h5 class="modal-title text-white"><i class="fas fa-plus mr-1"></i> New Project</h5>
@@ -2356,6 +2324,7 @@ if ($viewId > 0) {
       <div class="modal-dialog modal-lg">
         <div class="modal-content">
           <form method="POST">
+            <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($projectWorkflowCsrf, ENT_QUOTES, 'UTF-8') ?>">
             <input type="hidden" name="action" value="edit_project">
             <input type="hidden" name="project_id" id="editProjectId">
             <div class="modal-header bg-warning">
@@ -2431,6 +2400,7 @@ if ($viewId > 0) {
       <div class="modal-dialog modal-sm">
         <div class="modal-content">
           <form method="POST">
+            <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($projectWorkflowCsrf, ENT_QUOTES, 'UTF-8') ?>">
             <input type="hidden" name="action" value="delete_project">
             <input type="hidden" name="project_id" id="deleteProjectId">
             <div class="modal-header bg-danger">

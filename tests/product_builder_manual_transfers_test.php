@@ -23,10 +23,15 @@ $ready=pb_transfer_save_image($pdo,['id'=>$manualId,'version'=>$manual['version'
 $withFolder=pb_transfer_save_folder($pdo,['id'=>$manualId,'version'=>$ready['version'],'folder_path'=>'Y:\GRAPHICS KIT\Manual'],82);
 transferReject(fn()=>pb_save_manual_transfer($pdo,array_replace($data,['id'=>$manualId,'version'=>$manual['version'],'title'=>'Stale typo']),81));
 $simpleEdit=array_intersect_key($data,array_flip(['source_sku','design_name','version_name','category']));
+$simpleEdit['source_sku']='SO22237';
 $edited=pb_save_manual_transfer($pdo,$simpleEdit+['id'=>$manualId,'version'=>$withFolder['version'],'title'=>'Corrected graphics'],83);
 transferAssert($edited['order_number']==='REFERENCE-1'&&$edited['snapshot']['source_quantity']===3&&$edited['snapshot']['source_url']==='https://example.test/graphics'&&$edited['snapshot']['component_notes']==='Internal note'&&$edited['snapshot']['options']===$manual['snapshot']['options'],'Reduced form preserves every hidden legacy field.');
 transferAssert($edited['title']==='Corrected graphics'&&$edited['img_status']==='ready'&&$edited['folder_path']===$withFolder['folder_path'],'Editing fixes text without changing workflow or folder.');
 transferAssert((int)$edited['created_by']===81&&(int)$edited['updated_by']===83&&$edited['created_at']===$manual['created_at'],'Audit and original creation date preserved.');
+$reread=pb_transfer_get($pdo,$manualId);
+transferAssert($reread['source_sku']==='SO22237'&&$reread['order_number']==='REFERENCE-1','Edited SKU is stored independently from the preserved legacy order reference.');
+$skuMatches=pb_transfer_list($pdo,['q'=>'SO22237','img_filters'=>'unset,skip,gen,ready']);
+transferAssert(count($skuMatches['rows'])===1&&(int)$skuMatches['rows'][0]['id']===$manualId&&$skuMatches['rows'][0]['source_sku']==='SO22237','List/search API returns the edited SKU.');
 $draft=pb_transfer_draft($pdo,$manualId);
 transferAssert($draft['name']==='Corrected graphics'&&$draft['modelcode']==='TEST'&&$draft['components'][0]['options']['graphics_number']==='Yes'&&$draft['components'][0]['notes']==='Internal note','Manual snapshot fills the regular builder.');
 transferAssert($draft['components'][0]['design_id']!==null&&$draft['components'][0]['graphics_version_id']!==null,'Design and version resolve by the same names as automatic transfers.');

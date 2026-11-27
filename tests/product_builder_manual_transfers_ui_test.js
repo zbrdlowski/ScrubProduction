@@ -5,14 +5,14 @@ const {chromium}=require('playwright'),assert=require('assert/strict');
   const page=await browser.newPage({viewport:{width:1440,height:1000}}),errors=[];
   page.on('pageerror',e=>errors.push(e.message));page.on('dialog',dialog=>dialog.accept());
   const cat={brand:'KTM',model:'EXC',year_range:'2008-2011',modelcode:'TEST'};
-  let rows=[{id:1,source_kind:'order',order_number:'ORDER-1',title:'Automatic transfer',status:'pending',img_status:null,version:1,created_at:'2026-11-26 10:00:00',snapshot:{category:cat}},
+  let rows=[{id:1,source_kind:'order',source_sku:'ORDER-ITEM-SKU',order_number:'ORDER-1',title:'Automatic transfer',status:'pending',img_status:null,version:1,created_at:'2026-11-26 10:00:00',snapshot:{category:cat}},
    {id:2,source_kind:'manual',order_number:'DONE',title:'Completed manual transfer',status:'completed',product_id:22,img_status:'ready',version:2,created_at:'2026-11-26 09:00:00',snapshot:{category:cat}}];
   let failOptions=true,failSave=true,writes=[];
   await page.route('**/scripts/product_builder/api.php?*',async route=>{
    const req=route.request(),url=new URL(req.url()),action=url.searchParams.get('action');let result={ok:true};
    if(action==='transfers'){
     const filters=(url.searchParams.get('img_filters')||'').split(','),q=(url.searchParams.get('q')||'').toLowerCase();
-    const selected=rows.filter(row=>(filters.includes(row.status==='completed'?'completed':row.img_status||'unset')||(q&&row.status==='completed'))&&(!q||(row.title+' '+row.order_number).toLowerCase().includes(q)));
+    const selected=rows.filter(row=>(filters.includes(row.status==='completed'?'completed':row.img_status||'unset')||(q&&row.status==='completed'))&&(!q||(row.title+' '+row.order_number+' '+(row.source_sku||'')).toLowerCase().includes(q)));
     Object.assign(result,{rows:selected,page:1,pages:1,per_page:100,total:selected.length,from:selected.length?1:0,to:selected.length});
    }else if(action==='transfer_form_options'){
     if(failOptions){failOptions=false;return route.fulfill({status:500,json:{ok:false,error:'Test catalogue unavailable'}});}
@@ -33,10 +33,12 @@ const {chromium}=require('playwright'),assert=require('assert/strict');
   const chooseCategory=async value=>{await field('category').evaluate((node,value)=>{window.jQuery(node).val(value).trigger('change');},value);};
   await page.goto('http://localhost/darkscrub/.cache/product-builder/transfers-viewer.html');await page.locator('[data-transfer-row="1"]').waitFor();
   assert.equal(await page.locator('[data-manual-transfer-edit="1"]').count(),0);
+  assert.equal(await page.locator('[data-transfer-row="1"] .pb-product-identity code').innerText(),'ORDER-1','Automatic transfers still show the original order.');
   await page.click('#pb-new-transfer');await page.locator('#pb-manual-transfer-modal.show').waitFor();await page.locator('#pb-manual-transfer-retry:visible').waitFor();
   assert.equal(await field('transfer-save').isDisabled(),true);await field('transfer-retry').click();await page.locator('#pb-manual-transfer-save:enabled').waitFor();
   assert.equal(await page.locator('#pb-manual-transfer-form input[id^="pb-manual-"],#pb-manual-transfer-form select[id^="pb-manual-"],#pb-manual-transfer-form textarea').count(),5);
   assert.equal(await page.locator('[data-manual-spec]').count(),0);
+  assert.equal(await page.locator('label[for="pb-manual-source_sku"]').innerText(),'Order No. / SKU');
   assert.equal(await page.locator('#pb-manual-transfer-modal .select2-selection').evaluate(node=>getComputedStyle(node).backgroundColor),'rgb(52, 58, 64)');
   await field('design_name').fill(' Artlex ');await field('version_name').fill(' ST ');
   assert.equal(await field('title').inputValue(),'Artlex ST');
@@ -56,14 +58,30 @@ const {chromium}=require('playwright'),assert=require('assert/strict');
   assert.equal(writes[0].request_key,writes[1].request_key,'Create retry uses the same request key.');assert.equal(rows.length,3);
   assert.match(await page.locator('[data-transfer-row="90"]').textContent(),/Manual <graphics> typo/);assert.equal(await page.locator('[data-transfer-row="90"] graphics').count(),0);
   assert.equal(await page.locator('[data-transfer-row="90"] td').count(),19);
+  assert.equal(await page.locator('[data-transfer-row="90"] .pb-product-identity code').innerText(),'SOURCE-SKU','Created reference appears in the table.');
+  rows[0].order_number='LEGACY-REF';
   await page.click('[data-manual-transfer-edit="90"]');await page.locator('#pb-manual-transfer-save:enabled').waitFor();
   assert.equal(await field('title').inputValue(),'Manual <graphics> typo','Opening an edit keeps its saved name.');
   assert.equal(await field('category').inputValue(),'0');
   await field('version_name').fill('R1');assert.equal(await field('title').inputValue(),'Artlex R1 For KTM EXC 2008-2011');
-  await field('title').fill('Manual graphics corrected');await field('transfer-save').click();await field('transfer-modal').waitFor({state:'hidden'});
+  await field('title').fill('Manual graphics corrected');await field('source_sku').fill('SO22237');await field('transfer-save').click();await field('transfer-modal').waitFor({state:'hidden'});
   await page.waitForFunction(()=>document.querySelector('[data-transfer-row="90"]').textContent.includes('Manual graphics corrected'));
   assert.equal(rows.length,3);assert.equal(rows[0].version,2);
+  assert.equal(await page.locator('[data-transfer-row="90"] .pb-product-identity code').innerText(),'SO22237','Edited SKU replaces the old reference immediately.');
+  rows[0].img_status='ready';
+  await page.reload();await page.locator('[data-transfer-row="90"]').waitFor();
+  assert.equal(await page.locator('[data-transfer-row="90"] .pb-product-identity code').innerText(),'SO22237','A fresh list read still shows the saved SKU.');
+  await page.fill('#pb-search','SO22237');await page.waitForFunction(()=>document.querySelectorAll('[data-transfer-row]').length===1);
+  await page.click('[data-transfer-folder="90"]');await page.locator('#pb-transfer-folder-modal.show').waitFor();
+  assert.equal(await page.locator('#pb-transfer-folder-source').innerText(),'Manual graphics corrected · SO22237');
+  await page.locator('#pb-transfer-folder-modal .close').click();await page.locator('#pb-transfer-folder-modal').waitFor({state:'hidden'});
+  await page.click('[data-manual-transfer-edit="90"]');await page.locator('#pb-manual-transfer-save:enabled').waitFor();
+  assert.equal(await field('source_sku').inputValue(),'SO22237','Reopened editor and table show the same value.');
+  await page.screenshot({path:'.cache/product-builder/manual-transfer-reference-fixed.png',fullPage:true});
+  await page.locator('#pb-manual-transfer-modal .close').click();await field('transfer-modal').waitFor({state:'hidden'});
+  await page.fill('#pb-search','');await page.locator('[data-transfer-row="1"]').waitFor();
   await page.locator('[data-transfer-filter="completed"]').check();await page.locator('[data-transfer-row="2"]').waitFor();assert.equal(await page.locator('[data-manual-transfer-edit="2"]').count(),0);
+  assert.equal(await page.locator('[data-transfer-row="2"] .pb-product-identity code').innerText(),'DONE','Older manual records retain their source reference.');
   assert.equal(await page.locator('[data-transfer-prepare]').count(),0,'Manual creation does not grant access to Builder.');
   await page.setViewportSize({width:430,height:930});await page.click('#pb-new-transfer');await page.locator('#pb-manual-transfer-save:enabled').waitFor();
   await field('design_name').fill('Artlex');await field('version_name').fill('ST');await chooseCategory('0');
@@ -72,10 +90,11 @@ const {chromium}=require('playwright'),assert=require('assert/strict');
   await page.goto('http://localhost/darkscrub/.cache/product-builder/i18n-transfers-sk.html');await page.locator('[data-transfer-row="1"]').waitFor();
   assert.equal(await page.locator('#pb-new-transfer').innerText(),'Nový manuálny transfer');
   await page.click('#pb-new-transfer');await page.locator('#pb-manual-transfer-save:enabled').waitFor();
+  assert.equal(await page.locator('label[for="pb-manual-source_sku"]').innerText(),'Order No. / SKU');
   assert.equal(await field('transfer-title').innerText(),'Nový manuálny transfer');assert.equal(await field('transfer-save').innerText(),'Uložiť transfer');
   await field('design_name').fill('Artlex');await field('version_name').fill('ST');await chooseCategory('0');
   assert.equal(await field('title').inputValue(),'Artlex ST For KTM EXC 2008-2011','Product title uses For in both interface languages.');
   await page.locator('#pb-manual-transfer-modal .close').click();await field('transfer-modal').waitFor({state:'hidden'});
-  assert.deepEqual(errors,[]);console.log('Manual transfer UI: five fields, generated names, category picker, UNI, empty inputs, editable name, create retry, edit, completed lock, EN/SK and mobile OK.');
+  assert.deepEqual(errors,[]);console.log('Manual transfer UI: five fields, generated names, category picker, UNI, empty inputs, editable name, create retry, edited SKU in table/folder/search/reopened modal, completed lock, EN/SK and mobile OK.');
  }finally{await browser.close();}
 })().catch(error=>{console.error(error);process.exit(1);});

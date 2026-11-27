@@ -125,6 +125,12 @@ Po exporte:
 - custom objednavka dostane status `EXPORTED`
 - dalsie produkcne zmeny uz ries v standardnom order module
 
+## Scrub note pre priradeného grafika
+
+Používateľ s oprávnením `custom_orders.work`, ktorý má cez **Take** priradenú celú custom objednávku, môže pred exportom upravovať **Scrub note** pri jej existujúcich položkách a uložiť ju cez **Save note**. Rovnaké interné pole sa pri Seat Cover môže zobrazovať ako **My Item Note**. Buyer Note a ostatné polia položky zostávajú pod pôvodnými oprávneniami. Samotné priradenie k položke alebo Lead owner nestačí.
+
+Uloženie mení iba `my-item-note` v špecifikácii danej položky a zapisuje autora a zmenu do histórie. Server pri každom uložení kontroluje aktuálne priradenie, príslušnosť položky k objednávke aj zámok po exporte. Po odobratí priradenia používateľ túto úpravu stratí; po exporte sa poznámka upravuje v Production. Prístup sa obnoví aj v otvorenom detaile po Take alebo odobratí priradenia.
+
 ## Úpravy po exporte do Production
 
 Po exporte zostávajú pôvodné údaje v custom objednávke viditeľné. Údaje, ktoré sa priebežne neprenášajú do Production, sú zamknuté aj na serveri; odmietne sa aj zmena zo starého otvoreného formulára. Použite odkaz `Open Production`.

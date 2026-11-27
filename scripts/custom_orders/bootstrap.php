@@ -19,6 +19,7 @@ $customOrdersPermissionMap = [
   'category_info_options.php' => 'custom_orders.view',
   'check_official_number.php' => 'custom_orders.view',
   'save_note.php' => 'custom_orders.work',
+  'save_item_note.php' => 'custom_orders.work',
   'edit_note.php' => 'custom_orders.work',
   'delete_note.php' => 'custom_orders.work',
   'upload_photos.php' => 'custom_orders.work',

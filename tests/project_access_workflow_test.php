@@ -37,7 +37,11 @@ $definitions = [
     priority VARCHAR(32), start_date DATE NULL, due_date DATE NULL, assigned_to INT NULL, created_by INT,
     notes TEXT, color VARCHAR(16), created_at DATETIME DEFAULT CURRENT_TIMESTAMP",
   'project_tasks' => "id INT AUTO_INCREMENT PRIMARY KEY, project_id INT, title VARCHAR(255), assigned_to INT NULL,
-    status VARCHAR(32), priority VARCHAR(32), due_date DATE NULL, notes TEXT, sort_order INT DEFAULT 0",
+    status VARCHAR(32), priority VARCHAR(32), due_date DATE NULL, notes TEXT, sort_order INT DEFAULT 0,
+    parent_task_id INT NULL, requires_review TINYINT NOT NULL DEFAULT 0,
+    review_requested_at DATETIME NULL, reviewed_at DATETIME NULL, reviewed_by INT NULL",
+  'project_notifications' => "id INT AUTO_INCREMENT PRIMARY KEY, project_id INT, task_id INT, recipient_id INT,
+    kind VARCHAR(32), created_at DATETIME DEFAULT CURRENT_TIMESTAMP, read_at DATETIME NULL",
   'project_time_log' => "id INT AUTO_INCREMENT PRIMARY KEY, project_id INT, task_id INT NULL, employee_id INT,
     logged_date DATE, hours DECIMAL(8,2), note TEXT",
   'order_activity' => "id INT AUTO_INCREMENT PRIMARY KEY, order_id INT NULL, actor_employee_id INT NULL,
@@ -62,7 +66,8 @@ $_SESSION = ['user_id' => 7, 'permission' => $case === 'create_admin' ? 900 : 0]
 $_SERVER['REQUEST_METHOD'] = 'POST';
 $_SERVER['PHP_SELF'] = '/index.php';
 $_GET = ['page' => 'projects'];
-$_POST = ['project_id' => 1];
+$_SESSION['project_workflow_csrf'] = str_repeat('a', 64);
+$_POST = ['project_id' => 1, 'csrf_token' => $_SESSION['project_workflow_csrf']];
 $expectedStatus = 'waiting';
 
 if (in_array($case, ['create', 'create_admin', 'guest_post', 'edit_project'], true)) {

@@ -17,6 +17,13 @@ Oba súbory sú tabulátorové TXT v kódovaní Windows-1250. Neupravujte ich v 
 6. Z vytvoreného balíka stiahnite najprv **Zákazníci TXT** a potom **Objednávky TXT**.
 7. Oba súbory importujte do OMEGY v rovnakom poradí.
 
+Pole **Import objednávok od** sa predvolí na predchádzajúci pracovný deň.
+Preskakujú sa víkendy, sviatky zo súboru `sviatky.php`, Veľký piatok,
+Veľkonočný pondelok a schválené dovolenky označené **Company-wide holiday**.
+Ak evidencia dovoleniek ešte nie je dostupná, použijú sa víkendy a sviatky.
+Polia **Import objednávok do** a **Deň spracovania** zostávajú predvolené na dnešok.
+Ručne zadaný dátum sa zachová.
+
 ## Zberné a manuálne faktúry
 
 CUSTOM objednávky, ktoré účtovníctvo fakturuje ručne alebo spolu na jednej
